@@ -27,6 +27,7 @@ FrogPilotDevicePanel::FrogPilotDevicePanel(FrogPilotSettingsWindow *parent) : Fr
     {"DeviceManagement", tr("Device Settings"), tr("Settings that control device behavior."), "../frogpilot/assets/toggle_icons/icon_device.png"},
     {"LowVoltageShutdown", tr("Battery Shutdown Threshold"), tr("Automatically shut down the device when the vehicle's battery voltage reaches the set threshold preventing excessive battery drain to protect the battery."), ""},
     {"DeviceShutdown", tr("Device Shutdown Timer"), tr("How long the device stays on for after you go offroad."), ""},
+    {"UseFrogServer", tr("Switch to FrogPilot Server"), tr("Use the Konik connect instead of Comma connect"), ""},
     {"NoLogging", tr("Disable Data Logging"), QString("<b>%1</b><br><br>%2").arg(tr("WARNING: This will prevent your drives from being recorded and all data will be unobtainable!")).arg(tr("Disable all data logging to improve privacy.")), ""},
     {"NoUploads", tr("Disable Data Uploads"), QString("<b>%1</b><br><br>%2").arg(tr("WARNING: This will prevent your drives from appearing on <b>comma connect</b> which may impact debugging and support!")).arg(tr("Prevent the device from sending any data to <b>comma</b>'s servers.")), ""},
     {"OfflineMode", tr("Disable Internet Requirement"), tr("Allow the device to work indefinitely without an internet connection."), ""},

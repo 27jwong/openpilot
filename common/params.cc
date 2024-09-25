@@ -534,6 +534,19 @@ std::unordered_map<std::string, uint32_t> keys = {
     {"WheelIcon", PERSISTENT},
     {"WheelSpeed", PERSISTENT},
     {"WheelToDownload", CLEAR_ON_MANAGER_START},
+
+    {"DongleIdPrev", PERSISTENT},
+    {"FrogId", PERSISTENT},
+    {"UseFrogServer", PERSISTENT},
+    {"RecordRoad", PERSISTENT},
+    {"TorqueInterceptorEnabled", PERSISTENT},
+    {"RadarInterceptorEnabled", PERSISTENT},
+    {"NoMRCC", PERSISTENT},
+    {"NoFSC", PERSISTENT},
+    {"BlendedACC", PERSISTENT},
+    {"ManualTransmission", PERSISTENT},
+    {"LiveStreamRunning", CLEAR_ON_MANAGER_START},
+    {"RemoteAccess", CLEAR_ON_MANAGER_START},
 };
 
 } // namespace
