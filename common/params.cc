@@ -112,6 +112,7 @@ std::unordered_map<std::string, uint32_t> keys = {
     {"CarVin", CLEAR_ON_MANAGER_START | CLEAR_ON_ONROAD_TRANSITION},
     {"CompletedTrainingVersion", PERSISTENT},
     {"ControlsReady", CLEAR_ON_MANAGER_START | CLEAR_ON_ONROAD_TRANSITION},
+    {"ConnectVersion", PERSISTENT},
     {"CurrentBootlog", PERSISTENT},
     {"CurrentRoute", CLEAR_ON_MANAGER_START | CLEAR_ON_ONROAD_TRANSITION},
     {"DisableLogging", CLEAR_ON_MANAGER_START | CLEAR_ON_ONROAD_TRANSITION},
@@ -534,6 +535,16 @@ std::unordered_map<std::string, uint32_t> keys = {
     {"WheelIcon", PERSISTENT},
     {"WheelSpeed", PERSISTENT},
     {"WheelToDownload", CLEAR_ON_MANAGER_START},
+    {"RecordRoad", PERSISTENT},
+    {"TorqueInterceptorEnabled", PERSISTENT},
+    {"RadarInterceptorEnabled", PERSISTENT},
+    {"NoMRCC", PERSISTENT},
+    {"NoFSC", PERSISTENT},
+    {"ExperimentalLongTune", PERSISTENT},
+    {"LongOutputGain", PERSISTENT},
+    {"BlendedACC", PERSISTENT},
+    {"EnableStreamer", PERSISTENT},
+    {"ManualTransmission", PERSISTENT},
 };
 
 } // namespace

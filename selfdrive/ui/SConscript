@@ -27,6 +27,11 @@ widgets_src = ["ui.cc", "qt/widgets/input.cc", "qt/widgets/wifi.cc",
 frogpilot_widgets_src = ["../frogpilot/ui/qt/widgets/drive_stats.cc", "../frogpilot/ui/qt/widgets/frogpilot_controls.cc",
                          "../frogpilot/ui/qt/widgets/model_reviewer.cc"]
 
+frogpilot_widgets_src = ["../frogpilot/ui/qt/widgets/model_reviewer.cc", "../frogpilot/ui/qt/widgets/frogpilot_controls.cc",
+                     "../frogpilot/ui/qt/widgets/drive_stats.cc"]
+
+widgets_src += frogpilot_widgets_src
+
 widgets_src += frogpilot_widgets_src
 
 qt_env['CPPDEFINES'] = []
@@ -56,6 +61,14 @@ frogpilot_src = ["../frogpilot/navigation/ui/maps_settings.cc", "../frogpilot/na
                  "../frogpilot/ui/qt/offroad/theme_settings.cc", "../frogpilot/ui/qt/offroad/utilities.cc",
                  "../frogpilot/ui/qt/offroad/vehicle_settings.cc", "../frogpilot/ui/qt/offroad/visual_settings.cc",
                  "../frogpilot/ui/qt/offroad/wheel_settings.cc"]
+
+if GetOption("nosr"):
+  qt_env.Append(CXXFLAGS=['-DNO_SR'])
+  base_libs.remove('OmxCore')
+  qt_libs.remove('OmxCore')
+  frogpilot_src.remove("../frogpilot/screenrecorder/screenrecorder.cc")
+  frogpilot_src.remove("../frogpilot/screenrecorder/omx_encoder.cc")
+  print("Removing Screen Recorder")
 
 qt_src += frogpilot_src
 

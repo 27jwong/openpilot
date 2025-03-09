@@ -42,6 +42,48 @@ TogglesPanel::TogglesPanel(SettingsWindow *parent) : ListWidget(parent) {
       "../assets/img_experimental_white.svg",
     },
     {
+      "ExperimentalLongTune",
+      tr("Longitudinal Auto-Tune (Beta)"),
+      tr("Enable the longitudinal auto-tuning feature. Slowly adjusts the acceleration gain to minimize error"),
+      "../assets/offroad/icon_openpilot.png",
+    },
+    {
+      "BlendedACC",
+      tr("Blended Acc (Experimental)"),
+      tr("Blend stock MRCC and Experimental Mode longitudinal control."),
+      "../assets/offroad/icon_openpilot.png",
+    },
+    {
+      "TorqueInterceptorEnabled",
+      tr("Torque Interceptor Installed"),
+      tr("Enable the torque interceptor to control the steering wheel."),
+      "../assets/offroad/icon_openpilot.png",
+    },
+    {
+      "RadarInterceptorEnabled",
+      tr("Radar Interceptor Installed"),
+      tr("Enable if you have installed the radar Iterceptor."),
+      "../assets/offroad/icon_openpilot.png",
+    },
+    {
+      "NoMRCC",
+      tr("Car Does not have stock MRCC"),
+      tr("Enable if your car does not have stock MRCC."),
+      "../assets/offroad/icon_openpilot.png",
+    },
+    {
+      "NoFSC",
+      tr("Car Does not have stock FSC"),
+      tr("Enable if your car does not have stock FSC."),
+      "../assets/offroad/icon_openpilot.png",
+    },
+    {
+      "ManualTransmission",
+      tr("Manual Transmission"),
+      tr("Enable if your is a manual."),
+      "../assets/offroad/icon_openpilot.png",
+    },
+    {
       "DisengageOnAccelerator",
       tr("Disengage on Accelerator Pedal"),
       tr("When enabled, pressing the accelerator pedal will disengage openpilot."),
@@ -57,6 +99,18 @@ TogglesPanel::TogglesPanel(SettingsWindow *parent) : ListWidget(parent) {
       "RecordFront",
       tr("Record and Upload Driver Camera"),
       tr("Upload data from the driver facing camera and help improve the driver monitoring algorithm."),
+      "../assets/offroad/icon_monitoring.png",
+    },
+    {
+      "RecordRoad",
+      tr("Record and Upload Road Cameras"),
+      tr("Upload data from the road cameras."),
+      "../assets/offroad/icon_monitoring.png",
+    },
+    {
+      "EnableStreamer",
+      tr("Stream live video to your phone"),
+      tr("Use the connect website to stram your devices cameras to your phone in realtime."),
       "../assets/offroad/icon_monitoring.png",
     },
     {

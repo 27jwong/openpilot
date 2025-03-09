@@ -40,12 +40,30 @@ def manager_init() -> None:
   convert_params(params_cache)
 
   default_params: list[tuple[str, str | bytes]] = [
+    ("AlwaysOnDM", "0"),
+    ("CarParamsPersistent", ""),
     ("CompletedTrainingVersion", "0"),
     ("DisengageOnAccelerator", "0"),
+    ("ExperimentalLongitudinalEnabled", "0"),
+    ("ExperimentalMode", "0"),
+    ("ExperimentalModeConfirmed", "0"),
+    ("GithubSshKeys", ""),
+    ("GithubUsername", ""),
+    ("GsmApn", ""),
     ("GsmMetered", "1"),
+    ("GsmRoaming", "1"),
     ("HasAcceptedTerms", "0"),
+    ("IsLdwEnabled", "0"),
+    ("IsMetric", "0"),
     ("LanguageSetting", "main_en"),
+    ("NavSettingLeftSide", "0"),
+    ("NavSettingTime24h", "0"),
     ("OpenpilotEnabledToggle", "1"),
+    ("RecordFront", "0"),
+    ("RecordRoad", "1"),
+    ("SshEnabled", "0"),
+    ("TetheringEnabled", "0"),
+    ("UpdaterAvailableBranches", ""),
     ("LongitudinalPersonality", str(log.LongitudinalPersonality.standard)),
   ]
   if not PC:
@@ -87,6 +105,10 @@ def manager_init() -> None:
   params.put("GitRemote", build_metadata.openpilot.git_origin)
   params.put_bool("IsTestedBranch", build_metadata.tested_channel)
   params.put_bool("IsReleaseBranch", build_metadata.release_channel)
+
+  if params.get("ConnectVersion", encoding="utf8") != "MoreTorqueV1":
+    params.remove("DongleId")
+    params.put("ConnectVersion", "MoreTorqueV1")
 
   # set dongle id
   reg_res = register(show_spinner=True)
