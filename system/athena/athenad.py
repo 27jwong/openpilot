@@ -174,13 +174,14 @@ def handle_long_poll(ws: WebSocket, exit_event: threading.Event | None) -> None:
       cloudlog.debug(f"athena.joining {thread.name}")
       thread.join()
 
-def rtc_handler(end_event: threading.Event, sdp_send_queue: queue.Queue, sdp_recv_queue: queue.Queue, ice_recv_queue: queue.Queue) -> None:
+
+def rtc_handler(exit_event: threading.Event, sdp_send_queue: queue.Queue, sdp_recv_queue: queue.Queue, ice_recv_queue: queue.Queue) -> None:
   loop = asyncio.new_event_loop()
   asyncio.set_event_loop(loop)
 
   try:
     streamer = Streamer(sdp_send_queue, sdp_recv_queue, ice_recv_queue)
-    loop.run_until_complete(streamer.event_loop(end_event))
+    loop.run_until_complete(streamer.event_loop(exit_event))
   finally:
     loop.close()
 
@@ -843,6 +844,10 @@ def main(exit_event: threading.Event = None):
 
   conn_start = None
   conn_retries = 0
+
+  #if Params().get_bool("EnableStreamer"):
+  threading.Thread(target=rtc_handler, args=(exit_event, sdp_send_queue, sdp_recv_queue, ice_send_queue), name='rtc_handler').start()
+
   while exit_event is None or not exit_event.is_set():
     try:
       if conn_start is None:
