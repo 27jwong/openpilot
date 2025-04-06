@@ -57,9 +57,9 @@ class CarInterface(CarInterfaceBase):
       ret.stoppingDecelRate = 0.3
       ret.longitudinalTuning.kiBP = [0., 5., 35.]
       ret.longitudinalTuning.kiV = [1.0, 0.8, 0.5]
-      ret.longitudinalActuatorDelay = 0.05
+      # ret.longitudinalActuatorDelay = 0.05
       ret.startingState = True
-      ret.steerActuatorDelay = 0.3
+      ret.steerActuatorDelay = 0.1
       if p.get_bool("ManualTransmission"):
         ret.flags |= MazdaFlags.MANUAL_TRANSMISSION.value
 
