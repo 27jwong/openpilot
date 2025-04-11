@@ -8,6 +8,8 @@ from openpilot.common.realtime import ControlsTimer as Timer, DT_CTRL
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.params import Params
 
+import cereal.messaging as messaging
+
 VisualAlert = car.CarControl.HUDControl.VisualAlert
 LongCtrlState = car.CarControl.Actuators.LongControlState
 
@@ -32,6 +34,11 @@ class CarController(CarControllerBase):
 
 
   def update(self, CC, CS, now_nanos, frogpilot_toggles):
+    sm = messaging.SubMaster(['longitudinalPlan'])
+    sm.update()
+    long_plan = sm['longitudinalPlan']
+    allow_throttle = long_plan.allowThrottle
+    
     can_sends = []
 
     apply_steer = 0
@@ -125,7 +132,7 @@ class CarController(CarControllerBase):
 
       if OPlong:
         if self.params.get_bool("BlendedACC"):
-          if self.params_memory.get_int("CEStatus") or (-0.1 < CC.actuators.accel < 0.1 and CS.acc["ACCEL_CMD"] >= 2000): #or CC.actuators.accel < 5 or CC.actuators.accel > 2:
+          if self.params_memory.get_int("CEStatus") or (CC.actuators.longControlState == LongCtrlState.starting) or (allow_throttle == False): #or CC.actuators.accel < 5 or CC.actuators.accel > 2:
             CS.acc["ACCEL_CMD"] = raw_acc_output
 
         else:
