@@ -52,7 +52,7 @@ class CarInterface(CarInterfaceBase):
       ret.safetyConfigs[0].safetyParam |= Panda.FLAG_MAZDA_GEN2
       ret.experimentalLongitudinalAvailable = True
       ret.stopAccel = -0.5
-      # ret.vEgoStarting = 0.2
+      ret.vEgoStarting = 0.2
       ret.vEgoStopping = 0.2
       ret.stoppingDecelRate = 0.3
       ret.longitudinalTuning.kiBP = [0., 5., 35.]
