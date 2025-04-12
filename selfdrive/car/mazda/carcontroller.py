@@ -35,7 +35,7 @@ class CarController(CarControllerBase):
 
   def update(self, CC, CS, now_nanos, frogpilot_toggles):
     sm = messaging.SubMaster(['longitudinalPlan'])
-    sm.update()
+    sm.update(0)
     long_plan = sm['longitudinalPlan']
     allow_throttle = long_plan.allowThrottle
     
