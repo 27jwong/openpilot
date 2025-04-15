@@ -132,7 +132,7 @@ class CarController(CarControllerBase):
 
       if OPlong:
         if self.params.get_bool("BlendedACC"):
-          if self.params_memory.get_int("CEStatus") or (CC.actuators.longControlState == LongCtrlState.starting) or (allow_throttle == False and CS.acc["ACCEL_CMD"] > 2000 and abs(CC.actuators.accel) < 0.1): #or CC.actuators.accel < 5 or CC.actuators.accel > 2:
+          if self.params_memory.get_int("CEStatus") or (CC.actuators.longControlState == LongCtrlState.starting):# or (allow_throttle == False and CS.acc["ACCEL_CMD"] > 2000 and abs(CC.actuators.accel) < 0.1):
             CS.acc["ACCEL_CMD"] = raw_acc_output
 
         else:
