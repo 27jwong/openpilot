@@ -13,11 +13,13 @@ from openpilot.common.params import Params
 from openpilot.selfdrive.car.gm.values import GMFlags
 from openpilot.selfdrive.controls.lib.desire_helper import LANE_CHANGE_SPEED_MIN
 from openpilot.selfdrive.modeld.constants import ModelConstants
+from openpilot.system.hardware import HARDWARE
 from openpilot.system.hardware.power_monitoring import VBATT_PAUSE_CHARGING
 from openpilot.system.version import get_build_metadata
 from panda import ALTERNATIVE_EXPERIENCE
 
 params = Params()
+params_cache = Params("/cache/params")
 params_default = Params("/dev/shm/params_default")
 params_memory = Params("/dev/shm/params")
 
@@ -34,13 +36,16 @@ PLANNER_TIME = ModelConstants.T_IDXS[-1]  # Length of time the model projects ou
 THRESHOLD = 0.63                          # Requires the condition to be true for ~1 second
 TO_RADIANS = math.pi / 180                # Conversion factor from degrees to radians
 
-ACTIVE_THEME_PATH = Path(__file__).parent / "assets/active_theme"
-METADATAS_PATH = Path(__file__).parent / "assets/model_metadata"
+ACTIVE_THEME_PATH = Path(__file__).parents[1] / "assets/active_theme"
+METADATAS_PATH = Path(__file__).parents[1] / "assets/model_metadata"
 MODELS_PATH = Path("/data/models")
-RANDOM_EVENTS_PATH = Path(__file__).parent / "assets/random_events"
+RANDOM_EVENTS_PATH = Path(__file__).parents[1] / "assets/random_events"
 THEME_SAVE_PATH = Path("/data/themes")
 
 ERROR_LOGS_PATH = Path("/data/error_logs")
+
+KONIK_PATH = Path("/cache/use_konik")
+KONIK_LOGS_PATH = Path("/data/media/0/realdata_konik")
 
 MAPD_PATH = Path("/data/media/0/osm/mapd")
 MAPS_PATH = Path("/data/media/0/osm/offline")
@@ -53,13 +58,13 @@ DEFAULT_MODEL = "national-public-radio"
 DEFAULT_MODEL_NAME = "National Public Radio 👀📡"
 DEFAULT_MODEL_VERSION = "v6"
 
-DEFAULT_TINYGRAD_MODEL = "not-too-shabby"
-DEFAULT_TINYGRAD_MODEL_NAME = "Not Too Shabby 👀📡"
-DEFAULT_TINYGRAD_MODEL_VERSION = "v7"
+DEFAULT_TINYGRAD_MODEL = "tomb-raider"
+DEFAULT_TINYGRAD_MODEL_NAME = "Tomb Raider 👀📡"
+DEFAULT_TINYGRAD_MODEL_VERSION = "v8"
 
 EXCLUDED_KEYS = {
   "AvailableModels", "AvailableModelNames", "CarParamsPersistent", "ExperimentalLongitudinalEnabled",
-  "ExperimentalModels", "ModelDrivesAndScores", "ModelVersions", "openpilotMinutes",
+  "ExperimentalModels", "KonikMinutes", "ModelDrivesAndScores", "ModelVersions", "openpilotMinutes",
   "SpeedLimits", "UpdaterAvailableBranches"
 }
 
@@ -89,8 +94,6 @@ frogpilot_default_params: list[tuple[str, str | bytes, int]] = [
   ("AlwaysOnLateral", "1", 0),
   ("AlwaysOnLateralLKAS", "1", 0),
   ("AlwaysOnLateralMain", "1", 0),
-  ("AMapKey1", "", 0),
-  ("AMapKey2", "", 0),
   ("AutomaticallyDownloadModels", "1", 1),
   ("AutomaticUpdates", "1", 0),
   ("AvailableModelNames", "", 1),
@@ -165,7 +168,6 @@ frogpilot_default_params: list[tuple[str, str | bytes, int]] = [
   ("GasRegenCmd", "1", 2),
   ("GithubSshKeys", "", 0),
   ("GithubUsername", "", 0),
-  ("GMapKey", "", 0),
   ("GoatScream", "0", 1),
   ("GreenLightAlert", "0", 0),
   ("GsmApn", "", 0),
@@ -184,6 +186,8 @@ frogpilot_default_params: list[tuple[str, str | bytes, int]] = [
   ("IsLdwEnabled", "0", 0),
   ("IsMetric", "0", 0),
   ("JerkInfo", "0", 3),
+  ("KonikDongleId", "", 3),
+  ("KonikMinutes", "0", 0),
   ("LaneChangeCustomizations", "0", 0),
   ("LaneChangeTime", "2.0", 0),
   ("LaneDetectionWidth", "0", 2),
@@ -205,8 +209,6 @@ frogpilot_default_params: list[tuple[str, str | bytes, int]] = [
   ("MapAcceleration", "0", 1),
   ("MapDeceleration", "0", 1),
   ("MapGears", "0", 1),
-  ("MapboxPublicKey", "", 0),
-  ("MapboxSecretKey", "", 0),
   ("MapsSelected", "", 0),
   ("MapStyle", "0", 2),
   ("MapTurnControl", "1", 1),
@@ -302,6 +304,7 @@ frogpilot_default_params: list[tuple[str, str | bytes, int]] = [
   ("SLCFallback", "2", 1),
   ("SLCLookaheadHigher", "0", 2),
   ("SLCLookaheadLower", "0", 2),
+  ("SLCMapboxFiller", "1", 1),
   ("SLCOverride", "1", 1),
   ("SLCPriority1", "Navigation", 2),
   ("SLCPriority2", "Map Data", 2),
@@ -309,6 +312,8 @@ frogpilot_default_params: list[tuple[str, str | bytes, int]] = [
   ("SNGHack", "1", 2),
   ("SpeedLimitChangedAlert", "1", 0),
   ("SpeedLimitController", "1", 0),
+  ("SpeedLimitFiller", "0", 2),
+  ("SpeedLimitsFiltered", "", 0),
   ("SpeedLimitSources", "0", 3),
   ("SshEnabled", "0", 0),
   ("StartupMessageBottom", "Human-tested, frog-approved 🐸", 0),
@@ -332,6 +337,7 @@ frogpilot_default_params: list[tuple[str, str | bytes, int]] = [
   ("SteerRatioStock", "0", 3),
   ("StoppedTimer", "0", 1),
   ("TacoTune", "0", 2),
+  ("TacoTuneHacks", "0", 2),
   ("TetheringEnabled", "0", 0),
   ("ToyotaDoors", "1", 0),
   ("TrafficFollow", "0.5", 2),
@@ -349,6 +355,7 @@ frogpilot_default_params: list[tuple[str, str | bytes, int]] = [
   ("UnlimitedLength", "1", 2),
   ("UnlockDoors", "1", 0),
   ("UpdaterAvailableBranches", "", 0),
+  ("UseKonikServer", "0", 2),
   ("UseSI", "1", 3),
   ("UseVienna", "0", 1),
   ("VeryLongDistanceButtonControl", "6", 2),
@@ -382,7 +389,17 @@ class FrogPilotVariables:
     self.frogpilot_toggles.frogs_go_moo = Path("/persist/frogsgomoo.py").is_file()
     self.frogpilot_toggles.block_user = self.development_branch and not self.frogpilot_toggles.frogs_go_moo
 
-    self.not_vetted = Path("/data/openpilot/not_vetted").is_file()
+    self.frogpilot_toggles.use_konik_server = params.get_bool("UseKonikServer")
+    self.frogpilot_toggles.use_konik_server |= Path("/data/openpilot/not_vetted").is_file()
+
+    if not KONIK_PATH.is_file() and self.frogpilot_toggles.use_konik_server:
+      KONIK_PATH.touch()
+
+      HARDWARE.reboot()
+    elif KONIK_PATH.is_file() and not self.frogpilot_toggles.use_konik_server:
+      KONIK_PATH.unlink()
+
+      HARDWARE.reboot()
 
     self.button_functions = {
       "NOTHING": 0,
@@ -416,6 +433,7 @@ class FrogPilotVariables:
     msg_bytes = params.get("CarParams" if started else "CarParamsPersistent", block=started)
     if msg_bytes:
       with car.CarParams.from_bytes(msg_bytes) as CP:
+        allow_taco_hacks = CP.safetyConfigs[0].safetyModel == SafetyModel.hyundaiCanfd
         always_on_lateral_set = bool(CP.alternativeExperience & ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL)
         car_make = CP.carName
         car_model = CP.carFingerprint
@@ -433,6 +451,7 @@ class FrogPilotVariables:
         vEgoStopping = CP.vEgoStopping
         vEgoStarting = CP.vEgoStarting
     else:
+      allow_taco_hacks = False
       always_on_lateral_set = False
       car_make = "MOCK"
       car_model = "MOCK"
@@ -460,7 +479,7 @@ class FrogPilotVariables:
     if not toggle.use_lkas_for_aol:
       params.remove("AlwaysOnLateralLKAS")
 
-    toggle.allow_far_lead_tracking = self.testing_branch and tuning_level >= 3 and has_radar or self.frogpilot_toggles.frogs_go_moo
+    toggle.allow_far_lead_tracking = has_radar
 
     advanced_custom_ui = params.get_bool("AdvancedCustomUI") if tuning_level >= level["AdvancedCustomUI"] else default.get_bool("AdvancedCustomUI")
     toggle.hide_alerts = advanced_custom_ui and (params.get_bool("HideAlerts") if tuning_level >= level["HideAlerts"] else default.get_bool("HideAlerts")) and not debug_mode
@@ -609,10 +628,12 @@ class FrogPilotVariables:
     toggle.device_shutdown_time = (device_shutdown_setting - 3) * 3600 if device_shutdown_setting >= 4 else device_shutdown_setting * (60 * 15)
     toggle.increase_thermal_limits = device_management and (params.get_bool("IncreaseThermalLimits") if tuning_level >= level["IncreaseThermalLimits"] else default.get_bool("IncreaseThermalLimits"))
     toggle.low_voltage_shutdown = np.clip(params.get_float("LowVoltageShutdown"), VBATT_PAUSE_CHARGING, 12.5) if device_management and tuning_level >= level["LowVoltageShutdown"] else default.get_float("LowVoltageShutdown")
-    toggle.no_logging = (device_management and (params.get_bool("NoLogging") if tuning_level >= level["NoLogging"] else default.get_bool("NoLogging")) or self.development_branch or self.not_vetted) and not self.vetting_branch
-    toggle.no_uploads = (device_management and (params.get_bool("NoUploads") if tuning_level >= level["NoUploads"] else default.get_bool("NoUploads")) or self.development_branch or self.not_vetted) and not self.vetting_branch
+    toggle.no_logging = (device_management and (params.get_bool("NoLogging") if tuning_level >= level["NoLogging"] else default.get_bool("NoLogging")) or self.development_branch) and not self.vetting_branch
+    toggle.no_uploads = (device_management and (params.get_bool("NoUploads") if tuning_level >= level["NoUploads"] else default.get_bool("NoUploads")) or self.development_branch) and not self.vetting_branch
     toggle.no_onroad_uploads = toggle.no_uploads and (params.get_bool("DisableOnroadUploads") if tuning_level >= level["DisableOnroadUploads"] else default.get_bool("DisableOnroadUploads"))
     toggle.offline_mode = device_management and (params.get_bool("OfflineMode") if tuning_level >= level["OfflineMode"] else default.get_bool("OfflineMode"))
+
+    toggle.disable_openpilot_long = params.get_bool("DisableOpenpilotLongitudinal") if tuning_level >= level["DisableOpenpilotLongitudinal"] else default.get_bool("DisableOpenpilotLongitudinal")
 
     distance_button_control = params.get_int("DistanceButtonControl") if tuning_level >= level["DistanceButtonControl"] else default.get_int("DistanceButtonControl")
     toggle.experimental_mode_via_distance = openpilot_longitudinal and distance_button_control == self.button_functions["EXPERIMENTAL_MODE"]
@@ -698,6 +719,10 @@ class FrogPilotVariables:
     downloaded_models = [model for model in toggle.available_models.split(",") if any(MODELS_PATH.glob(f"{model}.*"))]
     toggle.model_randomizer = downloaded_models and (params.get_bool("ModelRandomizer") if tuning_level >= level["ModelRandomizer"] else default.get_bool("ModelRandomizer"))
     if toggle.available_models and toggle.available_model_names and downloaded_models and toggle.model_versions:
+      toggle.available_models += f",{DEFAULT_TINYGRAD_MODEL}"
+      toggle.available_model_names += f",{DEFAULT_TINYGRAD_MODEL_NAME}"
+      toggle.model_versions += f",{DEFAULT_TINYGRAD_MODEL_VERSION}"
+      downloaded_models += [DEFAULT_TINYGRAD_MODEL]
       if toggle.model_randomizer:
         if not started:
           blacklisted_models = (params.get("BlacklistedModels", encoding="utf-8") or "").split(",")
@@ -721,7 +746,7 @@ class FrogPilotVariables:
     toggle.classic_model = toggle.model_version in {"v1", "v2", "v3", "v4"}
     toggle.planner_curvature_model = toggle.model_version not in {"v1", "v2", "v3", "v4", "v5"}
     toggle.radarless_model = toggle.model_version in {"v3"}
-    toggle.tinygrad_model = toggle.model_version in {"v7"}
+    toggle.tinygrad_model = toggle.model_version in {"v8"}
 
     toggle.model_ui = params.get_bool("ModelUI") if tuning_level >= level["ModelUI"] else default.get_bool("ModelUI")
     toggle.dynamic_path_width = toggle.model_ui and (params.get_bool("DynamicPathWidth") if tuning_level >= level["DynamicPathWidth"] else default.get_bool("DynamicPathWidth"))
@@ -802,12 +827,14 @@ class FrogPilotVariables:
     toggle.slc_fallback_experimental_mode = slc_fallback_method == 1
     toggle.slc_fallback_previous_speed_limit = slc_fallback_method == 2
     toggle.slc_fallback_set_speed = slc_fallback_method == 0
+    toggle.slc_mapbox_filler = toggle.speed_limit_controller and params_cache.get("MapboxSecretKey", encoding="utf-8") and (params.get_bool("SLCMapboxFiller") if tuning_level >= level["SLCMapboxFiller"] else default.get_bool("SLCMapboxFiller"))
     toggle.speed_limit_confirmation = toggle.speed_limit_controller and (params.get_bool("SLCConfirmation") if tuning_level >= level["SLCConfirmation"] else default.get_bool("SLCConfirmation"))
     toggle.speed_limit_confirmation_higher = toggle.speed_limit_confirmation and (params.get_bool("SLCConfirmationHigher") if tuning_level >= level["SLCConfirmationHigher"] else default.get_bool("SLCConfirmationHigher"))
     toggle.speed_limit_confirmation_lower = toggle.speed_limit_confirmation and (params.get_bool("SLCConfirmationLower") if tuning_level >= level["SLCConfirmationLower"] else default.get_bool("SLCConfirmationLower"))
     slc_override_method = params.get_int("SLCOverride") if toggle.speed_limit_controller and tuning_level >= level["SLCOverride"] else default.get_int("SLCOverride")
     toggle.speed_limit_controller_override_manual = slc_override_method == 1
     toggle.speed_limit_controller_override_set_speed = slc_override_method == 2
+    toggle.speed_limit_filler = toggle.speed_limit_controller and (params.get_bool("SpeedLimitFiller") if tuning_level >= level["SpeedLimitFiller"] else default.get_bool("SpeedLimitFiller"))
     toggle.speed_limit_offset1 = (params.get_int("Offset1") * speed_conversion if tuning_level >= level["Offset1"] else default.get_int("Offset1") * CV.MPH_TO_MS) if toggle.speed_limit_controller else 0
     toggle.speed_limit_offset2 = (params.get_int("Offset2") * speed_conversion if tuning_level >= level["Offset2"] else default.get_int("Offset2") * CV.MPH_TO_MS) if toggle.speed_limit_controller else 0
     toggle.speed_limit_offset3 = (params.get_int("Offset3") * speed_conversion if tuning_level >= level["Offset3"] else default.get_int("Offset3") * CV.MPH_TO_MS) if toggle.speed_limit_controller else 0
@@ -824,6 +851,8 @@ class FrogPilotVariables:
 
     toggle.startup_alert_top = params.get("StartupMessageTop", encoding="utf-8") if tuning_level >= level["StartupMessageTop"] else default.get("StartupMessageTop", encoding="utf-8")
     toggle.startup_alert_bottom = params.get("StartupMessageBottom", encoding="utf-8") if tuning_level >= level["StartupMessageBottom"] else default.get("StartupMessageBottom", encoding="utf-8")
+
+    toggle.taco_tune_hacks = allow_taco_hacks and (params.get_bool("TacoTuneHacks") if tuning_level >= level["TacoTuneHacks"] else default.get_bool("TacoTuneHacks"))
 
     toggle.tethering_config = params.get_int("TetheringEnabled")
 

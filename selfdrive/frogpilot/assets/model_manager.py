@@ -9,11 +9,11 @@ import urllib.request
 
 from pathlib import Path
 
-from openpilot.selfdrive.frogpilot.assets.download_functions import GITLAB_URL, download_file, get_repository_url, handle_error, handle_request_error, verify_download
-from openpilot.selfdrive.frogpilot.frogpilot_utilities import delete_file
-from openpilot.selfdrive.frogpilot.frogpilot_variables import DEFAULT_CLASSIC_MODEL, DEFAULT_MODEL, DEFAULT_TINYGRAD_MODEL, MODELS_PATH, params, params_default, params_memory
+from openpilot.frogpilot.assets.download_functions import GITLAB_URL, download_file, get_repository_url, handle_error, handle_request_error, verify_download
+from openpilot.frogpilot.common.frogpilot_utilities import delete_file
+from openpilot.frogpilot.common.frogpilot_variables import DEFAULT_CLASSIC_MODEL, DEFAULT_MODEL, DEFAULT_TINYGRAD_MODEL, MODELS_PATH, params, params_default, params_memory
 
-VERSION = "v13"
+VERSION = "v15"
 
 CANCEL_DOWNLOAD_PARAM = "CancelModelDownload"
 DOWNLOAD_PROGRESS_PARAM = "ModelDownloadProgress"
@@ -119,22 +119,16 @@ class ModelManager:
   @staticmethod
   def copy_default_model():
     classic_default_model_path = MODELS_PATH / f"{DEFAULT_CLASSIC_MODEL}.thneed"
-    source_path = Path(__file__).parents[2] / "classic_modeld/models/supercombo.thneed"
+    source_path = Path(__file__).parents[1] / "classic_modeld/models/supercombo.thneed"
     if source_path.is_file() and not classic_default_model_path.is_file():
       shutil.copyfile(source_path, classic_default_model_path)
       print(f"Copied the classic default model from {source_path} to {classic_default_model_path}")
 
     default_model_path = MODELS_PATH / f"{DEFAULT_MODEL}.thneed"
-    source_path = Path(__file__).parents[2] / "modeld/models/supercombo.thneed"
+    source_path = Path(__file__).parents[2] / "selfdrive/modeld/models/supercombo.thneed"
     if source_path.is_file() and not default_model_path.is_file():
       shutil.copyfile(source_path, default_model_path)
       print(f"Copied the default model from {source_path} to {default_model_path}")
-
-    tingrad_default_model_path = MODELS_PATH / f"{DEFAULT_TINYGRAD_MODEL}.pkl"
-    source_path = Path(__file__).parents[2] / "tinygrad_modeld/models/supercombo_tinygrad.pkl"
-    if source_path.is_file() and not tingrad_default_model_path.is_file():
-      shutil.copyfile(source_path, tingrad_default_model_path)
-      print(f"Copied the default tinygrad model from {source_path} to {tingrad_default_model_path}")
 
   def check_models(self, boot_run, repo_url):
     available_models = set(self.available_models) - {DEFAULT_MODEL, DEFAULT_CLASSIC_MODEL}
@@ -150,7 +144,7 @@ class ModelManager:
       if tmp_file.is_file():
         delete_file(tmp_file)
 
-    if params.get("Model", encoding="utf-8") not in self.available_models:
+    if params.get("Model", encoding="utf-8") not in self.available_models + [DEFAULT_TINYGRAD_MODEL]:
       params.put("Model", params_default.get("Model", encoding="utf-8"))
 
     automatically_download_models = not boot_run and params.get_bool("AutomaticallyDownloadModels")
@@ -187,11 +181,11 @@ class ModelManager:
       self.download_all_models()
 
   def update_model_params(self, model_info, repo_url):
-    self.available_models = [model["id"] for model in model_info]
-    self.model_versions = [model["version"] for model in model_info]
+    self.available_models = [model["id"] for model in model_info if model["id"] != DEFAULT_TINYGRAD_MODEL]
+    self.model_versions = [model["version"] for model in model_info if model["id"] != DEFAULT_TINYGRAD_MODEL]
 
     params.put("AvailableModels", ",".join(self.available_models))
-    params.put("AvailableModelNames", ",".join([model["name"] for model in model_info]))
+    params.put("AvailableModelNames", ",".join([model["name"] for model in model_info if model["id"] != DEFAULT_TINYGRAD_MODEL]))
     params.put("ExperimentalModels", ",".join([model["id"] for model in model_info if model.get("experimental", False)]))
     params.put("ModelVersions", ",".join(self.model_versions))
     print("Models list updated successfully")
@@ -226,8 +220,8 @@ class ModelManager:
 
     model_info = self.fetch_models(f"{repo_url}/Versions/model_names_{VERSION}.json")
     if model_info:
-      available_models = [model["id"] for model in model_info]
-      available_model_names = [re.sub(r"[🗺️👀📡]", "", model["name"]).strip() for model in model_info]
+      available_models = [model["id"] for model in model_info if model["id"] != DEFAULT_TINYGRAD_MODEL]
+      available_model_names = [re.sub(r"[🗺️👀📡]", "", model["name"]).strip() for model in model_info if model["id"] != DEFAULT_TINYGRAD_MODEL]
 
       for model_id, model_name in zip(available_models, available_model_names):
         model_downloaded = list(MODELS_PATH.glob(f"{model_id}.*"))
