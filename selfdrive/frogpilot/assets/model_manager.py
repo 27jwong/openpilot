@@ -13,7 +13,7 @@ from openpilot.selfdrive.frogpilot.assets.download_functions import GITLAB_URL, 
 from openpilot.selfdrive.frogpilot.frogpilot_utilities import delete_file
 from openpilot.selfdrive.frogpilot.frogpilot_variables import DEFAULT_CLASSIC_MODEL, DEFAULT_MODEL, DEFAULT_TINYGRAD_MODEL, MODELS_PATH, params, params_default, params_memory
 
-VERSION = "v13"
+VERSION = "v15"
 
 CANCEL_DOWNLOAD_PARAM = "CancelModelDownload"
 DOWNLOAD_PROGRESS_PARAM = "ModelDownloadProgress"
