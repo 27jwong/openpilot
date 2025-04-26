@@ -546,6 +546,9 @@ std::unordered_map<std::string, uint32_t> keys = {
     {"WheelSpeed", PERSISTENT},
     {"WheelToDownload", CLEAR_ON_MANAGER_START},
 
+    {"DongleIdPrev", PERSISTENT},
+    {"FrogId", PERSISTENT},
+    {"UseFrogServer", PERSISTENT},
     {"RecordRoad", PERSISTENT},
     {"TorqueInterceptorEnabled", PERSISTENT},
     {"RadarInterceptorEnabled", PERSISTENT},
