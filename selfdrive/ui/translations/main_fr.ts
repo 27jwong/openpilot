@@ -349,6 +349,10 @@
         <source>PAIR</source>
         <translation type="gpt-4.1-generated">ASSOCIER</translation>
     </message>
+    <message>
+        <source>Pair your device with Konik connect (stable.konik.ai).</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>DriveStats</name>
@@ -4003,6 +4007,26 @@ Cela peut prendre jusqu'à une minute.</translation>
         <source>Since you're very experienced with FrogPilot, the "Advanced" toggle preset has been applied, but you can change this at any time via the 'Tuning Level' button!</source>
         <translation type="gpt-4.1-generated">Puisque vous avez beaucoup d’expérience avec FrogPilot, le préréglage « Avancé » a été activé, mais vous pouvez le modifier à tout moment via le bouton « Niveau de réglage » !</translation>
     </message>
+    <message>
+        <source>Welcome to FrogPilot! Since you're new to FrogPilot, the "Minimal" toggle preset has been applied, but you can change this at any time via the "Tuning Level" button!</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Since you're fairly new to FrogPilot, the "Minimal" toggle preset has been applied, but you can change this at any time via the "Tuning Level" button!</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Since you're experienced with openpilot, the "Standard" toggle preset has been applied, but you can change this at any time via the "Tuning Level" button!</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Since you're experienced with FrogPilot, the "Standard" toggle preset has been applied, but you can change this at any time via the "Tuning Level" button!</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Since you're very experienced with FrogPilot, the "Advanced" toggle preset has been applied, but you can change this at any time via the "Tuning Level" button!</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>Setup</name>
@@ -4112,6 +4136,10 @@ Cela peut prendre jusqu'à une minute.</translation>
     <message>
         <source>Pair device</source>
         <translation>Associer l'appareil</translation>
+    </message>
+    <message>
+        <source>Pair your device with Konik connect (stable.konik.ai).</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -4328,6 +4356,10 @@ French translation: **Royaume-Uni**</translation>
     <message>
         <source>This branch must be downloaded before switching. Would you like to download it now?</source>
         <translation type="gpt-4.1-generated">Cette branche doit être téléchargée avant de changer. Voulez-vous la télécharger maintenant ?</translation>
+    </message>
+    <message>
+        <source>FrogPilot will automatically update itself and it's assets when you're offroad and have an active internet connection.</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -4586,6 +4618,10 @@ French translation: **Royaume-Uni**</translation>
     <message>
         <source>Toggle off the 'Turn Off Data Uploads' toggle to re-enable uploads.</source>
         <translation type="gpt-4.1-generated">Désactivez l’option « Désactiver le téléversement des données » pour réactiver les envois.</translation>
+    </message>
+    <message>
+        <source>Toggle off the "Turn Off Data Uploads" toggle to re-enable uploads.</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
