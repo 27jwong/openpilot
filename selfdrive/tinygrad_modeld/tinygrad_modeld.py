@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 import os
 from openpilot.system.hardware import TICI
-from tinygrad.tensor import Tensor
-from tinygrad.dtype import dtypes
+
+#
 if TICI:
-  from openpilot.frogpilot.tinygrad_modeld.runners.tinygrad_helpers import qcom_tensor_from_opencl_address
+  from tinygrad.tensor import Tensor
+  from tinygrad.dtype import dtypes
+  from openpilot.selfdrive.tinygrad_modeld.runners.tinygrad_helpers import qcom_tensor_from_opencl_address
   os.environ['QCOM'] = '1'
 else:
-  os.environ['LLVM'] = '1'
+  from openpilot.selfdrive.tinygrad_modeld.runners.ort_helpers import make_onnx_cpu_runner
 import time
 import pickle
 import numpy as np
@@ -26,22 +28,21 @@ from openpilot.common.transformations.model import get_warp_matrix
 from openpilot.system import sentry
 from openpilot.selfdrive.car.car_helpers import get_demo_car_params
 from openpilot.selfdrive.controls.lib.desire_helper import DesireHelper
-from openpilot.selfdrive.controls.lib.drive_helpers import get_accel_from_plan_tomb_raider, smooth_value, get_curvature_from_plan
+from openpilot.selfdrive.controls.lib.drive_helpers import get_accel_from_plan_tomb_raider, smooth_value
 from openpilot.frogpilot.tinygrad_modeld.parse_model_outputs import Parser
 from openpilot.frogpilot.tinygrad_modeld.fill_model_msg import fill_model_msg, fill_pose_msg, PublishState
 from openpilot.frogpilot.tinygrad_modeld.constants import ModelConstants, Plan
 from openpilot.frogpilot.tinygrad_modeld.models.commonmodel_pyx import DrivingModelFrame, CLContext
 
-from openpilot.frogpilot.common.frogpilot_variables import get_frogpilot_toggles
+from openpilot.selfdrive.frogpilot.frogpilot_variables import METADATAS_PATH, MODELS_PATH, get_frogpilot_toggles
+
+
 
 
 PROCESS_NAME = "frogpilot.tinygrad_modeld.tinygrad_modeld"
 SEND_RAW_PRED = os.getenv('SEND_RAW_PRED')
 
-VISION_PKL_PATH = Path(__file__).parent / 'models/driving_vision_tinygrad.pkl'
-POLICY_PKL_PATH = Path(__file__).parent / 'models/driving_policy_tinygrad.pkl'
-VISION_METADATA_PATH = Path(__file__).parent / 'models/driving_vision_metadata.pkl'
-POLICY_METADATA_PATH = Path(__file__).parent / 'models/driving_policy_metadata.pkl'
+MODEL_PKL_PATH = Path(__file__).parent / 'models/supercombo_tinygrad.pkl'
 
 LAT_SMOOTH_SECONDS = 0.3
 LONG_SMOOTH_SECONDS = 0.3
@@ -57,9 +58,55 @@ def get_action_from_model(model_output: dict[str, np.ndarray], prev_action: log.
                                                                  action_t=long_action_t)
     desired_accel = smooth_value(desired_accel, prev_action.desiredAcceleration, LONG_SMOOTH_SECONDS)
 
-    desired_curvature = get_curvature_from_plan(plan[:, Plan.T_FROM_CURRENT_EULER][:, 2],
-                                                 plan[:, Plan.ORIENTATION_RATE][:, 2],
-                                                 ModelConstants.T_IDXS, v_ego, lat_action_t)
+    desired_curvature = model_output['desired_curvature'][0, 0]
+    if v_ego > MIN_LAT_CONTROL_SPEED:
+      desired_curvature = smooth_value(desired_curvature, prev_action.desiredCurvature, LAT_SMOOTH_SECONDS)
+    else:
+      desired_curvature = prev_action.desiredCurvature
+
+    return log.ModelDataV2.Action(desiredCurvature=float(desired_curvature),
+                                  desiredAcceleration=float(desired_accel),
+                                  shouldStop=bool(should_stop))
+
+LAT_SMOOTH_SECONDS = 0.3
+LONG_SMOOTH_SECONDS = 0.3
+MIN_LAT_CONTROL_SPEED = 0.3
+
+
+def get_action_from_model(model_output: dict[str, np.ndarray], prev_action: log.ModelDataV2.Action,
+                          lat_action_t: float, long_action_t: float, v_ego: float) -> log.ModelDataV2.Action:
+    plan = model_output['plan'][0]
+    desired_accel, should_stop = get_accel_from_plan_tomb_raider(plan[:,Plan.VELOCITY][:,0],
+                                                                 plan[:,Plan.ACCELERATION][:,0],
+                                                                 ModelConstants.T_IDXS,
+                                                                 action_t=long_action_t)
+    desired_accel = smooth_value(desired_accel, prev_action.desiredAcceleration, LONG_SMOOTH_SECONDS)
+
+    desired_curvature = model_output['desired_curvature'][0, 0]
+    if v_ego > MIN_LAT_CONTROL_SPEED:
+      desired_curvature = smooth_value(desired_curvature, prev_action.desiredCurvature, LAT_SMOOTH_SECONDS)
+    else:
+      desired_curvature = prev_action.desiredCurvature
+
+    return log.ModelDataV2.Action(desiredCurvature=float(desired_curvature),
+                                  desiredAcceleration=float(desired_accel),
+                                  shouldStop=bool(should_stop))
+
+LAT_SMOOTH_SECONDS = 0.3
+LONG_SMOOTH_SECONDS = 0.3
+MIN_LAT_CONTROL_SPEED = 0.3
+
+
+def get_action_from_model(model_output: dict[str, np.ndarray], prev_action: log.ModelDataV2.Action,
+                          lat_action_t: float, long_action_t: float, v_ego: float) -> log.ModelDataV2.Action:
+    plan = model_output['plan'][0]
+    desired_accel, should_stop = get_accel_from_plan_tomb_raider(plan[:,Plan.VELOCITY][:,0],
+                                                                 plan[:,Plan.ACCELERATION][:,0],
+                                                                 ModelConstants.T_IDXS,
+                                                                 action_t=long_action_t)
+    desired_accel = smooth_value(desired_accel, prev_action.desiredAcceleration, LONG_SMOOTH_SECONDS)
+
+    desired_curvature = model_output['desired_curvature'][0, 0]
     if v_ego > MIN_LAT_CONTROL_SPEED:
       desired_curvature = smooth_value(desired_curvature, prev_action.desiredCurvature, LAT_SMOOTH_SECONDS)
     else:
@@ -84,54 +131,39 @@ class ModelState:
   output: np.ndarray
   prev_desire: np.ndarray  # for tracking the rising edge of the pulse
 
-  def __init__(self, context: CLContext):
-    self.frames = {
-      'input_imgs': DrivingModelFrame(context, ModelConstants.TEMPORAL_SKIP),
-      'big_input_imgs': DrivingModelFrame(context, ModelConstants.TEMPORAL_SKIP)
-    }
+  def __init__(self, context: CLContext, model: str, model_version: str):
+    self.frames = {'input_imgs': DrivingModelFrame(context), 'big_input_imgs': DrivingModelFrame(context)}
     self.prev_desire = np.zeros(ModelConstants.DESIRE_LEN, dtype=np.float32)
 
-    self.full_features_buffer = np.zeros((1, ModelConstants.FULL_HISTORY_BUFFER_LEN,  ModelConstants.FEATURE_LEN), dtype=np.float32)
-    self.full_desire = np.zeros((1, ModelConstants.FULL_HISTORY_BUFFER_LEN, ModelConstants.DESIRE_LEN), dtype=np.float32)
-    self.full_prev_desired_curv = np.zeros((1, ModelConstants.FULL_HISTORY_BUFFER_LEN, ModelConstants.PREV_DESIRED_CURV_LEN), dtype=np.float32)
-    self.temporal_idxs = slice(-1-(ModelConstants.TEMPORAL_SKIP*(ModelConstants.INPUT_HISTORY_BUFFER_LEN-1)), None, ModelConstants.TEMPORAL_SKIP)
-
-    # policy inputs
+    # img buffers are managed in openCL transform code
     self.numpy_inputs = {
-      'desire': np.zeros((1, ModelConstants.INPUT_HISTORY_BUFFER_LEN, ModelConstants.DESIRE_LEN), dtype=np.float32),
+      'desire': np.zeros((1, (ModelConstants.FULL_HISTORY_BUFFER_LEN+1), ModelConstants.DESIRE_LEN), dtype=np.float32),
       'traffic_convention': np.zeros((1, ModelConstants.TRAFFIC_CONVENTION_LEN), dtype=np.float32),
       'lateral_control_params': np.zeros((1, ModelConstants.LATERAL_CONTROL_PARAMS_LEN), dtype=np.float32),
-      'prev_desired_curv': np.zeros((1, ModelConstants.INPUT_HISTORY_BUFFER_LEN, ModelConstants.PREV_DESIRED_CURV_LEN), dtype=np.float32),
-      'features_buffer': np.zeros((1, ModelConstants.INPUT_HISTORY_BUFFER_LEN,  ModelConstants.FEATURE_LEN), dtype=np.float32),
+      'prev_desired_curv': np.zeros((1, (ModelConstants.FULL_HISTORY_BUFFER_LEN+1), ModelConstants.PREV_DESIRED_CURV_LEN), dtype=np.float32),
+      'features_buffer': np.zeros((1, ModelConstants.FULL_HISTORY_BUFFER_LEN,  ModelConstants.FEATURE_LEN), dtype=np.float32),
     }
 
-    with open(VISION_METADATA_PATH, 'rb') as f:
-      vision_metadata = pickle.load(f)
-      self.vision_input_shapes =  vision_metadata['input_shapes']
-      self.vision_output_slices = vision_metadata['output_slices']
-      vision_output_size = vision_metadata['output_shapes']['outputs'][1]
+    with open(METADATAS_PATH / f'supercombo_metadata_{model_version}.pkl', 'rb') as f:
+      model_metadata = pickle.load(f)
+    self.input_shapes =  model_metadata['input_shapes']
 
-    with open(POLICY_METADATA_PATH, 'rb') as f:
-      policy_metadata = pickle.load(f)
-      self.policy_input_shapes =  policy_metadata['input_shapes']
-      self.policy_output_slices = policy_metadata['output_slices']
-      policy_output_size = policy_metadata['output_shapes']['outputs'][1]
-
-    # img buffers are managed in openCL transform code
-    self.vision_inputs: dict[str, Tensor] = {}
-    self.vision_output = np.zeros(vision_output_size, dtype=np.float32)
-    self.policy_inputs = {k: Tensor(v, device='NPY').realize() for k,v in self.numpy_inputs.items()}
-    self.policy_output = np.zeros(policy_output_size, dtype=np.float32)
+    self.output_slices = model_metadata['output_slices']
+    net_output_size = model_metadata['output_shapes']['outputs'][1]
+    self.output = np.zeros(net_output_size, dtype=np.float32)
     self.parser = Parser()
 
-    with open(VISION_PKL_PATH, "rb") as f:
-      self.vision_run = pickle.load(f)
+    if TICI:
+      self.tensor_inputs = {k: Tensor(v, device='NPY').realize() for k,v in self.numpy_inputs.items()}
+      with open(MODELS_PATH / f'{model}.pkl', "rb") as f:
+        self.model_run = pickle.load(f)
+    else:
+      self.onnx_cpu_runner = make_onnx_cpu_runner(MODEL_PATH)
 
-    with open(POLICY_PKL_PATH, "rb") as f:
-      self.policy_run = pickle.load(f)
-
-  def slice_outputs(self, model_outputs: np.ndarray, output_slices: dict[str, slice]) -> dict[str, np.ndarray]:
-    parsed_model_outputs = {k: model_outputs[np.newaxis, v] for k,v in output_slices.items()}
+  def slice_outputs(self, model_outputs: np.ndarray) -> dict[str, np.ndarray]:
+    parsed_model_outputs = {k: model_outputs[np.newaxis, v] for k,v in self.output_slices.items()}
+    if SEND_RAW_PRED:
+      parsed_model_outputs['raw_pred'] = model_outputs.copy()
     return parsed_model_outputs
 
   def run(self, buf: VisionBuf, wbuf: VisionBuf, transform: np.ndarray, transform_wide: np.ndarray,
@@ -141,9 +173,8 @@ class ModelState:
     new_desire = np.where(inputs['desire'] - self.prev_desire > .99, inputs['desire'], 0)
     self.prev_desire[:] = inputs['desire']
 
-    self.full_desire[0,:-1] = self.full_desire[0,1:]
-    self.full_desire[0,-1] = new_desire
-    self.numpy_inputs['desire'][:] = self.full_desire.reshape((1,ModelConstants.INPUT_HISTORY_BUFFER_LEN,ModelConstants.TEMPORAL_SKIP,-1)).max(axis=2)
+    self.numpy_inputs['desire'][0,:-1] = self.numpy_inputs['desire'][0,1:]
+    self.numpy_inputs['desire'][0,-1] = new_desire
 
     self.numpy_inputs['traffic_convention'][:] = inputs['traffic_convention']
     self.numpy_inputs['lateral_control_params'][:] = inputs['lateral_control_params']
@@ -153,25 +184,25 @@ class ModelState:
     if TICI:
       # The imgs tensors are backed by opencl memory, only need init once
       for key in imgs_cl:
-        if key not in self.vision_inputs:
-          self.vision_inputs[key] = qcom_tensor_from_opencl_address(imgs_cl[key].mem_address, self.vision_input_shapes[key], dtype=dtypes.uint8)
+        if key not in self.tensor_inputs:
+          self.tensor_inputs[key] = qcom_tensor_from_opencl_address(imgs_cl[key].mem_address, self.input_shapes[key], dtype=dtypes.uint8)
     else:
       for key in imgs_cl:
-        frame_input = self.frames[key].buffer_from_cl(imgs_cl[key]).reshape(self.vision_input_shapes[key])
-        self.vision_inputs[key] = Tensor(frame_input, dtype=dtypes.uint8).realize()
+        self.numpy_inputs[key] = self.frames[key].buffer_from_cl(imgs_cl[key]).reshape(self.input_shapes[key]).astype(dtype=np.float32)
 
     if prepare_only:
       return None
 
-    self.vision_output = self.vision_run(**self.vision_inputs).numpy().flatten()
-    vision_outputs_dict = self.parser.parse_vision_outputs(self.slice_outputs(self.vision_output, self.vision_output_slices))
+    if TICI:
+      self.output = self.model_run(**self.tensor_inputs).numpy().flatten()
+    else:
+      self.output = self.onnx_cpu_runner.run(None, self.numpy_inputs)[0].flatten()
 
-    self.full_features_buffer[0,:-1] = self.full_features_buffer[0,1:]
-    self.full_features_buffer[0,-1] = vision_outputs_dict['hidden_state'][0, :]
-    self.numpy_inputs['features_buffer'][:] = self.full_features_buffer[0, self.temporal_idxs]
+    outputs = self.parser.parse_outputs(self.slice_outputs(self.output))
 
-    self.policy_output = self.policy_run(**self.policy_inputs).numpy().flatten()
-    policy_outputs_dict = self.parser.parse_policy_outputs(self.slice_outputs(self.policy_output, self.policy_output_slices))
+    self.numpy_inputs['features_buffer'][0,:-1] = self.numpy_inputs['features_buffer'][0,1:]
+    self.numpy_inputs['features_buffer'][0,-1] = outputs['hidden_state'][0, :]
+
 
     # TODO model only uses last value now
     self.full_prev_desired_curv[0,:-1] = self.full_prev_desired_curv[0,1:]
@@ -196,7 +227,14 @@ def main(demo=False):
   cloudlog.warning("setting up CL context")
   cl_context = CLContext()
   cloudlog.warning("CL context ready; loading model")
-  model = ModelState(cl_context)
+
+  # FrogPilot variables
+  frogpilot_toggles = get_frogpilot_toggles()
+
+  model_name = frogpilot_toggles.model
+  model_version = frogpilot_toggles.model_version
+
+  model = ModelState(cl_context, model_name, model_version)
   cloudlog.warning("models loaded, modeld starting")
 
   # visionipc clients
@@ -257,9 +295,6 @@ def main(demo=False):
   prev_action = log.ModelDataV2.Action()
 
   DH = DesireHelper()
-
-  # FrogPilot variables
-  frogpilot_toggles = get_frogpilot_toggles()
 
   while True:
     # Keep receiving frames until we are at least 1 frame ahead of previous extra frame
