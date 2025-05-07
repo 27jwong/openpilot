@@ -15,6 +15,7 @@ EventName = car.CarEvent.EventName
 
 NON_LINEAR_TORQUE_PARAMS = {
   CAR.MAZDA_3_2019: (3.8818, 0.6873, 0.0999, 0.3605),
+  CAR.MAZDA_CX_30: (3.8818, 0.6873, 0.0999, 0.3605),
 }
 
 class CarInterface(CarInterfaceBase):
@@ -47,7 +48,7 @@ class CarInterface(CarInterfaceBase):
       return self.torque_from_lateral_accel_linear
 
   @staticmethod
-  def _get_params(ret, candidate, fingerprint, car_fw, experimental_long, docs, frogpilot_toggles):
+  def _get_params(ret, candidate, fingerprint, car_fw, disable_openpilot_long, experimental_long, docs):
     ret.carName = "mazda"
     ret.safetyConfigs = [get_safety_config(car.CarParams.SafetyModel.mazda)]
     ret.radarUnavailable = True
@@ -93,14 +94,15 @@ class CarInterface(CarInterfaceBase):
       ret.experimentalLongitudinalAvailable = True
       ret.stopAccel = -.5
       ret.vEgoStarting = .2
-      ret.longitudinalTuning.kpBP = [0., 5., 35.]
-      ret.longitudinalTuning.kpV = [0.0, 0.0, 0.0]
+      ret.vEgoStopping = .2
+      #ret.longitudinalTuning.kpBP = [0., 5., 35.]
+      #ret.longitudinalTuning.kpV = [0.0, 0.0, 0.0]
       ret.longitudinalTuning.kiBP = [0., 35.]
-      ret.longitudinalTuning.kiV = [0.1, 0.1]
+      ret.longitudinalTuning.kiV = [0.5, 0.25]
       ret.startingState = True
       ret.steerActuatorDelay = 0.3
 
-    ret.steerLimitTimer = 0.8
+    ret.steerLimitTimer = 1.0
 
     CarInterfaceBase.configure_torque_tune(candidate, ret.lateralTuning)
 
