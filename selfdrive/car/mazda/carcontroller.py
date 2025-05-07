@@ -8,6 +8,8 @@ from openpilot.common.realtime import ControlsTimer as Timer, DT_CTRL
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.params import Params
 
+import cereal.messaging as messaging
+
 VisualAlert = car.CarControl.HUDControl.VisualAlert
 LongCtrlState = car.CarControl.Actuators.LongControlState
 
@@ -32,6 +34,11 @@ class CarController(CarControllerBase):
 
 
   def update(self, CC, CS, now_nanos, frogpilot_toggles):
+    sm = messaging.SubMaster(['longitudinalPlan'])
+    sm.update(0)
+    long_plan = sm['longitudinalPlan']
+    allow_throttle = long_plan.allowThrottle
+    
     can_sends = []
 
     apply_steer = 0
@@ -74,8 +81,7 @@ class CarController(CarControllerBase):
         steer_required = CC.hudControl.visualAlert == VisualAlert.steerRequired
         # TODO: find a way to silence audible warnings so we can add more hud alerts
         steer_required = steer_required and CS.lkas_allowed_speed
-        if not self.CP.flags & MazdaFlags.NO_FSC:
-          can_sends.append(mazdacan.create_alert_command(self.packer, CS.cam_laneinfo, ldw, steer_required))
+        can_sends.append(mazdacan.create_alert_command(self.packer, CS.cam_laneinfo, ldw, steer_required))
 
       if self.CP.flags & MazdaFlags.RADAR_INTERCEPTOR:
         hold = False
@@ -107,22 +113,31 @@ class CarController(CarControllerBase):
 
     else:
       raw_acc_output = (CC.actuators.accel * 240) + 2000
-      if self.params.get_bool("BlendedACC"):
-        if self.params_memory.get_int("CEStatus"):
-          self.acc_filter.update_alpha(abs(raw_acc_output-self.filtered_acc_last)/1000)
-          filtered_acc_output = int(self.acc_filter.update(raw_acc_output))
-        else:
+      OPlong = (self.params.get_bool("ExperimentalLongitudinalEnabled") and CC.longActive)
+      
+      # if self.params.get_bool("BlendedACC"):
+        # if self.params_memory.get_int("CEStatus"):
+          # self.acc_filter.update_alpha(abs(raw_acc_output-self.filtered_acc_last)/1000)
+          # filtered_acc_output = int(self.acc_filter.update(raw_acc_output))
+          # if OPlong:
+            # CS.acc["ACCEL_CMD"] = raw_acc_output
+        # else:
           # we want to use the stock value in this case but we need a smooth transition.
-          self.acc_filter.update_alpha(abs(CS.acc["ACCEL_CMD"]-self.filtered_acc_last)/1000)
-          filtered_acc_output = int(self.acc_filter.update(CS.acc["ACCEL_CMD"]))
+          # self.acc_filter.update_alpha(abs(CS.acc["ACCEL_CMD"]-self.filtered_acc_last)/1000)
+          # filtered_acc_output = CS.acc["ACCEL_CMD"]
 
-        acc_output = filtered_acc_output
-        self.filtered_acc_last = filtered_acc_output
-      else:
-        acc_output = raw_acc_output
+        # self.filtered_acc_last = filtered_acc_output
+      # elif OPlong:
+        # CS.acc["ACCEL_CMD"] = raw_acc_output
 
-      if self.params.get_bool("ExperimentalLongitudinalEnabled") and CC.longActive:
-        CS.acc["ACCEL_CMD"] = acc_output
+      if OPlong:
+        if self.params.get_bool("BlendedACC"):
+          if self.params_memory.get_int("CEStatus") or (CC.actuators.longControlState == LongCtrlState.starting):# or (allow_throttle == False and CS.acc["ACCEL_CMD"] > 2000 and abs(CC.actuators.accel) < 0.1):
+            CS.acc["ACCEL_CMD"] = raw_acc_output
+
+        else:
+          CS.acc["ACCEL_CMD"] = raw_acc_output
+
 
       resume = False
       hold = False
