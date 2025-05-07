@@ -112,12 +112,12 @@ class CAR(Platforms):
   )
   MAZDA_3_2019 = MazdaPlatformConfig(
     [MazdaCarDocs("Mazda 3 2019-24")],
-    MazdaCarSpecs(mass=3000 * CV.LB_TO_KG, wheelbase=2.725, steerRatio=18.8),
+    MazdaCarSpecs(mass=3000 * CV.LB_TO_KG, wheelbase=2.725, steerRatio=17.0),
     flags=MazdaFlags.GEN2,
   )
   MAZDA_CX_30 = MazdaPlatformConfig(
     [MazdaCarDocs("Mazda CX-30 2019-24")],
-    MazdaCarSpecs(mass=3375 * CV.LB_TO_KG, wheelbase=2.814, steerRatio=15.5),
+    MazdaCarSpecs(mass=3527 * CV.LB_TO_KG, wheelbase=2.65176, steerRatio=15.9),
     flags=MazdaFlags.GEN2,
   )
   MAZDA_CX_50 = MazdaPlatformConfig(
