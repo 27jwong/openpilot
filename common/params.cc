@@ -565,8 +565,6 @@ std::unordered_map<std::string, uint32_t> keys = {
     {"NoFSC", PERSISTENT},
     {"BlendedACC", PERSISTENT},
     {"ManualTransmission", PERSISTENT},
-    {"LiveStreamRunning", CLEAR_ON_MANAGER_START},
-    {"RemoteAccess", CLEAR_ON_MANAGER_START},
 };
 
 } // namespace

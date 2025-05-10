@@ -48,9 +48,6 @@ def manager_init() -> None:
     ("LongitudinalPersonality", str(log.LongitudinalPersonality.standard)),
     ("BlendedACC", "0"),
     ("RecordRoad", "1"),
-    ("UseFrogServer", "1"),
-    ("FrogId", ""),
-    ("RemoteAccess", "0"),
   ]
   if not PC:
     default_params.append(("LastUpdateTime", datetime.datetime.utcnow().isoformat().encode('utf8')))
