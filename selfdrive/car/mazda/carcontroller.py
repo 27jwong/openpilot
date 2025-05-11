@@ -112,7 +112,7 @@ class CarController(CarControllerBase):
           can_sends.extend(mazdacan.create_radar_command(self.packer, self.frame, CC.longActive, CS, hold))
 
     else:
-      raw_acc_output = (CC.actuators.accel * 240) + 2000
+      raw_acc_output = (CC.actuators.accel * 200) + 2000
       OPlong = (self.params.get_bool("ExperimentalLongitudinalEnabled") and CC.longActive)
       
       # if self.params.get_bool("BlendedACC"):
