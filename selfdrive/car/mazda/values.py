@@ -54,7 +54,7 @@ class MazdaCarDocs(CarDocs):
 
 @dataclass(frozen=True, kw_only=True)
 class MazdaCarSpecs(CarSpecs):
-  tireStiffnessFactor: float = 0.7  # not optimized yet
+  tireStiffnessFactor: float = 0.5  # not optimized yet
 
 
 class MazdaFlags(IntFlag):
