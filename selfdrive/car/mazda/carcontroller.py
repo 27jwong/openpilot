@@ -113,7 +113,7 @@ class CarController(CarControllerBase):
 
     else:
       raw_acc_output = (CC.actuators.accel * 200) + 2000
-      OPlong = (self.params.get_bool("ExperimentalLongitudinalEnabled") and CC.longActive)
+      OPlong = (self.params.get_bool("ExperimentalLongitudinalEnabled") and CC.longActive and CS.distance_setting == 1)
       
       # if self.params.get_bool("BlendedACC"):
         # if self.params_memory.get_int("CEStatus"):
