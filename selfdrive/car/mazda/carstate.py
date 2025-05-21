@@ -213,6 +213,7 @@ class CarState(CarStateBase):
     self.cp = cp
     self.cp_cam = cp_cam
     self.acc = copy.copy(cp.vl["ACC"])
+    self.distance_setting = copy.copy(cp.vl["GEAR"]["DISTANCE_SETTING"])
 
     # FrogPilot CarState functions
     self.lkas_previously_enabled = self.lkas_enabled
