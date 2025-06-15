@@ -31,6 +31,7 @@ class CarController(CarControllerBase):
     self.filtered_acc_last = 0
     self.params = Params()
     self.params_memory = Params("/dev/shm/params")
+    self.blend_coeff = 0 #factor for blending OP and stock long. 0 is fully stock, 1 is fully OP
 
 
   def update(self, CC, CS, now_nanos, frogpilot_toggles):
@@ -113,7 +114,7 @@ class CarController(CarControllerBase):
 
     else:
       raw_acc_output = (CC.actuators.accel * 200) + 2000
-      OPlong = (self.params.get_bool("ExperimentalLongitudinalEnabled") and CC.longActive and CS.distance_setting == 1)
+      OPlong = (self.params.get_bool("ExperimentalLongitudinalEnabled") and CC.longActive)# and CS.distance_setting == 1)
       
       # if self.params.get_bool("BlendedACC"):
         # if self.params_memory.get_int("CEStatus"):
@@ -133,7 +134,14 @@ class CarController(CarControllerBase):
       if OPlong:
         if self.params.get_bool("BlendedACC"):
           if self.params_memory.get_int("CEStatus") or (CC.actuators.longControlState == LongCtrlState.starting):# or (allow_throttle == False and CS.acc["ACCEL_CMD"] > 2000 and abs(CC.actuators.accel) < 0.1):
-            CS.acc["ACCEL_CMD"] = raw_acc_output
+            blended_acc_output = (self.blend_coeff * raw_acc_output) + ((1 - self.blend_coeff) * CS.acc["ACCEL_CMD"])
+            CS.acc["ACCEL_CMD"] = blended_acc_output
+
+            if self.blend_coeff < 1:
+              self.blend_coeff += 0.01
+              
+          elif self.blend_coeff > 0:
+            self.blend_coeff -= 0.01
 
         else:
           CS.acc["ACCEL_CMD"] = raw_acc_output
