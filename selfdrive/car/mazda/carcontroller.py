@@ -139,10 +139,10 @@ class CarController(CarControllerBase):
             CS.acc["ACCEL_CMD"] = blended_acc_output
 
             if self.blend_coeff < 1:
-              self.blend_coeff += DT_CTRL / self.transition_time
+              self.blend_coeff += (DT_CTRL / self.transition_time)
               
           elif self.blend_coeff > 0:
-            self.blend_coeff -= DT_CTRL / self.transition_time
+            self.blend_coeff -= (DT_CTRL / self.transition_time)
 
         else:
           CS.acc["ACCEL_CMD"] = raw_acc_output
