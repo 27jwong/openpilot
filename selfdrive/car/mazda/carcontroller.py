@@ -32,6 +32,7 @@ class CarController(CarControllerBase):
     self.params = Params()
     self.params_memory = Params("/dev/shm/params")
     self.blend_coeff = 0 #factor for blending OP and stock long. 0 is fully stock, 1 is fully OP
+    self.transition_time = 2.5 #After this number of seconds, the smooth blending from stock to OP (or vice versa) is complete
 
 
   def update(self, CC, CS, now_nanos, frogpilot_toggles):
@@ -138,10 +139,10 @@ class CarController(CarControllerBase):
             CS.acc["ACCEL_CMD"] = blended_acc_output
 
             if self.blend_coeff < 1:
-              self.blend_coeff += 0.01
+              self.blend_coeff += DT_CTRL / self.transition_time
               
           elif self.blend_coeff > 0:
-            self.blend_coeff -= 0.01
+            self.blend_coeff -= DT_CTRL / self.transition_time
 
         else:
           CS.acc["ACCEL_CMD"] = raw_acc_output
