@@ -205,7 +205,7 @@ class LongitudinalPlanner:
 
   def update(self, radarless_model, tomb_raider, sm, frogpilot_toggles):
     if tomb_raider:
-      self.mpc.mode = 'acc'
+      # self.mpc.mode = 'acc'
       self.mode = 'blended' if sm['controlsState'].experimentalMode else 'acc'
     else:
       self.mpc.mode = 'blended' if sm['controlsState'].experimentalMode else 'acc'
