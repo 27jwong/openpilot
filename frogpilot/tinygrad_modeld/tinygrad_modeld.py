@@ -149,7 +149,7 @@ class ModelState:
     self.numpy_inputs['lateral_control_params'][:] = inputs['lateral_control_params']
     imgs_cl = {name: self.frames[name].prepare(bufs[name], transforms[name].flatten()) for name in self.vision_input_names}
 
-    if TICI and not USBGPU:
+    if TICI:
       # The imgs tensors are backed by opencl memory, only need init once
       for key in imgs_cl:
         if key not in self.vision_inputs:
@@ -175,7 +175,7 @@ class ModelState:
     # TODO model only uses last value now
     self.full_prev_desired_curv[0,:-1] = self.full_prev_desired_curv[0,1:]
     self.full_prev_desired_curv[0,-1,:] = policy_outputs_dict['desired_curvature'][0, :]
-    self.numpy_inputs['prev_desired_curv'][:] = self.full_prev_desired_curv[0, self.temporal_idxs]
+    self.numpy_inputs['prev_desired_curv'][:] = 0*self.full_prev_desired_curv[0, self.temporal_idxs]
 
     combined_outputs_dict = {**vision_outputs_dict, **policy_outputs_dict}
     if SEND_RAW_PRED:
