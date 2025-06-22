@@ -133,16 +133,22 @@ class CarController(CarControllerBase):
         # CS.acc["ACCEL_CMD"] = raw_acc_output
 
       if OPlong:
+        if CS.distance_setting == 1:
+          self.params_memory.put_int("CEStatus", 2) #Use the far distance setting to force CEM on
+          
         if self.params.get_bool("BlendedACC"):
-          if self.params_memory.get_int("CEStatus"): #or (CC.actuators.longControlState == LongCtrlState.starting):# or (allow_throttle == False and CS.acc["ACCEL_CMD"] > 2000 and abs(CC.actuators.accel) < 0.1):
-            blended_acc_output = (self.blend_coeff * raw_acc_output) + ((1 - self.blend_coeff) * CS.acc["ACCEL_CMD"])
-            CS.acc["ACCEL_CMD"] = blended_acc_output
-
-            if self.blend_coeff < 1:
-              self.blend_coeff += min((DT_CTRL / self.transition_time), (1 - self.blend_coeff))
+          blended_acc_output = (self.blend_coeff * raw_acc_output) + ((1 - self.blend_coeff) * CS.acc["ACCEL_CMD"])
+          CEStatus = self.params_memory.get_int("CEStatus")
+          
+          if CEStatus and self.blend_coeff < 1: #or (CC.actuators.longControlState == LongCtrlState.starting):# or (allow_throttle == False and CS.acc["ACCEL_CMD"] > 2000 and abs(CC.actuators.accel) < 0.1):
+            self.blend_coeff += min((DT_CTRL / self.transition_time), (1 - self.blend_coeff))
               
-          elif self.blend_coeff > 0:
+          elif not CEStatus and self.blend_coeff > 0:
             self.blend_coeff -= min((DT_CTRL / self.transition_time), self.blend_coeff)
+
+          if self.blend_coeff > 0:
+            CS.acc["ACCEL_CMD"] = blended_acc_output
+            
 
           self.transition_time = (0.045455 * CS.out.vEgo) + 0.5 #ramp transition time depending on vehicle speed. 0.5s at standstill, 3s at 55mph
 
