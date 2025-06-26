@@ -33,6 +33,7 @@ class CarController(CarControllerBase):
     self.params_memory = Params("/dev/shm/params")
     self.blend_coeff = 0 #factor for blending OP and stock long. 0 is fully stock, 1 is fully OP
     self.transition_time = 2.5 #After this number of seconds, the smooth blending from stock to OP (or vice versa) is complete
+    self.distance_last = None
 
 
   def update(self, CC, CS, now_nanos, frogpilot_toggles):
@@ -40,6 +41,7 @@ class CarController(CarControllerBase):
     sm.update(0)
     long_plan = sm['longitudinalPlan']
     allow_throttle = long_plan.allowThrottle
+    
     
     can_sends = []
 
@@ -135,6 +137,8 @@ class CarController(CarControllerBase):
       if OPlong:
         if CS.distance_setting == 1:
           self.params_memory.put_int("CEStatus", 2) #Use the far distance setting to force CEM on
+        elif self.distance_last == 1:
+          self.params_memory.put_int("CEStatus", 0)
           
         if self.params.get_bool("BlendedACC"):
           blended_acc_output = (self.blend_coeff * raw_acc_output) + ((1 - self.blend_coeff) * CS.acc["ACCEL_CMD"])
@@ -151,6 +155,7 @@ class CarController(CarControllerBase):
             
 
           self.transition_time = (0.045455 * CS.out.vEgo) + 0.5 #ramp transition time depending on vehicle speed. 0.5s at standstill, 3s at 55mph
+          self.distance_last = CS.distance_setting
 
         else:
           CS.acc["ACCEL_CMD"] = raw_acc_output
