@@ -147,7 +147,7 @@ class CarController(CarControllerBase):
           if CEStatus and self.blend_coeff < 1: #or (CC.actuators.longControlState == LongCtrlState.starting):# or (allow_throttle == False and CS.acc["ACCEL_CMD"] > 2000 and abs(CC.actuators.accel) < 0.1):
             self.blend_coeff += min((DT_CTRL / self.transition_time), (1 - self.blend_coeff))
               
-          elif not CEStatus and self.blend_coeff > 0:
+          elif CEStatus < 2 and self.blend_coeff > 0: #CEStatus == 1 is when CEM is forced off, but we still want to be decrementing in that scenario
             self.blend_coeff -= min((DT_CTRL / self.transition_time), self.blend_coeff)
 
           if self.blend_coeff > 0:
