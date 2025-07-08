@@ -30,6 +30,10 @@ static void update_state(FrogPilotUIState *fs) {
     frogpilot_scene.lane_width_left = frogpilotPlan.getLaneWidthLeft();
     frogpilot_scene.lane_width_right = frogpilotPlan.getLaneWidthRight();
     if (frogpilotPlan.getThemeUpdated()) {
+      frogpilot_scene.frogpilot_toggles = QJsonDocument::fromJson(fs->params_memory.get("FrogPilotToggles").c_str()).object();
+
+      update_theme(fs);
+
       emit fs->themeUpdated();
     }
     if (frogpilotPlan.getTogglesUpdated()) {
@@ -58,9 +62,9 @@ void update_theme(FrogPilotUIState *fs) {
 
 FrogPilotUIState::FrogPilotUIState(QObject *parent) : QObject(parent) {
   sm = std::make_unique<SubMaster, const std::initializer_list<const char *>>({
-    "carControl", "carState", "controlsState", "deviceState", "frogpilotCarState", "frogpilotDeviceState",
-    "frogpilotNavigation", "frogpilotPlan", "liveDelay", "liveParameters", "liveTorqueParameters", "liveTracks",
-    "navInstruction"
+    "carControl", "carState", "controlsState", "deviceState", "frogpilotCarState", "frogpilotControlsState",
+    "frogpilotDeviceState", "frogpilotNavigation", "frogpilotPlan", "frogpilotRadarState", "liveDelay",
+    "liveParameters", "liveTorqueParameters", "liveTracks", "navInstruction"
   });
 
   wifi = new WifiManager(this);
@@ -70,6 +74,8 @@ FrogPilotUIState::FrogPilotUIState(QObject *parent) : QObject(parent) {
   if (frogpilot_scene.frogpilot_toggles.value("tethering_config").toInt() == 1) {
     wifi->setTetheringEnabled(true);
   }
+
+  update_theme(this);
 }
 
 FrogPilotUIState *frogpilotUIState() {
