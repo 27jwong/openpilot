@@ -166,7 +166,7 @@ class LongitudinalPlanner:
 
     self.a_desired = init_a
     self.v_desired_filter = FirstOrderFilter(init_v, 2.0, self.dt)
-    self.v_model_error = 0.0
+    # self.v_model_error = 0.0
 
     self.lead_one = Lead()
     self.lead_two = Lead()
@@ -246,8 +246,8 @@ class LongitudinalPlanner:
     # Prevent divergence, smooth in current v_ego
     self.v_desired_filter.x = max(0.0, self.v_desired_filter.update(v_ego))
     # Compute model v_ego error
-    self.v_model_error = get_speed_error(sm['modelV2'], v_ego)
-    x, v, a, j, throttle_prob = self.parse_model(sm['modelV2'], self.v_model_error, v_ego, frogpilot_toggles.taco_tune)
+    # self.v_model_error = get_speed_error(sm['modelV2'], v_ego)
+    x, v, a, j, throttle_prob = self.parse_model(sm['modelV2'], 0, v_ego, frogpilot_toggles.taco_tune)
     # Don't clip at low speeds since throttle_prob doesn't account for creep
     self.allow_throttle = throttle_prob > ALLOW_THROTTLE_THRESHOLD or v_ego <= MIN_ALLOW_THROTTLE_SPEED
 
