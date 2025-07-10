@@ -329,7 +329,7 @@ class LongitudinalPlanner:
         a_target = output_a_target_mpc
         should_stop = output_should_stop_mpc
       else:
-        a_target = output_a_target_mpc #min(output_a_target_mpc, output_a_target_e2e)
+        a_target = min(output_a_target_mpc, output_a_target_e2e)
         should_stop = output_should_stop_e2e or output_should_stop_mpc
     else:
       action_t = self.CP.longitudinalActuatorDelay + DT_MDL
