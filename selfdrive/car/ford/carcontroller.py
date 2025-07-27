@@ -7,7 +7,6 @@ from openpilot.selfdrive.car.ford.values import CarControllerParams, FordFlags
 from openpilot.selfdrive.car.interfaces import CarControllerBase
 from openpilot.selfdrive.controls.lib.drive_helpers import V_CRUISE_MAX
 
-GearShifter = car.CarState.GearShifter
 LongCtrlState = car.CarControl.Actuators.LongControlState
 VisualAlert = car.CarControl.HUDControl.VisualAlert
 
@@ -25,7 +24,7 @@ def apply_ford_curvature_limits(apply_curvature, apply_curvature_last, current_c
 
 
 class CarController(CarControllerBase):
-  def __init__(self, dbc_name, CP, FPCP, VM):
+  def __init__(self, dbc_name, CP, VM):
     self.CP = CP
     self.VM = VM
     self.packer = CANPacker(dbc_name)

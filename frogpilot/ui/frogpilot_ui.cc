@@ -35,6 +35,8 @@ static void update_state(FrogPilotUIState *fs) {
       update_theme(fs);
 
       emit fs->themeUpdated();
+
+      fs->params_memory.remove("UseActiveTheme");
     }
     if (frogpilotPlan.getTogglesUpdated()) {
       frogpilot_scene.frogpilot_toggles = QJsonDocument::fromJson(fs->params_memory.get("FrogPilotToggles").c_str()).object();

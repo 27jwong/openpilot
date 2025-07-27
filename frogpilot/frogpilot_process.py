@@ -126,7 +126,7 @@ def frogpilot_thread():
       frogpilot_tracking.update(sm)
     elif not started and toggles_updated:
       frogpilot_plan_send = messaging.new_message("frogpilotPlan")
-      frogpilot_plan_send.frogpilotPlan.themeUpdated = theme_manager.theme_updated
+      frogpilot_plan_send.frogpilotPlan.themeUpdated = theme_manager.theme_updated or params_memory.get_bool("UseActiveTheme")
       frogpilot_plan_send.frogpilotPlan.togglesUpdated = toggles_updated
       pm.send("frogpilotPlan", frogpilot_plan_send)
 

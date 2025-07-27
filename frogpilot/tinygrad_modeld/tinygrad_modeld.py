@@ -1,16 +1,11 @@
 #!/usr/bin/env python3
 import os
 from openpilot.system.hardware import TICI
+os.environ['DEV'] = 'QCOM' if TICI else 'LLVM'
 USBGPU = "USBGPU" in os.environ
 if USBGPU:
-  os.environ['AMD'] = '1'
+  os.environ['DEV'] = 'AMD'
   os.environ['AMD_IFACE'] = 'USB'
-elif TICI:
-  from openpilot.frogpilot.tinygrad_modeld.runners.tinygrad_helpers import qcom_tensor_from_opencl_address
-  os.environ['QCOM'] = '1'
-else:
-  os.environ['LLVM'] = '1'
-  os.environ['JIT'] = '2'
 from tinygrad.tensor import Tensor
 from tinygrad.dtype import dtypes
 import time
@@ -36,6 +31,7 @@ from openpilot.frogpilot.tinygrad_modeld.parse_model_outputs import Parser
 from openpilot.frogpilot.tinygrad_modeld.fill_model_msg import fill_model_msg, fill_pose_msg, PublishState
 from openpilot.frogpilot.tinygrad_modeld.constants import ModelConstants, Plan
 from openpilot.frogpilot.tinygrad_modeld.models.commonmodel_pyx import DrivingModelFrame, CLContext
+from openpilot.frogpilot.tinygrad_modeld.runners.tinygrad_helpers import qcom_tensor_from_opencl_address
 
 from openpilot.frogpilot.common.frogpilot_variables import get_frogpilot_toggles
 

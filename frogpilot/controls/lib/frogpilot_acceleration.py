@@ -20,7 +20,7 @@ def get_max_accel_sport(v_ego):
   return float(np.interp(v_ego, A_CRUISE_MAX_BP_CUSTOM, A_CRUISE_MAX_VALS_SPORT))
 
 def get_max_accel_low_speeds(max_accel, v_cruise):
-  return float(np.interp(v_cruise, [0., CITY_SPEED_LIMIT / 2, CITY_SPEED_LIMIT], [max_accel / 3, max_accel / 2, max_accel]))
+  return float(np.interp(v_cruise, [0., CITY_SPEED_LIMIT / 2, CITY_SPEED_LIMIT], [max_accel / 4, max_accel / 2, max_accel]))
 
 def get_max_accel_ramp_off(max_accel, v_cruise, v_ego):
   return float(np.interp(v_cruise - v_ego, [0., 1., 5.], [0., 0.5, max_accel]))

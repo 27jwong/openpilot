@@ -98,8 +98,7 @@ private:
   QPixmap brakePedalImg;
   QPixmap chillModeIcon;
   QPixmap curveIcon;
-  QPixmap curveSpeedLeftIcon;
-  QPixmap curveSpeedRightIcon;
+  QPixmap curveSpeedIcon;
   QPixmap dashboardIcon;
   QPixmap experimentalModeIcon;
   QPixmap gasPedalImg;

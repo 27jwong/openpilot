@@ -14,7 +14,7 @@ struct FrogPilotCarControl {
   hudControl @0 :HUDControl;
 
   struct HUDControl {
-    audibleAlert @0: AudibleAlert;
+    audibleAlert @0 :AudibleAlert;
 
     enum AudibleAlert {
       none @0;
@@ -102,12 +102,6 @@ struct FrogPilotCarParams @0xf35cc4560bbf6ec2 {
 }
 
 struct FrogPilotCarState @0xda96579883444c35 {
-  struct ButtonEvent {
-    enum Type {
-      lkas @0;
-    }
-  }
-
   accelPressed @0 :Bool;
   alwaysOnLateralAllowed @1 :Bool;
   alwaysOnLateralEnabled @2 :Bool;
@@ -123,6 +117,12 @@ struct FrogPilotCarState @0xda96579883444c35 {
   pauseLongitudinal @12 :Bool;
   sportGear @13 :Bool;
   trafficModeEnabled @14 :Bool;
+
+  struct ButtonEvent {
+    enum Type {
+      lkas @0;
+    }
+  }
 }
 
 struct FrogPilotControlsState @0x80ae746ee2596b11 {

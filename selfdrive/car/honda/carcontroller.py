@@ -10,7 +10,6 @@ from openpilot.selfdrive.car.honda.values import CruiseButtons, VISUAL_HUD, HOND
 from openpilot.selfdrive.car.interfaces import CarControllerBase
 from openpilot.selfdrive.controls.lib.drive_helpers import rate_limit
 
-GearShifter = car.CarState.GearShifter
 VisualAlert = car.CarControl.HUDControl.VisualAlert
 LongCtrlState = car.CarControl.Actuators.LongControlState
 
@@ -107,7 +106,7 @@ def rate_limit_steer(new_steer, last_steer):
 
 
 class CarController(CarControllerBase):
-  def __init__(self, dbc_name, CP, FPCP, VM):
+  def __init__(self, dbc_name, CP, VM):
     self.CP = CP
     self.packer = CANPacker(dbc_name)
     self.params = CarControllerParams(CP)

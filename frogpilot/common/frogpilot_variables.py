@@ -74,8 +74,8 @@ DEFAULT_MODEL = "national-public-radio"
 DEFAULT_MODEL_NAME = "National Public Radio 👀📡"
 DEFAULT_MODEL_VERSION = "v6"
 
-DEFAULT_TINYGRAD_MODEL = "tomb-raider"
-DEFAULT_TINYGRAD_MODEL_NAME = "Tomb Raider 👀📡"
+DEFAULT_TINYGRAD_MODEL = "space-lab"
+DEFAULT_TINYGRAD_MODEL_NAME = "Space Lab 👀📡"
 DEFAULT_TINYGRAD_MODEL_VERSION = "v7"
 
 EXCLUDED_KEYS = {
@@ -243,7 +243,6 @@ frogpilot_default_params: list[tuple[str, str | bytes, int, str]] = [
   ("LaneChangeTime", "2.0", 0, "0"),
   ("LaneDetectionWidth", "0", 2, "0"),
   ("LaneLinesWidth", "4", 2, "2"),
-  ("LateralMetrics", "1", 3, "0"),
   ("LateralTune", "1", 2, "0"),
   ("LeadDepartingAlert", "0", 0, "0"),
   ("LeadDetectionThreshold", "35", 3, "50"),
@@ -253,7 +252,6 @@ frogpilot_default_params: list[tuple[str, str | bytes, int, str]] = [
   ("LockDoors", "1", 0, "0"),
   ("LockDoorsTimer", "0", 0, "0"),
   ("LongDistanceButtonControl", "5", 2, "0"),
-  ("LongitudinalMetrics", "1", 2, "0"),
   ("LongitudinalActuatorDelay", "", 3, ""),
   ("LongitudinalActuatorDelayStock", "", 3, ""),
   ("LongitudinalTune", "1", 0, "0"),
@@ -273,7 +271,6 @@ frogpilot_default_params: list[tuple[str, str | bytes, int, str]] = [
   ("ModelDrivesAndScores", "", 2, ""),
   ("ModelRandomizer", "0", 2, "0"),
   ("ModelUI", "1", 2, "0"),
-  ("ModelVersion", DEFAULT_CLASSIC_MODEL_VERSION, 2, DEFAULT_CLASSIC_MODEL_VERSION),
   ("ModelVersions", "", 2, ""),
   ("NavigationUI", "1", 1, "0"),
   ("NavSettingLeftSide", "0", 0, "0"),
@@ -399,7 +396,6 @@ frogpilot_default_params: list[tuple[str, str | bytes, int, str]] = [
   ("TacoTune", "0", 2, "0"),
   ("TacoTuneHacks", "0", 2, "0"),
   ("TetheringEnabled", "0", 0, "0"),
-  ("TogglesUpdated", "0", 0, "0"),
   ("ToyotaDoors", "1", 0, "0"),
   ("TrafficFollow", "0.5", 2, "0.5"),
   ("TrafficJerkAcceleration", "50", 3, "50"),
@@ -840,7 +836,6 @@ class FrogPilotVariables:
       toggle.model_name = DEFAULT_CLASSIC_MODEL_NAME
       toggle.model_version = DEFAULT_CLASSIC_MODEL_VERSION
     toggle.classic_model = toggle.model_version in {"v1", "v2", "v3", "v4"}
-    toggle.planner_curvature_model = toggle.model_version not in {"v1", "v2", "v3", "v4", "v5"}
     toggle.tinygrad_model = toggle.model_version in {"v7"}
     toggle.tomb_raider = toggle.model == "tomb-raider"
 

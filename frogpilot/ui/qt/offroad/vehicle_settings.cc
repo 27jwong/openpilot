@@ -244,10 +244,16 @@ FrogPilotVehiclesPanel::FrogPilotVehiclesPanel(FrogPilotSettingsWindow *parent) 
 
   std::set<QString> rebootKeys = {"NewLongAPI", "TacoTuneHacks"};
   for (const QString &key : rebootKeys) {
-    QObject::connect(static_cast<ToggleControl*>(toggles[key]), &ToggleControl::toggleFlipped, [this]() {
+    QObject::connect(static_cast<ToggleControl*>(toggles[key]), &ToggleControl::toggleFlipped, [this, key](bool state) {
       if (started) {
-        if (FrogPilotConfirmationDialog::toggleReboot(this)) {
-          Hardware::reboot();
+        if (key == "TacoTuneHacks" && state) {
+          if (FrogPilotConfirmationDialog::toggleReboot(this)) {
+            Hardware::reboot();
+          }
+        } else if (key != "TacoTuneHacks") {
+          if (FrogPilotConfirmationDialog::toggleReboot(this)) {
+            Hardware::reboot();
+          }
         }
       }
     });
