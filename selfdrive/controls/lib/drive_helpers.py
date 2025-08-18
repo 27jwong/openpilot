@@ -198,7 +198,7 @@ def get_friction(lateral_accel_error: float, lateral_accel_deadzone: float, fric
   friction_interp = interp(
     apply_center_deadzone(lateral_accel_error, lateral_accel_deadzone),
     [-friction_threshold, friction_threshold],
-    [-torque_params.friction, torque_params.friction]
+    [-torque_params.friction * torque_params.latAccelFactor, torque_params.friction * torque_params.latAccelFactor]
   )
   friction = float(friction_interp) if friction_compensation else 0.0
   return friction

@@ -60,7 +60,8 @@ class LatControlInputs(NamedTuple):
   aego: float
 
 
-TorqueFromLateralAccelCallbackType = Callable[[LatControlInputs, car.CarParams.LateralTorqueTuning, float, float, bool, bool], float]
+TorqueFromLateralAccelCallbackType = Callable[[float, car.CarParams.LateralTorqueTuning, bool], float]
+LateralAccelFromTorqueCallbackType = Callable[[float, car.CarParams.LateralTorqueTuning, bool], float]
 
 
 @cache
@@ -218,14 +219,19 @@ class CarInterfaceBase(ABC):
   def get_steer_feedforward_function(self):
     return self.get_steer_feedforward_default
 
-  def torque_from_lateral_accel_linear(self, latcontrol_inputs: LatControlInputs, torque_params: car.CarParams.LateralTorqueTuning,
-                                       lateral_accel_error: float, lateral_accel_deadzone: float, friction_compensation: bool, gravity_adjusted: bool) -> float:
+  def torque_from_lateral_accel_linear(self, lateral_acceleration: float, torque_params: car.CarParams.LateralTorqueTuning) -> float:
     # The default is a linear relationship between torque and lateral acceleration (accounting for road roll and steering friction)
-    friction = get_friction(lateral_accel_error, lateral_accel_deadzone, FRICTION_THRESHOLD, torque_params, friction_compensation)
-    return (latcontrol_inputs.lateral_acceleration / float(torque_params.latAccelFactor)) + friction
+    # friction = get_friction(lateral_accel_error, lateral_accel_deadzone, FRICTION_THRESHOLD, torque_params, friction_compensation)
+    return lateral_acceleration / float(torque_params.latAccelFactor)
 
   def torque_from_lateral_accel(self) -> TorqueFromLateralAccelCallbackType:
     return self.torque_from_lateral_accel_linear
+
+  def lateral_accel_from_torque_linear(self, torque: float, torque_params: car.CarParams.LateralTorqueTuning) -> float:
+    return torque * float(torque_params.latAccelFactor)
+
+  def lateral_accel_from_torque(self) -> LateralAccelFromTorqueCallbackType:
+    return self.lateral_accel_from_torque_linear
 
   # returns a set of default params to avoid repetition in car specific params
   @staticmethod

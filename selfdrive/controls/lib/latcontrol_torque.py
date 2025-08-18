@@ -2,10 +2,11 @@ import math
 
 from cereal import log
 from openpilot.common.numpy_fast import interp
-from openpilot.selfdrive.car.interfaces import LatControlInputs
+from openpilot.selfdrive.controls.lib.drive_helpers import get_friction
 from openpilot.selfdrive.controls.lib.latcontrol import LatControl
 from openpilot.selfdrive.controls.lib.pid import PIDController
 from openpilot.selfdrive.controls.lib.vehicle_model import ACCELERATION_DUE_TO_GRAVITY
+from openpilot.selfdrive.car.interfaces import FRICTION_THRESHOLD
 
 from openpilot.frogpilot.controls.lib.neural_network_feedforward import LOW_SPEED_Y_NN, NeuralNetworkFeedforward
 
@@ -28,9 +29,10 @@ class LatControlTorque(LatControl):
   def __init__(self, CP, CI):
     super().__init__(CP, CI)
     self.torque_params = CP.lateralTuning.torque
-    self.pid = PIDController(self.torque_params.kp, self.torque_params.ki,
-                             k_f=self.torque_params.kf, pos_limit=self.steer_max, neg_limit=-self.steer_max)
     self.torque_from_lateral_accel = CI.torque_from_lateral_accel()
+    self.lateral_accel_from_torque = CI.lateral_accel_from_torque()
+    self.pid = PIDController(self.torque_params.kp, self.torque_params.ki,
+                             k_f=self.torque_params.kf)
     self.use_steering_angle = self.torque_params.useSteeringAngle
     self.steering_angle_deadzone_deg = self.torque_params.steeringAngleDeadzoneDeg
 
@@ -43,6 +45,11 @@ class LatControlTorque(LatControl):
     self.torque_params.latAccelFactor = latAccelFactor
     self.torque_params.latAccelOffset = latAccelOffset
     self.torque_params.friction = friction
+    self.update_limits()
+
+  def update_limits(self):
+    self.pid.set_limits(self.lateral_accel_from_torque(self.steer_max, self.torque_params),
+                        self.lateral_accel_from_torque(-self.steer_max, self.torque_params))
 
   def update(self, active, CS, VM, params, steer_limited, desired_curvature, llk, model_data=None, frogpilot_toggles=None):
     pid_log = log.ControlsState.LateralTorqueState.new_message()
@@ -76,21 +83,17 @@ class LatControlTorque(LatControl):
           llk, measurement, model_data, params, pid_log, roll_compensation, setpoint, frogpilot_toggles
         )
       else:
-        torque_from_setpoint = self.torque_from_lateral_accel(LatControlInputs(setpoint, roll_compensation, CS.vEgo, CS.aEgo), self.torque_params,
-                                                              setpoint, lateral_accel_deadzone, friction_compensation=False, gravity_adjusted=False)
-        torque_from_measurement = self.torque_from_lateral_accel(LatControlInputs(measurement, roll_compensation, CS.vEgo, CS.aEgo), self.torque_params,
-                                                                 measurement, lateral_accel_deadzone, friction_compensation=False, gravity_adjusted=False)
-        pid_log.error = torque_from_setpoint - torque_from_measurement
-        ff = self.torque_from_lateral_accel(LatControlInputs(gravity_adjusted_lateral_accel, roll_compensation, CS.vEgo, CS.aEgo), self.torque_params,
-                                            desired_lateral_accel - actual_lateral_accel, lateral_accel_deadzone, friction_compensation=True,
-                                            gravity_adjusted=True)
+        pid_log.error = float(setpoint - measurement)
+        ff = gravity_adjusted_lateral_accel
+        ff += get_friction(desired_lateral_accel - actual_lateral_accel, lateral_accel_deadzone, FRICTION_THRESHOLD, self.torque_params, True)
 
       freeze_integrator = steer_limited or CS.steeringPressed or CS.vEgo < 5
       self.pid._k_p = frogpilot_toggles.steerKp
-      output_torque = self.pid.update(pid_log.error,
+      output_lataccel = self.pid.update(pid_log.error,
                                       feedforward=ff,
                                       speed=CS.vEgo,
                                       freeze_integrator=freeze_integrator)
+      output_torque = self.torque_from_lateral_accel(output_lataccel, self.torque_params)
 
       pid_log.active = True
       pid_log.p = self.pid.p
