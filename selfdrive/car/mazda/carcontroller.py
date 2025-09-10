@@ -1,3 +1,4 @@
+import numpy as np
 from cereal import car
 from opendbc.can.packer import CANPacker
 from openpilot.selfdrive.car import apply_driver_steer_torque_limits, apply_ti_steer_torque_limits
@@ -117,7 +118,7 @@ class CarController(CarControllerBase):
 
     else:
       raw_acc_output = (CC.actuators.accel * 200) + 2000
-      OPlong = (self.params.get_bool("ExperimentalLongitudinalEnabled") and CC.longActive)# and CS.distance_setting == 1)
+      OPlong = (self.params.get_bool("ExperimentalLongitudinalEnabled") and CC.longActive)
       
       # if self.params.get_bool("BlendedACC"):
         # if self.params_memory.get_int("CEStatus"):
@@ -143,8 +144,11 @@ class CarController(CarControllerBase):
         if self.params.get_bool("BlendedACC"):
           blended_acc_output = (self.blend_coeff * raw_acc_output) + ((1 - self.blend_coeff) * CS.acc["ACCEL_CMD"])
           CEStatus = self.params_memory.get_int("CEStatus")
+          # gas_gate_thresh = np.interp(CS.out.vEgo, [0,1,5,15,25], [0,500,250,20,0]) 
+          #If OP is gas gating, we'll allow it to take over control of long from MRCC. But only if MRCC commands are within this range. 
+          #This is mainly to prevent the car from drifting away from the lead at highway speeds.
           
-          if (CEStatus and self.blend_coeff < 1) or (allow_throttle == False and CS.acc["ACCEL_CMD"] > 2000 and abs(CC.actuators.accel) < 0.1) or (CS.out.vEgo < 4.5):
+          if (CEStatus and self.blend_coeff < 1) or abs(CS.out.aEgo > 2):# or (allow_throttle == False and (2000 - gas_gate_thresh) < CS.acc["ACCEL_CMD"] < (2000 + gas_gate_thresh)):
             self.blend_coeff += min((DT_CTRL / self.transition_time), (1 - self.blend_coeff))
               
           elif CEStatus < 2 and self.blend_coeff > 0: #CEStatus == 1 is when CEM is forced off, but we still want to be decrementing in that scenario
