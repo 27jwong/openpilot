@@ -14,8 +14,8 @@ FrogPilotButtonType = custom.FrogPilotCarState.ButtonEvent.Type
 EventName = car.CarEvent.EventName
 
 NON_LINEAR_TORQUE_PARAMS = {
-  CAR.MAZDA_3_2019: (3.8818, 0.6873, 0.0999, 0.3605),
-  CAR.MAZDA_CX_30: (1.67159302, 0.86828345, 0.08239716, 0.3605),
+  CAR.MAZDA_3_2019: (3.650, 1.0, 0.13, 0.3605),
+  CAR.MAZDA_CX_30: (3.650, 1.0, 0.13, 0.3605),
 }
 
 class CarInterface(CarInterfaceBase):
@@ -98,10 +98,11 @@ class CarInterface(CarInterfaceBase):
       ret.longitudinalTuning.kpBP = [0., 5., 35.]
       ret.longitudinalTuning.kpV = [0.0, 0.0, 0.0]
       ret.longitudinalTuning.kiBP = [0., 35.]
-      ret.longitudinalTuning.kiV = [0.1, 0.01]
+      ret.longitudinalTuning.kiV = [0.1, 0.1]
       ret.startingState = True
       ret.longitudinalActuatorDelay = 0.35
       ret.steerActuatorDelay = 0.335
+      ret.wheelSpeedFactor = 2285/2179 #For alt tire size
 
     ret.steerLimitTimer = 1.5
 

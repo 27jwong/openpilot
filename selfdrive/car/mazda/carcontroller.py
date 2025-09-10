@@ -144,7 +144,7 @@ class CarController(CarControllerBase):
           blended_acc_output = (self.blend_coeff * raw_acc_output) + ((1 - self.blend_coeff) * CS.acc["ACCEL_CMD"])
           CEStatus = self.params_memory.get_int("CEStatus")
           
-          if (CEStatus and self.blend_coeff < 1) or (allow_throttle == False and CS.acc["ACCEL_CMD"] > 2000 and abs(CC.actuators.accel) < 0.1) or (CS.out.vEgo < 4.5):
+          if (CEStatus and self.blend_coeff < 1) or (allow_throttle == False and CS.acc["ACCEL_CMD"] > 2200) or (CS.out.vEgo < 5):
             self.blend_coeff += min((DT_CTRL / self.transition_time), (1 - self.blend_coeff))
               
           elif CEStatus < 2 and self.blend_coeff > 0: #CEStatus == 1 is when CEM is forced off, but we still want to be decrementing in that scenario
