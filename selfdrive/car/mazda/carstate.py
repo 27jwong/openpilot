@@ -176,6 +176,7 @@ class CarState(CarStateBase):
 
     ret.vEgoRaw = (ret.wheelSpeeds.fl + ret.wheelSpeeds.fr + ret.wheelSpeeds.rl + ret.wheelSpeeds.rr) / 4.
     ret.vEgo, ret.aEgo = self.update_speed_kf(ret.vEgoRaw) # Doesn't match cluster speed exactly
+    ret.vEgoCluster = ret.vEgo * (2179/2285) #For alt tire size
 
     ret.leftBlinker, ret.rightBlinker = self.update_blinker_from_lamp(100, cp.vl["BLINK_INFO"]["LEFT_BLINK"] == 1,
                                                                       cp.vl["BLINK_INFO"]["RIGHT_BLINK"] == 1)
