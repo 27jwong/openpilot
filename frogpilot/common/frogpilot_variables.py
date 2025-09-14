@@ -42,9 +42,6 @@ MINIMUM_LATERAL_ACCELERATION = 1.3        # m/s^2, typical minimum lateral accel
 PLANNER_TIME = ModelConstants.T_IDXS[-1]  # Length of time the model projects out for
 THRESHOLD = 0.63                          # Requires the condition to be true for ~1 second
 
-def scale_threshold(v_ego):
-  return np.interp(v_ego, [0, 17.9, 26.8, 35.8, 44.7], [0.58, 0.60, 0.62, 0.72, 0.82])
-
 NON_DRIVING_GEARS = [GearShifter.neutral, GearShifter.park, GearShifter.reverse, GearShifter.unknown]
 
 RESOURCES_REPO = "FrogAi/FrogPilot-Resources"
