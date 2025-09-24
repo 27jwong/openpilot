@@ -11,6 +11,7 @@ public:
 signals:
   void openSubPanel();
   void openSubSubPanel();
+  void openSubSubSubPanel();
 
 protected:
   void showEvent(QShowEvent *event) override;
@@ -27,7 +28,9 @@ private:
   bool isHKGCanFd;
   bool isToyota;
   bool isTSK;
+  bool qolOpen;
   bool slcOpen;
+  bool weatherOpen;
 
   int tuningLevel;
 
@@ -46,7 +49,7 @@ private:
   QSet<QString> curveSpeedKeys = {"CalibratedLateralAcceleration", "CalibrationProgress", "ResetCurveData", "ShowCSCStatus"};
   QSet<QString> customDrivingPersonalityKeys = {"AggressivePersonalityProfile", "RelaxedPersonalityProfile", "StandardPersonalityProfile", "TrafficPersonalityProfile"};
   QSet<QString> longitudinalTuneKeys = {"AccelerationProfile", "DecelerationProfile", "HumanAcceleration", "HumanFollowing", "LeadDetectionThreshold", "MaxDesiredAcceleration", "TacoTune"};
-  QSet<QString> qolKeys = {"CustomCruise", "CustomCruiseLong", "ForceStops", "IncreasedStoppedDistance", "MapGears", "ReverseCruise", "SetSpeedOffset"};
+  QSet<QString> qolKeys = {"CustomCruise", "CustomCruiseLong", "ForceStops", "IncreasedStoppedDistance", "MapGears", "ReverseCruise", "SetSpeedOffset", "WeatherPresets"};
   QSet<QString> relaxedPersonalityKeys = {"RelaxedFollow", "RelaxedJerkAcceleration", "RelaxedJerkDeceleration", "RelaxedJerkDanger", "RelaxedJerkSpeed", "RelaxedJerkSpeedDecrease", "ResetRelaxedPersonality"};
   QSet<QString> speedLimitControllerKeys = {"SLCOffsets", "SLCFallback", "SLCOverride", "SLCPriority", "SLCQOL", "SLCVisuals"};
   QSet<QString> speedLimitControllerOffsetsKeys = {"Offset1", "Offset2", "Offset3", "Offset4", "Offset5", "Offset6", "Offset7"};
@@ -54,6 +57,11 @@ private:
   QSet<QString> speedLimitControllerVisualKeys = {"ShowSLCOffset", "SpeedLimitSources"};
   QSet<QString> standardPersonalityKeys = {"StandardFollow", "StandardJerkAcceleration", "StandardJerkDeceleration", "StandardJerkDanger", "StandardJerkSpeed", "StandardJerkSpeedDecrease", "ResetStandardPersonality"};
   QSet<QString> trafficPersonalityKeys = {"TrafficFollow", "TrafficJerkAcceleration", "TrafficJerkDeceleration", "TrafficJerkDanger", "TrafficJerkSpeed", "TrafficJerkSpeedDecrease", "ResetTrafficPersonality"};
+  QSet<QString> weatherKeys = {"LowVisibilityOffsets", "RainOffsets", "RainStormOffsets", "SnowOffsets"};
+  QSet<QString> weatherLowVisibilityKeys = {"IncreaseFollowingLowVisibility", "IncreasedStoppedDistanceLowVisibility", "ReduceAccelerationLowVisibility", "ReduceLateralAccelerationLowVisibility"};
+  QSet<QString> weatherRainKeys = {"IncreaseFollowingRain", "IncreasedStoppedDistanceRain", "ReduceAccelerationRain", "ReduceLateralAccelerationRain"};
+  QSet<QString> weatherRainStormKeys = {"IncreaseFollowingRainStorm", "IncreasedStoppedDistanceRainStorm", "ReduceAccelerationRainStorm", "ReduceLateralAccelerationRainStorm"};
+  QSet<QString> weatherSnowKeys = {"IncreaseFollowingSnow", "IncreasedStoppedDistanceSnow", "ReduceAccelerationSnow", "ReduceLateralAccelerationSnow"};
 
   QSet<QString> parentKeys;
 

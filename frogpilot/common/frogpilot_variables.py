@@ -240,6 +240,14 @@ frogpilot_default_params: list[tuple[str, str | bytes, int, str]] = [
   ("HumanAcceleration", "1", 2, "0"),
   ("HumanFollowing", "1", 2, "0"),
   ("IncreasedStoppedDistance", "0", 1, "0"),
+  ("IncreaseFollowingLowVisibility", "0", 2, "0"),
+  ("IncreaseFollowingRain", "0", 2, "0"),
+  ("IncreaseFollowingRainStorm", "0", 2, "0"),
+  ("IncreaseFollowingSnow", "0", 2, "0"),
+  ("IncreasedStoppedDistanceLowVisibility", "0", 2, "0"),
+  ("IncreasedStoppedDistanceRain", "0", 2, "0"),
+  ("IncreasedStoppedDistanceRainStorm", "0", 2, "0"),
+  ("IncreasedStoppedDistanceSnow", "0", 2, "0"),
   ("IncreaseThermalLimits", "0", 2, "0"),
   ("IsLdwEnabled", "0", 0, "0"),
   ("IsMetric", "0", 0, "0"),
@@ -316,6 +324,14 @@ frogpilot_default_params: list[tuple[str, str | bytes, int, str]] = [
   ("RandomEvents", "0", 1, "0"),
   ("RandomThemes", "0", 1, "0"),
   ("RecordFront", "0", 0, "0"),
+  ("ReduceAccelerationLowVisibility", "0", 2, "0"),
+  ("ReduceAccelerationRain", "0", 2, "0"),
+  ("ReduceAccelerationRainStorm", "0", 2, "0"),
+  ("ReduceAccelerationSnow", "0", 2, "0"),
+  ("ReduceLateralAccelerationLowVisibility", "0", 2, "0"),
+  ("ReduceLateralAccelerationRain", "0", 2, "0"),
+  ("ReduceLateralAccelerationRainStorm", "0", 2, "0"),
+  ("ReduceLateralAccelerationSnow", "0", 2, "0"),
   ("RefuseVolume", "101", 2, "101"),
   ("RelaxedFollow", "1.75", 2, "1.75"),
   ("RelaxedJerkAcceleration", "100", 3, "100"),
@@ -430,6 +446,7 @@ frogpilot_default_params: list[tuple[str, str | bytes, int, str]] = [
   ("VoltSNG", "0", 2, "0"),
   ("WarningImmediateVolume", "101", 2, "101"),
   ("WarningSoftVolume", "101", 2, "101"),
+  ("WeatherPresets", "0", 2, "0"),
   ("WheelIcon", "frog", 0, "stock"),
   ("WheelSpeed", "0", 2, "0")
 ]
@@ -888,6 +905,23 @@ class FrogPilotVariables:
     toggle.map_deceleration = map_gears and (params.get_bool("MapDeceleration") if tuning_level >= level["MapDeceleration"] else default.get_bool("MapDeceleration"))
     toggle.reverse_cruise_increase = quality_of_life_longitudinal and toggle.car_make == "toyota" and pcm_cruise and (params.get_bool("ReverseCruise") if tuning_level >= level["ReverseCruise"] else default.get_bool("ReverseCruise"))
     toggle.set_speed_offset = params.get_int("SetSpeedOffset") * (1 if toggle.is_metric else CV.MPH_TO_KPH) if quality_of_life_longitudinal and not pcm_cruise and tuning_level >= level["SetSpeedOffset"] else default.get_int("SetSpeedOffset") * CV.MPH_TO_KPH
+    toggle.weather_presets = quality_of_life_longitudinal and (params.get_bool("WeatherPresets") if tuning_level >= level["WeatherPresets"] else default.get_bool("WeatherPresets"))
+    toggle.increase_following_distance_low_visibility = params.get_float("IncreaseFollowingLowVisibility") if toggle.weather_presets and tuning_level >= level["IncreaseFollowingLowVisibility"] else default.get_float("IncreaseFollowingLowVisibility")
+    toggle.increase_following_distance_rain = params.get_float("IncreaseFollowingRain") if toggle.weather_presets and tuning_level >= level["IncreaseFollowingRain"] else default.get_float("IncreaseFollowingRain")
+    toggle.increase_following_distance_rain_storm = params.get_float("IncreaseFollowingRainStorm") if toggle.weather_presets and tuning_level >= level["IncreaseFollowingRainStorm"] else default.get_float("IncreaseFollowingRainStorm")
+    toggle.increase_following_distance_snow = params.get_float("IncreaseFollowingSnow") if toggle.weather_presets and tuning_level >= level["IncreaseFollowingSnow"] else default.get_float("IncreaseFollowingSnow")
+    toggle.increase_stopped_distance_low_visibility = params.get_int("IncreasedStoppedDistanceLowVisibility") * distance_conversion if toggle.weather_presets and tuning_level >= level["IncreasedStoppedDistanceLowVisibility"] else default.get_int("IncreasedStoppedDistanceLowVisibility") * CV.FOOT_TO_METER
+    toggle.increase_stopped_distance_rain = params.get_int("IncreasedStoppedDistanceRain") * distance_conversion if toggle.weather_presets and tuning_level >= level["IncreasedStoppedDistanceRain"] else default.get_int("IncreasedStoppedDistanceRain") * CV.FOOT_TO_METER
+    toggle.increase_stopped_distance_rain_storm = params.get_int("IncreasedStoppedDistanceRainStorm") * distance_conversion if toggle.weather_presets and tuning_level >= level["IncreasedStoppedDistanceRainStorm"] else default.get_int("IncreasedStoppedDistanceRainStorm") * CV.FOOT_TO_METER
+    toggle.increase_stopped_distance_snow = params.get_int("IncreasedStoppedDistanceSnow") * distance_conversion if toggle.weather_presets and tuning_level >= level["IncreasedStoppedDistanceSnow"] else default.get_int("IncreasedStoppedDistanceSnow") * CV.FOOT_TO_METER
+    toggle.reduce_acceleration_low_visibility = (params.get_int("ReduceAccelerationLowVisibility") if toggle.weather_presets and tuning_level >= level["ReduceAccelerationLowVisibility"] else default.get_int("ReduceAccelerationLowVisibility")) / 100
+    toggle.reduce_acceleration_rain = (params.get_int("ReduceAccelerationRain") if toggle.weather_presets and tuning_level >= level["ReduceAccelerationRain"] else default.get_int("ReduceAccelerationRain")) / 100
+    toggle.reduce_acceleration_rain_storm = (params.get_int("ReduceAccelerationRainStorm") if toggle.weather_presets and tuning_level >= level["ReduceAccelerationRainStorm"] else default.get_int("ReduceAccelerationRainStorm")) / 100
+    toggle.reduce_acceleration_snow = (params.get_int("ReduceAccelerationSnow") if toggle.weather_presets and tuning_level >= level["ReduceAccelerationSnow"] else default.get_int("ReduceAccelerationSnow")) / 100
+    toggle.reduce_lateral_acceleration_low_visibility = (params.get_int("ReduceLateralAccelerationLowVisibility") if toggle.weather_presets and tuning_level >= level["ReduceLateralAccelerationLowVisibility"] else default.get_int("ReduceLateralAccelerationLowVisibility")) / 100
+    toggle.reduce_lateral_acceleration_rain = (params.get_int("ReduceLateralAccelerationRain") if toggle.weather_presets and tuning_level >= level["ReduceLateralAccelerationRain"] else default.get_int("ReduceLateralAccelerationRain")) / 100
+    toggle.reduce_lateral_acceleration_rain_storm = (params.get_int("ReduceLateralAccelerationRainStorm") if toggle.weather_presets and tuning_level >= level["ReduceLateralAccelerationRainStorm"] else default.get_int("ReduceLateralAccelerationRainStorm")) / 100
+    toggle.reduce_lateral_acceleration_snow = (params.get_int("ReduceLateralAccelerationSnow") if toggle.weather_presets and tuning_level >= level["ReduceLateralAccelerationSnow"] else default.get_int("ReduceLateralAccelerationSnow")) / 100
 
     quality_of_life_visuals = params.get_bool("QOLVisuals") if tuning_level >= level["QOLVisuals"] else default.get_bool("QOLVisuals")
     toggle.camera_view = params.get_int("CameraView") if quality_of_life_visuals and tuning_level >= level["CameraView"] else default.get_int("CameraView")
