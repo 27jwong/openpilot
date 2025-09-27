@@ -148,7 +148,7 @@ class CarController(CarControllerBase):
           #If OP is gas gating, we'll allow it to take over control of long from MRCC. But only if MRCC commands are within this range. 
           #This is mainly to prevent the car from drifting away from the lead at highway speeds.
           
-          if (CEStatus and self.blend_coeff < 1):# or (allow_throttle == False and (2000 - gas_gate_thresh) < CS.acc["ACCEL_CMD"] < (2000 + gas_gate_thresh)):
+          if (CEStatus and self.blend_coeff < 1) or abs(CS.out.aEgo > 2):# or (allow_throttle == False and (2000 - gas_gate_thresh) < CS.acc["ACCEL_CMD"] < (2000 + gas_gate_thresh)):
             self.blend_coeff += min((DT_CTRL / self.transition_time), (1 - self.blend_coeff))
               
           elif CEStatus < 2 and self.blend_coeff > 0: #CEStatus == 1 is when CEM is forced off, but we still want to be decrementing in that scenario
