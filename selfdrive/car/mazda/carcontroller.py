@@ -35,6 +35,7 @@ class CarController(CarControllerBase):
     self.blend_coeff = 0 #factor for blending OP and stock long. 0 is fully stock, 1 is fully OP
     self.transition_time = 2.5 #After this number of seconds, the smooth blending from stock to OP (or vice versa) is complete
     self.distance_last = None
+    self.accel_transition_thresh = 1.25 #m/s^2, if aEgo is less than this we want to use MRCC, if more than this we transition to OP long
 
 
   def update(self, CC, CS, now_nanos, frogpilot_toggles):
@@ -148,7 +149,7 @@ class CarController(CarControllerBase):
           #If OP is gas gating, we'll allow it to take over control of long from MRCC. But only if MRCC commands are within this range. 
           #This is mainly to prevent the car from drifting away from the lead at highway speeds.
           
-          if (CEStatus and self.blend_coeff < 1) or abs(CS.out.aEgo > 2):# or (allow_throttle == False and (2000 - gas_gate_thresh) < CS.acc["ACCEL_CMD"] < (2000 + gas_gate_thresh)):
+          if (CEStatus and self.blend_coeff < 1) or (abs(CS.out.aEgo) > self.accel_transition_thresh):# or (allow_throttle == False and (2000 - gas_gate_thresh) < CS.acc["ACCEL_CMD"] < (2000 + gas_gate_thresh)):
             self.blend_coeff += min((DT_CTRL / self.transition_time), (1 - self.blend_coeff))
               
           elif CEStatus < 2 and self.blend_coeff > 0: #CEStatus == 1 is when CEM is forced off, but we still want to be decrementing in that scenario
@@ -162,7 +163,22 @@ class CarController(CarControllerBase):
           self.distance_last = CS.distance_setting
 
         else:
-          CS.acc["ACCEL_CMD"] = raw_acc_output
+          blended_acc_output = (self.blend_coeff * raw_acc_output) + ((1 - self.blend_coeff) * CS.acc["ACCEL_CMD"])
+          
+          #Blend in MRCC when gas gating is active to disable it. Remove this section when gas gating gets better.
+          if allow_throttle or CC.actuators.accel < -3:
+            self.blend_coeff += min((DT_CTRL / self.transition_time), (1 - self.blend_coeff))
+              
+          else: #gas gating is active, so transition back to MRCC
+            self.blend_coeff -= min((DT_CTRL / self.transition_time), self.blend_coeff)
+
+          if self.blend_coeff > 0:
+            CS.acc["ACCEL_CMD"] = blended_acc_output
+
+          self.transition_time = (0.045455 * CS.out.vEgo) + 0.5 #ramp transition time depending on vehicle speed. 0.5s at standstill, 3s at 55mph
+          
+          # CS.acc["ACCEL_CMD"] = raw_acc_output
+      
 
 
       resume = False
