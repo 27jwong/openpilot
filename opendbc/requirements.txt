@@ -6,3 +6,4 @@ pycapnp
 pyyaml
 scons
 pytest
+lightgbm
