@@ -286,7 +286,7 @@ class CarInterfaceBase(ABC):
     """LGBM-based torque prediction from lateral acceleration"""  
       
     # Extract features for LGBM model  
-    features = self.extract_lgbm_features(lateral_acceleration, torque_params, lateral_accel_error, lateral_accel_deadzone, self.CS, self.VM)  
+    features = self.extract_lgbm_features(lateral_acceleration, torque_params, lateral_accel_error, self.CS, self.VM)  
       
     # Get torque prediction from LGBM model  
     predicted_torque = self.lgbm_model.predict(features)  
