@@ -27,6 +27,7 @@ from openpilot.selfdrive.controls.lib.drive_helpers import V_CRUISE_MAX, get_fri
 from openpilot.selfdrive.controls.lib.events import Events
 from openpilot.selfdrive.controls.lib.vehicle_model import VehicleModel
 from panda import Panda
+from openpilot.frogpilot.controls.lib.lightgbm_model import LGBMTorqueModel
 
 ButtonType = car.CarState.ButtonEvent.Type
 FrogPilotButtonType = custom.FrogPilotCarState.ButtonEvent.Type
@@ -115,6 +116,12 @@ class CarInterfaceBase(ABC):
 
     # FrogPilot variables
     self.always_on_lateral_allowed = False
+
+    lgbm_model_path = f"/data/openpilot/selfdrive/car/torque_data/lgbm_models/{self.CP.carFingerprint}.pkl"  
+    if os.path.exists(lgbm_model_path):  
+        self.lgbm_model = LGBMTorqueModel(lgbm_model_path)  
+    else:  
+        self.lgbm_model = None
 
   def apply(self, c: car.CarControl, now_nanos: int, frogpilot_toggles) -> tuple[car.CarControl.Actuators, list[tuple[int, int, bytes, int]]]:
     return self.CC.update(c, self.CS, now_nanos, frogpilot_toggles)
@@ -246,6 +253,45 @@ class CarInterfaceBase(ABC):
 
   def get_steer_feedforward_function(self):
     return self.get_steer_feedforward_default
+  
+  def extract_lgbm_features(self, latcontrol_inputs: LatControlInputs, torque_params, lateral_accel_error: float, CS, VM):  
+    """Extract features needed for LGBM model"""  
+    params = get_torque_params()[candidate]
+      
+    # Speed  
+    speed = latcontrol_inputs.vego  
+      
+    # Curvature - calculated from steering angle  
+    curvature = -VM.calc_curvature(math.radians(CS.steeringAngleDeg), CS.vEgo, 0.0)  
+      
+    # Actual lateral acceleration  
+    actual_lateral_accel = latcontrol_inputs.lateral_acceleration  
+      
+    # Roll  
+    roll = latcontrol_inputs.roll_compensation / ACCELERATION_DUE_TO_GRAVITY  # Convert back to radians  
+      
+    # Steer ratio - from vehicle parameters  
+    steer_ratio = self.CP.steerRatio  
+      
+    # Friction - using existing friction   
+    friction = params['FRICTION']
+      
+    # Error  
+    error = lateral_accel_error  
+      
+    return [speed, curvature, actual_lateral_accel, roll, steer_ratio, friction, error]
+  
+  def torque_from_lateral_accel_lgbm(self, latcontrol_inputs: LatControlInputs, torque_params: car.CarParams.LateralTorqueTuning,  
+                                  lateral_accel_error: float) -> float:  
+    """LGBM-based torque prediction from lateral acceleration"""  
+      
+    # Extract features for LGBM model  
+    features = self.extract_lgbm_features(latcontrol_inputs, torque_params, lateral_accel_error, lateral_accel_deadzone, self.CS, self.VM)  
+      
+    # Get torque prediction from LGBM model  
+    predicted_torque = self.lgbm_model.predict(features)  
+      
+    return predicted_torque
 
   def torque_from_lateral_accel_linear(self, lateral_acceleration: float, torque_params: car.CarParams.LateralTorqueTuning) -> float:
     # The default is a linear relationship between torque and lateral acceleration (accounting for road roll and steering friction)

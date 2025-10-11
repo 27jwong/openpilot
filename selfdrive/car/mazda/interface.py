@@ -40,12 +40,17 @@ class CarInterface(CarInterfaceBase):
     return torque_values, lataccel_values
 
   def torque_from_lateral_accel(self) -> TorqueFromLateralAccelCallbackType:
-    if self.CP.carFingerprint in NON_LINEAR_TORQUE_PARAMS:
+    lgbm_model_path = f"/data/openpilot/selfdrive/car/torque_data/lgbm_models/{self.CP.carFingerprint}.pkl"  
+    if os.path.exists(lgbm_model_path):  
+        return self.torque_from_lateral_accel_lgbm
+    
+    elif self.CP.carFingerprint in NON_LINEAR_TORQUE_PARAMS:
       torque_values, lataccel_values = self.get_lataccel_torque_siglin()
 
       def torque_from_lateral_accel_siglin(lateral_acceleration: float, torque_params: car.CarParams.LateralTorqueTuning):
         return np.interp(lateral_acceleration, lataccel_values, torque_values)
       return torque_from_lateral_accel_siglin
+    
     else:
       return self.torque_from_lateral_accel_linear
 
