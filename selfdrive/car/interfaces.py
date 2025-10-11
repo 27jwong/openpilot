@@ -268,7 +268,7 @@ class CarInterfaceBase(ABC):
     actual_lateral_accel = lateral_acceleration  
       
     # Roll  
-    roll = params['ROLL']  # Convert back to radians  
+    roll = params['ROLL']  
       
     # Steer ratio - from vehicle parameters  
     steer_ratio = self.CP.steerRatio  
