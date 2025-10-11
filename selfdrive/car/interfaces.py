@@ -254,21 +254,21 @@ class CarInterfaceBase(ABC):
   def get_steer_feedforward_function(self):
     return self.get_steer_feedforward_default
   
-  def extract_lgbm_features(self, latcontrol_inputs: LatControlInputs, torque_params, lateral_accel_error: float, CS, VM):  
+  def extract_lgbm_features(self, lateral_acceleration: float, torque_params, lateral_accel_error: float, CS, VM):  
     """Extract features needed for LGBM model"""  
     params = get_torque_params()[candidate]
       
     # Speed  
-    speed = latcontrol_inputs.vego  
+    speed = CS.vEgo  
       
     # Curvature - calculated from steering angle  
     curvature = -VM.calc_curvature(math.radians(CS.steeringAngleDeg), CS.vEgo, 0.0)  
       
     # Actual lateral acceleration  
-    actual_lateral_accel = latcontrol_inputs.lateral_acceleration  
+    actual_lateral_accel = lateral_acceleration  
       
     # Roll  
-    roll = latcontrol_inputs.roll_compensation / ACCELERATION_DUE_TO_GRAVITY  # Convert back to radians  
+    roll = params['ROLL']  # Convert back to radians  
       
     # Steer ratio - from vehicle parameters  
     steer_ratio = self.CP.steerRatio  
@@ -281,12 +281,12 @@ class CarInterfaceBase(ABC):
       
     return [speed, curvature, actual_lateral_accel, roll, steer_ratio, friction, error]
   
-  def torque_from_lateral_accel_lgbm(self, latcontrol_inputs: LatControlInputs, torque_params: car.CarParams.LateralTorqueTuning,  
+  def torque_from_lateral_accel_lgbm(self, lateral_acceleration: float, torque_params: car.CarParams.LateralTorqueTuning,  
                                   lateral_accel_error: float) -> float:  
     """LGBM-based torque prediction from lateral acceleration"""  
       
     # Extract features for LGBM model  
-    features = self.extract_lgbm_features(latcontrol_inputs, torque_params, lateral_accel_error, lateral_accel_deadzone, self.CS, self.VM)  
+    features = self.extract_lgbm_features(lateral_acceleration, torque_params, lateral_accel_error, lateral_accel_deadzone, self.CS, self.VM)  
       
     # Get torque prediction from LGBM model  
     predicted_torque = self.lgbm_model.predict(features)  
