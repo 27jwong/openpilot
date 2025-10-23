@@ -636,7 +636,7 @@
     </message>
     <message>
         <source>Compressing...</source>
-        <translation type="gpt-5-generated">Komprimieren…</translation>
+        <translation type="gpt-5-generated">Komprimieren...</translation>
     </message>
     <message>
         <source>Backup created!</source>
@@ -668,7 +668,7 @@
     </message>
     <message>
         <source>Restoring...</source>
-        <translation type="gpt-5-generated">Wird wiederhergestellt…</translation>
+        <translation type="gpt-5-generated">Wird wiederhergestellt...</translation>
     </message>
     <message>
         <source>Extracting...</source>
@@ -693,6 +693,238 @@
     <message>
         <source>Choose a backup to delete</source>
         <translation type="gpt-5-generated">Wählen Sie eine Sicherungskopie zum Löschen aus</translation>
+    </message>
+    <message>
+        <source>FrogPilot Stats</source>
+        <translation type="gpt-5-generated">FrogPilot-Statistiken</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;View your collected FrogPilot stats.&lt;/b&gt;</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Sehen Sie sich Ihre gesammelten FrogPilot-Statistiken an.&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>RESET</source>
+        <translation type="gpt-5-generated">ZURÜCKSETZEN</translation>
+    </message>
+    <message>
+        <source>VIEW</source>
+        <translation type="gpt-5-generated">ANSICHT</translation>
+    </message>
+    <message>
+        <source>Are you sure you want to reset all of your FrogPilot stats?</source>
+        <translation type="gpt-5-generated">Möchten Sie wirklich alle Ihre FrogPilot-Statistiken zurücksetzen?</translation>
+    </message>
+    <message>
+        <source>Reset</source>
+        <translation type="gpt-5-generated">Zurücksetzen</translation>
+    </message>
+    <message>
+        <source>Total Emergency Brake Alerts</source>
+        <translation type="gpt-5-generated">Gesamtzahl der Notbremswarnungen</translation>
+    </message>
+    <message>
+        <source>Time Using "Always On Lateral"</source>
+        <translation type="gpt-5-generated">Zeit mit „Immer Eingeschränkt Querführung“</translation>
+    </message>
+    <message>
+        <source>Favorite Set Speed</source>
+        <translation type="gpt-5-generated">Bevorzugte Sollgeschwindigkeit</translation>
+    </message>
+    <message>
+        <source>Total Disengagements</source>
+        <translation type="gpt-5-generated">Gesamte Deaktivierungen</translation>
+    </message>
+    <message>
+        <source>Total Engagements</source>
+        <translation type="gpt-5-generated">Gesamte Engagements</translation>
+    </message>
+    <message>
+        <source>Time Using "Experimental Mode"</source>
+        <translation type="gpt-5-generated">Zeit in „Experimental Mode“</translation>
+    </message>
+    <message>
+        <source>Total Frog Chirps</source>
+        <translation type="gpt-5-generated">Gesamte Froschquaks</translation>
+    </message>
+    <message>
+        <source>Total Frog Hops</source>
+        <translation type="gpt-5-generated">Gesamte Froschsprünge</translation>
+    </message>
+    <message>
+        <source>Total Drives</source>
+        <translation type="gpt-5-generated">Gesamte Fahrten</translation>
+    </message>
+    <message>
+        <source>Total Distance Driven</source>
+        <translation type="gpt-5-generated">Gesamte gefahrene Strecke</translation>
+    </message>
+    <message>
+        <source>Total Driving Time</source>
+        <translation type="gpt-5-generated">Gesamte Fahrzeit</translation>
+    </message>
+    <message>
+        <source>Total Frog Squeaks</source>
+        <translation type="gpt-5-generated">Gesamte Froschquietscher</translation>
+    </message>
+    <message>
+        <source>Total Goat Screams</source>
+        <translation type="gpt-5-generated">Gesamte Ziegenschreie</translation>
+    </message>
+    <message>
+        <source>Highest Acceleration Rate</source>
+        <translation type="gpt-5-generated">Höchste Beschleunigungsrate</translation>
+    </message>
+    <message>
+        <source>Time Using Lateral Control</source>
+        <translation type="gpt-5-generated">Zeit mit Querführung genutzt</translation>
+    </message>
+    <message>
+        <source>Longest Distance Without an Override</source>
+        <translation type="gpt-5-generated">Längste Strecke ohne Eingriff</translation>
+    </message>
+    <message>
+        <source>Time Using Longitudinal Control</source>
+        <translation type="gpt-5-generated">Zeit mit Längsregelung</translation>
+    </message>
+    <message>
+        <source>Driving Models:</source>
+        <translation type="gpt-5-generated">Fahrmodelle</translation>
+    </message>
+    <message>
+        <source>Month</source>
+        <translation type="gpt-5-generated">Monat</translation>
+    </message>
+    <message>
+        <source>Total Overrides</source>
+        <translation type="gpt-5-generated">Gesamtüberschreibungen</translation>
+    </message>
+    <message>
+        <source>Time Overriding openpilot</source>
+        <translation type="gpt-5-generated">Zeit überschreibt openpilot</translation>
+    </message>
+    <message>
+        <source>Random Events:</source>
+        <translation type="gpt-5-generated">Zufällige Ereignisse:</translation>
+    </message>
+    <message>
+        <source>Time Stopped</source>
+        <translation type="gpt-5-generated">Zeit angehalten</translation>
+    </message>
+    <message>
+        <source>Time Spent at Stoplights</source>
+        <translation type="gpt-5-generated">Verbrachte Zeit an Ampeln</translation>
+    </message>
+    <message>
+        <source>Total Time Tracked</source>
+        <translation type="gpt-5-generated">Gesamte erfasste Zeit</translation>
+    </message>
+    <message>
+        <source>UwUs</source>
+        <translation type="gpt-5-generated">UwUs</translation>
+    </message>
+    <message>
+        <source>Loch Ness Encounters</source>
+        <translation type="gpt-5-generated">Loch-Ness-Begegnungen</translation>
+    </message>
+    <message>
+        <source>Visits to 1955</source>
+        <translation type="gpt-5-generated">Besuche bis 1955</translation>
+    </message>
+    <message>
+        <source>Deja Vu Moments</source>
+        <translation type="gpt-5-generated">Déjà-vu-Momente</translation>
+    </message>
+    <message>
+        <source>Internet Explorer Weeeeeeees</source>
+        <translation type="gpt-5-generated">Internet Explorer Weeeeeeees</translation>
+    </message>
+    <message>
+        <source>HAL 9000 Denials</source>
+        <translation type="gpt-5-generated">HAL-9000-Verweigerungen</translation>
+    </message>
+    <message>
+        <source>openpilot Crashes</source>
+        <translation type="gpt-5-generated">openpilot stürzt ab</translation>
+    </message>
+    <message>
+        <source>This Is Fine Moments</source>
+        <translation type="gpt-5-generated">Momente, in denen alles in Ordnung ist</translation>
+    </message>
+    <message>
+        <source>To Be Continued Moments</source>
+        <translation type="gpt-5-generated">Fortsetzung folgt Momente</translation>
+    </message>
+    <message>
+        <source>Noices</source>
+        <translation type="gpt-5-generated">Geräusche</translation>
+    </message>
+    <message>
+        <source>Attempted Frog Murders</source>
+        <translation type="gpt-5-generated">Versuchte Froschmorde</translation>
+    </message>
+    <message>
+        <source>Total Mail Received</source>
+        <translation type="gpt-5-generated">Gesamteingänge E-Mails</translation>
+    </message>
+    <message>
+        <source> kilometer</source>
+        <translation type="gpt-5-generated">Kilometer</translation>
+    </message>
+    <message>
+        <source> kilometers</source>
+        <translation type="gpt-5-generated"> Kilometer</translation>
+    </message>
+    <message>
+        <source> mile</source>
+        <translation type="gpt-5-generated"> Meile</translation>
+    </message>
+    <message>
+        <source> miles</source>
+        <translation type="gpt-5-generated"> Meilen</translation>
+    </message>
+    <message>
+        <source> day </source>
+        <translation type="gpt-5-generated">Tag</translation>
+    </message>
+    <message>
+        <source> days </source>
+        <translation type="gpt-5-generated">Tage</translation>
+    </message>
+    <message>
+        <source> hour </source>
+        <translation type="gpt-5-generated">Stunde</translation>
+    </message>
+    <message>
+        <source> hours </source>
+        <translation type="gpt-5-generated"> Stunden</translation>
+    </message>
+    <message>
+        <source> minute</source>
+        <translation type="gpt-5-generated"> Minute</translation>
+    </message>
+    <message>
+        <source> minutes</source>
+        <translation type="gpt-5-generated">Minuten</translation>
+    </message>
+    <message>
+        <source>km/h</source>
+        <translation type="gpt-5-generated">km/h</translation>
+    </message>
+    <message>
+        <source>mph</source>
+        <translation type="gpt-5-generated">mph</translation>
+    </message>
+    <message>
+        <source>m/s²</source>
+        <translation type="gpt-5-generated">m/s²</translation>
+    </message>
+    <message>
+        <source>Total </source>
+        <translation type="gpt-5-generated">Gesamt</translation>
+    </message>
+    <message>
+        <source>% of </source>
+        <translation type="gpt-5-generated">% von</translation>
     </message>
 </context>
 <context>
@@ -872,6 +1104,125 @@
     <message>
         <source> seconds</source>
         <translation type="gpt-5-generated">Sekunden</translation>
+    </message>
+</context>
+<context>
+    <name>FrogPilotDriveSummary</name>
+    <message>
+        <source>Random Events Summary</source>
+        <translation type="gpt-5-generated">Zusammenfassung zufälliger Ereignisse</translation>
+    </message>
+    <message>
+        <source>Drive Summary</source>
+        <translation type="gpt-5-generated">Fahrzusammenfassung</translation>
+    </message>
+    <message>
+        <source>UwUs</source>
+        <translation type="gpt-5-generated">UwUs</translation>
+    </message>
+    <message>
+        <source>Loch Ness Encounters</source>
+        <translation type="gpt-5-generated">Loch-Ness-Begegnungen</translation>
+    </message>
+    <message>
+        <source>Visits to 1955</source>
+        <translation type="gpt-5-generated">Besuche im Jahr 1955</translation>
+    </message>
+    <message>
+        <source>Deja Vu Moments</source>
+        <translation type="gpt-5-generated">Déjà-vu-Momente</translation>
+    </message>
+    <message>
+        <source>Internet Explorer Weeeeeeees</source>
+        <translation type="gpt-5-generated">Internet Explorer Weeeeeeees</translation>
+    </message>
+    <message>
+        <source>HAL 9000 Denials</source>
+        <translation type="gpt-5-generated">HAL 9000 Ablehnungen</translation>
+    </message>
+    <message>
+        <source>openpilot Crashes</source>
+        <translation type="gpt-5-generated">openpilot-Abstürze</translation>
+    </message>
+    <message>
+        <source>This Is Fine Moments</source>
+        <translation type="gpt-5-generated">Das ist‑gut‑Momente</translation>
+    </message>
+    <message>
+        <source>To Be Continued Moments</source>
+        <translation type="gpt-5-generated">Fortsetzung folgt Momente</translation>
+    </message>
+    <message>
+        <source>Noices</source>
+        <translation type="gpt-5-generated">Geräusche</translation>
+    </message>
+    <message>
+        <source>Attempted Frog Murders</source>
+        <translation type="gpt-5-generated">Versuchte Froschmorde</translation>
+    </message>
+    <message>
+        <source>Total Mail Received</source>
+        <translation type="gpt-5-generated">Gesamteingangspost</translation>
+    </message>
+    <message>
+        <source>% of Drive With openpilot Engaged</source>
+        <translation type="gpt-5-generated">% der Fahrt mit aktiviertem openpilot</translation>
+    </message>
+    <message>
+        <source>Drive Distance</source>
+        <translation type="gpt-5-generated">Fahrstrecke</translation>
+    </message>
+    <message>
+        <source>Drive Time</source>
+        <translation type="gpt-5-generated">Fahrzeit</translation>
+    </message>
+    <message>
+        <source>% of Drive In "Experimental Mode"</source>
+        <translation type="gpt-5-generated">% der Fahrt im „Experimental Mode“</translation>
+    </message>
+    <message>
+        <source>No Random Events Played!</source>
+        <translation type="gpt-5-generated">Keine zufälligen Ereignisse abgespielt!</translation>
+    </message>
+    <message>
+        <source> kilometer</source>
+        <translation type="gpt-5-generated"> Kilometer</translation>
+    </message>
+    <message>
+        <source> kilometers</source>
+        <translation type="gpt-5-generated"> Kilometer</translation>
+    </message>
+    <message>
+        <source> mile</source>
+        <translation type="gpt-5-generated"> Meile</translation>
+    </message>
+    <message>
+        <source> miles</source>
+        <translation type="gpt-5-generated"> Meilen</translation>
+    </message>
+    <message>
+        <source> day </source>
+        <translation type="gpt-5-generated">Tag</translation>
+    </message>
+    <message>
+        <source> days </source>
+        <translation type="gpt-5-generated">Tage</translation>
+    </message>
+    <message>
+        <source> hour </source>
+        <translation type="gpt-5-generated">Stunde</translation>
+    </message>
+    <message>
+        <source> hours </source>
+        <translation type="gpt-5-generated">Stunden</translation>
+    </message>
+    <message>
+        <source> minute</source>
+        <translation type="gpt-5-generated"> Minute</translation>
+    </message>
+    <message>
+        <source> minutes</source>
+        <translation type="gpt-5-generated">Minuten</translation>
     </message>
 </context>
 <context>
@@ -1292,10 +1643,6 @@
         <translation type="gpt-5-generated">Voraussichtlicher Halt in</translation>
     </message>
     <message>
-        <source>&lt;b&gt;Switch to "Experimental Mode" when openpilot predicts a stop within the set time.&lt;/b&gt; This is usually triggered when the model "sees" a red light or stop sign ahead.&lt;br&gt;&lt;br&gt;&lt;i&gt;&lt;b&gt;Disclaimer&lt;/b&gt;: openpilot does not explicitly detect traffic lights or stop signs. In "Experimental Mode", openpilot makes end-to-end driving decisions from camera input, which means it may stop even when there's no clear reason.&lt;/i&gt;</source>
-        <translation type="gpt-5-generated">&lt;b&gt;Wechsle in den „Experimental Mode“, wenn openpilot innerhalb der eingestellten Zeit ein Anhalten vorhersagt.&lt;/b&gt; Dies wird normalerweise ausgelöst, wenn das Modell voraus eine rote Ampel oder ein Stoppschild „sieht“.&lt;br&gt;&lt;br&gt;&lt;i&gt;&lt;b&gt;Haftungsausschluss&lt;/b&gt;: openpilot erkennt Verkehrsampeln oder Stoppschilder nicht ausdrücklich. Im „Experimental Mode“ trifft openpilot End-to-End-Fahrentscheidungen aus Kameraeingaben, was bedeutet, dass es auch anhalten kann, wenn es dafür keinen klaren Grund gibt.&lt;/i&gt;</translation>
-    </message>
-    <message>
         <source>Turn Signal Below</source>
         <translation type="gpt-5-generated">Blinker unten</translation>
     </message>
@@ -1616,10 +1963,6 @@
         <translation type="gpt-5-generated">Erzwinge Stopp an „Erkannten“ Ampeln/Stoppschildern</translation>
     </message>
     <message>
-        <source>&lt;b&gt;Force openpilot to stop whenever the driving model "detects" a red light or stop sign.&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;i&gt;&lt;b&gt;Disclaimer&lt;/b&gt;: openpilot does not explicitly detect traffic lights or stop signs. In "Experimental Mode", openpilot makes end-to-end driving decisions from camera input, which means it may stop even when there's no clear reason.&lt;/i&gt;</source>
-        <translation type="gpt-5-generated">&lt;b&gt;Erzwinge, dass openpilot anhält, wenn das Fahrmodell eine rote Ampel oder ein Stoppschild „erkennt“.&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;i&gt;&lt;b&gt;Haftungsausschluss&lt;/b&gt;: openpilot erkennt Ampeln oder Stoppschilder nicht explizit. Im „Experimental Mode“ trifft openpilot Ende-zu-Ende-Fahrentscheidungen anhand der Kameraeingaben, was bedeutet, dass es auch ohne klaren Grund anhalten kann.&lt;/i&gt;</translation>
-    </message>
-    <message>
         <source>Increase Stopped Distance by:</source>
         <translation type="gpt-5-generated">Erhöhe den Haltabstand um:</translation>
     </message>
@@ -1650,6 +1993,42 @@
     <message>
         <source>&lt;b&gt;Reverse the cruise control button behavior&lt;/b&gt; so a short press increases the set speed by 5 instead of 1.</source>
         <translation type="gpt-5-generated">&lt;b&gt;Kehrt das Verhalten der Tempomat-Taste um&lt;/b&gt;, sodass ein kurzes Drücken die Sollgeschwindigkeit um 5 statt um 1 erhöht.</translation>
+    </message>
+    <message>
+        <source>Increase Following Distance by:</source>
+        <translation type="gpt-5-generated">Folgeabstand erhöhen um:</translation>
+    </message>
+    <message>
+        <source>Reduce Acceleration by:</source>
+        <translation type="gpt-5-generated">Beschleunigung verringern um:</translation>
+    </message>
+    <message>
+        <source>Reduce Speed in Curves by:</source>
+        <translation type="gpt-5-generated">Geschwindigkeit in Kurven reduzieren um:</translation>
+    </message>
+    <message>
+        <source>Snow</source>
+        <translation type="gpt-5-generated">Schnee</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Driving adjustments for snowy conditions.&lt;/b&gt;</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Fahranpassungen für Schneebedingungen.&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Add extra space behind lead vehicles in snow.&lt;/b&gt; Increase for more space; decrease for tighter gaps.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Zusätzlichen Abstand hinter vorausfahrenden Fahrzeugen im Schnee hinzufügen.&lt;/b&gt; Erhöhen für mehr Abstand; verringern für geringere Lücken."</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Add extra buffer when stopped behind vehicles in snow.&lt;/b&gt; Increase for more room; decrease for shorter gaps.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Fügen Sie bei Schnee zusätzlichen Abstand ein, wenn Sie hinter Fahrzeugen anhalten.&lt;/b&gt; Erhöhen für mehr Abstand; verringern für kürzere Lücken.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Lower the maximum acceleration in snow.&lt;/b&gt; Increase for softer takeoffs; decrease for quicker but less stable takeoffs.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Verringern Sie die maximale Beschleunigung im Schnee.&lt;/b&gt; Erhöhen für weichere Anfahrten; verringern für schnellere, aber weniger stabile Anfahrten.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Lower the desired speed while driving through curves in snow.&lt;/b&gt; Increase for safer, gentler turns; decrease for more aggressive driving in curves.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Reduzieren Sie die gewünschte Geschwindigkeit beim Fahren durch Kurven im Schnee.&lt;/b&gt; Erhöhen für sicherere, sanftere Kurven; verringern für aggressiveres Fahren in Kurven.</translation>
     </message>
     <message>
         <source>Speed Limit Controller</source>
@@ -2039,6 +2418,110 @@
         <source>&lt;b&gt;Following behavior that mimics human drivers&lt;/b&gt; by closing gaps behind faster vehicles for quicker takeoffs and dynamically adjusting the desired following distance for gentler, more efficient braking.</source>
         <translation type="gpt-5-generated">&lt;b&gt;Dem Fahrverhalten menschlicher Fahrer nachempfunden&lt;/b&gt;, indem Lücken hinter schnelleren Fahrzeugen geschlossen werden, um schneller anzufahren, und der gewünschte Folgeabstand dynamisch angepasst wird, um sanfteres und effizienteres Bremsen zu ermöglichen.</translation>
     </message>
+    <message>
+        <source>Weather Condition Offsets</source>
+        <translation type="gpt-5-generated">Wetterbedingungen-Offsets</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Automatically adjust driving behavior based on real-time weather.&lt;/b&gt; Helps maintain comfort and safety in low visibility, rain, or snow.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Fahrverhalten automatisch anhand der aktuellen Wetterlage anpassen.&lt;/b&gt; Hilft, Komfort und Sicherheit bei geringer Sicht, Regen oder Schnee zu erhalten.</translation>
+    </message>
+    <message>
+        <source>Low Visibility</source>
+        <translation type="gpt-5-generated">Geringe Sichtbarkeit</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Driving adjustments for fog, haze, or other low-visibility conditions.&lt;/b&gt;</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Fahranpassungen bei Nebel, Dunst oder anderen Bedingungen mit geringer Sicht.&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Add extra space behind lead vehicles in low visibility.&lt;/b&gt; Increase for more space; decrease for tighter gaps.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Zusätzlichen Abstand zu vorausfahrenden Fahrzeugen bei schlechter Sicht hinzufügen.&lt;/b&gt; Erhöhen für mehr Abstand; verringern für kleinere Lücken.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Add extra buffer when stopped behind vehicles in low visibility.&lt;/b&gt; Increase for more room; decrease for shorter gaps.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Fügen Sie bei geringer Sichtweite einen zusätzlichen Abstand hinzu, wenn Sie hinter Fahrzeugen anhalten.&lt;/b&gt; Erhöhen für mehr Platz; verringern für kürzere Abstände.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Lower the maximum acceleration in low visibility.&lt;/b&gt; Increase for softer takeoffs; decrease for quicker but less stable takeoffs.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Reduzieren Sie die maximale Beschleunigung bei geringer Sicht.&lt;/b&gt; Erhöhen Sie sie für sanftere Starts; verringern Sie sie für schnellere, aber weniger stabile Starts.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Lower the desired speed while driving through curves in low visibility.&lt;/b&gt; Increase for safer, gentler turns; decrease for more aggressive driving in curves.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Verringern Sie die gewünschte Geschwindigkeit beim Fahren durch Kurven bei geringer Sicht.&lt;/b&gt; Erhöhen für sicherere, sanftere Kurven; verringern für aggressiveres Fahren in Kurven.</translation>
+    </message>
+    <message>
+        <source>Rain</source>
+        <translation type="gpt-5-generated">Regen</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Driving adjustments for rainy conditions.&lt;/b&gt;</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Fahranpassungen für Regenbedingungen.&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Add extra space behind lead vehicles in rain.&lt;/b&gt; Increase for more space; decrease for tighter gaps.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Zusätzlichen Abstand bei Regen zum vorausfahrenden Fahrzeug halten.&lt;/b&gt; Erhöhen für mehr Abstand; verringern für geringere Lücken.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Add extra buffer when stopped behind vehicles in rain.&lt;/b&gt; Increase for more room; decrease for shorter gaps.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Fügen Sie bei Regen einen zusätzlichen Abstand ein, wenn Sie hinter Fahrzeugen zum Stillstand kommen.&lt;/b&gt; Erhöhen für mehr Raum; verringern für kürzere Abstände.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Lower the maximum acceleration in rain.&lt;/b&gt; Increase for softer takeoffs; decrease for quicker but less stable takeoffs.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Reduzieren Sie die maximale Beschleunigung bei Regen.&lt;/b&gt; Erhöhen für sanftere Anfahrten; verringern für schnellere, aber weniger stabile Anfahrten.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Lower the desired speed while driving through curves in rain.&lt;/b&gt; Increase for safer, gentler turns; decrease for more aggressive driving in curves.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Reduzieren Sie die gewünschte Geschwindigkeit beim Fahren durch Kurven im Regen.&lt;/b&gt; Erhöhen für sicherere, sanftere Kurven; verringern für aggressiveres Fahren in Kurven.</translation>
+    </message>
+    <message>
+        <source>Rainstorms</source>
+        <translation type="gpt-5-generated">Sturmregen</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Driving adjustments for rainstorms.&lt;/b&gt;</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Fahranpassungen bei Gewittern.&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Add extra space behind lead vehicles in a rainstorm.&lt;/b&gt; Increase for more space; decrease for tighter gaps.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;In einem Unwetter mehr Abstand zu vorausfahrenden Fahrzeugen halten.&lt;/b&gt; Erhöhen für mehr Abstand; verringern für kleinere Lücken.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Add extra buffer when stopped behind vehicles in a rainstorm.&lt;/b&gt; Increase for more room; decrease for shorter gaps.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Fügen Sie bei einem Halt hinter Fahrzeugen in einem Unwetter zusätzlichen Abstand hinzu.&lt;/b&gt; Erhöhen für mehr Platz; verringern für kürzere Abstände.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Lower the maximum acceleration in a rainstorm.&lt;/b&gt; Increase for softer takeoffs; decrease for quicker but less stable takeoffs.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Reduziere die maximale Beschleunigung bei starkem Regen.&lt;/b&gt; Erhöhe sie für sanftere Anfahrten; verringere sie für schnellere, aber weniger stabile Anfahrten.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Lower the desired speed while driving through curves in a rainstorm.&lt;/b&gt; Increase for safer, gentler turns; decrease for more aggressive driving in curves.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Reduzieren Sie die gewünschte Geschwindigkeit beim Fahren durch Kurven in einem Gewitterregen.&lt;/b&gt; Erhöhen für sicherere, sanftere Kurven; verringern für aggressiveres Fahren in Kurven.</translation>
+    </message>
+    <message>
+        <source>Human-Like Lane Changes</source>
+        <translation type="gpt-5-generated">Menschliche Spurwechsel</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Lane-change behavior that mimics human drivers&lt;/b&gt; by anticipating and tracking adjacent vehicles during lane changes.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Spurwechselverhalten, das menschliche Fahrer nachahmt&lt;/b&gt;, indem es während Spurwechseln benachbarte Fahrzeuge antizipiert und verfolgt.</translation>
+    </message>
+    <message>
+        <source>"Detected" Stop Lights/Signs</source>
+        <translation type="gpt-5-generated">„Erkannte“ Ampeln/Stoppschilder</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Switch to "Experimental Mode" whenever the driving model "detects" a red light or stop sign.&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;i&gt;&lt;b&gt;Disclaimer&lt;/b&gt;: openpilot does not explicitly detect traffic lights or stop signs. In "Experimental Mode", openpilot makes end-to-end driving decisions from camera input, which means it may stop even when there's no clear reason!&lt;/i&gt;</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Wechseln Sie in den „Experimental Mode“, sobald das Fahrmodell eine rote Ampel oder ein Stoppschild „erkennt“.&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;i&gt;&lt;b&gt;Haftungsausschluss&lt;/b&gt;: openpilot erkennt Ampeln oder Stoppschilder nicht explizit. Im „Experimental Mode“ trifft openpilot Ende-zu-Ende-Fahrentscheidungen anhand der Kameradaten, was bedeutet, dass es auch anhalten kann, wenn es keinen klaren Grund gibt!&lt;/i&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Switch to "Experimental Mode" when openpilot predicts a stop within the set time.&lt;/b&gt; This is usually triggered when the model "sees" a red light or stop sign ahead.&lt;br&gt;&lt;br&gt;&lt;i&gt;&lt;b&gt;Disclaimer&lt;/b&gt;: openpilot does not explicitly detect traffic lights or stop signs. In "Experimental Mode", openpilot makes end-to-end driving decisions from camera input, which means it may stop even when there's no clear reason!&lt;/i&gt;</source>
+        <translation type="gpt-5-generated">&lt;b&gt;In den „Experimental Mode“ wechseln, wenn openpilot innerhalb der eingestellten Zeit einen Stopp vorhersagt.&lt;/b&gt; Dies wird normalerweise ausgelöst, wenn das Modell eine rote Ampel oder ein Stoppschild voraus „sieht“.&lt;br&gt;&lt;br&gt;&lt;i&gt;&lt;b&gt;Haftungsausschluss&lt;/b&gt;: openpilot erkennt Ampeln oder Stoppschilder nicht ausdrücklich. Im „Experimental Mode“ trifft openpilot End-to-End-Fahrentscheidungen anhand der Kameraeingaben, was bedeutet, dass es möglicherweise anhält, selbst wenn es keinen klaren Grund gibt!&lt;/i&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Force openpilot to stop whenever the driving model "detects" a red light or stop sign.&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;i&gt;&lt;b&gt;Disclaimer&lt;/b&gt;: openpilot does not explicitly detect traffic lights or stop signs. In "Experimental Mode", openpilot makes end-to-end driving decisions from camera input, which means it may stop even when there's no clear reason!&lt;/i&gt;</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Erzwinge, dass openpilot anhält, sobald das Fahrmodell eine rote Ampel oder ein Stoppschild „erkennt“.&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;i&gt;&lt;b&gt;Haftungsausschluss&lt;/b&gt;: openpilot erkennt Verkehrsampeln oder Stoppschilder nicht ausdrücklich. Im „Experimentellen Modus“ trifft openpilot End-to-End-Fahrentscheidungen anhand der Kameraeingaben, was bedeutet, dass es auch anhalten kann, wenn es keinen klaren Grund gibt!&lt;/i&gt;</translation>
+    </message>
 </context>
 <context>
     <name>FrogPilotManageControl</name>
@@ -2223,7 +2706,7 @@
     </message>
     <message>
         <source>Offline...</source>
-        <translation type="gpt-5-generated">Offline…</translation>
+        <translation type="gpt-5-generated">Offline...</translation>
     </message>
     <message>
         <source>CANCELLED</source>
@@ -2342,7 +2825,7 @@
     </message>
     <message>
         <source>Updating...</source>
-        <translation type="gpt-5-generated">Aktualisierung läuft…</translation>
+        <translation type="gpt-5-generated">Aktualisierung läuft...</translation>
     </message>
     <message>
         <source>Select a driving model to download</source>
@@ -2414,7 +2897,7 @@
     </message>
     <message>
         <source>Cancelling...</source>
-        <translation type="gpt-5-generated">Abbrechen…</translation>
+        <translation type="gpt-5-generated">Abbrechen...</translation>
     </message>
     <message>
         <source>Updating Tinygrad will delete existing Tinygrad-based driving models and need to be re-downloaded. Proceed?</source>
@@ -2426,7 +2909,7 @@
     </message>
     <message>
         <source>Offline...</source>
-        <translation type="gpt-5-generated">Offline…</translation>
+        <translation type="gpt-5-generated">Offline...</translation>
     </message>
     <message>
         <source>Update available!</source>
@@ -3594,6 +4077,22 @@ Entwickler – Hochgradig anpassbare Einstellungen für versierte Enthusiasten</
     <message>
         <source>comma Pedal Support</source>
         <translation type="gpt-5-generated">Unterstützung für comma Pedal</translation>
+    </message>
+    <message>
+        <source>Subaru Settings</source>
+        <translation type="gpt-5-generated">Subaru-Einstellungen</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;FrogPilot features for Subaru vehicles.&lt;/b&gt;</source>
+        <translation type="gpt-5-generated">&lt;b&gt;FrogPilot-Funktionen für Subaru-Fahrzeuge.&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Stop and Go</source>
+        <translation type="gpt-5-generated">Stop-and-Go</translation>
+    </message>
+    <message>
+        <source>Stop and go for supported Subaru vehicles.</source>
+        <translation type="gpt-5-generated">Stop-and-Go für unterstützte Subaru-Fahrzeuge.</translation>
     </message>
 </context>
 <context>

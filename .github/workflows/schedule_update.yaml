@@ -42,16 +42,28 @@ jobs:
           echo "COMMITTER_DATE=$COMMITTER_DATE" >> $GITHUB_ENV
           echo "TARGET_COMMIT=$TARGET_COMMIT" >> $GITHUB_ENV
 
-      - name: Create Fixup Commit for ${{ env.TARGET_COMMIT }}
-        run: git commit --fixup="${{ env.TARGET_COMMIT }}"
+      - name: Create Fixup Commit if Changes Exist
+        id: fixup_commit
+        run: |
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Changes found, creating fixup commit."
+            git commit --fixup="${{ env.TARGET_COMMIT }}"
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Autosquash Fixup into Target Commit
+        if: steps.fixup_commit.outputs.has_changes == 'true'
         run: |
           GIT_SEQUENCE_EDITOR=: git rebase --autosquash -i HEAD~3
 
       - name: Restore Timestamps on Final Two Commits
+        if: steps.fixup_commit.outputs.has_changes == 'true'
         run: |
           git rebase --exec "GIT_COMMITTER_DATE='${{ env.COMMITTER_DATE }}' git commit --amend --no-edit --date='${{ env.AUTHOR_DATE }}'" HEAD~2
 
       - name: Push Updated ${{ env.BRANCH }} Branch
+        if: steps.fixup_commit.outputs.has_changes == 'true'
         run: git push origin "${{ env.BRANCH }}" --force-with-lease

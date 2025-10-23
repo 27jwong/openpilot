@@ -694,6 +694,238 @@
         <source>Choose a backup to delete</source>
         <translation type="gpt-5-generated">Quack! Pick a backup to delete, waddle!</translation>
     </message>
+    <message>
+        <source>FrogPilot Stats</source>
+        <translation type="gpt-5-generated">QuackPilot Stats, quack!</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;View your collected FrogPilot stats.&lt;/b&gt;</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Quack! Peek at your snazzy FrogPilot stats, waddle-waddle.&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>RESET</source>
+        <translation type="gpt-5-generated">QUACK-RESET</translation>
+    </message>
+    <message>
+        <source>VIEW</source>
+        <translation type="gpt-5-generated">Quack VIEW! Waddle-waddle!</translation>
+    </message>
+    <message>
+        <source>Are you sure you want to reset all of your FrogPilot stats?</source>
+        <translation type="gpt-5-generated">Quack! Are you sure you want to reset all your FrogPilot stats, waddle-waddle?</translation>
+    </message>
+    <message>
+        <source>Reset</source>
+        <translation type="gpt-5-generated">Quack! Reset!</translation>
+    </message>
+    <message>
+        <source>Total Emergency Brake Alerts</source>
+        <translation type="gpt-5-generated">Quack! Total Emergency Brake Alerts, waddle-waddle!</translation>
+    </message>
+    <message>
+        <source>Time Using "Always On Lateral"</source>
+        <translation type="gpt-5-generated">Quack-time Using "Always On Lateral", waddle-waddle!</translation>
+    </message>
+    <message>
+        <source>Favorite Set Speed</source>
+        <translation type="gpt-5-generated">Quack! Favorite Set Speed, waddle-waddle!</translation>
+    </message>
+    <message>
+        <source>Total Disengagements</source>
+        <translation type="gpt-5-generated">Quack! Total Waddle-Offs</translation>
+    </message>
+    <message>
+        <source>Total Engagements</source>
+        <translation type="gpt-5-generated">Quack-tastic Engagements</translation>
+    </message>
+    <message>
+        <source>Time Using "Experimental Mode"</source>
+        <translation type="gpt-5-generated">Quack-time using “Experimental Mode”, waddle-waddle!</translation>
+    </message>
+    <message>
+        <source>Total Frog Chirps</source>
+        <translation type="gpt-5-generated">Quack-tastic Frog Chirps Total! Waddle-waddle!</translation>
+    </message>
+    <message>
+        <source>Total Frog Hops</source>
+        <translation type="gpt-5-generated">Total Duck Quacks</translation>
+    </message>
+    <message>
+        <source>Total Drives</source>
+        <translation type="gpt-5-generated">Quack-tastic Drives</translation>
+    </message>
+    <message>
+        <source>Total Distance Driven</source>
+        <translation type="gpt-5-generated">Quack-total Distance Driven, waddle!</translation>
+    </message>
+    <message>
+        <source>Total Driving Time</source>
+        <translation type="gpt-5-generated">Quack! Total Waddle Time</translation>
+    </message>
+    <message>
+        <source>Total Frog Squeaks</source>
+        <translation type="gpt-5-generated">Total Duck Quacks</translation>
+    </message>
+    <message>
+        <source>Total Goat Screams</source>
+        <translation type="gpt-5-generated">Quack-quack Goat Screams, total! Waddle!</translation>
+    </message>
+    <message>
+        <source>Highest Acceleration Rate</source>
+        <translation type="gpt-5-generated">Top Quack-celeration Rate, waddle!</translation>
+    </message>
+    <message>
+        <source>Time Using Lateral Control</source>
+        <translation type="gpt-5-generated">Quack-time using lateral control, waddle-waddle!</translation>
+    </message>
+    <message>
+        <source>Longest Distance Without an Override</source>
+        <translation type="gpt-5-generated">Quackiest Distance Without a Waddle-override</translation>
+    </message>
+    <message>
+        <source>Time Using Longitudinal Control</source>
+        <translation type="gpt-5-generated">Quack-time using Longitudinal Control, waddle-waddle!</translation>
+    </message>
+    <message>
+        <source>Driving Models:</source>
+        <translation type="gpt-5-generated">Driving Models, quack!</translation>
+    </message>
+    <message>
+        <source>Month</source>
+        <translation type="gpt-5-generated">Quack-month</translation>
+    </message>
+    <message>
+        <source>Total Overrides</source>
+        <translation type="gpt-5-generated">Quack! Total Overrides, waddle-waddle!</translation>
+    </message>
+    <message>
+        <source>Time Overriding openpilot</source>
+        <translation type="gpt-5-generated">Quack! Time’s overriding openpilot—waddle-warn!</translation>
+    </message>
+    <message>
+        <source>Random Events:</source>
+        <translation type="gpt-5-generated">Quack-tastic Events:</translation>
+    </message>
+    <message>
+        <source>Time Stopped</source>
+        <translation type="gpt-5-generated">Quack! Time went splish-splash—stopped cold, waddle!</translation>
+    </message>
+    <message>
+        <source>Time Spent at Stoplights</source>
+        <translation type="gpt-5-generated">Quack Time at Stoplights</translation>
+    </message>
+    <message>
+        <source>Total Time Tracked</source>
+        <translation type="gpt-5-generated">Quack! Total Time Tracked, waddle-waddle!</translation>
+    </message>
+    <message>
+        <source>UwUs</source>
+        <translation type="gpt-5-generated">QuwackWs</translation>
+    </message>
+    <message>
+        <source>Loch Ness Encounters</source>
+        <translation type="gpt-5-generated">Quack Ness Encounters, waddle-waddle!</translation>
+    </message>
+    <message>
+        <source>Visits to 1955</source>
+        <translation type="gpt-5-generated">Quack-quack! Visits to 1955, waddle on back in time!</translation>
+    </message>
+    <message>
+        <source>Deja Vu Moments</source>
+        <translation type="gpt-5-generated">Quack déjà vu moments, waddle-waddle!</translation>
+    </message>
+    <message>
+        <source>Internet Explorer Weeeeeeees</source>
+        <translation type="gpt-5-generated">Quackernet Explorer Weeeeeeees!</translation>
+    </message>
+    <message>
+        <source>HAL 9000 Denials</source>
+        <translation type="gpt-5-generated">Quack! HAL 9000 Denials, waddle-waddle!</translation>
+    </message>
+    <message>
+        <source>openpilot Crashes</source>
+        <translation type="gpt-5-generated">Quack! openpilot goes splat-splat!</translation>
+    </message>
+    <message>
+        <source>This Is Fine Moments</source>
+        <translation type="gpt-5-generated">Quack-tastic moments, all fine! Waddle on, this is fine—quack!</translation>
+    </message>
+    <message>
+        <source>To Be Continued Moments</source>
+        <translation type="gpt-5-generated">Quack! To Be Continued Moments, waddle-waddle!</translation>
+    </message>
+    <message>
+        <source>Noices</source>
+        <translation type="gpt-5-generated">Quack-noices!</translation>
+    </message>
+    <message>
+        <source>Attempted Frog Murders</source>
+        <translation type="gpt-5-generated">Quack! Attempted Frog Murders—waddle-waddle, what a fowl plot!</translation>
+    </message>
+    <message>
+        <source>Total Mail Received</source>
+        <translation type="gpt-5-generated">Quack! Total Mail Received, waddle-waddle!</translation>
+    </message>
+    <message>
+        <source> kilometer</source>
+        <translation type="gpt-5-generated">Quackilometer</translation>
+    </message>
+    <message>
+        <source> kilometers</source>
+        <translation type="gpt-5-generated">Quack-o-meters, waddle!</translation>
+    </message>
+    <message>
+        <source> mile</source>
+        <translation type="gpt-5-generated">Quack-mile</translation>
+    </message>
+    <message>
+        <source> miles</source>
+        <translation type="gpt-5-generated"> quack miles</translation>
+    </message>
+    <message>
+        <source> day </source>
+        <translation type="gpt-5-generated">Quack-day</translation>
+    </message>
+    <message>
+        <source> days </source>
+        <translation type="gpt-5-generated">Quack-days 🦆</translation>
+    </message>
+    <message>
+        <source> hour </source>
+        <translation type="gpt-5-generated">Quack-hour 🦆</translation>
+    </message>
+    <message>
+        <source> hours </source>
+        <translation type="gpt-5-generated">Quack-hours 🦆</translation>
+    </message>
+    <message>
+        <source> minute</source>
+        <translation type="gpt-5-generated">Quack-minute</translation>
+    </message>
+    <message>
+        <source> minutes</source>
+        <translation type="gpt-5-generated"> Quack-minutes 🦆</translation>
+    </message>
+    <message>
+        <source>km/h</source>
+        <translation type="gpt-5-generated">km/quack h</translation>
+    </message>
+    <message>
+        <source>mph</source>
+        <translation type="gpt-5-generated">mph quack!</translation>
+    </message>
+    <message>
+        <source>m/s²</source>
+        <translation type="gpt-5-generated">m/s² quack!</translation>
+    </message>
+    <message>
+        <source>Total </source>
+        <translation type="gpt-5-generated">Quack-total! Waddle up the sum, quack!</translation>
+    </message>
+    <message>
+        <source>% of </source>
+        <translation type="gpt-5-generated">Quack % of quack!</translation>
+    </message>
 </context>
 <context>
     <name>FrogPilotDevicePanel</name>
@@ -874,6 +1106,125 @@
     <message>
         <source> seconds</source>
         <translation type="gpt-5-generated"> quack seconds</translation>
+    </message>
+</context>
+<context>
+    <name>FrogPilotDriveSummary</name>
+    <message>
+        <source>Random Events Summary</source>
+        <translation type="gpt-5-generated">Quack! Random Events Roundup, waddle-waddle!</translation>
+    </message>
+    <message>
+        <source>Drive Summary</source>
+        <translation type="gpt-5-generated">Quack! Drive Summary, waddle-waddle!</translation>
+    </message>
+    <message>
+        <source>UwUs</source>
+        <translation type="gpt-5-generated">Quack-uwu!</translation>
+    </message>
+    <message>
+        <source>Loch Ness Encounters</source>
+        <translation type="gpt-5-generated">Quack Ness Encounters, waddle-waddle!</translation>
+    </message>
+    <message>
+        <source>Visits to 1955</source>
+        <translation type="gpt-5-generated">Quacks to 1955</translation>
+    </message>
+    <message>
+        <source>Deja Vu Moments</source>
+        <translation type="gpt-5-generated">Quack déjà vu moments, waddle-waddle!</translation>
+    </message>
+    <message>
+        <source>Internet Explorer Weeeeeeees</source>
+        <translation type="gpt-5-generated">Quackernet Explorer Weeeeeeees, waddle-waddle!</translation>
+    </message>
+    <message>
+        <source>HAL 9000 Denials</source>
+        <translation type="gpt-5-generated">Quack! HAL 9000 Denials, waddle-waddle!</translation>
+    </message>
+    <message>
+        <source>openpilot Crashes</source>
+        <translation type="gpt-5-generated">Quack! openpilot Sploosh-Crashies!</translation>
+    </message>
+    <message>
+        <source>This Is Fine Moments</source>
+        <translation type="gpt-5-generated">Quack! This Is Fine, waddle-worthy Moments!</translation>
+    </message>
+    <message>
+        <source>To Be Continued Moments</source>
+        <translation type="gpt-5-generated">Quack! To Be Continued moments, waddle-wait for it, quack!</translation>
+    </message>
+    <message>
+        <source>Noices</source>
+        <translation type="gpt-5-generated">Quack-noices!</translation>
+    </message>
+    <message>
+        <source>Attempted Frog Murders</source>
+        <translation type="gpt-5-generated">Quack! Attempted Frog Murders—waddle-whoa!</translation>
+    </message>
+    <message>
+        <source>Total Mail Received</source>
+        <translation type="gpt-5-generated">Quack! Total Mail Received, waddle-counted!</translation>
+    </message>
+    <message>
+        <source>% of Drive With openpilot Engaged</source>
+        <translation type="gpt-5-generated">Quack % of Drive with openpilot Engaged, waddle-waddle!</translation>
+    </message>
+    <message>
+        <source>Drive Distance</source>
+        <translation type="gpt-5-generated">Quack-Quack Drive Distance 🦆</translation>
+    </message>
+    <message>
+        <source>Drive Time</source>
+        <translation type="gpt-5-generated">Quack-Quack Drive Time! Waddle on!</translation>
+    </message>
+    <message>
+        <source>% of Drive In "Experimental Mode"</source>
+        <translation type="gpt-5-generated">% of Drive in "Experimental Mode", quack!</translation>
+    </message>
+    <message>
+        <source>No Random Events Played!</source>
+        <translation type="gpt-5-generated">Quack! No Random Events Played, waddle-waddle!</translation>
+    </message>
+    <message>
+        <source> kilometer</source>
+        <translation type="gpt-5-generated">quil-quack-ometer</translation>
+    </message>
+    <message>
+        <source> kilometers</source>
+        <translation type="gpt-5-generated">Quackometers</translation>
+    </message>
+    <message>
+        <source> mile</source>
+        <translation type="gpt-5-generated"> quack-mile</translation>
+    </message>
+    <message>
+        <source> miles</source>
+        <translation type="gpt-5-generated"> quacks miles</translation>
+    </message>
+    <message>
+        <source> day </source>
+        <translation type="gpt-5-generated">Quack-day!</translation>
+    </message>
+    <message>
+        <source> days </source>
+        <translation type="gpt-5-generated">Quack-days 🦆</translation>
+    </message>
+    <message>
+        <source> hour </source>
+        <translation type="gpt-5-generated">Quack-hour!</translation>
+    </message>
+    <message>
+        <source> hours </source>
+        <translation type="gpt-5-generated">quack hours 🦆</translation>
+    </message>
+    <message>
+        <source> minute</source>
+        <translation type="gpt-5-generated">Quack-minute</translation>
+    </message>
+    <message>
+        <source> minutes</source>
+        <translation type="gpt-5-generated"> quack-minutes</translation>
     </message>
 </context>
 <context>
@@ -1294,10 +1645,6 @@
         <translation type="gpt-5-generated">Quack! Predicted Stop In, waddle-waddle.</translation>
     </message>
     <message>
-        <source>&lt;b&gt;Switch to "Experimental Mode" when openpilot predicts a stop within the set time.&lt;/b&gt; This is usually triggered when the model "sees" a red light or stop sign ahead.&lt;br&gt;&lt;br&gt;&lt;i&gt;&lt;b&gt;Disclaimer&lt;/b&gt;: openpilot does not explicitly detect traffic lights or stop signs. In "Experimental Mode", openpilot makes end-to-end driving decisions from camera input, which means it may stop even when there's no clear reason.&lt;/i&gt;</source>
-        <translation type="gpt-5-generated">&lt;b&gt;Quack! Switch to "Experimental Mode" when openpilot predicts a stop within the set time, waddle-waddle.&lt;/b&gt; Usually triggered when the model "sees" a red light or stop sign ahead, quack.&lt;br&gt;&lt;br&gt;&lt;i&gt;&lt;b&gt;Disclaimer&lt;/b&gt;: openpilot does not explicitly detect traffic lights or stop signs. In "Experimental Mode", openpilot makes end-to-end driving decisions from camera input—so it may stop even with no clear reason, quack.&lt;/i&gt;</translation>
-    </message>
-    <message>
         <source>Turn Signal Below</source>
         <translation type="gpt-5-generated">Quack! Turn Signal Below—waddle-waddle!</translation>
     </message>
@@ -1618,10 +1965,6 @@
         <translation type="gpt-5-generated">Quack! Force Stop at “Detected” Stop Lights/Signs, waddle!</translation>
     </message>
     <message>
-        <source>&lt;b&gt;Force openpilot to stop whenever the driving model "detects" a red light or stop sign.&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;i&gt;&lt;b&gt;Disclaimer&lt;/b&gt;: openpilot does not explicitly detect traffic lights or stop signs. In "Experimental Mode", openpilot makes end-to-end driving decisions from camera input, which means it may stop even when there's no clear reason.&lt;/i&gt;</source>
-        <translation type="gpt-5-generated">&lt;b&gt;Quack! Force openpilot to stop whenever the driving model “detects” a red light or stop sign, waddle-waddle.&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;i&gt;&lt;b&gt;Disclaimer&lt;/b&gt;: Quack! openpilot does not explicitly detect traffic lights or stop signs. In “Experimental Mode”, it makes end-to-end driving choices from camera peeks—so it may stop even when there’s no clear reason, quack.&lt;/i&gt;</translation>
-    </message>
-    <message>
         <source>Increase Stopped Distance by:</source>
         <translation type="gpt-5-generated">Quack! Waddle up Stopped Distance by:</translation>
     </message>
@@ -1652,6 +1995,42 @@
     <message>
         <source>&lt;b&gt;Reverse the cruise control button behavior&lt;/b&gt; so a short press increases the set speed by 5 instead of 1.</source>
         <translation type="gpt-5-generated">&lt;b&gt;Quack! Flip the cruise control button behavior&lt;/b&gt; so a short press bumps set speed by 5, not 1.</translation>
+    </message>
+    <message>
+        <source>Increase Following Distance by:</source>
+        <translation type="gpt-5-generated">Quack! Increase Following Distance by: waddle!</translation>
+    </message>
+    <message>
+        <source>Reduce Acceleration by:</source>
+        <translation type="gpt-5-generated">Quack! Waddle down acceleration by:</translation>
+    </message>
+    <message>
+        <source>Reduce Speed in Curves by:</source>
+        <translation type="gpt-5-generated">Quack! Waddle down speed in curves by:</translation>
+    </message>
+    <message>
+        <source>Snow</source>
+        <translation type="gpt-5-generated">Quack Snow!</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Driving adjustments for snowy conditions.&lt;/b&gt;</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Quack! Driving tweaks for snowy waddles.&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Add extra space behind lead vehicles in snow.&lt;/b&gt; Increase for more space; decrease for tighter gaps.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Quack! Add extra space behind lead vehicles in snow.&lt;/b&gt; Waddle it up for more space; paddle it down for tighter gaps.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Add extra buffer when stopped behind vehicles in snow.&lt;/b&gt; Increase for more room; decrease for shorter gaps.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Quack! Add extra buffer when stopped behind vehicles in snow.&lt;/b&gt; Waddle it up for more room; waddle it down for shorter gaps.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Lower the maximum acceleration in snow.&lt;/b&gt; Increase for softer takeoffs; decrease for quicker but less stable takeoffs.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Quack! Lower the max zoom-zoom in snow.&lt;/b&gt; Waddle it up for softer takeoffs; waddle it down for quicker but wobblier takeoffs, quack.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Lower the desired speed while driving through curves in snow.&lt;/b&gt; Increase for safer, gentler turns; decrease for more aggressive driving in curves.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Quack! Lower desired speed when waddling through snowy curves.&lt;/b&gt; Increase for safer, gentler turns—quack; decrease for more feisty curve-quacks.</translation>
     </message>
     <message>
         <source>Speed Limit Controller</source>
@@ -2040,6 +2419,110 @@
     <message>
         <source>&lt;b&gt;Following behavior that mimics human drivers&lt;/b&gt; by closing gaps behind faster vehicles for quicker takeoffs and dynamically adjusting the desired following distance for gentler, more efficient braking.</source>
         <translation type="gpt-5-generated">&lt;b&gt;Quack! Mimic human drivers&lt;/b&gt; by waddling up to close gaps behind faster cars for zippy takeoffs, and duckily tweak the following distance for smoother, more efficient braking.</translation>
+    </message>
+    <message>
+        <source>Weather Condition Offsets</source>
+        <translation type="gpt-5-generated">Quack-quack! Weather Condition Offsets, waddle on!</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Automatically adjust driving behavior based on real-time weather.&lt;/b&gt; Helps maintain comfort and safety in low visibility, rain, or snow.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Quack! Auto-tune driving vibes to the weather, right now.&lt;/b&gt; Waddle comfy and safe in foggy peeps, rain-splash, or snow-fluff, quack!</translation>
+    </message>
+    <message>
+        <source>Low Visibility</source>
+        <translation type="gpt-5-generated">Quack! Low Visibility, waddle careful!</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Driving adjustments for fog, haze, or other low-visibility conditions.&lt;/b&gt;</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Quack! Driving tweaks for fog, haze, or other low-visibility waddles.&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Add extra space behind lead vehicles in low visibility.&lt;/b&gt; Increase for more space; decrease for tighter gaps.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Quack! Add extra space behind lead vehicles in low visibility.&lt;/b&gt; Waddle it up for more space; waddle it down for tighter gaps.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Add extra buffer when stopped behind vehicles in low visibility.&lt;/b&gt; Increase for more room; decrease for shorter gaps.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Quack! Add extra buffer when stopped behind vehicles in low visibility.&lt;/b&gt; Waddle it up for more room; waddle it down for shorter gaps.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Lower the maximum acceleration in low visibility.&lt;/b&gt; Increase for softer takeoffs; decrease for quicker but less stable takeoffs.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Quack! Lower the max zoom-zoom in foggy views.&lt;/b&gt; Waddle it up for softer takeoffs; quack it down for quicker but wobblier takeoffs.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Lower the desired speed while driving through curves in low visibility.&lt;/b&gt; Increase for safer, gentler turns; decrease for more aggressive driving in curves.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Quack! Lower the desired speed when waddling through curvy roads in low visibility.&lt;/b&gt; Waddle up for safer, gentler turns; waddle down for more aggressive curve quacking.</translation>
+    </message>
+    <message>
+        <source>Rain</source>
+        <translation type="gpt-5-generated">Quack rain!</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Driving adjustments for rainy conditions.&lt;/b&gt;</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Quack! Driving tweaks for rainy waddles.&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Add extra space behind lead vehicles in rain.&lt;/b&gt; Increase for more space; decrease for tighter gaps.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Quack! Add extra splashy space behind lead vehicles in rain.&lt;/b&gt; Waddle it up for more room; waddle it down for tighter gaps, quack.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Add extra buffer when stopped behind vehicles in rain.&lt;/b&gt; Increase for more room; decrease for shorter gaps.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Quack! Add extra buffer when stopped behind vehicles in rain.&lt;/b&gt; Waddle it up for more room; waddle it down for shorter gaps, quack.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Lower the maximum acceleration in rain.&lt;/b&gt; Increase for softer takeoffs; decrease for quicker but less stable takeoffs.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Quack! Lower the max zoom-zoom in rain.&lt;/b&gt; Waddle it up for softer takeoffs; waddle it down for quicker but wobblier takeoffs.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Lower the desired speed while driving through curves in rain.&lt;/b&gt; Increase for safer, gentler turns; decrease for more aggressive driving in curves.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Quack! Lower desired speed when waddling through rainy curves.&lt;/b&gt; Increase for safer, gentler turns; decrease for quack-tastic, more aggressive curve waddles.</translation>
+    </message>
+    <message>
+        <source>Rainstorms</source>
+        <translation type="gpt-5-generated">Quackstorms! Waddle-wet weather, quack!</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Driving adjustments for rainstorms.&lt;/b&gt;</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Quack! Driving tweaks for rainstorms, waddle-waddle.&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Add extra space behind lead vehicles in a rainstorm.&lt;/b&gt; Increase for more space; decrease for tighter gaps.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Quack! Add extra splashy space behind lead vehicles in a rainstorm.&lt;/b&gt; Waddle it up for more space; waddle it down for snugger gaps, quack.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Add extra buffer when stopped behind vehicles in a rainstorm.&lt;/b&gt; Increase for more room; decrease for shorter gaps.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Quack! When you’re parked behind cars in a rainstorm, add extra buffer, waddle-waddle.&lt;/b&gt; Increase for more room; decrease for shorter gaps, quack.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Lower the maximum acceleration in a rainstorm.&lt;/b&gt; Increase for softer takeoffs; decrease for quicker but less stable takeoffs.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Quack! Lower max zoom-zoom in a rainstorm.&lt;/b&gt; Waddle it up for softer takeoffs; waddle it down for quicker but wobblier takeoffs, quack.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Lower the desired speed while driving through curves in a rainstorm.&lt;/b&gt; Increase for safer, gentler turns; decrease for more aggressive driving in curves.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Quack! Lower the desired speed when waddling through curvy rain, quack!&lt;/b&gt; Increase for safer, gentle turns; decrease for spicy, aggressive curve-quacks.</translation>
+    </message>
+    <message>
+        <source>Human-Like Lane Changes</source>
+        <translation type="gpt-5-generated">Quack-tastic Lane Changes, just like a duck-human waddle!</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Lane-change behavior that mimics human drivers&lt;/b&gt; by anticipating and tracking adjacent vehicles during lane changes.</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Quack-like lane changes, just like humans&lt;/b&gt;, waddling by anticipating and tracking adjacent vehicles during lane changes.</translation>
+    </message>
+    <message>
+        <source>"Detected" Stop Lights/Signs</source>
+        <translation type="gpt-5-generated">Quack! "Detected" Stop Lights/Signs, waddle-waddle!</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Switch to "Experimental Mode" whenever the driving model "detects" a red light or stop sign.&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;i&gt;&lt;b&gt;Disclaimer&lt;/b&gt;: openpilot does not explicitly detect traffic lights or stop signs. In "Experimental Mode", openpilot makes end-to-end driving decisions from camera input, which means it may stop even when there's no clear reason!&lt;/i&gt;</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Quack! Switch to "Experimental Mode" whenever the driving model "detects" a red light or stop sign, waddle-waddle.&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;i&gt;&lt;b&gt;Disclaimer&lt;/b&gt;: Quack! openpilot does not explicitly detect traffic lights or stop signs. In "Experimental Mode", openpilot makes end-to-end driving decisions from camera input—so it might stop even with no clear reason, quack!&lt;/i&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Switch to "Experimental Mode" when openpilot predicts a stop within the set time.&lt;/b&gt; This is usually triggered when the model "sees" a red light or stop sign ahead.&lt;br&gt;&lt;br&gt;&lt;i&gt;&lt;b&gt;Disclaimer&lt;/b&gt;: openpilot does not explicitly detect traffic lights or stop signs. In "Experimental Mode", openpilot makes end-to-end driving decisions from camera input, which means it may stop even when there's no clear reason!&lt;/i&gt;</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Quack! Switch to "Experimental Mode" when openpilot predicts a stop within the set time, waddle-waddle.&lt;/b&gt; Usually triggered when the model “sees” a red light or stop sign ahead, quack.&lt;br&gt;&lt;br&gt;&lt;i&gt;&lt;b&gt;Disclaimer&lt;/b&gt;: Quack! openpilot does not explicitly detect traffic lights or stop signs. In "Experimental Mode", openpilot makes end-to-end driving decisions from camera input—so it might stop even when there’s no clear reason, quack!&lt;/i&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Force openpilot to stop whenever the driving model "detects" a red light or stop sign.&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;i&gt;&lt;b&gt;Disclaimer&lt;/b&gt;: openpilot does not explicitly detect traffic lights or stop signs. In "Experimental Mode", openpilot makes end-to-end driving decisions from camera input, which means it may stop even when there's no clear reason!&lt;/i&gt;</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Quack! Force openpilot to stop whenever the driving model “detects” a red light or stop sign, waddle-waddle.&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;i&gt;&lt;b&gt;Disclaimer&lt;/b&gt;: Quack! openpilot does not explicitly detect traffic lights or stop signs. In “Experimental Mode”, openpilot makes end-to-end driving choices from camera input—so it may stop even when there’s no clear reason, quack!&lt;/i&gt;</translation>
     </message>
 </context>
 <context>
@@ -3597,6 +4080,22 @@ Developer - Ultra-custom settings for seasoned duckthusiasts</translation>
         <source>comma Pedal Support</source>
         <translation type="gpt-5-generated">Quack! comma Pedal Support, waddle on!</translation>
     </message>
+    <message>
+        <source>Subaru Settings</source>
+        <translation type="gpt-5-generated">Quack-quack Subaru Settings, waddle on!</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;FrogPilot features for Subaru vehicles.&lt;/b&gt;</source>
+        <translation type="gpt-5-generated">&lt;b&gt;Quack! FrogPilot goodies for Subaru rides, waddle-waddle.&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Stop and Go</source>
+        <translation type="gpt-5-generated">Quack-stop ‘n’ go-go, waddle!</translation>
+    </message>
+    <message>
+        <source>Stop and go for supported Subaru vehicles.</source>
+        <translation type="gpt-5-generated">Quack! Stop ‘n go for supported Subaru vehicles, waddle-waddle!</translation>
+    </message>
 </context>
 <context>
     <name>FrogPilotVisualsPanel</name>
@@ -4419,7 +4918,7 @@ Developer - Ultra-custom settings for seasoned duckthusiasts</translation>
     </message>
     <message>
         <source>Waiting for GPS</source>
-        <translation type="gpt-5-generated">Quack! Waiting for GPS, waddle-wait…</translation>
+        <translation type="gpt-5-generated">Quack! Waiting for GPS, waddle-wait...</translation>
     </message>
     <message>
         <source>Waiting for route</source>
@@ -4842,7 +5341,7 @@ Waddle-wait, this may take up to a minute.</translation>
     </message>
     <message>
         <source>Waiting for internet</source>
-        <translation type="gpt-5-generated">Quack! Waiting for internet, waddle-wait… quack!</translation>
+        <translation type="gpt-5-generated">Quack! Waiting for internet, waddle-wait... quack!</translation>
     </message>
     <message>
         <source>Choose Software to Install</source>
@@ -5138,7 +5637,7 @@ Waddle-wait, this may take up to a minute.</translation>
     </message>
     <message>
         <source>LOADING</source>
-        <translation type="gpt-5-generated">QUACKING… LOADING!</translation>
+        <translation type="gpt-5-generated">QUACKING... LOADING!</translation>
     </message>
     <message>
         <source>REMOVE</source>
