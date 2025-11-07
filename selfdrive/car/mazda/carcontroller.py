@@ -166,7 +166,7 @@ class CarController(CarControllerBase):
           blended_acc_output = (self.blend_coeff * raw_acc_output) + ((1 - self.blend_coeff) * CS.acc["ACCEL_CMD"])
           
           #Blend in MRCC when gas gating is active to disable it. Remove this section when gas gating gets better.
-          if allow_throttle:
+          if allow_throttle or abs(CC.actuators.accel) > self.accel_transition_thresh:
             self.blend_coeff += min((DT_CTRL / self.transition_time), (1 - self.blend_coeff))
               
           else: #gas gating is active, so transition back to MRCC
