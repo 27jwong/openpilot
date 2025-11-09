@@ -149,7 +149,7 @@ class CarController(CarControllerBase):
           #If OP is gas gating, we'll allow it to take over control of long from MRCC. But only if MRCC commands are within this range. 
           #This is mainly to prevent the car from drifting away from the lead at highway speeds.
           
-          if (CEStatus and self.blend_coeff < 1) or (abs(CS.out.aEgo) > self.accel_transition_thresh) or (abs(CC.actuators.accel) > 2*self.accel_transition_thresh):# or (allow_throttle == False and (2000 - gas_gate_thresh) < CS.acc["ACCEL_CMD"] < (2000 + gas_gate_thresh)):
+          if (CEStatus and self.blend_coeff < 1) or (abs(CS.out.aEgo) > self.accel_transition_thresh):# or (allow_throttle == False and (2000 - gas_gate_thresh) < CS.acc["ACCEL_CMD"] < (2000 + gas_gate_thresh)):
             self.blend_coeff += min((DT_CTRL / self.transition_time), (1 - self.blend_coeff))
               
           elif CEStatus < 2 and self.blend_coeff > 0: #CEStatus == 1 is when CEM is forced off, but we still want to be decrementing in that scenario
@@ -166,7 +166,7 @@ class CarController(CarControllerBase):
           blended_acc_output = (self.blend_coeff * raw_acc_output) + ((1 - self.blend_coeff) * CS.acc["ACCEL_CMD"])
           
           #Blend in MRCC when gas gating is active to disable it. Remove this section when gas gating gets better.
-          if allow_throttle or abs(CC.actuators.accel) > self.accel_transition_thresh:
+          if allow_throttle or CC.actuators.accel < -3:
             self.blend_coeff += min((DT_CTRL / self.transition_time), (1 - self.blend_coeff))
               
           else: #gas gating is active, so transition back to MRCC
