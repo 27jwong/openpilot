@@ -35,7 +35,7 @@ class CarController(CarControllerBase):
     self.blend_coeff = 0 #factor for blending OP and stock long. 0 is fully stock, 1 is fully OP
     self.transition_time = 2.5 #After this number of seconds, the smooth blending from stock to OP (or vice versa) is complete
     self.distance_last = None
-    self.accel_transition_thresh = 1 #m/s^2, if aEgo is less than this we want to use MRCC, if more than this we transition to OP long
+    self.accel_transition_thresh = 1.25 #m/s^2, if aEgo is less than this we want to use MRCC, if more than this we transition to OP long
 
 
   def update(self, CC, CS, now_nanos, frogpilot_toggles):
