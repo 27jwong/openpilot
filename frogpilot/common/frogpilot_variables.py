@@ -76,7 +76,7 @@ MAPS_PATH = Path("/data/media/0/osm/offline")
 NNFF_MODELS_PATH = Path(BASEDIR) / "frogpilot/assets/nnff_models"
 
 DEFAULT_MODEL = "firehose"
-DEFAULT_MODEL_NAME = "Firehose (Default) 👀📡"
+DEFAULT_MODEL_NAME = "neurips-driving 👀📡"
 DEFAULT_MODEL_VERSION = "v9"
 
 BUTTON_FUNCTIONS = {
