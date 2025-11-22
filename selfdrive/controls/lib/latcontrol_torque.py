@@ -36,7 +36,7 @@ VERSION = 1
 class LatControlTorque(LatControl):
   def __init__(self, CP, CI, dt):
     super().__init__(CP, CI, dt)
-    self.torque_params = CP.lateralTuning.torque.as_builder()
+    self.torque_params = CP.lateralTuning.torque
     self.torque_from_lateral_accel = CI.torque_from_lateral_accel()
     self.lateral_accel_from_torque = CI.lateral_accel_from_torque()
     self.pid = PIDController([INTERP_SPEEDS, KP_INTERP], KI, rate=1/self.dt)
@@ -57,7 +57,7 @@ class LatControlTorque(LatControl):
     self.pid.set_limits(self.lateral_accel_from_torque(self.steer_max, self.torque_params),
                         self.lateral_accel_from_torque(-self.steer_max, self.torque_params))
 
-  def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, curvature_limited, lat_delay):
+  def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, curvature_limited, lat_delay, llk, model_data, frogpilot_toggles):
     pid_log = log.ControlsState.LateralTorqueState.new_message()
     pid_log.version = VERSION
     if not active:
