@@ -159,7 +159,7 @@ class CarController(CarControllerBase):
           CEStatus = self.params_memory.get_int("CEStatus")
 
           #Force CEM more aggressively when approaching leads
-          if lead_status and self.lead_velocity < 0 and (self.lead_distance < CS.out.vEgo or self.lead_distance/ -self.lead_velocity < 8): #less than 1s gap or less than 8 sec to impact
+          if lead_status and self.lead_velocity < 0 and (self.lead_distance < 0.85*CS.out.vEgo or self.lead_distance/ -self.lead_velocity < 8): #less than 1s gap or less than 8 sec to impact
             if CEStatus == 0:
               self.params_memory.put_int("CEStatus", 2)
             self.approaching_CEM_last = True
