@@ -48,6 +48,11 @@ class TogglesLayoutMici(NavScroller):
     enable_openpilot = BigParamControl("enable openpilot", "OpenpilotEnabledToggle", toggle_callback=restart_needed_callback,
                                        description="Enable to use openpilot driver assistance.\n" +
                                                    "Disable to use your car's stock driver assistance.")
+    enable_torque_interceptor = BigParamControl("torque interceptor", "TorqueInterceptorEnabled", toggle_callback=restart_needed_callback)
+    enable_radar_interceptor = BigParamControl("radar interceptor", "RadarInterceptorEnabled", toggle_callback=restart_needed_callback)
+    enable_no_mrcc = BigParamControl("no stock MRCC", "NoMRCC", toggle_callback=restart_needed_callback)
+    enable_no_fsc = BigParamControl("no stock FSC", "NoFSC", toggle_callback=restart_needed_callback)
+    enable_manual_transmission = BigParamControl("manual transmission", "ManualTransmission", toggle_callback=restart_needed_callback)
 
     self._scroller.add_widgets([
       self._personality_toggle,
@@ -59,6 +64,11 @@ class TogglesLayoutMici(NavScroller):
       record_front,
       record_mic,
       enable_openpilot,
+      enable_torque_interceptor,
+      enable_radar_interceptor,
+      enable_no_mrcc,
+      enable_no_fsc,
+      enable_manual_transmission,
     ])
 
     # Toggle lists
@@ -71,6 +81,11 @@ class TogglesLayoutMici(NavScroller):
       ("RecordFront", record_front),
       ("RecordAudio", record_mic),
       ("OpenpilotEnabledToggle", enable_openpilot),
+      ("TorqueInterceptorEnabled", enable_torque_interceptor),
+      ("RadarInterceptorEnabled", enable_radar_interceptor),
+      ("NoMRCC", enable_no_mrcc),
+      ("NoFSC", enable_no_fsc),
+      ("ManualTransmission", enable_manual_transmission),
     )
 
     enable_openpilot.set_enabled(lambda: not ui_state.engaged)

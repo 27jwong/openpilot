@@ -338,4 +338,10 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"JetlinkProgress", {CLEAR_ON_MANAGER_START | DONT_LOG, JSON}},
     {"JetlinkRuntime", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION | DONT_LOG, JSON}},
     {"Version", {PERSISTENT, STRING}},
+    {"TorqueInterceptorEnabled", {PERSISTENT, BOOL}},
+    {"RadarInterceptorEnabled", {PERSISTENT, BOOL}},
+    {"NoMRCC", {PERSISTENT, BOOL}},
+    {"NoFSC", {PERSISTENT, BOOL}},
+    {"BlendedACC", {PERSISTENT, BOOL}},
+    {"ManualTransmission", {PERSISTENT, BOOL}},
 };
