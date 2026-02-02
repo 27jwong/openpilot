@@ -621,12 +621,31 @@ class Controls:
     # Update Torque Params
     if self.CP.lateralTuning.which() == 'torque':
       torque_params = self.sm['liveTorqueParameters']
-      if self.sm.all_checks(['liveTorqueParameters']) and (torque_params.useParams or self.frogpilot_toggles.force_auto_tune):
-        self.LaC.update_live_torque_params(torque_params.latAccelFactorFiltered, torque_params.latAccelOffsetFiltered,
-                                           torque_params.frictionCoefficientFiltered)
 
-      if self.sm.updated['liveDelay'] and hasattr(self.LaC, "update_live_delay"):
-        self.LaC.update_live_delay(self.sm['liveDelay'].lateralDelay)
+      allow_lat_accel_learning = self.CP.carName in ['toyota', 'hyundai']
+      allow_friction_learning = (allow_lat_accel_learning or self.CP.carName in ['gm'])
+      use_live_params = self.sm.all_checks(['liveTorqueParameters']) and (torque_params.useParams or self.frogpilot_toggles.force_auto_tune)
+
+      # Defaults pulled from manual tuning values
+      lat_accel_factor = self.params.get_float("SteerLatAccel")
+      friction = self.params.get_float("SteerFriction")
+      lat_accel_offset = self.CP.lateralTuning.torque.latAccelOffset
+
+      # Apply user overrides first
+      if self.frogpilot_toggles.use_custom_latAccelFactor:
+        lat_accel_factor = self.frogpilot_toggles.latAccelFactor
+      if self.frogpilot_toggles.use_custom_friction:
+        friction = self.frogpilot_toggles.friction
+
+      # Layer in live values only for parameters the platform allows to learn and only when not overridden
+      if use_live_params:
+        if allow_lat_accel_learning and not self.frogpilot_toggles.use_custom_latAccelFactor:
+          lat_accel_factor = torque_params.latAccelFactorFiltered
+          lat_accel_offset = torque_params.latAccelOffsetFiltered
+        if allow_friction_learning and not self.frogpilot_toggles.use_custom_friction:
+          friction = torque_params.frictionCoefficientFiltered
+
+      self.LaC.update_live_torque_params(lat_accel_factor, lat_accel_offset, friction)
 
     long_plan = self.sm['longitudinalPlan']
     model_v2 = self.sm['modelV2']
