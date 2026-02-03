@@ -15,8 +15,9 @@ FrogPilotButtonType = custom.FrogPilotCarState.ButtonEvent.Type
 EventName = car.CarEvent.EventName
 
 NON_LINEAR_TORQUE_PARAMS = {
-  CAR.MAZDA_3_2019: (3.650, 1.0, 0.13, 0.3605),
-  CAR.MAZDA_CX_30: (4.68689, 0.79999, 0.18244, 0.38763),
+  CAR.MAZDA_3_2019: (3.650, 1.0, 0.13, 0.0),
+  # CAR.MAZDA_CX_30: (4.68689, 0.79999, 0.18244, 0.38763),
+  CAR.MAZDA_CX_30: (6.48060, 0.71746, 0.21377, 0.01897),
 }
 
 class CarInterface(CarInterfaceBase):
@@ -28,10 +29,10 @@ class CarInterface(CarInterfaceBase):
       # This has big effect on the stability about 0 (noise when going straight)
       non_linear_torque_params = NON_LINEAR_TORQUE_PARAMS.get(self.CP.carFingerprint)
       assert non_linear_torque_params, "The params are not defined"
-      a, b, c, _ = non_linear_torque_params
+      a, b, c, d = non_linear_torque_params
       sig_input = a * lateral_acceleration
       sig = np.sign(sig_input) * (1 / (1 + exp(-fabs(sig_input))) - 0.5)
-      steer_torque = (sig * b) + (lateral_acceleration * c)
+      steer_torque = (sig * b) + (lateral_acceleration * c) + d
       return float(steer_torque)
 
     lataccel_values = np.arange(-15.0, 15.0, 0.01)
