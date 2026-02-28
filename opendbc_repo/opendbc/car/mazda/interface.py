@@ -78,7 +78,7 @@ class CarInterface(CarInterfaceBase):
 
     CarInterfaceBase.configure_torque_tune(candidate, ret.lateralTuning)
 
-    if candidate not in (CAR.MAZDA_CX5_2022, CAR.MAZDA_3_2019, CAR.MAZDA_CX_30, CAR.MAZDA_CX_50, CAR.MAZDA_3_2023, CAR.MAZDA_CX_30_2023) and not ret.flags & MazdaSafetyFlags.TORQUE_INTERCEPTOR:
+    if candidate not in (CAR.MAZDA_CX5_2022, CAR.MAZDA_3_2019, CAR.MAZDA_CX_30, CAR.MAZDA_CX_50, CAR.MAZDA_3_2023, CAR.MAZDA_CX_30_2023):
       ret.minSteerSpeed = LKAS_LIMITS.DISABLE_SPEED * CV.KPH_TO_MS
 
     ret.centerToFront = ret.wheelbase * 0.41
@@ -94,6 +94,8 @@ class CarInterface(CarInterfaceBase):
       if p.get_bool("TorqueInterceptorEnabled"): # Torque Interceptor Installed
         ret.flags |= MazdaSafetyFlags.TORQUE_INTERCEPTOR.value
         ret.safetyConfigs[0].safetyParam |= MazdaSafetyFlags.TORQUE_INTERCEPTOR.value
+        ret.minSteerSpeed = 0.0
+        ret.steerAtStandstill = True
       if p.get_bool("RadarInterceptorEnabled"): # Radar Interceptor Installed
         ret.flags |= MazdaSafetyFlags.RADAR_INTERCEPTOR.value
         ret.safetyConfigs[0].safetyParam |= MazdaSafetyFlags.RADAR_INTERCEPTOR.value
@@ -127,6 +129,7 @@ class CarInterface(CarInterfaceBase):
       ret.longitudinalTuning.kiV = [0.1, 0.1]
       ret.deprecated.startingState = True
       ret.steerActuatorDelay = 0.335
+      ret.steerAtStandstill = True
 
     if candidate in GEN3:
       ret.safetyConfigs[0].safetyParam |= MazdaSafetyFlags.GEN3.value
