@@ -166,6 +166,8 @@ class Controls:
     self.personality = self.read_personality_param()
     self.v_cruise_helper = VCruiseHelper(self.CP)
     self.recalibrating_seen = False
+    self.lat_accel_factor_default = self.params.get_float("SteerLatAccel")
+    self.friction_default = self.params.get_float("SteerFriction")
 
     self.can_log_mono_time = 0
 
@@ -631,8 +633,8 @@ class Controls:
       use_live_params = self.sm.all_checks(['liveTorqueParameters']) and (torque_params.useParams or self.frogpilot_toggles.force_auto_tune)
 
       # Defaults pulled from manual tuning values
-      lat_accel_factor = self.params.get_float("SteerLatAccel")
-      friction = self.params.get_float("SteerFriction")
+      lat_accel_factor = self.lat_accel_factor_default
+      friction = self.friction_default
       lat_accel_offset = self.CP.lateralTuning.torque.latAccelOffset
 
       # Apply user overrides first
