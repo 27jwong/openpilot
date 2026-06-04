@@ -6,6 +6,7 @@ from collections import deque
 from functools import partial
 from types import SimpleNamespace
 
+from openpilot.common.conversions import Conversions as CV
 import cereal.messaging as messaging
 from cereal import car, log
 from cereal.services import SERVICE_LIST
@@ -22,7 +23,7 @@ BLOCK_NUM_NEEDED = 5
 MOVING_WINDOW_SEC = 60.0
 MIN_OKAY_WINDOW_SEC = 25.0
 MIN_RECOVERY_BUFFER_SEC = 2.0
-MIN_VEGO = 15.0
+MIN_VEGO = 50.0 * CV.MPH_TO_MS
 MIN_ABS_YAW_RATE = 0.0
 MAX_YAW_RATE_SANITY_CHECK = 1.0
 MIN_NCC = 0.95
