@@ -12,7 +12,7 @@ from openpilot.common.params import Params
 
 NON_LINEAR_TORQUE_PARAMS = {
   CAR.MAZDA_3_2019: (3.650, 1.0, 0.13, 0.3605),
-  CAR.MAZDA_CX_30: (2.082, 1.444, 0.1, 0.238),
+  CAR.MAZDA_CX_30: (6.69417, 0.71168, 0.21504, 0.02331)),
   CAR.MAZDA_CX_30_2023: (5.5, 0.79999, 0.18244, 0.38763),
   CAR.MAZDA_CX_50: (3.8818, 0.6873, 0.0999, 0.3605),
 }
@@ -29,10 +29,10 @@ class CarInterface(CarInterfaceBase):
       # This has big effect on the stability about 0 (noise when going straight)
       non_linear_torque_params = NON_LINEAR_TORQUE_PARAMS.get(self.CP.carFingerprint)
       assert non_linear_torque_params, "The params are not defined"
-      a, b, c, _ = non_linear_torque_params
+      a, b, c, d = non_linear_torque_params
       sig_input = a * lateral_acceleration
       sig = np.sign(sig_input) * (1 / (1 + exp(-fabs(sig_input))) - 0.5)
-      steer_torque = (sig * b) + (lateral_acceleration * c)
+      steer_torque = (sig * b) + (lateral_acceleration * c) + d
       return float(steer_torque)
 
     lataccel_values = np.arange(-8.0, 8.0, 0.01)
