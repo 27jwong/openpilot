@@ -5,8 +5,6 @@ from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N
 from openpilot.common.pid import PIDController
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.common.filter_simple import FirstOrderFilter
-from opendbc.car.gm.values import CarControllerParams, GMFlags
-from openpilot.starpilot.common.testing_grounds import testing_ground
 from openpilot.common.params import Params
 from openpilot.selfdrive.controls.lib.longcontrol_vehicle_tunes import LongControlVehicleTuning
 
