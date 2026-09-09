@@ -1,5 +1,6 @@
 from __future__ import annotations
 from dataclasses import replace
+import hashlib
 import os
 import re
 import shutil
@@ -75,6 +76,11 @@ EXCLUDED_KEYS = {
   "ModelDrivesAndScores",
   "ModelManifestVersion",
   "OverpassRequests",
+  # a toggle reset shouldn't silently drop the PIN gating remote camera access
+  "RemoteAccessPinEnabled",
+  "RemoteAccessPinHash",
+  "RemoteAccessPinIterations",
+  "RemoteAccessPinSalt",
   "SpeedLimits",
   "SpeedLimitsFiltered",
   "UpdaterAvailableBranches",
@@ -255,12 +261,20 @@ class SystemSettingsManagerView(PanelManagerView):
         "set_state": self._controller._on_konik_toggle,
       },
       {
-        "title": tr("Live View"),
-        "subtitle": tr("Let Konik stream the cameras while offroad"),
-        "get_state": lambda: self._controller._params.get_bool("LiveViewEnabled"),
-        "set_state": self._controller._on_live_view_toggle,
+        "title": tr("Live View PIN"),
+        "subtitle": tr("PIN required to view the cameras remotely"),
+        "get_state": self._controller._remote_pin_is_set,
+        "set_state": self._controller._on_remote_pin_toggle,
         "is_enabled": self._controller._get_konik_state,
         "disabled_label": tr("Turn on Use Konik Server first"),
+      },
+      {
+        "title": tr("Live View"),
+        "subtitle": tr("Stream the cameras to Konik while offroad"),
+        "get_state": lambda: self._controller._params.get_bool("LiveViewEnabled"),
+        "set_state": self._controller._on_live_view_toggle,
+        "is_enabled": self._controller._remote_pin_is_set,
+        "disabled_label": tr("Set a Live View PIN first"),
       },
       {
         "title": tr("Debug Mode"),
@@ -823,6 +837,7 @@ class StarPilotSystemLayout(_SettingsPage):
   def __init__(self):
     super().__init__()
     self._keyboard = Keyboard(min_text_size=0)
+    self._pin_keyboard = Keyboard(max_text_size=12, min_text_size=4, password_mode=True, show_password_toggle=True)
     self._storage_text = "0 MB"
     self._storage_updated_at = 0.0
     self._storage_refresh_pending = False
@@ -987,6 +1002,69 @@ class StarPilotSystemLayout(_SettingsPage):
     if Path("/data/not_vetted").exists():
       return True
     return self._params.get_bool("UseKonikServer")
+
+  # Live View PIN. Mirrors the PIN athenad checks before it will answer Konik's
+  # camera streaming RPCs, so the two must stay in sync (see system/athena/athenad.py).
+  _REMOTE_PIN_ITERATIONS = 150000
+
+  def _remote_pin_is_set(self):
+    if not self._params.get_bool("RemoteAccessPinEnabled"):
+      return False
+    salt = self._params.get("RemoteAccessPinSalt")
+    hsh = self._params.get("RemoteAccessPinHash")
+    iters = self._params.get("RemoteAccessPinIterations")
+    return bool(salt) and bool(hsh) and isinstance(iters, int) and iters > 0
+
+  def _remote_pin_set(self, pin):
+    salt = os.urandom(16)
+    self._params.put("RemoteAccessPinSalt", salt)
+    self._params.put("RemoteAccessPinHash",
+                     hashlib.pbkdf2_hmac("sha256", pin.encode("utf-8"), salt, self._REMOTE_PIN_ITERATIONS, dklen=32))
+    self._params.put("RemoteAccessPinIterations", self._REMOTE_PIN_ITERATIONS)
+    self._params.put_bool("RemoteAccessPinEnabled", True)
+
+  def _remote_pin_clear(self):
+    self._params.put_bool("RemoteAccessPinEnabled", False)
+    self._params.remove("RemoteAccessPinSalt")
+    self._params.remove("RemoteAccessPinHash")
+    self._params.put("RemoteAccessPinIterations", self._REMOTE_PIN_ITERATIONS)
+    # Live View is meaningless without a PIN to gate it
+    self._params.put_bool("LiveViewEnabled", False)
+    self._params.put_bool("LiveView", False)
+
+  def _prompt_pin(self, sub_title, callback):
+    self._pin_keyboard.reset(min_text_size=4)
+    self._pin_keyboard.set_title(tr("Live View PIN"), sub_title)
+    self._pin_keyboard.set_text("")
+    self._pin_keyboard.set_callback(lambda result: callback(result, self._pin_keyboard.text))
+    gui_app.push_widget(self._pin_keyboard)
+
+  def _on_remote_pin_toggle(self, state):
+    if not state:
+      def _do_clear(res):
+        if res == DialogResult.CONFIRM:
+          self._remote_pin_clear()
+      gui_app.push_widget(ConfirmDialog(tr("Remove the Live View PIN? This also turns off Live View."),
+                                        tr("Remove"), callback=_do_clear))
+      return
+
+    def on_confirm(res, confirm_pin, new_pin):
+      if res != DialogResult.CONFIRM:
+        return
+      if confirm_pin != new_pin:
+        gui_app.push_widget(alert_dialog(tr("PINs do not match.")))
+        return
+      self._remote_pin_set(new_pin)
+
+    def on_new(res, new_pin):
+      if res != DialogResult.CONFIRM:
+        return
+      if not new_pin.isdigit() or not (4 <= len(new_pin) <= 12):
+        gui_app.push_widget(alert_dialog(tr("PIN must be 4-12 digits.")))
+        return
+      self._prompt_pin(tr("Confirm new PIN"), lambda r, p: on_confirm(r, p, new_pin))
+
+    self._prompt_pin(tr("Enter new PIN (4-12 digits)"), on_new)
 
   def _on_live_view_toggle(self, state):
     self._params.put_bool("LiveViewEnabled", state)

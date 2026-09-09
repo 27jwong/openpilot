@@ -63,8 +63,7 @@ def only_offroad(started: bool, params: Params, CP: car.CarParams, starpilot_tog
   return not started
 
 def webrtc_stream(started: bool, params: Params, CP: car.CarParams, starpilot_toggles: SimpleNamespace) -> bool:
-  # set by athenad's startStream for the duration of a Konik live view session,
-  # so the cameras and the livestream encoder come up while parked
+  # set by athenad's streamer for the duration of a Konik live view session
   return params.get_bool("LiveView")
 
 def or_(*fns):
