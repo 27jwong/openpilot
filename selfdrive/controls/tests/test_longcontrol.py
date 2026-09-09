@@ -6,6 +6,7 @@ import pytest
 import openpilot.selfdrive.controls.lib.longcontrol as longcontrol
 import openpilot.selfdrive.controls.lib.longcontrol_vehicle_tunes as vehicle_tunes
 from opendbc.car.gm.values import CAR, GMFlags
+from opendbc.car.mazda.values import MazdaSafetyFlags
 from openpilot.selfdrive.controls.lib.longcontrol import (
   LongControl,
   LongCtrlState,
@@ -1037,3 +1038,81 @@ def test_gm_stock_truck_update_gradually_releases_stale_brake_integral():
   )
 
   assert -0.66 < output_accel < -0.44
+
+
+def make_mazda_gen2_cp(**overrides):
+  CP = make_longcontrol_cp(brand="mazda", flags=MazdaSafetyFlags.GEN2.value, **overrides)
+  CP.longitudinalTuning.kpBP = [0.0, 12.0, 30.0]
+  CP.longitudinalTuning.kpV = [0.2, 0.5, 0.8]
+  CP.longitudinalTuning.kiBP = [0.0, 35.0]
+  CP.longitudinalTuning.kiV = [1.0, 1.0]
+  return CP
+
+
+def test_mazda_gen2_is_detected():
+  assert LongControl(make_mazda_gen2_cp()).vehicle_tuning.is_mazda_gen2
+  assert not LongControl(make_longcontrol_cp(brand="mazda")).vehicle_tuning.is_mazda_gen2
+  assert not LongControl(make_longcontrol_cp(brand="gm")).vehicle_tuning.is_mazda_gen2
+
+
+def test_mazda_gen2_error_filter_smooths_measurement_noise():
+  tuning = LongControl(make_mazda_gen2_cp()).vehicle_tuning
+
+  # a steady error settles onto the true value rather than being attenuated forever
+  for _ in range(200):
+    filtered = tuning.filter_accel_error(0.4)
+  assert filtered == pytest.approx(0.4, abs=1e-3)
+
+  # alternating noise of the size aEgo actually carries is rejected, not passed through
+  tuning.reset()
+  for _ in range(50):
+    tuning.filter_accel_error(0.4)
+  outputs = [tuning.filter_accel_error(0.4 + (0.15 if i % 2 else -0.15)) for i in range(40)]
+  assert max(outputs) - min(outputs) < 0.10
+
+
+def test_mazda_gen2_error_filter_passes_large_errors_immediately():
+  tuning = LongControl(make_mazda_gen2_cp()).vehicle_tuning
+  for _ in range(100):
+    tuning.filter_accel_error(0.0)
+
+  # a hard-braking request must not be delayed by the smoothing
+  assert tuning.filter_accel_error(-2.5) == pytest.approx(-2.5)
+  # and the filter picks up from there instead of snapping back to zero
+  assert tuning.filter_accel_error(-2.5) == pytest.approx(-2.5, abs=1e-6)
+
+
+def test_mazda_gen2_error_filter_resets_with_the_controller():
+  lc = LongControl(make_mazda_gen2_cp())
+  for _ in range(100):
+    lc.vehicle_tuning.filter_accel_error(1.0)
+  assert lc.vehicle_tuning.accel_error_filter.x > 0.9
+
+  lc.reset()
+  assert not lc.vehicle_tuning.accel_error_filter.initialized
+  # first sample after a reset is adopted directly, no ramp from a stale value
+  assert lc.vehicle_tuning.filter_accel_error(-0.3) == pytest.approx(-0.3)
+
+
+def test_other_brands_are_not_filtered():
+  tuning = LongControl(make_longcontrol_cp(brand="gm")).vehicle_tuning
+  assert tuning.filter_accel_error(0.9) == 0.9
+  assert tuning.filter_accel_error(-0.4) == -0.4
+
+
+def test_mazda_gen2_integrator_corrects_a_standing_offset():
+  """The old kp=0/ki=0.1 tune needed ~10s to cancel a steady offset. Check the new
+  gains close most of a held error within a couple of seconds."""
+  lc = LongControl(make_mazda_gen2_cp())
+  lc.long_control_state = LongCtrlState.pid
+  toggles = make_toggles()
+
+  a_target, a_ego = 0.5, 0.0
+  for _ in range(200):  # 2 s at 100 Hz, car stubbornly not responding
+    CS = car.CarState.new_message(vEgo=20.0, aEgo=a_ego, brakePressed=False)
+    output_accel = lc.update(active=True, CS=CS, a_target=a_target, should_stop=False,
+                             accel_limits=(-3.5, 2.0), starpilot_toggles=toggles)
+
+  # feedforward alone would sit at a_target; the loop must be commanding meaningfully more
+  assert output_accel > a_target + 0.5
+  assert lc.pid.i > 0.5

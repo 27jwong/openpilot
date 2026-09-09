@@ -1,6 +1,8 @@
 import numpy as np
 
 from opendbc.car.gm.values import CAR, GMFlags
+from opendbc.car.mazda.values import MazdaSafetyFlags
+from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.realtime import DT_CTRL
 from openpilot.starpilot.common.testing_grounds import testing_ground
 
@@ -17,6 +19,16 @@ GM_TRUCK_TARGET_FILTER_UP_TAU = 0.10
 GM_TRUCK_TARGET_FILTER_DOWN_TAU = 0.06
 GM_TRUCK_TARGET_FILTER_BRAKE_BYPASS = -0.65
 GM_TRUCK_TARGET_FILTER_DROP_BYPASS = 0.45
+
+# Mazda GEN2 runs a real PI loop on accel error (see mazda/interface.py). aEgo is a
+# differentiated wheel speed, so it carries 0.05 m/s^2 of noise at highway speed and
+# 0.15 at parking-lot speed. Feeding that straight into kp would dither the pedal, so
+# the error gets a short low-pass first. 0.10s costs ~4% of the tracking improvement
+# and removes ~60% of the command jerk the unfiltered term would add.
+MAZDA_GEN2_ERROR_FILTER_RC = 0.10
+# Past this the request is a hard stop or a hard launch and the loop should not be
+# spending phase margin on smoothing; hand the raw error through instead.
+MAZDA_GEN2_ERROR_FILTER_BYPASS = 1.5
 
 
 def get_bolt_acc_pedal_friction_bias(output_accel, a_target, v_ego):
@@ -81,6 +93,9 @@ class LongControlVehicleTuning:
       getattr(CP, "carFingerprint", None) in (CAR.CHEVROLET_SILVERADO, CAR.CHEVROLET_SILVERADO_CC) and
       not CP.enableGasInterceptorDEPRECATED
     )
+    self.is_mazda_gen2 = bool(
+      CP.brand == "mazda" and (CP.flags & MazdaSafetyFlags.GEN2.value)
+    )
     self.is_bolt_acc_pedal_friction_car = bool(
       CP.brand == "gm" and
       CP.enableGasInterceptorDEPRECATED and
@@ -94,6 +109,21 @@ class LongControlVehicleTuning:
     self.integrator_hold_frames = 0
     self.gm_truck_filtered_a_target = 0.0
     self.gm_truck_target_filter_initialized = False
+    self.accel_error_filter = FirstOrderFilter(0.0, MAZDA_GEN2_ERROR_FILTER_RC, DT_CTRL,
+                                               initialized=False)
+
+  def filter_accel_error(self, error):
+    """Low-pass the accel error before it reaches the PI, so kp tracks the car and
+    not the noise in aEgo. Large errors bypass the filter to keep the loop prompt."""
+    if not self.is_mazda_gen2:
+      return error
+
+    if abs(error) > MAZDA_GEN2_ERROR_FILTER_BYPASS:
+      self.accel_error_filter.x = float(error)
+      self.accel_error_filter.initialized = True
+      return error
+
+    return float(self.accel_error_filter.update(float(error)))
 
   def shape_gm_truck_accel_target(self, a_target, v_ego, should_stop):
     if not self.is_gm_stock_truck:

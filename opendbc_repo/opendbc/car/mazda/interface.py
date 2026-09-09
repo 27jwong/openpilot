@@ -123,10 +123,17 @@ class CarInterface(CarInterfaceBase):
       ret.stopAccel = -.5
       ret.vEgoStarting = .2
       ret.longitudinalActuatorDelay = 0.35 # gas is 0.25s and brake looks like 0.5
-      ret.longitudinalTuning.kpBP = [0., 5., 35.]
-      ret.longitudinalTuning.kpV = [0.0, 0.0, 0.0]
+      # Identified from CX-30 logs: the ACC accel interface is unity-gain and linear
+      # over +-1.6 m/s^2, so the feedforward carries the request and the PI only has to
+      # reject disturbance. The old kp=0/ki=0.1 loop corrected an offset with a ~10s
+      # time constant, which left a slow standing accel error; these gains are IMC-tuned
+      # against the measured first-order plant (tau ~0.42s). kp is only usable because
+      # longcontrol_vehicle_tunes.py low-passes the accel error first; aEgo is a
+      # differentiated wheel speed and is too noisy to feed back raw.
+      ret.longitudinalTuning.kpBP = [0., 12., 30.]
+      ret.longitudinalTuning.kpV = [0.2, 0.5, 0.8]
       ret.longitudinalTuning.kiBP = [0., 35.]
-      ret.longitudinalTuning.kiV = [0.1, 0.1]
+      ret.longitudinalTuning.kiV = [1.0, 1.0]
       ret.startingState = True
       ret.steerActuatorDelay = 0.335
       ret.steerAtStandstill = True

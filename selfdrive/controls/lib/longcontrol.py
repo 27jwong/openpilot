@@ -278,7 +278,7 @@ class LongControl:
 
     else:  # LongCtrlState.pid
       a_target = self.vehicle_tuning.shape_gm_truck_accel_target(a_target, CS.vEgo, should_stop)
-      error = a_target - CS.aEgo
+      error = self.vehicle_tuning.filter_accel_error(a_target - CS.aEgo)
       self.update_mpc_mode(self.experimental_mode)
       self.vehicle_tuning.shape_volt_test_tune_integrator(self.pid, error, CS.vEgo)
       self._trim_positive_overshoot_integrator(a_target, error, CS)
