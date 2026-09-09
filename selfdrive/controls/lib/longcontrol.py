@@ -306,7 +306,7 @@ class LongControl:
       a_target = self.vehicle_tuning.shape_hyundai_elantra_lead_target(
         a_target, CS.vEgo, should_stop, leads,
       )
-      error = a_target - CS.aEgo
+      error = self.vehicle_tuning.filter_accel_error(a_target - CS.aEgo)
       self.update_mpc_mode(self.experimental_mode)
       self.vehicle_tuning.shape_volt_test_tune_integrator(self.pid, error, CS.vEgo)
       self.vehicle_tuning.trim_volt_cruise_integrator(
