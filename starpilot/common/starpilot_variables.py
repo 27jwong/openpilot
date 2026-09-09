@@ -1412,6 +1412,7 @@ class StarPilotVariables:
     toggle.screen_timeout_onroad = self.get_value("ScreenTimeoutOnroad", cast=float, condition=screen_management)
     toggle.standby_mode = self.get_value("StandbyMode", condition=screen_management)
 
+    toggle.blended_acc = self.get_value("BlendedACC", condition=toggle.openpilot_longitudinal and toggle.car_make == "mazda")
     toggle.sng_hack = self.get_value("SNGHack", condition=toggle.openpilot_longitudinal and toggle.car_make == "toyota" and not toggle.has_pedal and not has_sng)
     toggle.toyota_auto_hold = self.get_value("ToyotaAutoHold", condition=toggle.car_make == "toyota")
 

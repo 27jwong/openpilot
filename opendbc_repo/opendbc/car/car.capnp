@@ -345,6 +345,10 @@ struct CarControl {
   latActive @11: Bool;
   longActive @12: Bool;
 
+  # Resolved experimental mode, after conditional experimental/chill arbitration.
+  # Ports that blend openpilot longitudinal with the stock ACC command use this.
+  experimentalMode @18: Bool;
+
   # Final actuator commands
   actuators @6 :Actuators;
 

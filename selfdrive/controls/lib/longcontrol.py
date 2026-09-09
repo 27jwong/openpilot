@@ -5,7 +5,6 @@ from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N
 from openpilot.common.pid import PIDController
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.common.filter_simple import FirstOrderFilter
-from openpilot.common.params import Params
 from openpilot.selfdrive.controls.lib.longcontrol_vehicle_tunes import LongControlVehicleTuning
 
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
@@ -119,8 +118,6 @@ class LongControl:
     self.long_control_state = LongCtrlState.off
     self.experimental_mode = False
     self.experimental_mode_last = False
-    self.params = Params()
-    self.params_memory = Params("/dev/shm/params")
     self.pid = PIDController((CP.longitudinalTuning.kpBP, CP.longitudinalTuning.kpV),
                              (CP.longitudinalTuning.kiBP, CP.longitudinalTuning.kiV),
                              rate=1 / DT_CTRL)
@@ -257,11 +254,12 @@ class LongControl:
                                                        CS.cruiseState.standstill, starpilot_toggles,
                                                        allow_stopping_release=allow_stopping_release)
 
-    if self.params.get_bool("BlendedACC"):
-      experimental_mode = self.params_memory.get_int("CEStatus") # 0 means experimental mode is off
-      if experimental_mode and not self.experimental_mode_last:
-        self.reset()
-      self.experimental_mode_last = experimental_mode
+    # Blended ACC hands longitudinal back and forth between the stock ACC and openpilot
+    # at the experimental mode boundary. Reset on the handover so the PID doesn't inherit
+    # windup from the cycles where its output was being discarded.
+    if getattr(starpilot_toggles, "blended_acc", False) and self.experimental_mode and not self.experimental_mode_last:
+      self.reset()
+    self.experimental_mode_last = self.experimental_mode
     if self.long_control_state == LongCtrlState.off:
       self.reset()
       output_accel = 0.
