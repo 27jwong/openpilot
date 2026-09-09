@@ -33,6 +33,7 @@ class TogglesLayoutMici(NavScroller):
     enable_no_mrcc = BigParamControl("no stock MRCC", "NoMRCC", toggle_callback=restart_needed_callback)
     enable_no_fsc = BigParamControl("no stock FSC", "NoFSC", toggle_callback=restart_needed_callback)
     enable_manual_transmission = BigParamControl("manual transmission", "ManualTransmission", toggle_callback=restart_needed_callback)
+    enable_blended_acc = BigParamControl("blended ACC", "BlendedACC", toggle_callback=restart_needed_callback)
 
     self._scroller.add_widgets([
       self._personality_toggle,
@@ -50,6 +51,7 @@ class TogglesLayoutMici(NavScroller):
       enable_no_mrcc,
       enable_no_fsc,
       enable_manual_transmission,
+      enable_blended_acc,
     ])
 
     # Toggle lists
@@ -68,6 +70,7 @@ class TogglesLayoutMici(NavScroller):
       ("NoMRCC", enable_no_mrcc),
       ("NoFSC", enable_no_fsc),
       ("ManualTransmission", enable_manual_transmission),
+      ("BlendedACC", enable_blended_acc),
     )
 
     enable_openpilot.set_enabled(lambda: not ui_state.engaged)

@@ -398,6 +398,7 @@ class Controls:
 
     CC = car.CarControl.new_message()
     CC.enabled = self.sm['selfdriveState'].enabled
+    CC.experimentalMode = bool(self.sm['selfdriveState'].experimentalMode)
 
     # Check which actuators can be enabled
     standstill = abs(CS.vEgo) <= max(self.CP.minSteerSpeed, 0.3) or CS.standstill
@@ -427,7 +428,7 @@ class Controls:
 
     # accel PID loop
     pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
-    self.LoC.experimental_mode = bool(self.sm['selfdriveState'].experimentalMode)
+    self.LoC.experimental_mode = CC.experimentalMode
     actuators.accel = float(min(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits,
                                                 self.starpilot_toggles, has_lead=long_plan.hasLead,
                                                 traffic_mode_enabled=self.sm['starpilotCarState'].trafficModeEnabled,

@@ -6,7 +6,6 @@ from opendbc.car.mazda import mazdacan
 from opendbc.car.mazda.values import CarControllerParams, Buttons, MazdaSafetyFlags
 from openpilot.common.realtime import ControlsTimer as Timer, DT_CTRL
 from openpilot.common.filter_simple import FirstOrderFilter
-from openpilot.common.params import Params
 
 VisualAlert = structs.CarControl.HUDControl.VisualAlert
 LongCtrlState = structs.CarControl.Actuators.LongControlState
@@ -24,10 +23,7 @@ class CarController(CarControllerBase):
     self.resume_timer = Timer(0.5)
     self.cancel_delay = Timer(0.07) # 70ms delay to try to avoid a race condition with stock system
     self.acc_filter = FirstOrderFilter(0.0, .1, DT_CTRL, initialized=False)
-    self.filtered_acc_last = 0
     self.long_active_last = False
-    self.params = Params()
-    self.params_memory = Params("/dev/shm/params")
 
 
 
@@ -88,12 +84,13 @@ class CarController(CarControllerBase):
           op_acc = CC.actuators.accel * 1150
           op_acc = max(-1000, min(op_acc, 1000))
 
-          if self.params.get_bool("BlendedACC"):
+          if getattr(starpilot_toggles, "blended_acc", False):
             if CC.longActive:
               if not self.long_active_last:
                 self.acc_filter.initialized = False
-              ce_status = self.params_memory.get_int("CEStatus")
-              target_acc = op_acc if ce_status != 0 else stock_acc
+              # Hand longitudinal to openpilot only while experimental mode is actually
+              # resolved on; otherwise let the stock radar ACC command through.
+              target_acc = op_acc if CC.experimentalMode else stock_acc
               raw_acc_output = self.acc_filter.update(target_acc)
             else:
               raw_acc_output = stock_acc
@@ -111,12 +108,13 @@ class CarController(CarControllerBase):
         stock_acc = CS.acc["ACCEL_CMD"]
         op_acc = (CC.actuators.accel * 200) + 2000
 
-        if self.params.get_bool("BlendedACC"):
+        if getattr(starpilot_toggles, "blended_acc", False):
           if CC.longActive:
             if not self.long_active_last:
               self.acc_filter.initialized = False
-            ce_status = self.params_memory.get_int("CEStatus")
-            target_acc = op_acc if ce_status != 0 else stock_acc
+            # Hand longitudinal to openpilot only while experimental mode is actually
+            # resolved on; otherwise let the stock radar ACC command through.
+            target_acc = op_acc if CC.experimentalMode else stock_acc
             raw_acc_output = self.acc_filter.update(target_acc)
           else:
             raw_acc_output = stock_acc

@@ -37,6 +37,7 @@ DESCRIPTIONS = {
   "NoMRCC": tr_noop("Enable if your car does not have stock MRCC."),
   "NoFSC": tr_noop("Enable if your car does not have stock FSC."),
   "ManualTransmission": tr_noop("Enable if your car has a manual transmission."),
+  "BlendedACC": tr_noop("Let the stock ACC handle acceleration during normal cruising and hand over to openpilot only in experimental mode. Disable to have openpilot control acceleration at all times."),
 }
 
 
@@ -135,6 +136,12 @@ class TogglesLayout(Widget):
       "ManualTransmission": (
         lambda: tr("Manual Transmission"),
         DESCRIPTIONS["ManualTransmission"],
+        "chffr_wheel.png",
+        True,
+      ),
+      "BlendedACC": (
+        lambda: tr("Blended ACC"),
+        DESCRIPTIONS["BlendedACC"],
         "chffr_wheel.png",
         True,
       ),

@@ -140,6 +140,13 @@ TogglesPanel::TogglesPanel(SettingsWindow *parent) : ListWidget(parent) {
       "../assets/icons/chffr_wheel.png",
       true,
     },
+    {
+      "BlendedACC",
+      tr("Blended ACC"),
+      tr("Let the stock ACC handle acceleration during normal cruising and hand over to openpilot only in experimental mode. Disable to have openpilot control acceleration at all times."),
+      "../assets/icons/chffr_wheel.png",
+      true,
+    },
   };
 
 

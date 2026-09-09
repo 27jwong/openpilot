@@ -459,6 +459,12 @@ class VehicleSettingsManagerView(PanelManagerView):
         "get_state": lambda: self._controller._params.get_bool("ManualTransmission"),
         "set_state": lambda s: self._controller._on_toggle("ManualTransmission"),
       })
+      toggles.append({
+        "title": tr("Blended ACC"),
+        "subtitle": tr("Let the stock ACC handle acceleration during normal cruising and hand over to openpilot only in experimental mode. Disable to have openpilot control acceleration at all times."),
+        "get_state": lambda: self._controller._params.get_bool("BlendedACC"),
+        "set_state": lambda s: self._controller._on_toggle("BlendedACC"),
+      })
 
     return toggles
 
