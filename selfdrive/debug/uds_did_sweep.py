@@ -13,8 +13,10 @@ Two modes:
   sweep   walk a DID range, print/record every positive response  (default)
   watch   poll one DID repeatedly, report which bytes move and how fast it polls
 
-Read-only: it sends 0x22 (ReadDataByIdentifier), 0x10 (session control) and 0x3E
-(tester present), and nothing else. No writes, no routine control, no security access.
+Read-only: it sends 0x22 (ReadDataByIdentifier) and 0x10 (session control), and
+nothing else. No writes, no routine control, no security access. There is no
+tester-present keepalive on purpose -- every 0x22 already resets the ECU's session
+timer, and a keepalive fired during a slow multi-frame read desyncs the transfer.
 
 Run it on the comma device, parked, with openpilot stopped. See --help.
 """
@@ -80,11 +82,25 @@ def check_pandad_stopped() -> None:
   sys.exit(1)
 
 
-def make_client(args) -> UdsClient:
+def make_client(args):
   panda = Panda()
   panda.set_safety_mode(CarParams.SafetyModel.elm327)
-  return UdsClient(panda, args.addr, bus=args.bus, timeout=args.timeout,
-                   response_pending_timeout=args.pending_timeout)
+  client = UdsClient(panda, args.addr, bus=args.bus, timeout=args.timeout,
+                     response_pending_timeout=args.pending_timeout)
+  return panda, client
+
+
+def clear_rx(panda, bus: int) -> None:
+  """Drop buffered CAN before a request.
+
+  With the car awake the bus is busy, and a multi-frame read can spend a second
+  or more in flight. The panda's RX buffer fills with traffic we don't want in
+  that window, which is what starves the SPI link into NACKing.
+  """
+  try:
+    panda.can_clear(bus)
+  except Exception:
+    pass
 
 
 def enter_session(client: UdsClient, session: str) -> None:
@@ -128,7 +144,7 @@ def build_did_list(args) -> list[int]:
   return dids
 
 
-def do_sweep(client: UdsClient, args) -> None:
+def do_sweep(panda, client: UdsClient, args) -> None:
   results: dict[str, dict] = {}
   if args.out and os.path.exists(args.out):
     with open(args.out) as f:
@@ -138,28 +154,45 @@ def do_sweep(client: UdsClient, args) -> None:
   dids = [d for d in build_did_list(args) if f"0x{d:04x}" not in results]
   print(f"sweeping {len(dids)} DIDs on {hex(args.addr)} (bus {args.bus})\n")
 
-  hits, t_start, last_keepalive, last_save = 0, time.monotonic(), time.monotonic(), time.monotonic()
+  # No tester-present loop: every 0x22 already resets the ECU's session timer, and
+  # a keepalive fired during a slow multi-frame read desyncs the transfer.
+  hits, t_start, last_save = 0, time.monotonic(), time.monotonic()
+  fails, needs_clear = 0, False
   try:
     for i, did in enumerate(dids):
-      if time.monotonic() - last_keepalive > 2.0:
-        try:
-          client.tester_present()
-        except Exception:
-          pass
-        last_keepalive = time.monotonic()
+      if needs_clear:
+        clear_rx(panda, args.bus)
+        needs_clear = False
 
       data, miss = read_did(client, did)
       key = f"0x{did:04x}"
 
       if data is not None:
         hits += 1
+        fails = 0
         results[key] = {"ok": True, "len": len(data), "hex": data.hex()}
         print(f"  HIT {key}  len={len(data):3}  {data.hex()}")
+        # a multi-frame answer leaves the bus busy behind it
+        needs_clear = len(data) > 7
       else:
         kind, nrc, msg = miss
         results[key] = {"ok": False, "why": kind, "nrc": nrc}
         if kind != "nrc" or nrc not in BORING_NRCS:
           print(f"  ??  {key}  {msg}")
+        if kind == "error":
+          # panda link trouble, not an ECU miss
+          fails += 1
+          needs_clear = True
+          time.sleep(min(0.2 * fails, 2.0))
+          if fails % 5 == 0:
+            print("  ... rebuilding panda link")
+            try:
+              panda, client = make_client(args)
+              enter_session(client, args.session)
+            except Exception as e:  # noqa: BLE001
+              print(f"  reconnect failed: {e}")
+        else:
+          fails = 0
 
       if args.delay:
         time.sleep(args.delay)
@@ -193,34 +226,59 @@ def do_sweep(client: UdsClient, args) -> None:
     print("A DID whose bytes never move is config; a DID that moves with traffic is perception.")
 
 
-def do_watch(client: UdsClient, args) -> None:
+def do_watch(panda, client: UdsClient, args) -> None:
   did = args.did
   print(f"polling DID {hex(did)} on {hex(args.addr)} for {args.seconds}s -- "
         f"point the car at moving traffic\n")
   samples: list[bytes] = []
   stamps: list[float] = []
   t_end = time.monotonic() + args.seconds
-  last_keepalive = time.monotonic()
+  # No tester-present here on purpose: every 0x22 resets the ECU's session timer,
+  # so a keepalive during continuous polling is redundant -- and a read of a large
+  # DID can take over a second, so the keepalive lands mid-transfer and desyncs it.
+  fails = 0
   try:
     while time.monotonic() < t_end:
-      if time.monotonic() - last_keepalive > 2.0:
-        try:
-          client.tester_present()
-        except Exception:
-          pass
-        last_keepalive = time.monotonic()
+      clear_rx(panda, args.bus)
       t0 = time.monotonic()
       data, miss = read_did(client, did)
       if data is None:
-        print(f"  miss: {miss[2]}")
-        time.sleep(0.1)
+        kind, _nrc, msg = miss
+        print(f"  miss: {msg}")
+        # Panda link trouble (SPI NACK etc) rather than an ECU-level miss:
+        # back off, and rebuild the link if it keeps happening.
+        if kind == "error":
+          fails += 1
+          time.sleep(min(0.2 * fails, 2.0))
+          if fails % 5 == 0:
+            print("  ... rebuilding panda link")
+            try:
+              panda, client = make_client(args)
+              enter_session(client, args.session)
+            except Exception as e:  # noqa: BLE001
+              print(f"  reconnect failed: {e}")
+        else:
+          time.sleep(0.1)
         continue
+      fails = 0
       samples.append(data)
       stamps.append(t0)
       if args.print_every and len(samples) % args.print_every == 0:
-        print(f"  {time.monotonic()-t0:6.3f}s  {data.hex()}")
+        uniq = len(set(samples))
+        verdict = "FROZEN so far" if uniq == 1 else f"{uniq} distinct payloads"
+        print(f"  [{len(samples):4} reads, {time.monotonic()-t0:5.2f}s each, {verdict}]  "
+              f"{data.hex()[:64]}...")
   except KeyboardInterrupt:
     print("\ninterrupted")
+
+  if args.out and samples:
+    with open(args.out, "w") as f:
+      json.dump({
+        "did": hex(did), "addr": hex(args.addr), "bus": args.bus,
+        "samples": [{"t": round(t - stamps[0], 4), "hex": s.hex()}
+                    for t, s in zip(stamps, samples, strict=False)],
+      }, f, indent=1)
+    print(f"\nwrote {len(samples)} samples to {args.out}")
 
   if len(samples) < 2:
     print("not enough samples")
@@ -233,18 +291,34 @@ def do_watch(client: UdsClient, args) -> None:
 
   dt = [b - a for a, b in zip(stamps, stamps[1:], strict=False)]
   hz = len(samples) / (stamps[-1] - stamps[0])
-  print(f"\n{len(samples)} samples, {hz:.1f} Hz "
-        f"(median period {sorted(dt)[len(dt)//2]*1000:.1f} ms), {len(set(samples))} unique")
-  print("\nper-byte activity:")
-  print(f"  {'byte':>4} {'uniq':>5} {'min':>4} {'max':>4}  changes")
+  period = sorted(dt)[len(dt) // 2] * 1000
+  uniq = len(set(samples))
+  print(f"\n{len(samples)} samples, {hz:.2f} Hz (median period {period:.1f} ms), "
+        f"{uniq} unique payload{'' if uniq == 1 else 's'}")
+
+  moving = []
   for i in range(n):
     col = [s[i] for s in samples]
-    changes = sum(1 for a, b in zip(col, col[1:], strict=False) if a != b)
-    mark = "  <-- moving" if len(set(col)) > 4 else ""
-    print(f"  {i:>4} {len(set(col)):>5} {min(col):>4} {max(col):>4}  {changes:>6}{mark}")
-  print("\nIf several adjacent bytes move together and settle when traffic clears,")
-  print("that is a target list. Log it alongside a route and correlate against")
-  print("modelV2.leadsV3 the same way the CAN sweep did.")
+    if len(set(col)) > 1:
+      changes = sum(1 for a, b in zip(col, col[1:], strict=False) if a != b)
+      moving.append((i, len(set(col)), min(col), max(col), changes))
+
+  if not moving:
+    print(f"\nVERDICT: FROZEN -- all {n} bytes identical across every read.")
+    print("This DID is a stored snapshot (freeze-frame / event record), not live")
+    print("perception. The live data, if it exists, is at a different DID.")
+  else:
+    print(f"\nVERDICT: LIVE -- {len(moving)} of {n} bytes changed.")
+    print(f"  {'byte':>4} {'uniq':>5} {'min':>4} {'max':>4}  changes")
+    for i, u, lo, hi, changes in moving:
+      print(f"  {i:>4} {u:>5} {lo:>4} {hi:>4}  {changes:>6}")
+    print("\nAdjacent bytes moving together, settling when traffic clears, is a")
+    print("target list. Log it against a route and correlate to modelV2.leadsV3.")
+
+  if hz < 5:
+    print(f"\nNote: {hz:.2f} Hz is too slow to drive on -- radar wants 10-20 Hz.")
+    print(f"A {n}-byte payload is ~{-(-n // 7) + 1} CAN frames of ISO-TP. Prefer a")
+    print("compact DID (<= 7 bytes answers in one frame) if one exists.")
 
 
 def main() -> None:
@@ -269,7 +343,7 @@ def main() -> None:
   p.add_argument("--start", type=lambda x: int(x, 0), help="explicit DID range start")
   p.add_argument("--end", type=lambda x: int(x, 0), help="explicit DID range end")
   p.add_argument("--full", action="store_true", help="sweep all 65536 DIDs, not just likely blocks")
-  p.add_argument("--out", help="JSON results file (makes the sweep resumable)")
+  p.add_argument("--out", help="JSON output file: makes a sweep resumable, and saves watch samples")
   p.add_argument("--did", type=lambda x: int(x, 0), help="watch mode: DID to poll")
   p.add_argument("--seconds", type=float, default=30.0, help="watch mode: duration (default 30)")
   p.add_argument("--print-every", type=int, default=10,
@@ -286,13 +360,13 @@ def main() -> None:
   parked_confirmation(args.yes)
   check_pandad_stopped()
 
-  client = make_client(args)
+  panda, client = make_client(args)
   enter_session(client, args.session)
 
   if args.mode == "sweep":
-    do_sweep(client, args)
+    do_sweep(panda, client, args)
   else:
-    do_watch(client, args)
+    do_watch(panda, client, args)
 
 
 if __name__ == "__main__":
