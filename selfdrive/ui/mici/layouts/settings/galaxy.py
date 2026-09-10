@@ -27,11 +27,11 @@ class GalaxyQRDialog(NavWidget):
 
   def _generate_qr_code(self) -> None:
     try:
-      qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=10, border=0)
+      qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=10, border=4)
       qr.add_data(self._url)
       qr.make(fit=True)
 
-      pil_img = qr.make_image(fill_color="white", back_color="black").convert("RGBA")
+      pil_img = qr.make_image(fill_color="black", back_color="white").convert("RGBA")
       img_array = np.array(pil_img, dtype=np.uint8)
 
       if self._qr_texture and self._qr_texture.id != 0:
@@ -61,6 +61,10 @@ class GalaxyQRDialog(NavWidget):
     self._title.set_max_width(int(rect.width - label_x))
     self._title.set_position(label_x, rect.y + 16)
     self._title.render()
+
+    # Show the URL so it can be read off the screen when a scan misfires.
+    rl.draw_text_ex(gui_app.font(FontWeight.NORMAL), self._url, rl.Vector2(label_x, rect.y + rect.height - 40),
+                    24, 0.0, rl.Color(180, 150, 230, 255))
 
   def __del__(self):
     if self._qr_texture and self._qr_texture.id != 0:
