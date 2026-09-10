@@ -8,11 +8,17 @@ signal on the bus is a single lead-detected bit in CRUZE_STATE (0x44A). If the r
 does not answer here either, its perception is sealed and the only remaining path is
 an interceptor on the radar's own harness.
 
-Two modes:
+Three modes:
 
-  sweep   walk a DID range, print/record every positive response  (default)
-  watch   poll one DID (or a comma-separated set, round-robin) and report which
-          bytes move and how fast it polls
+  sessions  find which diagnostic sessions the ECU accepts  (run this FIRST)
+  sweep     walk a DID range, print/record every positive response  (default)
+  watch     poll one DID (or a comma-separated set, round-robin) and report
+            which bytes move and how fast it polls
+
+A DID sweep only ever covers the session it ran in. The same ECU can expose a
+different DID map in a manufacturer- or supplier-specific session -- the Hyundai
+radar-points trick in selfdrive/debug/car/hyundai_enable_radar_points.py lives in
+session 0x07, which a normal 0x03 sweep never sees. So run 'sessions' first.
 
 Read-only: it sends 0x22 (ReadDataByIdentifier) and 0x10 (session control), and
 nothing else. No writes, no routine control, no security access. There is no
@@ -104,15 +110,83 @@ def clear_rx(panda, bus: int) -> None:
     pass
 
 
-def enter_session(client: UdsClient, session: str) -> None:
-  if session == "none":
-    return
-  st = SESSION_TYPE.EXTENDED_DIAGNOSTIC if session == "extended" else SESSION_TYPE.DEFAULT
+def parse_session(s: str) -> int | None:
+  """'none' -> None, a name, or a raw session byte like 0x07."""
+  named = {"default": 0x01, "extended": 0x03}
+  if s == "none":
+    return None
+  if s in named:
+    return named[s]
+  return int(s, 0)
+
+
+def enter_session(client: UdsClient, session: int | None) -> bool:
+  if session is None:
+    return True
   try:
-    client.diagnostic_session_control(st)
-    print(f"entered {st.name} session")
+    client.diagnostic_session_control(session)  # type: ignore[arg-type]
+    print(f"entered session {hex(session)}")
+    return True
   except Exception as e:
-    print(f"could not enter {st.name} session ({e}) -- continuing anyway")
+    print(f"could not enter session {hex(session)} ({e}) -- continuing anyway")
+    return False
+
+
+# Session 0x02 is programmingSession: it can drop an ECU into its bootloader and
+# leave it there. Never probe it automatically -- pass --session 0x02 by hand if
+# you truly mean it.
+PROGRAMMING_SESSION = 0x02
+
+
+def do_sessions(panda, client: UdsClient, args) -> None:
+  """Find which diagnostic sessions the ECU accepts.
+
+  This matters more than it looks. A DID sweep only ever covers the session it
+  ran in -- the same ECU can expose a completely different DID map in a
+  manufacturer- or supplier-specific session. The Hyundai radar-points trick
+  (selfdrive/debug/car/hyundai_enable_radar_points.py) lives in session 0x07,
+  which a normal 0x03 sweep never sees.
+  """
+  print(f"probing session types on {hex(args.addr)} (bus {args.bus})")
+  print(f"skipping {hex(PROGRAMMING_SESSION)} (programmingSession -- bootloader risk)\n")
+  accepted = []
+  for st in range(0x01, 0x80):
+    if st == PROGRAMMING_SESSION:
+      continue
+    clear_rx(panda, args.bus)
+    try:
+      client.diagnostic_session_control(st)  # type: ignore[arg-type]
+      accepted.append(st)
+      note = ""
+      if st in (0x01, 0x03):
+        note = "  (standard)"
+      elif 0x40 <= st <= 0x5F:
+        note = "  (vehicle-manufacturer specific)"
+      elif 0x60 <= st <= 0x7E:
+        note = "  (system-supplier specific)"
+      print(f"  ACCEPTED {hex(st)}{note}")
+    except NegativeResponseError:
+      pass
+    except Exception as e:  # noqa: BLE001
+      print(f"  ??  {hex(st)}  {type(e).__name__}: {e}")
+      time.sleep(0.2)
+    finally:
+      # don't leave the ECU parked in an exotic session
+      try:
+        client.diagnostic_session_control(SESSION_TYPE.DEFAULT)
+      except Exception:
+        pass
+
+  print(f"\n=== {len(accepted)} sessions accepted: "
+        f"{', '.join(hex(s) for s in accepted)} ===")
+  extra = [s for s in accepted if s not in (0x01, 0x03)]
+  if extra:
+    print("\nRe-sweep DIDs in each non-standard session -- the DID map can differ:")
+    for s in extra:
+      print(f"  ./uds_did_sweep.py sweep --full --session {hex(s)} "
+            f"--out /data/radar_dids_s{s:02x}.json")
+  else:
+    print("\nOnly standard sessions. The DID map you already swept is the whole map.")
 
 
 def read_did(client: UdsClient, did: int):
@@ -353,12 +427,14 @@ def main() -> None:
                                      "  ./uds_did_sweep.py sweep --full --out radar_dids.json\n"
                                      "  ./uds_did_sweep.py watch --did 0x2100 --seconds 60\n"
                                      "  ./uds_did_sweep.py watch --did 0xdc6a,0xdc74,0xdc75 --seconds 120\n")
-  p.add_argument("mode", choices=["sweep", "watch"], nargs="?", default="sweep")
+  p.add_argument("mode", choices=["sweep", "watch", "sessions"], nargs="?", default="sweep")
   p.add_argument("--addr", type=lambda x: int(x, 0), default=0x764,
                  help="ECU tx address (default 0x764, GEN2 Mazda fwdRadar)")
   p.add_argument("--bus", type=int, default=0, help="CAN bus (default 0)")
-  p.add_argument("--session", choices=["extended", "default", "none"], default="extended",
-                 help="diagnostic session to enter first (default extended)")
+  p.add_argument("--session", default="extended",
+                 help="session to enter first: 'extended' (0x03, default), 'default' "
+                      "(0x01), 'none', or a raw byte like 0x07. A DID sweep only covers "
+                      "the session it runs in -- run 'sessions' mode to find the others")
   p.add_argument("--timeout", type=float, default=0.15,
                  help="per-request timeout in s (default 0.15; a local ECU answers in ms)")
   p.add_argument("--pending-timeout", type=float, default=1.0,
@@ -381,6 +457,10 @@ def main() -> None:
 
   if args.mode == "watch" and args.did is None:
     p.error("watch mode needs --did")
+  try:
+    args.session = parse_session(args.session)
+  except ValueError:
+    p.error(f"bad --session {args.session!r}: use extended, default, none, or a byte like 0x07")
   if args.debug:
     carlog.setLevel("DEBUG")
 
@@ -388,8 +468,12 @@ def main() -> None:
   check_pandad_stopped()
 
   panda, client = make_client(args)
-  enter_session(client, args.session)
 
+  if args.mode == "sessions":
+    do_sessions(panda, client, args)
+    return
+
+  enter_session(client, args.session)
   if args.mode == "sweep":
     do_sweep(panda, client, args)
   else:
