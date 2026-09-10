@@ -11,7 +11,8 @@ an interceptor on the radar's own harness.
 Two modes:
 
   sweep   walk a DID range, print/record every positive response  (default)
-  watch   poll one DID repeatedly, report which bytes move and how fast it polls
+  watch   poll one DID (or a comma-separated set, round-robin) and report which
+          bytes move and how fast it polls
 
 Read-only: it sends 0x22 (ReadDataByIdentifier) and 0x10 (session control), and
 nothing else. No writes, no routine control, no security access. There is no
@@ -226,74 +227,23 @@ def do_sweep(panda, client: UdsClient, args) -> None:
     print("A DID whose bytes never move is config; a DID that moves with traffic is perception.")
 
 
-def do_watch(panda, client: UdsClient, args) -> None:
-  did = args.did
-  print(f"polling DID {hex(did)} on {hex(args.addr)} for {args.seconds}s -- "
-        f"point the car at moving traffic\n")
-  samples: list[bytes] = []
-  stamps: list[float] = []
-  t_end = time.monotonic() + args.seconds
-  # No tester-present here on purpose: every 0x22 resets the ECU's session timer,
-  # so a keepalive during continuous polling is redundant -- and a read of a large
-  # DID can take over a second, so the keepalive lands mid-transfer and desyncs it.
-  fails = 0
-  try:
-    while time.monotonic() < t_end:
-      clear_rx(panda, args.bus)
-      t0 = time.monotonic()
-      data, miss = read_did(client, did)
-      if data is None:
-        kind, _nrc, msg = miss
-        print(f"  miss: {msg}")
-        # Panda link trouble (SPI NACK etc) rather than an ECU-level miss:
-        # back off, and rebuild the link if it keeps happening.
-        if kind == "error":
-          fails += 1
-          time.sleep(min(0.2 * fails, 2.0))
-          if fails % 5 == 0:
-            print("  ... rebuilding panda link")
-            try:
-              panda, client = make_client(args)
-              enter_session(client, args.session)
-            except Exception as e:  # noqa: BLE001
-              print(f"  reconnect failed: {e}")
-        else:
-          time.sleep(0.1)
-        continue
-      fails = 0
-      samples.append(data)
-      stamps.append(t0)
-      if args.print_every and len(samples) % args.print_every == 0:
-        uniq = len(set(samples))
-        verdict = "FROZEN so far" if uniq == 1 else f"{uniq} distinct payloads"
-        print(f"  [{len(samples):4} reads, {time.monotonic()-t0:5.2f}s each, {verdict}]  "
-              f"{data.hex()[:64]}...")
-  except KeyboardInterrupt:
-    print("\ninterrupted")
-
-  if args.out and samples:
-    with open(args.out, "w") as f:
-      json.dump({
-        "did": hex(did), "addr": hex(args.addr), "bus": args.bus,
-        "samples": [{"t": round(t - stamps[0], 4), "hex": s.hex()}
-                    for t, s in zip(stamps, samples, strict=False)],
-      }, f, indent=1)
-    print(f"\nwrote {len(samples)} samples to {args.out}")
-
+def summarize(did: int, samples: list[bytes], stamps: list[float]) -> None:
+  """Print the FROZEN/LIVE verdict for one DID."""
+  print(f"\n--- {hex(did)} ---")
   if len(samples) < 2:
-    print("not enough samples")
+    print("  not enough samples")
     return
 
   n = min(len(s) for s in samples)
   if any(len(s) != n for s in samples):
-    print(f"warning: response length varies ({sorted({len(s) for s in samples})}); "
+    print(f"  warning: response length varies ({sorted({len(s) for s in samples})}); "
           f"comparing first {n} bytes")
 
   dt = [b - a for a, b in zip(stamps, stamps[1:], strict=False)]
-  hz = len(samples) / (stamps[-1] - stamps[0])
-  period = sorted(dt)[len(dt) // 2] * 1000
+  hz = len(samples) / (stamps[-1] - stamps[0]) if stamps[-1] > stamps[0] else 0
+  period = sorted(dt)[len(dt) // 2] * 1000 if dt else 0
   uniq = len(set(samples))
-  print(f"\n{len(samples)} samples, {hz:.2f} Hz (median period {period:.1f} ms), "
+  print(f"  {len(samples)} samples, {hz:.2f} Hz (median period {period:.1f} ms), "
         f"{uniq} unique payload{'' if uniq == 1 else 's'}")
 
   moving = []
@@ -304,21 +254,95 @@ def do_watch(panda, client: UdsClient, args) -> None:
       moving.append((i, len(set(col)), min(col), max(col), changes))
 
   if not moving:
-    print(f"\nVERDICT: FROZEN -- all {n} bytes identical across every read.")
-    print("This DID is a stored snapshot (freeze-frame / event record), not live")
-    print("perception. The live data, if it exists, is at a different DID.")
+    print(f"  VERDICT: FROZEN -- all {n} bytes identical across every read.")
   else:
-    print(f"\nVERDICT: LIVE -- {len(moving)} of {n} bytes changed.")
-    print(f"  {'byte':>4} {'uniq':>5} {'min':>4} {'max':>4}  changes")
+    print(f"  VERDICT: LIVE -- {len(moving)} of {n} bytes changed.")
+    print(f"    {'byte':>4} {'uniq':>5} {'min':>4} {'max':>4}  changes")
     for i, u, lo, hi, changes in moving:
-      print(f"  {i:>4} {u:>5} {lo:>4} {hi:>4}  {changes:>6}")
-    print("\nAdjacent bytes moving together, settling when traffic clears, is a")
-    print("target list. Log it against a route and correlate to modelV2.leadsV3.")
+      print(f"    {i:>4} {u:>5} {lo:>4} {hi:>4}  {changes:>6}")
 
-  if hz < 5:
-    print(f"\nNote: {hz:.2f} Hz is too slow to drive on -- radar wants 10-20 Hz.")
-    print(f"A {n}-byte payload is ~{-(-n // 7) + 1} CAN frames of ISO-TP. Prefer a")
-    print("compact DID (<= 7 bytes answers in one frame) if one exists.")
+  if hz and hz < 5:
+    print(f"  Note: {hz:.2f} Hz is too slow to drive on -- radar wants 10-20 Hz.")
+    print(f"  A {n}-byte payload is ~{-(-n // 7) + 1} CAN frames of ISO-TP.")
+
+
+def do_watch(panda, client: UdsClient, args) -> None:
+  dids = args.did
+  if len(dids) == 1:
+    print(f"polling DID {hex(dids[0])} on {hex(args.addr)} for {args.seconds}s")
+  else:
+    print(f"round-robin polling {len(dids)} DIDs on {hex(args.addr)} for {args.seconds}s: "
+          f"{', '.join(hex(d) for d in dids)}")
+  print("!! A live value only looks live if something MOVES in front of the car.")
+  print("!! Park facing traffic, or have someone walk toward the bumper.\n")
+
+  per: dict[int, tuple[list[bytes], list[float]]] = {d: ([], []) for d in dids}
+  t_end = time.monotonic() + args.seconds
+  # No tester-present here on purpose: every 0x22 resets the ECU's session timer,
+  # so a keepalive during continuous polling is redundant -- and a read of a large
+  # DID can take over a second, so the keepalive lands mid-transfer and desyncs it.
+  fails = 0
+  try:
+    while time.monotonic() < t_end:
+      for did in dids:
+        if time.monotonic() >= t_end:
+          break
+        samples, stamps = per[did]
+        clear_rx(panda, args.bus)
+        t0 = time.monotonic()
+        data, miss = read_did(client, did)
+        if data is None:
+          kind, _nrc, msg = miss
+          print(f"  {hex(did)} miss: {msg}")
+          # Panda link trouble (SPI NACK etc) rather than an ECU-level miss:
+          # back off, and rebuild the link if it keeps happening.
+          if kind == "error":
+            fails += 1
+            time.sleep(min(0.2 * fails, 2.0))
+            if fails % 5 == 0:
+              print("  ... rebuilding panda link")
+              try:
+                panda, client = make_client(args)
+                enter_session(client, args.session)
+              except Exception as e:  # noqa: BLE001
+                print(f"  reconnect failed: {e}")
+          else:
+            time.sleep(0.1)
+          continue
+        fails = 0
+        samples.append(data)
+        stamps.append(t0)
+        if args.print_every and len(samples) % args.print_every == 0:
+          uniq = len(set(samples))
+          verdict = "frozen so far" if uniq == 1 else f"{uniq} distinct"
+          print(f"  {hex(did)} [{len(samples):4} reads, {verdict}]  {data.hex()[:48]}")
+  except KeyboardInterrupt:
+    print("\ninterrupted")
+
+  if args.out and any(v[0] for v in per.values()):
+    with open(args.out, "w") as f:
+      json.dump({
+        "addr": hex(args.addr), "bus": args.bus,
+        "dids": {hex(d): [{"t": round(t - st[0], 4), "hex": s_.hex()}
+                          for t, s_ in zip(st, sa, strict=False)]
+                 for d, (sa, st) in per.items() if sa},
+      }, f, indent=1)
+    total = sum(len(v[0]) for v in per.values())
+    print(f"\nwrote {total} samples across {len(dids)} DIDs to {args.out}")
+
+  for did in dids:
+    samples, stamps = per[did]
+    summarize(did, samples, stamps)
+
+  live = [d for d in dids if len(set(per[d][0])) > 1]
+  if len(dids) > 1:
+    print(f"\n=== {len(live)} of {len(dids)} DIDs moved ===")
+    if live:
+      print("  live:", ", ".join(hex(d) for d in live))
+      print("  Adjacent bytes moving together, settling when traffic clears, is a")
+      print("  target list. Log it against a route and correlate to modelV2.leadsV3.")
+    else:
+      print("  Nothing in this set is live. These are stored or configuration values.")
 
 
 def main() -> None:
@@ -327,7 +351,8 @@ def main() -> None:
                               epilog="examples:\n"
                                      "  ./uds_did_sweep.py sweep\n"
                                      "  ./uds_did_sweep.py sweep --full --out radar_dids.json\n"
-                                     "  ./uds_did_sweep.py watch --did 0x2100 --seconds 60\n")
+                                     "  ./uds_did_sweep.py watch --did 0x2100 --seconds 60\n"
+                                     "  ./uds_did_sweep.py watch --did 0xdc6a,0xdc74,0xdc75 --seconds 120\n")
   p.add_argument("mode", choices=["sweep", "watch"], nargs="?", default="sweep")
   p.add_argument("--addr", type=lambda x: int(x, 0), default=0x764,
                  help="ECU tx address (default 0x764, GEN2 Mazda fwdRadar)")
@@ -344,7 +369,9 @@ def main() -> None:
   p.add_argument("--end", type=lambda x: int(x, 0), help="explicit DID range end")
   p.add_argument("--full", action="store_true", help="sweep all 65536 DIDs, not just likely blocks")
   p.add_argument("--out", help="JSON output file: makes a sweep resumable, and saves watch samples")
-  p.add_argument("--did", type=lambda x: int(x, 0), help="watch mode: DID to poll")
+  p.add_argument("--did", type=lambda x: [int(v, 0) for v in x.split(",")],
+                 help="watch mode: DID to poll, or a comma-separated list to "
+                      "round-robin (settles a whole block in one run)")
   p.add_argument("--seconds", type=float, default=30.0, help="watch mode: duration (default 30)")
   p.add_argument("--print-every", type=int, default=10,
                  help="watch mode: print every Nth sample (0 to silence)")
