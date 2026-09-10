@@ -1667,3 +1667,43 @@ def test_mazda_gen2_integrator_corrects_a_standing_offset():
   # feedforward alone would sit at a_target; the loop must be commanding meaningfully more
   assert output_accel > a_target + 0.5
   assert lc.pid.i > 0.5
+
+
+def test_mazda_gen2_brake_overshoot_is_bounded():
+  """Feedback may lead the plant, but not out-brake the planner without limit."""
+  lc = LongControl(make_mazda_gen2_cp())
+  cap = vehicle_tunes.MAZDA_GEN2_MAX_BRAKE_OVERSHOOT
+
+  lc.pid.i = -1.2  # a wound-up integrator mid brake
+  limited = lc.vehicle_tuning.limit_brake_overshoot(lc.pid, -2.4, -1.5)
+  assert limited == pytest.approx(-1.5 - cap)
+  # the integrator was back-calculated to what actually got sent, not left wound up
+  assert lc.pid.i == pytest.approx(-1.2 + ((-1.5 - cap) - -2.4))
+
+
+def test_mazda_gen2_brake_overshoot_leaves_normal_commands_alone():
+  lc = LongControl(make_mazda_gen2_cp())
+  before = lc.pid.i = -0.3
+  # within the allowance: untouched, and the integrator is not disturbed
+  assert lc.vehicle_tuning.limit_brake_overshoot(lc.pid, -1.55, -1.5) == -1.55
+  assert lc.pid.i == before
+  # positive requests are not the braking case at all
+  assert lc.vehicle_tuning.limit_brake_overshoot(lc.pid, 0.2, 0.8) == 0.2
+  assert lc.pid.i == before
+
+
+def test_brake_overshoot_limit_is_mazda_gen2_only():
+  lc = LongControl(make_longcontrol_cp(brand="gm"))
+  lc.pid.i = -1.0
+  assert lc.vehicle_tuning.limit_brake_overshoot(lc.pid, -3.0, -1.0) == -3.0
+  assert lc.pid.i == -1.0
+
+
+def test_mazda_gen2_emergency_braking_authority_is_preserved():
+  """At the accel floor the cap must not reduce available braking."""
+  lc = LongControl(make_mazda_gen2_cp())
+  lc.long_control_state = LongCtrlState.pid
+  CS = car.CarState.new_message(vEgo=25.0, aEgo=-1.0, brakePressed=False)
+  output = lc.update(active=True, CS=CS, a_target=-3.5, should_stop=False,
+                     accel_limits=(-3.5, 2.0), starpilot_toggles=make_toggles())
+  assert output == pytest.approx(-3.5, abs=1e-6)

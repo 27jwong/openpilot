@@ -332,6 +332,7 @@ class LongControl:
                                          freeze_integrator=freeze_integrator)
       raw_output_accel = self._cap_positive_output_on_negative_target(raw_output_accel, a_target, error, CS)
       raw_output_accel = self.vehicle_tuning.apply_pedal_long_brake_bias(raw_output_accel, a_target, CS)
+      raw_output_accel = self.vehicle_tuning.limit_brake_overshoot(self.pid, raw_output_accel, a_target)
       raw_output_accel = self.vehicle_tuning.apply_bolt_start_handoff_floor(
         raw_output_accel,
         self.last_output_accel,

@@ -76,6 +76,12 @@ MAZDA_GEN2_ERROR_FILTER_RC = 0.10
 # spending phase margin on smoothing; hand the raw error through instead.
 MAZDA_GEN2_ERROR_FILTER_BYPASS = 1.5
 
+# The PI has to lead the plant to overcome its ~0.4 s lag, but with a real integrator that
+# lead keeps building through a sustained brake and the command ends up well below what the
+# planner asked for - measured at -0.20 m/s^2 on average during hard braking, which lands as
+# a jab. Bound it to roughly the authority the old kp=0/ki=0.1 loop had.
+MAZDA_GEN2_MAX_BRAKE_OVERSHOOT = 0.10
+
 
 def get_bolt_acc_pedal_friction_bias(output_accel, a_target, v_ego):
   if output_accel >= -0.05 or a_target >= -0.80 or v_ego <= 5.0:
@@ -299,6 +305,21 @@ class LongControlVehicleTuning:
       return error
 
     return float(self.accel_error_filter.update(float(error)))
+
+  def limit_brake_overshoot(self, pid, output_accel, a_target):
+    """Stop feedback from out-braking the planner by more than a fixed margin.
+
+    The integrator is back-calculated to whatever was actually sent, so releasing the
+    clamp cannot hand back a step that the driver feels as a second jab."""
+    if not self.is_mazda_gen2 or a_target >= 0.0:
+      return output_accel
+
+    floor = a_target - MAZDA_GEN2_MAX_BRAKE_OVERSHOOT
+    if output_accel >= floor:
+      return output_accel
+
+    pid.i += floor - output_accel
+    return floor
 
   def shape_gm_truck_accel_target(self, a_target, v_ego, should_stop):
     if not self.is_gm_stock_truck:
