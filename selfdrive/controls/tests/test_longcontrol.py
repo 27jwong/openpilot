@@ -1594,7 +1594,7 @@ def test_leaving_experimental_does_not_reset_mode_transition_timer():
 def make_mazda_gen2_cp(**overrides):
   CP = make_longcontrol_cp(brand="mazda", flags=MazdaSafetyFlags.GEN2.value, **overrides)
   CP.longitudinalTuning.kpBP = [0.0, 12.0, 30.0]
-  CP.longitudinalTuning.kpV = [0.2, 0.5, 0.8]
+  CP.longitudinalTuning.kpV = [0.2, 0.5, 0.4]
   CP.longitudinalTuning.kiBP = [0.0, 35.0]
   CP.longitudinalTuning.kiV = [1.0, 1.0]
   return CP

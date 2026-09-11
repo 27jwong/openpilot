@@ -129,9 +129,11 @@ class CarInterface(CarInterfaceBase):
       # time constant, which left a slow standing accel error; these gains are IMC-tuned
       # against the measured first-order plant (tau ~0.42s). kp is only usable because
       # longcontrol_vehicle_tunes.py low-passes the accel error first; aEgo is a
-      # differentiated wheel speed and is too noisy to feed back raw.
+      # differentiated wheel speed and is too noisy to feed back raw. kp comes back down
+      # at highway speed: at 0.8 it turned that noise into a 0.3-1.5 Hz back-and-forth
+      # while following a lead, 3x what the planner asked for, and tracked no better.
       ret.longitudinalTuning.kpBP = [0., 12., 30.]
-      ret.longitudinalTuning.kpV = [0.2, 0.5, 0.8]
+      ret.longitudinalTuning.kpV = [0.2, 0.5, 0.4]
       ret.longitudinalTuning.kiBP = [0., 35.]
       ret.longitudinalTuning.kiV = [1.0, 1.0]
       ret.startingState = True
