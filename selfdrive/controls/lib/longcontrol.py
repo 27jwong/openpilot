@@ -231,7 +231,8 @@ class LongControl:
     return min(output_accel, float(positive_cap))
 
   def update(self, active, CS, a_target, should_stop, accel_limits, starpilot_toggles, has_lead=False,
-             traffic_mode_enabled=False, profile_max_accel=0.0, pedal_override=False, leads=None):
+             traffic_mode_enabled=False, profile_max_accel=0.0, pedal_override=False, leads=None,
+             pitch=None):
     """Update longitudinal control. This updates the state machine and runs a PID loop"""
     self.pid.neg_limit = accel_limits[0]
     self.pid.pos_limit = accel_limits[1]
@@ -260,6 +261,10 @@ class LongControl:
     if getattr(starpilot_toggles, "blended_acc", False) and self.experimental_mode and not self.experimental_mode_last:
       self.reset()
     self.experimental_mode_last = self.experimental_mode
+    pitch_feedforward = self.vehicle_tuning.get_pitch_feedforward(
+      pitch, CS.vEgo, active and self.long_control_state == LongCtrlState.pid,
+    )
+
     if self.long_control_state == LongCtrlState.off:
       self.reset()
       output_accel = 0.
@@ -321,7 +326,7 @@ class LongControl:
       )
       feedforward = self.vehicle_tuning.get_longitudinal_feedforward(
         self.feedforward_gain, self.last_output_accel, a_target, CS.vEgo,
-      )
+      ) + pitch_feedforward
       freeze_integrator = self.vehicle_tuning.get_integrator_freeze(
         self.last_output_accel, a_target, error, CS.vEgo, accel_limits,
       )

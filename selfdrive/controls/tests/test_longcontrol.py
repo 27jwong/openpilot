@@ -1707,3 +1707,112 @@ def test_mazda_gen2_emergency_braking_authority_is_preserved():
   output = lc.update(active=True, CS=CS, a_target=-3.5, should_stop=False,
                      accel_limits=(-3.5, 2.0), starpilot_toggles=make_toggles())
   assert output == pytest.approx(-3.5, abs=1e-6)
+
+
+def _hold_pitch(tuning, pitch, seconds, v_ego=25.0):
+  out = 0.0
+  for _ in range(int(seconds / DT_CTRL)):
+    out = tuning.get_pitch_feedforward(pitch, v_ego, True)
+  return out
+
+
+def _flat_and_settled(CP=None):
+  """A tuning whose washout has converged on level ground, as it is after a minute of driving."""
+  tuning = vehicle_tunes.LongControlVehicleTuning(CP or make_mazda_gen2_cp())
+  tuning.reset()
+  _hold_pitch(tuning, 0.0, 15.0)
+  return tuning
+
+
+def test_mazda_gen2_pitch_feedforward_answers_a_grade_change():
+  """A hill the car has not absorbed yet is fed forward at close to full gravity."""
+  tuning = _flat_and_settled()
+  # cresting onto a 4% upgrade: the washout still reads flat, so the whole step is handed over.
+  # 9.81 * sin(0.04) = 0.392
+  assert tuning.get_pitch_feedforward(0.04, 25.0, True) == pytest.approx(0.392, abs=0.01)
+  # and it is still most of the way there a second in, while the car is still catching up
+  assert _hold_pitch(tuning, 0.04, 1.0) == pytest.approx(0.392 * 0.717, abs=0.02)
+  # a downgrade is the mirror image
+  tuning = _flat_and_settled()
+  assert tuning.get_pitch_feedforward(-0.04, 25.0, True) == pytest.approx(-0.392, abs=0.01)
+
+
+def test_mazda_gen2_pitch_feedforward_does_nothing_on_a_hill_already_underway():
+  """Engaging mid-climb must not inject a step: by then the car has absorbed the grade."""
+  tuning = vehicle_tunes.LongControlVehicleTuning(make_mazda_gen2_cp())
+  tuning.reset()
+  assert tuning.get_pitch_feedforward(0.04, 25.0, True) == 0.0
+
+
+def test_mazda_gen2_pitch_feedforward_washes_out_on_a_sustained_hill():
+  """The CX-30 compensates a steady grade itself, so the term must decay to nothing."""
+  tuning = _flat_and_settled()
+  assert _hold_pitch(tuning, 0.04, 3.0) == pytest.approx(0.392 * 0.368, abs=0.02)  # one RC
+  assert _hold_pitch(tuning, 0.04, 12.0) == pytest.approx(0.0, abs=0.02)
+
+
+def test_mazda_gen2_pitch_feedforward_is_bounded():
+  tuning = _flat_and_settled()
+  # a 45 degree "grade" can only come from a broken pitch estimate
+  assert tuning.get_pitch_feedforward(0.79, 25.0, True) == pytest.approx(
+    vehicle_tunes.MAZDA_GEN2_PITCH_FF_MAX)
+  tuning = _flat_and_settled()
+  assert tuning.get_pitch_feedforward(-0.79, 25.0, True) == pytest.approx(
+    -vehicle_tunes.MAZDA_GEN2_PITCH_FF_MAX)
+
+
+def test_mazda_gen2_pitch_feedforward_re_arms_instead_of_holding_a_stale_washout():
+  """Coming back from creep or a disengage must not step a settled washout into the command."""
+  tuning = vehicle_tunes.LongControlVehicleTuning(make_mazda_gen2_cp())
+  tuning.reset()
+  _hold_pitch(tuning, 0.04, 12.0)
+  assert tuning.get_pitch_feedforward(0.04, 1.0, True) == 0.0      # below the speed floor
+  # back above it on the same hill: re-armed, so the term is 0, not -0.39
+  assert tuning.get_pitch_feedforward(0.04, 25.0, True) == 0.0
+  tuning.reset()
+  _hold_pitch(tuning, 0.04, 12.0)
+  assert tuning.get_pitch_feedforward(0.04, 25.0, False) == 0.0    # not in the PID state
+  assert tuning.get_pitch_feedforward(0.04, 25.0, True) == 0.0
+
+
+def test_mazda_gen2_pitch_feedforward_ignores_a_missing_or_bad_estimate():
+  tuning = vehicle_tunes.LongControlVehicleTuning(make_mazda_gen2_cp())
+  tuning.reset()
+  assert tuning.get_pitch_feedforward(None, 25.0, True) == 0.0
+  assert tuning.get_pitch_feedforward(float("nan"), 25.0, True) == 0.0
+
+
+def test_pitch_feedforward_is_mazda_gen2_only():
+  """Every other platform keeps whatever grade handling it already had."""
+  for CP in (make_longcontrol_cp(brand="gm"),
+             make_longcontrol_cp(brand="toyota"),
+             make_longcontrol_cp(brand="mazda")):      # GEN1 mazda: no GEN2 flag
+    tuning = vehicle_tunes.LongControlVehicleTuning(CP)
+    tuning.reset()
+    assert tuning.get_pitch_feedforward(0.04, 25.0, True) == 0.0
+
+
+def test_mazda_gen2_pitch_feedforward_reaches_the_command():
+  CS = car.CarState.new_message(vEgo=25.0, aEgo=0.0, brakePressed=False)
+  kwargs = dict(active=True, CS=CS, a_target=0.0, should_stop=False,
+                accel_limits=(-3.5, 2.0), starpilot_toggles=make_toggles())
+
+  def settled_on_the_flat():
+    lc = LongControl(make_mazda_gen2_cp())
+    lc.long_control_state = LongCtrlState.pid
+    for _ in range(int(15.0 / DT_CTRL)):
+      lc.update(pitch=0.0, **kwargs)
+    return lc
+
+  climbing, level = settled_on_the_flat(), settled_on_the_flat()
+  assert level.update(pitch=0.0, **kwargs) == pytest.approx(0.0, abs=1e-6)
+  assert climbing.update(pitch=0.04, **kwargs) == pytest.approx(0.392, abs=0.01)
+
+
+def test_pitch_feedforward_defaults_to_off_when_controlsd_has_no_pose():
+  """calibrated_pose is None before locationd converges; the loop must behave as it does today."""
+  lc = LongControl(make_mazda_gen2_cp())
+  lc.long_control_state = LongCtrlState.pid
+  CS = car.CarState.new_message(vEgo=25.0, aEgo=0.0, brakePressed=False)
+  assert lc.update(active=True, CS=CS, a_target=0.0, should_stop=False,
+                   accel_limits=(-3.5, 2.0), starpilot_toggles=make_toggles()) == 0.0
