@@ -2051,6 +2051,14 @@ class LongitudinalPlanner:
       cloudlog.error(f"Longitudinal planner received non-finite vCruise={v_cruise}, falling back to v_ego={v_ego:.2f}")
       v_cruise = max(v_ego, 0.0)
     v_cruise_initialized = sm['carState'].vCruise != V_CRUISE_UNSET
+    if not v_cruise_initialized:
+      # An unset set speed reaches us as V_CRUISE_UNSET clamped to V_CRUISE_MAX, i.e. 145 kph.
+      # The solver runs while we are disengaged and is warm started from its own last
+      # solution, so that placeholder leaves it holding a full-throttle trajectory right up
+      # to the frame the driver first sets a speed, and the step down to the real target then
+      # lands as a brake before the loop settles. Track v_ego instead, so the problem the
+      # solver warms on is the one it gets handed at engage.
+      v_cruise = max(v_ego, 0.0)
 
     long_control_off = sm['controlsState'].longControlState == LongCtrlState.off
     force_slow_decel = sm['controlsState'].forceDecel
