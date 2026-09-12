@@ -3,6 +3,7 @@ from openpilot.selfdrive.controls.lib.lead_behavior import (
   is_radarless_matched_follow_window,
   should_hold_tracked_vision_lead,
   should_track_lead,
+  should_coast_to_lead_approach,
   should_disable_far_lead_throttle,
 )
 
@@ -243,3 +244,36 @@ def test_radarless_matched_follow_window_keeps_default_low_speed_guard():
 
 def test_radarless_matched_follow_window_accepts_lower_speed_when_requested():
   assert is_radarless_matched_follow_window(14.4, 25.4, 16.2, 1.25, radar=False, lead_brake=0.0, lead_prob=1.0, min_speed=12.0)
+
+
+def test_coast_to_lead_approach_starts_while_there_is_gap_left():
+  # 30 m/s, lead 3 m/s slower, 40 m of gap still to close -> ~13 s to reach it
+  assert should_coast_to_lead_approach(30.0, 82.0, 42.0, 3.0, False)
+
+
+def test_coast_to_lead_approach_ignores_a_gap_we_will_not_reach_soon():
+  # same closing speed but 90 m to close: 30 s away, no reason to lift yet
+  assert not should_coast_to_lead_approach(30.0, 132.0, 42.0, 3.0, False)
+
+
+def test_coast_to_lead_approach_ignores_steady_following():
+  assert not should_coast_to_lead_approach(30.0, 43.0, 42.0, 0.2, False)
+  assert not should_coast_to_lead_approach(30.0, 82.0, 42.0, 0.0, False)
+
+
+def test_coast_to_lead_approach_leaves_low_speed_creep_alone():
+  # disableThrottle bypasses the planner's own low-speed exemption, so this must not fire
+  assert not should_coast_to_lead_approach(4.0, 30.0, 12.0, 2.0, False)
+  assert not should_coast_to_lead_approach(4.0, 30.0, 12.0, 2.0, True)
+
+
+def test_coast_to_lead_approach_holds_through_the_approach():
+  # once coasting, a gap that no longer meets the entry bar keeps it latched
+  assert should_coast_to_lead_approach(30.0, 47.0, 42.0, 1.0, True)
+  # and it releases once the gap is closed or the closing speed is gone
+  assert not should_coast_to_lead_approach(30.0, 44.0, 42.0, 1.0, True)
+  assert not should_coast_to_lead_approach(30.0, 82.0, 42.0, 0.1, True)
+
+
+def test_coast_to_lead_approach_releases_when_the_lead_pulls_away():
+  assert not should_coast_to_lead_approach(30.0, 82.0, 42.0, -2.0, True)

@@ -16,7 +16,7 @@ from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import desir
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import should_trigger_planner_fcw
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import STOP_DISTANCE
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import T_IDXS as T_IDXS_MPC
-from openpilot.selfdrive.controls.lib.lead_behavior import is_radarless_matched_follow_window
+from openpilot.selfdrive.controls.lib.lead_behavior import LEAD_APPROACH_COAST_FILTER_RC, is_radarless_matched_follow_window, should_coast_to_lead_approach
 from openpilot.selfdrive.controls.lib.lead_follow_policy import apply as apply_follow_policy
 from openpilot.selfdrive.controls.lib.lead_follow_policy import is_nonurgent_duplicate_vision_follow
 from openpilot.selfdrive.controls.lib.longitudinal_vehicle_tunes import (
@@ -590,6 +590,12 @@ class LongitudinalPlanner:
       CP.brand == "tesla" and CP.carFingerprint == "TESLA_MODEL_S_PREAP" and
       CP.openpilotLongitudinalControl and not CP.pcmCruise
     )
+
+    from opendbc.car.mazda.values import MazdaSafetyFlags
+    self.lead_approach_coast_enabled = bool(CP.brand == "mazda" and (CP.flags & MazdaSafetyFlags.GEN2.value))
+    self.lead_approach_coast = False
+    self.lead_approach_coast_dist = FirstOrderFilter(0.0, LEAD_APPROACH_COAST_FILTER_RC, dt, initialized=False)
+    self.lead_approach_coast_speed = FirstOrderFilter(0.0, LEAD_APPROACH_COAST_FILTER_RC, dt, initialized=False)
     self.nap_adaptive_accel = False
     self._preap_params = None
     self._preap_param_frame = 0
@@ -2066,6 +2072,9 @@ class LongitudinalPlanner:
       self.v_desired_filter.x = v_ego
       # Clip aEgo to cruise limits to prevent large accelerations when becoming active
       self.a_desired = np.clip(sm['carState'].aEgo, accel_limits[0], accel_limits[1])
+      self.lead_approach_coast = False
+      self.lead_approach_coast_dist.initialized = False
+      self.lead_approach_coast_speed.initialized = False
       self.model_allow_throttle = True
       self.model_allow_throttle_transition_t = 0.0
 
@@ -2104,7 +2113,26 @@ class LongitudinalPlanner:
           self.model_allow_throttle_transition_t = 0.0
       else:
         self.model_allow_throttle_transition_t = 0.0
-    self.allow_throttle = self.model_allow_throttle and not sm['starpilotPlan'].disableThrottle
+
+    coast_to_lead = False
+    if self.lead_approach_coast_enabled:
+      approach_lead = sm['radarState'].leadOne
+      if approach_lead is not None and bool(getattr(approach_lead, "status", False)):
+        # tFollow is published as 0 while longitudinal is inactive; keep the gap sane.
+        coast_t_follow = max(float(sm['starpilotPlan'].tFollow), 1.0)
+        lead_dist = float(self.lead_approach_coast_dist.update(float(approach_lead.dRel)))
+        lead_speed = float(self.lead_approach_coast_speed.update(float(approach_lead.vLead)))
+        coast_to_lead = should_coast_to_lead_approach(
+          v_ego, lead_dist,
+          float(desired_follow_distance(v_ego, lead_speed, coast_t_follow)),
+          v_ego - lead_speed, self.lead_approach_coast,
+        )
+      else:
+        self.lead_approach_coast_dist.initialized = False
+        self.lead_approach_coast_speed.initialized = False
+    self.lead_approach_coast = coast_to_lead
+    self.allow_throttle = (self.model_allow_throttle and not sm['starpilotPlan'].disableThrottle
+                           and not coast_to_lead)
 
     if not self.allow_throttle:
       clipped_accel_coast = max(accel_coast, accel_limits_turns[0])
