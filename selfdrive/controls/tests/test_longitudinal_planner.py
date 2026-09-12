@@ -4255,3 +4255,27 @@ def test_unset_cruise_speed_warms_the_solver_on_v_ego_not_the_placeholder():
   planner.update(sm, make_toggles())
 
   assert targets[-1] == pytest.approx(105.0 * CV.KPH_TO_MS)
+
+
+def test_model_brake_risk_reaches_the_uncertainty_track():
+  # brakePressProbs is consumed through disengage_risk -> uncert_slow/uncert_fast -> the
+  # uncertainty handed to mpc.set_weights. A second consumer of the same signal (the
+  # recently_braked term of a self.stable_lead heuristic) was reordered above its own
+  # producer and went silently dead, so pin the live path: a reorder must not cut the
+  # model's brake risk out of the planner again.
+  v_ego = 22.0
+  CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
+  toggles = make_toggles()
+
+  def settled_uncertainty(brake_press_prob):
+    planner = LongitudinalPlanner(CP, init_v=v_ego)
+    sm = make_sm(v_ego, 0.0, -1.2, brake_press_prob=brake_press_prob)
+    for _ in range(10):
+      planner.update(sm, toggles)
+    return planner.uncert_slow.x
+
+  quiet = settled_uncertainty(0.0)
+  braking = settled_uncertainty(0.6)
+
+  assert quiet == pytest.approx(0.0)
+  assert braking > 0.05
