@@ -41,13 +41,18 @@ FAR_LEAD_COAST_MIN_GAP = 3.5
 # at 15-50 s and only drops below 10 s once the planner is already braking, so it never buys
 # anything. Measured over 49 min of CX-30 following, these bounds coast on 6% of follow time,
 # 0% of steady following and 0% below the speed floor.
-LEAD_APPROACH_COAST_ENTER_TTG = 15.0
+LEAD_APPROACH_COAST_ENTER_TTG = 12.0
 LEAD_APPROACH_COAST_EXIT_TTG = 18.0
 LEAD_APPROACH_COAST_ENTER_GAP = 8.0
 LEAD_APPROACH_COAST_EXIT_GAP = 3.0
 LEAD_APPROACH_COAST_MIN_CLOSING = 0.5
-LEAD_APPROACH_COAST_EXIT_CLOSING = 0.3
+LEAD_APPROACH_COAST_EXIT_CLOSING = 0.1
 LEAD_APPROACH_COAST_MIN_SPEED = 8.0
+# Coasting bleeds the closing speed off before the gap is reached, so the planner gets the car
+# back matched in speed but still short of the lead and accelerates to close - then the gate
+# re-arms and the pair oscillate. Measured on route 694aadb900: 8 re-engagements within 20 s of
+# a release, releasing with a median 11 m still to run. Lock the gate out after every release.
+LEAD_APPROACH_COAST_RELOCK_TIME = 20.0
 # Vision lead distance and speed are noisy enough to chatter the latch ~5 times a minute at
 # 0.7 s a time. A short causal filter settles that to ~1 at 2.8 s without costing any benefit.
 LEAD_APPROACH_COAST_FILTER_RC = 0.5
@@ -207,7 +212,8 @@ def should_disable_far_lead_throttle(v_ego: float, lead_distance: float, desired
 
 
 def should_coast_to_lead_approach(v_ego: float, lead_distance: float, desired_gap: float,
-                                  closing_speed: float, coasting: bool) -> bool:
+                                  closing_speed: float, coasting: bool,
+                                  relock_remaining: float = 0.0) -> bool:
   """Cut throttle while closing on a lead we will reach soon, so the approach is a coast
   instead of holding speed and then braking at close range.
 
@@ -220,6 +226,9 @@ def should_coast_to_lead_approach(v_ego: float, lead_distance: float, desired_ga
   time_to_gap = gap_to_close / max(float(closing_speed), 0.1)
   if coasting:
     return gap_to_close > LEAD_APPROACH_COAST_EXIT_GAP and time_to_gap < LEAD_APPROACH_COAST_EXIT_TTG
+
+  if relock_remaining > 0.0:
+    return False
 
   return (v_ego > LEAD_APPROACH_COAST_MIN_SPEED and
           closing_speed > LEAD_APPROACH_COAST_MIN_CLOSING and

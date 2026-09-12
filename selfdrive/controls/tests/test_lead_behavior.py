@@ -247,8 +247,13 @@ def test_radarless_matched_follow_window_accepts_lower_speed_when_requested():
 
 
 def test_coast_to_lead_approach_starts_while_there_is_gap_left():
-  # 30 m/s, lead 3 m/s slower, 40 m of gap still to close -> ~13 s to reach it
-  assert should_coast_to_lead_approach(30.0, 82.0, 42.0, 3.0, False)
+  # 30 m/s, lead 3 m/s slower, 33 m of gap still to close -> 11 s to reach it
+  assert should_coast_to_lead_approach(30.0, 75.0, 42.0, 3.0, False)
+
+
+def test_coast_to_lead_approach_waits_until_the_gap_is_close_enough():
+  # same closing speed, 40 m to close: 13 s away, outside the window
+  assert not should_coast_to_lead_approach(30.0, 82.0, 42.0, 3.0, False)
 
 
 def test_coast_to_lead_approach_ignores_a_gap_we_will_not_reach_soon():
@@ -277,3 +282,14 @@ def test_coast_to_lead_approach_holds_through_the_approach():
 
 def test_coast_to_lead_approach_releases_when_the_lead_pulls_away():
   assert not should_coast_to_lead_approach(30.0, 82.0, 42.0, -2.0, True)
+
+
+def test_coast_to_lead_approach_will_not_re_arm_during_the_lockout():
+  # coasting hands the car back matched in speed but short of the lead; re-arming straight
+  # away oscillates against the planner's throttle, so entry is blocked for a while
+  assert not should_coast_to_lead_approach(30.0, 75.0, 42.0, 3.0, False, relock_remaining=5.0)
+  assert should_coast_to_lead_approach(30.0, 75.0, 42.0, 3.0, False, relock_remaining=0.0)
+
+
+def test_coast_to_lead_approach_lockout_does_not_cut_a_coast_already_running():
+  assert should_coast_to_lead_approach(30.0, 47.0, 42.0, 1.0, True, relock_remaining=5.0)
