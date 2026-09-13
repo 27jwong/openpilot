@@ -9,8 +9,6 @@ from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.params import Params
 from openpilot.starpilot.common.experimental_state import CEStatus
 
-import cereal.messaging as messaging
-
 VisualAlert = structs.CarControl.HUDControl.VisualAlert
 LongCtrlState = structs.CarControl.Actuators.LongControlState
 
@@ -29,7 +27,6 @@ class CarController(CarControllerBase):
     self.acc_filter = FirstOrderFilter(0.0, .1, DT_CTRL, initialized=False)
     self.long_active_last = False
     self.params_memory = Params(memory=True)
-    self.sm = messaging.SubMaster(['longitudinalPlan', 'radarState'])
     self.lead_d_filter = FirstOrderFilter(0.0, .075, DT_CTRL, initialized=False)
     self.lead_v_filter = FirstOrderFilter(0.0, .075, DT_CTRL, initialized=False)
     self.lead_distance = 0.0
@@ -44,13 +41,11 @@ class CarController(CarControllerBase):
 
 
   def update(self, CC, CS, now_nanos, starpilot_toggles):
-    self.sm.update(0)
-
-    lead_one = self.sm['radarState'].leadOne
-    lead_status = lead_one.status  # whether lead is valid
+    # card surfaces radarState's leadOne on CS so opendbc stays free of messaging
+    lead_status = bool(getattr(CS, "openpilot_lead_status", False))  # whether lead is valid
     if lead_status:
-      self.lead_distance = self.lead_d_filter.update(lead_one.dRel)  # relative distance in meters
-      self.lead_velocity = self.lead_v_filter.update(lead_one.vRel)  # relative velocity in m/s
+      self.lead_distance = self.lead_d_filter.update(float(getattr(CS, "openpilot_lead_d_rel", 0.0)))  # relative distance in meters
+      self.lead_velocity = self.lead_v_filter.update(float(getattr(CS, "openpilot_lead_v_rel", 0.0)))  # relative velocity in m/s
 
     can_sends = []
 
