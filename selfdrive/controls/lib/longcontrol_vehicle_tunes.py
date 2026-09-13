@@ -90,6 +90,13 @@ MAZDA_GEN2_MAX_BRAKE_OVERSHOOT = 0.10
 #
 #     aEgo(t) = 0.952 * cmd(t - 0.50 s) - 0.96 * highpass_3s(g * sin(pitch))     R^2 = 0.87
 #
+# Those coefficients were fit before CP.wheelSpeedFactor was set for the CX-30, so the aEgo
+# they were regressed against ran ~4.9% low (non-stock tires). Rescaling into the corrected
+# frame puts both at unity - 0.952 * 1.0487 = 1.00 and 0.96 * 1.0487 = 1.01, grade arriving in
+# true units from locationd so only aEgo moves - which is what a unity-gain accel interface
+# implies, and why PITCH_FF_GAIN below is 1.0 rather than the fitted 0.96. The 0.50 s delay and
+# 3 s washout are time constants and carry over unchanged.
+#
 # The car's own ACC closes an inertial accel loop, so a sustained hill costs the command
 # nothing - on a steady 3.5% upgrade at constant speed openpilot averages -0.013 m/s^2, and
 # the grade coefficient collapses to -0.145 if the washout is removed. What it does not do is
