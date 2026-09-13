@@ -140,6 +140,15 @@ class CarInterface(CarInterfaceBase):
       ret.steerActuatorDelay = 0.335
       ret.steerAtStandstill = True
 
+      if candidate == CAR.MAZDA_CX_30:
+        # Non-stock tire size: 2285mm rolling circumference against the 2179mm the wheel
+        # speed sensors assume, so the car under-reports speed by ~4.9%. Correcting vEgoRaw
+        # here puts vEgo/aEgo in the true ground-speed frame, which matters less for the
+        # long PI gains (a scale error is absorbed into them) than for locationd, paramsd,
+        # lagd and torqued, which all observe vEgo and were being biased by it. carstate
+        # divides the factor back out for vEgoCluster so the UI still matches the dash.
+        ret.wheelSpeedFactor = 2285 / 2179
+
     if candidate in GEN3:
       ret.safetyConfigs[0].safetyParam |= MazdaSafetyFlags.GEN3.value
       ret.alphaLongitudinalAvailable = False

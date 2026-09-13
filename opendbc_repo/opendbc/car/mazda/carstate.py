@@ -183,6 +183,11 @@ class CarState(CarStateBase):
         cp_cam.vl["WHEEL_SPEEDS"]["RR"],
     )
 
+    # The car's own cluster reads uncorrected wheel speed, so undo wheelSpeedFactor to keep
+    # the UI speed agreeing with the dash. Reciprocal by construction, not a second constant.
+    # No-op on the 1.0 default.
+    ret.vEgoCluster = ret.vEgo / (self.CP.wheelSpeedFactor or 1.0)
+
     ret.steeringTorque = cp_body.vl["TI_FEEDBACK"]["STEER_TORQUE_SENSOR"]
     ret.steeringPressed = abs(ret.steeringTorque) > self.params.STEER_DRIVER_ALLOWANCE
 
