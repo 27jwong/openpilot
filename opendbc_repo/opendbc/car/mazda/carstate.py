@@ -25,6 +25,7 @@ class CarState(CarStateBase):
     self.params = CarControllerParams(CP)
 
     self.distance_button = 0
+    self.distance_setting = 0
     self.ti_ramp_down = False
     self.ti_version = 1
     self.ti_state = TI_STATE.RUN
@@ -208,6 +209,7 @@ class CarState(CarStateBase):
       ret.cruiseState.speed = cp.vl["CRUZE_STATE"]["CRZ_SPEED"] * unit_conversion
       ret.cruiseState.enabled = (cp.vl["CRUZE_STATE"]["CRZ_STATE"] >= 2)
       ret.cruiseState.available = (cp.vl["CRUZE_STATE"]["CRZ_STATE"] != 0)
+      self.distance_setting = int(cp.vl["CRUZE_STATE"]["DISTANCE_SETTING"])
     else:
       ret.cruiseState.speed = cp_body.vl["CRUZE_STATE"]["CRZ_SPEED"] * unit_conversion
       ret.cruiseState.enabled = (cp_body.vl["CRUZE_STATE"]["CRZ_STATE"] >= 3)

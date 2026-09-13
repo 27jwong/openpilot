@@ -6,6 +6,10 @@ from opendbc.car.mazda import mazdacan
 from opendbc.car.mazda.values import CarControllerParams, Buttons, MazdaSafetyFlags
 from openpilot.common.realtime import ControlsTimer as Timer, DT_CTRL
 from openpilot.common.filter_simple import FirstOrderFilter
+from openpilot.common.params import Params
+from openpilot.starpilot.common.experimental_state import CEStatus
+
+import cereal.messaging as messaging
 
 VisualAlert = structs.CarControl.HUDControl.VisualAlert
 LongCtrlState = structs.CarControl.Actuators.LongControlState
@@ -24,10 +28,30 @@ class CarController(CarControllerBase):
     self.cancel_delay = Timer(0.07) # 70ms delay to try to avoid a race condition with stock system
     self.acc_filter = FirstOrderFilter(0.0, .1, DT_CTRL, initialized=False)
     self.long_active_last = False
+    self.params_memory = Params(memory=True)
+    self.sm = messaging.SubMaster(['longitudinalPlan', 'radarState'])
+    self.lead_d_filter = FirstOrderFilter(0.0, .075, DT_CTRL, initialized=False)
+    self.lead_v_filter = FirstOrderFilter(0.0, .075, DT_CTRL, initialized=False)
+    self.lead_distance = 0.0
+    self.lead_velocity = 0.0
+    # factor for blending stock MRCC and openpilot long. 0 is fully stock, 1 is fully openpilot
+    self.blend_coeff = 0.0
+    # seconds for a full crossfade in either direction; rescaled by speed every cycle
+    self.transition_time = 2.5
+    self.distance_last = None
+    self.approaching_CEM_last = False
 
 
 
   def update(self, CC, CS, now_nanos, starpilot_toggles):
+    self.sm.update(0)
+
+    lead_one = self.sm['radarState'].leadOne
+    lead_status = lead_one.status  # whether lead is valid
+    if lead_status:
+      self.lead_distance = self.lead_d_filter.update(lead_one.dRel)  # relative distance in meters
+      self.lead_velocity = self.lead_v_filter.update(lead_one.vRel)  # relative velocity in m/s
+
     can_sends = []
 
     apply_torque = 0
@@ -104,24 +128,56 @@ class CarController(CarControllerBase):
           can_sends.extend(mazdacan.create_radar_command(self.packer, self.frame, CC.longActive, CS, hold))
 
     elif self.CP.flags & MazdaSafetyFlags.GEN2:
-      if self.CP.openpilotLongitudinalControl:
+      if self.CP.openpilotLongitudinalControl and CC.longActive:
         stock_acc = CS.acc["ACCEL_CMD"]
         op_acc = (CC.actuators.accel * 200) + 2000
 
-        if getattr(starpilot_toggles, "blended_acc", False):
-          if CC.longActive:
-            if not self.long_active_last:
-              self.acc_filter.initialized = False
-            # Hand longitudinal to openpilot only while experimental mode is actually
-            # resolved on; otherwise let the stock radar ACC command through.
-            target_acc = op_acc if CC.experimentalMode else stock_acc
-            raw_acc_output = self.acc_filter.update(target_acc)
-          else:
-            raw_acc_output = stock_acc
-        else:
-          raw_acc_output = op_acc if CC.longActive else stock_acc
+        # Force CEM with the closest distance setting
+        if CS.distance_setting == 1:
+          self.params_memory.put_int("CEStatus", CEStatus["USER_OVERRIDDEN"])
+        elif self.distance_last == 1:
+          self.params_memory.put_int("CEStatus", CEStatus["OFF"])
 
-        CS.acc["ACCEL_CMD"] = raw_acc_output
+        if getattr(starpilot_toggles, "blended_acc", False):
+          # Built from last cycle's coefficient, so a status change lands on the next
+          # cycle instead of stepping the command partway through this one.
+          blended_acc_output = (self.blend_coeff * op_acc) + ((1 - self.blend_coeff) * stock_acc)
+          ce_status = self.params_memory.get_int("CEStatus", default=CEStatus["OFF"])
+
+          # Force CEM more aggressively when approaching leads: less than a 0.85s gap,
+          # or less than 8s to impact.
+          if lead_status and self.lead_velocity < 0 and (self.lead_distance < 0.85 * CS.out.vEgo or
+                                                         self.lead_distance / -self.lead_velocity < 8):
+            if ce_status == CEStatus["OFF"]:
+              self.params_memory.put_int("CEStatus", CEStatus["USER_OVERRIDDEN"])
+            self.approaching_CEM_last = True
+          elif CS.distance_setting != 1 and self.approaching_CEM_last:
+            self.params_memory.put_int("CEStatus", CEStatus["OFF"])
+            self.approaching_CEM_last = False
+
+          # blend in openpilot long. Every status at or above USER_OVERRIDDEN is a reason
+          # CEM resolved experimental mode on; OFF and USER_DISABLED both mean it is off.
+          if ce_status >= CEStatus["USER_OVERRIDDEN"] and self.blend_coeff < 1:
+            self.blend_coeff += min((DT_CTRL / self.transition_time), (1 - self.blend_coeff))
+
+          # blend back out to MRCC. USER_DISABLED is CEM forced off, but the coefficient
+          # still has to decay from there, hence the comparison rather than equality.
+          elif ce_status < CEStatus["USER_OVERRIDDEN"] and self.blend_coeff > 0:
+            self.blend_coeff -= min((DT_CTRL / self.transition_time), self.blend_coeff)
+
+          if self.blend_coeff > 0:
+            CS.acc["ACCEL_CMD"] = blended_acc_output
+
+          # ramp the crossfade with speed: 0.5s at standstill, ~1.6s at 55mph. The
+          # coefficient only reads as 3s at 55 if vEgo were mph, and it is m/s.
+          self.transition_time = (0.045455 * CS.out.vEgo) + 0.5
+          if self.approaching_CEM_last:
+            self.transition_time /= 2
+
+          self.distance_last = CS.distance_setting
+
+        else:
+          CS.acc["ACCEL_CMD"] = op_acc
 
       resume = False
       hold = False
