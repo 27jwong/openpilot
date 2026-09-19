@@ -6,6 +6,7 @@ import pytest
 import openpilot.selfdrive.controls.lib.longcontrol as longcontrol
 import openpilot.selfdrive.controls.lib.longcontrol_vehicle_tunes as vehicle_tunes
 from opendbc.car.gm.values import CAR, GMFlags
+from opendbc.car.mazda.values import MazdaSafetyFlags
 from opendbc.car.subaru.values import CAR as SUBARU_CAR
 from opendbc.car.toyota.values import CAR as TOYOTA_CAR
 from opendbc.car.volkswagen.values import CAR as VOLKSWAGEN_CAR
@@ -1624,3 +1625,230 @@ def test_leaving_experimental_does_not_reset_mode_transition_timer():
     lc.update_mpc_mode(False)
 
   assert not lc.transitioning
+
+
+def make_mazda_gen2_cp(**overrides):
+  CP = make_longcontrol_cp(brand="mazda", flags=MazdaSafetyFlags.GEN2.value, **overrides)
+  CP.longitudinalTuning.kpBP = [0.0, 12.0, 30.0]
+  CP.longitudinalTuning.kpV = [0.2, 0.5, 0.4]
+  CP.longitudinalTuning.kiBP = [0.0, 35.0]
+  CP.longitudinalTuning.kiV = [1.0, 1.0]
+  return CP
+
+
+def test_mazda_gen2_is_detected():
+  assert LongControl(make_mazda_gen2_cp()).vehicle_tuning.is_mazda_gen2
+  assert not LongControl(make_longcontrol_cp(brand="mazda")).vehicle_tuning.is_mazda_gen2
+  assert not LongControl(make_longcontrol_cp(brand="gm")).vehicle_tuning.is_mazda_gen2
+
+
+def test_mazda_gen2_error_filter_smooths_measurement_noise():
+  tuning = LongControl(make_mazda_gen2_cp()).vehicle_tuning
+
+  # a steady error settles onto the true value rather than being attenuated forever
+  for _ in range(200):
+    filtered = tuning.filter_accel_error(0.4)
+  assert filtered == pytest.approx(0.4, abs=1e-3)
+
+  # alternating noise of the size aEgo actually carries is rejected, not passed through
+  tuning.reset()
+  for _ in range(50):
+    tuning.filter_accel_error(0.4)
+  outputs = [tuning.filter_accel_error(0.4 + (0.15 if i % 2 else -0.15)) for i in range(40)]
+  assert max(outputs) - min(outputs) < 0.10
+
+
+def test_mazda_gen2_error_filter_passes_large_errors_immediately():
+  tuning = LongControl(make_mazda_gen2_cp()).vehicle_tuning
+  for _ in range(100):
+    tuning.filter_accel_error(0.0)
+
+  # a hard-braking request must not be delayed by the smoothing
+  assert tuning.filter_accel_error(-2.5) == pytest.approx(-2.5)
+  # and the filter picks up from there instead of snapping back to zero
+  assert tuning.filter_accel_error(-2.5) == pytest.approx(-2.5, abs=1e-6)
+
+
+def test_mazda_gen2_error_filter_resets_with_the_controller():
+  lc = LongControl(make_mazda_gen2_cp())
+  for _ in range(100):
+    lc.vehicle_tuning.filter_accel_error(1.0)
+  assert lc.vehicle_tuning.accel_error_filter.x > 0.9
+
+  lc.reset()
+  assert not lc.vehicle_tuning.accel_error_filter.initialized
+  # first sample after a reset is adopted directly, no ramp from a stale value
+  assert lc.vehicle_tuning.filter_accel_error(-0.3) == pytest.approx(-0.3)
+
+
+def test_other_brands_are_not_filtered():
+  tuning = LongControl(make_longcontrol_cp(brand="gm")).vehicle_tuning
+  assert tuning.filter_accel_error(0.9) == 0.9
+  assert tuning.filter_accel_error(-0.4) == -0.4
+
+
+def test_mazda_gen2_integrator_corrects_a_standing_offset():
+  """The old kp=0/ki=0.1 tune needed ~10s to cancel a steady offset. Check the new
+  gains close most of a held error within a couple of seconds."""
+  lc = LongControl(make_mazda_gen2_cp())
+  lc.long_control_state = LongCtrlState.pid
+  toggles = make_toggles()
+
+  a_target, a_ego = 0.5, 0.0
+  for _ in range(200):  # 2 s at 100 Hz, car stubbornly not responding
+    CS = car.CarState.new_message(vEgo=20.0, aEgo=a_ego, brakePressed=False)
+    output_accel = lc.update(active=True, CS=CS, a_target=a_target, should_stop=False,
+                             accel_limits=(-3.5, 2.0), starpilot_toggles=toggles)
+
+  # feedforward alone would sit at a_target; the loop must be commanding meaningfully more
+  assert output_accel > a_target + 0.5
+  assert lc.pid.i > 0.5
+
+
+def test_mazda_gen2_brake_overshoot_is_bounded():
+  """Feedback may lead the plant, but not out-brake the planner without limit."""
+  lc = LongControl(make_mazda_gen2_cp())
+  cap = vehicle_tunes.MAZDA_GEN2_MAX_BRAKE_OVERSHOOT
+
+  lc.pid.i = -1.2  # a wound-up integrator mid brake
+  limited = lc.vehicle_tuning.limit_brake_overshoot(lc.pid, -2.4, -1.5)
+  assert limited == pytest.approx(-1.5 - cap)
+  # the integrator was back-calculated to what actually got sent, not left wound up
+  assert lc.pid.i == pytest.approx(-1.2 + ((-1.5 - cap) - -2.4))
+
+
+def test_mazda_gen2_brake_overshoot_leaves_normal_commands_alone():
+  lc = LongControl(make_mazda_gen2_cp())
+  before = lc.pid.i = -0.3
+  # within the allowance: untouched, and the integrator is not disturbed
+  assert lc.vehicle_tuning.limit_brake_overshoot(lc.pid, -1.55, -1.5) == -1.55
+  assert lc.pid.i == before
+  # positive requests are not the braking case at all
+  assert lc.vehicle_tuning.limit_brake_overshoot(lc.pid, 0.2, 0.8) == 0.2
+  assert lc.pid.i == before
+
+
+def test_brake_overshoot_limit_is_mazda_gen2_only():
+  lc = LongControl(make_longcontrol_cp(brand="gm"))
+  lc.pid.i = -1.0
+  assert lc.vehicle_tuning.limit_brake_overshoot(lc.pid, -3.0, -1.0) == -3.0
+  assert lc.pid.i == -1.0
+
+
+def test_mazda_gen2_emergency_braking_authority_is_preserved():
+  """At the accel floor the cap must not reduce available braking."""
+  lc = LongControl(make_mazda_gen2_cp())
+  lc.long_control_state = LongCtrlState.pid
+  CS = car.CarState.new_message(vEgo=25.0, aEgo=-1.0, brakePressed=False)
+  output = lc.update(active=True, CS=CS, a_target=-3.5, should_stop=False,
+                     accel_limits=(-3.5, 2.0), starpilot_toggles=make_toggles())
+  assert output == pytest.approx(-3.5, abs=1e-6)
+
+
+def _hold_pitch(tuning, pitch, seconds, v_ego=25.0):
+  out = 0.0
+  for _ in range(int(seconds / DT_CTRL)):
+    out = tuning.get_pitch_feedforward(pitch, v_ego, True)
+  return out
+
+
+def _flat_and_settled(CP=None):
+  """A tuning whose washout has converged on level ground, as it is after a minute of driving."""
+  tuning = vehicle_tunes.LongControlVehicleTuning(CP or make_mazda_gen2_cp())
+  tuning.reset()
+  _hold_pitch(tuning, 0.0, 15.0)
+  return tuning
+
+
+def test_mazda_gen2_pitch_feedforward_answers_a_grade_change():
+  """A hill the car has not absorbed yet is fed forward at close to full gravity."""
+  tuning = _flat_and_settled()
+  # cresting onto a 4% upgrade: the washout still reads flat, so the whole step is handed over.
+  # 9.81 * sin(0.04) = 0.392
+  assert tuning.get_pitch_feedforward(0.04, 25.0, True) == pytest.approx(0.392, abs=0.01)
+  # and it is still most of the way there a second in, while the car is still catching up
+  assert _hold_pitch(tuning, 0.04, 1.0) == pytest.approx(0.392 * 0.717, abs=0.02)
+  # a downgrade is the mirror image
+  tuning = _flat_and_settled()
+  assert tuning.get_pitch_feedforward(-0.04, 25.0, True) == pytest.approx(-0.392, abs=0.01)
+
+
+def test_mazda_gen2_pitch_feedforward_does_nothing_on_a_hill_already_underway():
+  """Engaging mid-climb must not inject a step: by then the car has absorbed the grade."""
+  tuning = vehicle_tunes.LongControlVehicleTuning(make_mazda_gen2_cp())
+  tuning.reset()
+  assert tuning.get_pitch_feedforward(0.04, 25.0, True) == 0.0
+
+
+def test_mazda_gen2_pitch_feedforward_washes_out_on_a_sustained_hill():
+  """The CX-30 compensates a steady grade itself, so the term must decay to nothing."""
+  tuning = _flat_and_settled()
+  assert _hold_pitch(tuning, 0.04, 3.0) == pytest.approx(0.392 * 0.368, abs=0.02)  # one RC
+  assert _hold_pitch(tuning, 0.04, 12.0) == pytest.approx(0.0, abs=0.02)
+
+
+def test_mazda_gen2_pitch_feedforward_is_bounded():
+  tuning = _flat_and_settled()
+  # a 45 degree "grade" can only come from a broken pitch estimate
+  assert tuning.get_pitch_feedforward(0.79, 25.0, True) == pytest.approx(
+    vehicle_tunes.MAZDA_GEN2_PITCH_FF_MAX)
+  tuning = _flat_and_settled()
+  assert tuning.get_pitch_feedforward(-0.79, 25.0, True) == pytest.approx(
+    -vehicle_tunes.MAZDA_GEN2_PITCH_FF_MAX)
+
+
+def test_mazda_gen2_pitch_feedforward_re_arms_instead_of_holding_a_stale_washout():
+  """Coming back from creep or a disengage must not step a settled washout into the command."""
+  tuning = vehicle_tunes.LongControlVehicleTuning(make_mazda_gen2_cp())
+  tuning.reset()
+  _hold_pitch(tuning, 0.04, 12.0)
+  assert tuning.get_pitch_feedforward(0.04, 1.0, True) == 0.0      # below the speed floor
+  # back above it on the same hill: re-armed, so the term is 0, not -0.39
+  assert tuning.get_pitch_feedforward(0.04, 25.0, True) == 0.0
+  tuning.reset()
+  _hold_pitch(tuning, 0.04, 12.0)
+  assert tuning.get_pitch_feedforward(0.04, 25.0, False) == 0.0    # not in the PID state
+  assert tuning.get_pitch_feedforward(0.04, 25.0, True) == 0.0
+
+
+def test_mazda_gen2_pitch_feedforward_ignores_a_missing_or_bad_estimate():
+  tuning = vehicle_tunes.LongControlVehicleTuning(make_mazda_gen2_cp())
+  tuning.reset()
+  assert tuning.get_pitch_feedforward(None, 25.0, True) == 0.0
+  assert tuning.get_pitch_feedforward(float("nan"), 25.0, True) == 0.0
+
+
+def test_pitch_feedforward_is_mazda_gen2_only():
+  """Every other platform keeps whatever grade handling it already had."""
+  for CP in (make_longcontrol_cp(brand="gm"),
+             make_longcontrol_cp(brand="toyota"),
+             make_longcontrol_cp(brand="mazda")):      # GEN1 mazda: no GEN2 flag
+    tuning = vehicle_tunes.LongControlVehicleTuning(CP)
+    tuning.reset()
+    assert tuning.get_pitch_feedforward(0.04, 25.0, True) == 0.0
+
+
+def test_mazda_gen2_pitch_feedforward_reaches_the_command():
+  CS = car.CarState.new_message(vEgo=25.0, aEgo=0.0, brakePressed=False)
+  kwargs = dict(active=True, CS=CS, a_target=0.0, should_stop=False,
+                accel_limits=(-3.5, 2.0), starpilot_toggles=make_toggles())
+
+  def settled_on_the_flat():
+    lc = LongControl(make_mazda_gen2_cp())
+    lc.long_control_state = LongCtrlState.pid
+    for _ in range(int(15.0 / DT_CTRL)):
+      lc.update(pitch=0.0, **kwargs)
+    return lc
+
+  climbing, level = settled_on_the_flat(), settled_on_the_flat()
+  assert level.update(pitch=0.0, **kwargs) == pytest.approx(0.0, abs=1e-6)
+  assert climbing.update(pitch=0.04, **kwargs) == pytest.approx(0.392, abs=0.01)
+
+
+def test_pitch_feedforward_defaults_to_off_when_controlsd_has_no_pose():
+  """calibrated_pose is None before locationd converges; the loop must behave as it does today."""
+  lc = LongControl(make_mazda_gen2_cp())
+  lc.long_control_state = LongCtrlState.pid
+  CS = car.CarState.new_message(vEgo=25.0, aEgo=0.0, brakePressed=False)
+  assert lc.update(active=True, CS=CS, a_target=0.0, should_stop=False,
+                   accel_limits=(-3.5, 2.0), starpilot_toggles=make_toggles()) == 0.0

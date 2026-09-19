@@ -8,6 +8,7 @@ import pytest
 
 from cereal import log
 from openpilot.common.constants import CV
+from openpilot.selfdrive.car.cruise import V_CRUISE_MAX, V_CRUISE_UNSET
 from opendbc.car.honda.interface import CarInterface
 from opendbc.car.honda.values import CAR
 from opendbc.car.gm.values import CAR as GM_CAR, GMFlags
@@ -4228,3 +4229,62 @@ def test_near_duplicate_lead_source_hysteresis_skips_distinct_leads():
 
   assert lead_0_bias == 0.0
   assert lead_1_bias == 0.0
+
+
+def test_unset_cruise_speed_warms_the_solver_on_v_ego_not_the_placeholder():
+  # An unset set speed reaches the planner as V_CRUISE_UNSET clamped to V_CRUISE_MAX. The
+  # solver runs while we are disengaged and warm starts from its own last solution, so
+  # handing it that placeholder leaves it holding a full-throttle trajectory until the
+  # driver first sets a speed, and the step down to the real target lands as a brake on
+  # the first engage of the drive.
+  v_ego = 27.0
+  CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
+  planner = LongitudinalPlanner(CP, init_v=v_ego)
+
+  targets = []
+  real_mpc_update = planner.mpc.update
+
+  def record(radarstate, v_cruise, *args, **kwargs):
+    targets.append(float(v_cruise))
+    return real_mpc_update(radarstate, v_cruise, *args, **kwargs)
+
+  planner.mpc.update = record
+
+  sm = make_sm(v_ego, 0.0, -1.2)
+  sm['carState'].vCruise = V_CRUISE_UNSET
+  sm['starpilotPlan'].vCruise = V_CRUISE_MAX * CV.KPH_TO_MS
+  planner.update(sm, make_toggles())
+
+  assert targets[-1] == pytest.approx(v_ego)
+
+  # A set speed the driver actually chose still reaches the solver untouched.
+  sm = make_sm(v_ego, 0.0, -1.2)
+  sm['carState'].vCruise = 105.0
+  sm['starpilotPlan'].vCruise = 105.0 * CV.KPH_TO_MS
+  planner.update(sm, make_toggles())
+
+  assert targets[-1] == pytest.approx(105.0 * CV.KPH_TO_MS)
+
+
+def test_model_brake_risk_reaches_the_uncertainty_track():
+  # brakePressProbs is consumed through disengage_risk -> uncert_slow/uncert_fast -> the
+  # uncertainty handed to mpc.set_weights. A second consumer of the same signal (the
+  # recently_braked term of a self.stable_lead heuristic) was reordered above its own
+  # producer and went silently dead, so pin the live path: a reorder must not cut the
+  # model's brake risk out of the planner again.
+  v_ego = 22.0
+  CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
+  toggles = make_toggles()
+
+  def settled_uncertainty(brake_press_prob):
+    planner = LongitudinalPlanner(CP, init_v=v_ego)
+    sm = make_sm(v_ego, 0.0, -1.2, brake_press_prob=brake_press_prob)
+    for _ in range(10):
+      planner.update(sm, toggles)
+    return planner.uncert_slow.x
+
+  quiet = settled_uncertainty(0.0)
+  braking = settled_uncertainty(0.6)
+
+  assert quiet == pytest.approx(0.0)
+  assert braking > 0.05

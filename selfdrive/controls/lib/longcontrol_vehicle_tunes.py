@@ -1,9 +1,14 @@
+import math
+
 import numpy as np
 
 from opendbc.car.gm.values import CAR, GMFlags
+from opendbc.car.mazda.values import MazdaSafetyFlags
 from opendbc.car.subaru.values import CAR as SUBARU_CAR
 from opendbc.car.toyota.values import CAR as TOYOTA_CAR
 from opendbc.car.volkswagen.values import CAR as VOLKSWAGEN_CAR
+from openpilot.common.constants import ACCELERATION_DUE_TO_GRAVITY
+from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.realtime import DT_CTRL
 from openpilot.starpilot.common.testing_grounds import testing_ground
 
@@ -70,6 +75,55 @@ VOLKSWAGEN_TAOS_COMFORT_STOP_MIN_TTC = 4.0
 VOLKSWAGEN_TAOS_COMFORT_STOP_MAX_CLOSING_SPEED = 1.5
 VOLKSWAGEN_TAOS_COMFORT_STOP_CAP_BP = [0.0, 0.5, 1.0, 2.0, 3.5, VOLKSWAGEN_TAOS_COMFORT_STOP_MAX_SPEED]
 VOLKSWAGEN_TAOS_COMFORT_STOP_CAP_V = [-0.45, -0.55, -0.65, -0.80, -0.95, -1.10]
+
+# Mazda GEN2 runs a real PI loop on accel error (see mazda/interface.py). aEgo is a
+# differentiated wheel speed, so it carries 0.05 m/s^2 of noise at highway speed and
+# 0.15 at parking-lot speed. Feeding that straight into kp would dither the pedal, so
+# the error gets a short low-pass first. 0.10s costs ~4% of the tracking improvement
+# and removes ~60% of the command jerk the unfiltered term would add.
+MAZDA_GEN2_ERROR_FILTER_RC = 0.10
+# Past this the request is a hard stop or a hard launch and the loop should not be
+# spending phase margin on smoothing; hand the raw error through instead.
+MAZDA_GEN2_ERROR_FILTER_BYPASS = 1.5
+
+# The PI has to lead the plant to overcome its ~0.4 s lag, but with a real integrator that
+# lead keeps building through a sustained brake and the command ends up well below what the
+# planner asked for - measured at -0.20 m/s^2 on average during hard braking, which lands as
+# a jab. Bound it to roughly the authority the old kp=0/ki=0.1 loop had.
+MAZDA_GEN2_MAX_BRAKE_OVERSHOOT = 0.10
+
+# Road grade on the CX-30 is a disturbance with a deadline, not a steady bias. Identified over
+# 118 min of longActive on 09-09..09-11 logs, letting both coefficients float:
+#
+#     aEgo(t) = 0.952 * cmd(t - 0.50 s) - 0.96 * highpass_3s(g * sin(pitch))     R^2 = 0.87
+#
+# Those coefficients were fit before CP.wheelSpeedFactor was set for the CX-30, so the aEgo
+# they were regressed against ran ~4.9% low (non-stock tires). Rescaling into the corrected
+# frame puts both at unity - 0.952 * 1.0487 = 1.00 and 0.96 * 1.0487 = 1.01, grade arriving in
+# true units from locationd so only aEgo moves - which is what a unity-gain accel interface
+# implies, and why PITCH_FF_GAIN below is 1.0 rather than the fitted 0.96. The 0.50 s delay and
+# 3 s washout are time constants and carry over unchanged.
+#
+# The car's own ACC closes an inertial accel loop, so a sustained hill costs the command
+# nothing - on a steady 3.5% upgrade at constant speed openpilot averages -0.013 m/s^2, and
+# the grade coefficient collapses to -0.145 if the washout is removed. What it does not do is
+# react quickly: grade arrives at full unity gain and decays with a ~3 s time constant, and
+# for those 3 s the disturbance lands on us. Measured cost over 132 clean upgrade onsets with
+# no lead: a mean 1.36 m/s (3.0 mph) sag, p90 2.81 m/s, and aTarget does not ask for any of it
+# back until ~3 s in because the planner is reacting to speed error, not to the hill.
+#
+# So compensate the transient and nothing else. A plain g*sin(pitch) term double-counts against
+# the car's own loop and simulated 3x worse than no compensation at all (RMS speed error 0.242
+# vs 0.084 m/s); the washed-out form measured 0.020. Over the transitions themselves the washed
+# term correlates 0.80 with the acceleration the plant actually fails to deliver.
+MAZDA_GEN2_PITCH_FF_WASHOUT_RC = 3.0
+MAZDA_GEN2_PITCH_FF_GAIN = 1.0
+# Measured |ff|: std 0.087, p99 0.30, max 0.60 m/s^2 over all engaged time, so this clip is a
+# bound on a bad pitch estimate rather than a limit the honest signal ever reaches.
+MAZDA_GEN2_PITCH_FF_MAX = 0.6
+# Below this the wheel-speed aEgo is too coarse for the grade term to mean anything, and creep
+# and launch are shaped by their own curves.
+MAZDA_GEN2_PITCH_FF_MIN_SPEED = 3.0
 
 
 def get_bolt_acc_pedal_friction_bias(output_accel, a_target, v_ego):
@@ -163,6 +217,9 @@ class LongControlVehicleTuning:
       CP.brand == "volkswagen" and
       str(getattr(CP, "carFingerprint", "")) == str(VOLKSWAGEN_CAR.VOLKSWAGEN_TAOS_MK1)
     )
+    self.is_mazda_gen2 = bool(
+      CP.brand == "mazda" and (CP.flags & MazdaSafetyFlags.GEN2.value)
+    )
     self.is_bolt_acc_pedal_friction_car = bool(
       CP.brand == "gm" and
       CP.enableGasInterceptorDEPRECATED and
@@ -182,6 +239,10 @@ class LongControlVehicleTuning:
     self.toyota_corolla_target_filter_initialized = False
     self.bolt_start_handoff_frames = 0
     self.subaru_stop_release_frames = 0
+    self.accel_error_filter = FirstOrderFilter(0.0, MAZDA_GEN2_ERROR_FILTER_RC, DT_CTRL,
+                                               initialized=False)
+    self.pitch_washout = FirstOrderFilter(0.0, MAZDA_GEN2_PITCH_FF_WASHOUT_RC, DT_CTRL,
+                                          initialized=False)
 
   def shape_stopping_accel(self, output_accel, a_target, should_stop, v_ego, has_lead, stop_accel, leads=None):
     """Shape low-speed stop braking without overriding urgent targets."""
@@ -305,6 +366,54 @@ class LongControlVehicleTuning:
                                BOLT_ACC_PEDAL_START_HANDOFF_FLOOR_V))
     target_floor = min(speed_floor, max(0.0, 0.4 * float(a_target)))
     return max(float(output_accel), min(float(last_output_accel), target_floor))
+
+  def get_pitch_feedforward(self, pitch, v_ego, active):
+    """Feedforward only the part of the road grade the car has not absorbed yet.
+
+    The washout is what makes this safe to add: the CX-30 compensates a sustained grade
+    itself, so the term has to decay to zero on the same ~3 s the car takes to catch up,
+    or it fights a loop that has already won and the integrator has to unwind it. Returns
+    0 whenever the pitch is unusable, so a dropout costs nothing more than today."""
+    if not self.is_mazda_gen2:
+      return 0.0
+
+    if not active or pitch is None or not math.isfinite(pitch) or v_ego < MAZDA_GEN2_PITCH_FF_MIN_SPEED:
+      # Re-arm rather than hold: a stale washout would step into the command on re-engage.
+      self.pitch_washout.initialized = False
+      return 0.0
+
+    grade_accel = ACCELERATION_DUE_TO_GRAVITY * math.sin(float(pitch))
+    settled = self.pitch_washout.update(grade_accel)
+    return float(clip((grade_accel - settled) * MAZDA_GEN2_PITCH_FF_GAIN,
+                      -MAZDA_GEN2_PITCH_FF_MAX, MAZDA_GEN2_PITCH_FF_MAX))
+
+  def filter_accel_error(self, error):
+    """Low-pass the accel error before it reaches the PI, so kp tracks the car and
+    not the noise in aEgo. Large errors bypass the filter to keep the loop prompt."""
+    if not self.is_mazda_gen2:
+      return error
+
+    if abs(error) > MAZDA_GEN2_ERROR_FILTER_BYPASS:
+      self.accel_error_filter.x = float(error)
+      self.accel_error_filter.initialized = True
+      return error
+
+    return float(self.accel_error_filter.update(float(error)))
+
+  def limit_brake_overshoot(self, pid, output_accel, a_target):
+    """Stop feedback from out-braking the planner by more than a fixed margin.
+
+    The integrator is back-calculated to whatever was actually sent, so releasing the
+    clamp cannot hand back a step that the driver feels as a second jab."""
+    if not self.is_mazda_gen2 or a_target >= 0.0:
+      return output_accel
+
+    floor = a_target - MAZDA_GEN2_MAX_BRAKE_OVERSHOOT
+    if output_accel >= floor:
+      return output_accel
+
+    pid.i += floor - output_accel
+    return floor
 
   def shape_gm_truck_accel_target(self, a_target, v_ego, should_stop):
     if not self.is_gm_stock_truck:
