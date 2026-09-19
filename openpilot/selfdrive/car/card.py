@@ -165,6 +165,7 @@ class Car:
   aol_process_fault_context = None
   curve_replay = False
   car_params_published = False
+  mazda_lead_passthrough = False
 
   def __init__(self, CI=None, RI: RadarInterfaceBase | None = None, startup_owner=None) -> None:
     prewarm_cache_contracts(("CarParamsCache", "CarParamsPersistent", "CarParamsPrevRoute"))
@@ -431,6 +432,18 @@ class Car:
     self.slc_replay = self.slc_configuration[0]
     self.slc_control_enabled = self.slc_replay and self.slc_configuration[1].enabled
     self.slc_source_floor_ns = 0
+
+    # Mazda openpilot long (GEN2 blended ACC) runs its own filtering over the raw lead and
+    # hands over at the resolved experimental mode, so card passes radarState's leadOne and
+    # selfdriveState's experimentalMode to CarState, and opendbc stays free of messaging
+    self.mazda_lead_passthrough = self.CP.brand == "mazda" and self.CP.openpilotLongitudinalControl
+    mazda_services = [s for s in ('radarState', 'selfdriveState') if s not in subscribed_services]
+    if self.mazda_lead_passthrough and mazda_services:
+      subscribed_services.extend(mazda_services)
+      self.sm = messaging.SubMaster(subscribed_services,
+                                    ignore_alive=[*self.sm.ignore_alive, *mazda_services],
+                                    ignore_avg_freq=[*self.sm.ignore_average_freq, *mazda_services],
+                                    ignore_valid=[*self.sm.ignore_valid, *mazda_services])
 
     # Write previous route's CarParams
     prev_cp = get_cache(self.params, "CarParamsPersistent")
@@ -1702,6 +1715,8 @@ class Car:
         update_subaru_sng(self, CS, CC, now_nanos)
         from openpilot.starpilot.car.subaru.stop_start_caller import update as update_subaru_startup
         update_subaru_startup(self, now_nanos)
+      if self.mazda_lead_passthrough:
+        self._update_openpilot_lead_state()
       self.last_actuators_output, can_sends = self.CI.apply(CC, now_nanos)
       self.publish_sendcan(can_sends, valid=CS.canValid)
       if learning_snapshot is not None and self.learning_send_committed_mono_ns:
@@ -1718,6 +1733,15 @@ class Car:
           self._clear_learning_evidence()
 
       self.CC_prev = CC
+
+  def _update_openpilot_lead_state(self) -> None:
+    lead = self.sm['radarState'].leadOne
+
+    # Unfiltered lead, for brands that run their own filtering over it (Mazda GEN2 blended ACC)
+    self.CI.CS.openpilot_lead_status = bool(lead.status)
+    self.CI.CS.openpilot_lead_d_rel = float(lead.dRel)
+    self.CI.CS.openpilot_lead_v_rel = float(lead.vRel)
+    self.CI.CS.openpilot_experimental_mode = bool(self.sm['selfdriveState'].experimentalMode)
 
   def step(self):
     CS, RD = self.state_update(defer_radar=True)
