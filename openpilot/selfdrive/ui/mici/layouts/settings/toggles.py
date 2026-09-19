@@ -61,6 +61,7 @@ class TogglesLayoutMici(NavScroller):
     enable_openpilot = BigParamControl("enable openpilot", "OpenpilotEnabledToggle", toggle_callback=restart_needed_callback,
                                        description="Enable to use openpilot driver assistance.\n" +
                                                    "Disable to use your car's stock driver assistance.")
+    enable_blended_acc = BigParamControl("blended ACC", "BlendedACC", toggle_callback=restart_needed_callback)
 
     self._scroller.add_widgets([
       self._personality_toggle,
@@ -75,6 +76,7 @@ class TogglesLayoutMici(NavScroller):
       record_front,
       record_mic,
       enable_openpilot,
+      enable_blended_acc,
     ])
 
     # Toggle lists
@@ -89,6 +91,7 @@ class TogglesLayoutMici(NavScroller):
       ("RecordFront", record_front),
       ("RecordAudio", record_mic),
       ("OpenpilotEnabledToggle", enable_openpilot),
+      ("BlendedACC", enable_blended_acc),
     )
 
     enable_openpilot.set_enabled(lambda: not ui_state.engaged)
