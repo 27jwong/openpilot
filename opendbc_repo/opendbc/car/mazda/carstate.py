@@ -25,6 +25,7 @@ class CarState(CarStateBase):
     self.params = CarControllerParams(CP)
 
     self.distance_button = 0
+    self.distance_setting = 0
     self.accel_button = 0
     self.decel_button = 0
     self.cancel_button = 0
@@ -188,6 +189,11 @@ class CarState(CarStateBase):
         cp_cam.vl["WHEEL_SPEEDS"]["RR"],
     )
 
+    # The car's own cluster reads uncorrected wheel speed, so undo wheelSpeedFactor to keep
+    # the UI speed agreeing with the dash. Reciprocal by construction, not a second constant.
+    # No-op on the 1.0 default.
+    ret.vEgoCluster = ret.vEgo / (self.CP.wheelSpeedFactor or 1.0)
+
     ret.steeringTorque = cp_body.vl["TI_FEEDBACK"]["STEER_TORQUE_SENSOR"]
     ret.steeringPressed = abs(ret.steeringTorque) > self.params.STEER_DRIVER_ALLOWANCE
 
@@ -213,6 +219,7 @@ class CarState(CarStateBase):
       ret.cruiseState.speed = cp.vl["CRUZE_STATE"]["CRZ_SPEED"] * unit_conversion
       ret.cruiseState.enabled = (cp.vl["CRUZE_STATE"]["CRZ_STATE"] >= 2)
       ret.cruiseState.available = (cp.vl["CRUZE_STATE"]["CRZ_STATE"] != 0)
+      self.distance_setting = int(cp.vl["CRUZE_STATE"]["DISTANCE_SETTING"])
     else:
       ret.cruiseState.speed = cp_body.vl["CRUZE_STATE"]["CRZ_SPEED"] * unit_conversion
       ret.cruiseState.enabled = (cp_body.vl["CRUZE_STATE"]["CRZ_STATE"] >= 3)
