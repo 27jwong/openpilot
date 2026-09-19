@@ -140,11 +140,18 @@ try:
   ffmpeg = importlib.import_module("ffmpeg")
 except ModuleNotFoundError:
   ffmpeg = None
+try:
+  eigen = importlib.import_module("eigen")
+except ModuleNotFoundError:
+  eigen = None
 
 capnproto_include_dirs = [capnproto.INCLUDE_DIR] if capnproto is not None else []
 capnproto_lib_dirs = [capnproto.LIB_DIR] if capnproto is not None else []
 ffmpeg_include_dirs = [ffmpeg.INCLUDE_DIR] if ffmpeg is not None else []
 ffmpeg_lib_dirs = [ffmpeg.LIB_DIR] if ffmpeg is not None else []
+# 19.6 also dropped libeigen3-dev from the rootfs in favor of a managed package.
+# Eigen is header-only, so this one only contributes an include dir.
+eigen_include_dirs = [eigen.INCLUDE_DIR] if eigen is not None else []
 
 # Cross-builds install managed dependencies in /work/.venv-linux-arm64, but
 # comma devices expose the same packages from /usr/local/venv. Never embed the
@@ -288,6 +295,13 @@ if arch != "Darwin":
 ccflags_option = GetOption('ccflags')
 if ccflags_option:
   ccflags += ccflags_option.split(' ')
+
+# Eigen comes from the managed package where there is one, and from our vendored
+# copy on hosts with neither that nor libeigen3-dev. Both go in with -isystem
+# rather than CPPPATH: this build is -Werror -Wshadow, and Eigen's headers only
+# pass because a system include dir silences their warnings.
+for eigen_dir in eigen_include_dirs + [Dir("#third_party/eigen/include").abspath]:
+  ccflags += ["-isystem", eigen_dir]
 
 env = Environment(
   ENV=lenv,
