@@ -37,7 +37,13 @@ MIN_BUCKET_POINTS = np.array([100, 300, 500, 500, 500, 500, 300, 100])
 MIN_ENGAGE_BUFFER = 2  # secs
 
 VERSION = 1  # bump this to invalidate old parameter caches
-ALLOWED_CARS = ['toyota', 'hyundai', 'rivian', 'honda', 'volkswagen']
+# Brands linear enough in torque_from_lateral_accel to learn the whole lat accel model
+FULL_AUTO_CARS = ['toyota', 'hyundai', 'rivian', 'honda', 'volkswagen']
+# Brands with a non-linear torque_from_lateral_accel. The fit here is a straight line through
+# a curve, and the resulting latAccelFactor is unused by their torque conversion anyway: it
+# survives only as a scale on the friction term. Learn friction, keep the offline lat accel tune.
+FRICTION_ONLY_CARS = ['mazda']
+ALLOWED_CARS = FULL_AUTO_CARS + FRICTION_ONLY_CARS
 
 
 def slope2rot(slope):
@@ -80,7 +86,9 @@ class TorqueEstimator(ParameterEstimator):
     # The running process supplies its startup policy. Offline fitting retains
     # its existing behavior regardless of this computer's saved preferences.
     self.learning_allowed = allow_learning
-    self.use_params = self.learning_allowed and CP.brand in ALLOWED_CARS and CP.lateralTuning.which() == 'torque'
+    self.allow_lat_accel_learning = CP.brand in FULL_AUTO_CARS and CP.lateralTuning.which() == 'torque'
+    self.allow_friction_learning = CP.brand in ALLOWED_CARS and CP.lateralTuning.which() == 'torque'
+    self.use_params = self.learning_allowed and self.allow_friction_learning
 
     if CP.lateralTuning.which() == 'torque':
       self.offline_friction = CP.lateralTuning.torque.friction
@@ -116,11 +124,11 @@ class TorqueEstimator(ParameterEstimator):
           cache_CP = msg
         if self.get_restore_key(cache_CP, cache_ltp.version) == self.get_restore_key(CP, VERSION):
           if cache_ltp.valid:
-            initial_params = {
-              'latAccelFactor': cache_ltp.latAccelFactorFiltered,
-              'latAccelOffset': cache_ltp.latAccelOffsetFiltered,
-              'frictionCoefficient': cache_ltp.frictionCoefficientFiltered
-            }
+            if self.allow_lat_accel_learning:
+              initial_params['latAccelFactor'] = cache_ltp.latAccelFactorFiltered
+              initial_params['latAccelOffset'] = cache_ltp.latAccelOffsetFiltered
+            if self.allow_friction_learning:
+              initial_params['frictionCoefficient'] = cache_ltp.frictionCoefficientFiltered
           cached_points: list[list[float]] = [list(point) for point in cache_ltp.points]
           initial_params['points'] = cached_points
           self.decay = cache_ltp.decay
@@ -170,6 +178,10 @@ class TorqueEstimator(ParameterEstimator):
   def update_params(self, params):
     self.decay = min(self.decay + DT_MDL, MAX_FILTER_DECAY)
     for param, value in params.items():
+      if param.startswith('latAccel') and not self.allow_lat_accel_learning:
+        continue
+      if param == 'frictionCoefficient' and not self.allow_friction_learning:
+        continue
       self.filtered_params[param].update(value)
       self.filtered_params[param].update_alpha(self.decay)
 
