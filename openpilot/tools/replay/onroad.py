@@ -15,16 +15,22 @@ import sys
 import tempfile
 import time
 
-USAGE = """Usage: ./onroad [jobs] [--c3|--c4|--all|--replay-only] [--params /saved/params] [--alert] [--cem] [--csc] [--prefix replay-NAME] <replay args>
+USAGE = """Usage: ./onroad [jobs] [--c3|--c4|--all|--replay-only] [--params /saved/params] [--alert] [--cem] [--csc]
+  [--live-controls] [--prefix replay-NAME] <replay args>
 Replay arguments include a route or --demo, --start, --cache, --playback, --data_dir and --no-loop.
 The native replay terminal provides playback controls. Route playback may read/download the route you request.
 --alert previews a synthetic visual critical alert; it does not publish car control.
 --cem and --csc preview synthetic onroad visuals in the selected native UI only.
 Old --nav, --offroad and --galaxy demos are not available in this port.
 --params supplements recorded settings with a read-only snapshot, including unlogged layout preferences.
+--live-controls runs card and controlsd live in the private session instead of playing back their recorded
+output, so a route can be replayed against the current controls code.
 """
 UNAVAILABLE = frozenset(("--nav", "-nav", "--offroad", "--galaxy"))
 PREFIX_RE = re.compile(r"replay-[A-Za-z0-9_-]{1,48}\Z")
+# Services the live card/controlsd own under --live-controls, so replay must not publish the recorded ones
+LIVE_CONTROLS_SERVICES = ("carState", "carParams", "carControl", "controlsState", "sendcan", "carOutput")
+LIVE_CONTROLS_COMMANDS = (("openpilot.selfdrive.car.card",), ("openpilot.selfdrive.controls.controlsd",))
 
 
 @dataclass(frozen=True)
@@ -37,10 +43,16 @@ class OnroadPlan:
   alert: bool = False
   visual_preview: frozenset[str] = frozenset()
   params_snapshot: str | None = None
+  live_controls: bool = False
 
 
 def _block_alert_service(args: tuple[str, ...]) -> list[str]:
   """Merge the one owned publisher exclusion with a user's existing replay block list."""
+  return _block_services(args, ("selfdriveState",))
+
+
+def _block_services(args: tuple[str, ...], owned: tuple[str, ...]) -> list[str]:
+  """Merge the publishers this session owns with a user's existing replay block list."""
   result: list[str] = []
   blocked: list[str] = []
   index = 0
@@ -55,7 +67,7 @@ def _block_alert_service(args: tuple[str, ...]) -> list[str]:
     else:
       result.append(arg)
     index += 1
-  services = [service for service in (*blocked, "selfdriveState") if service]
+  services = [service for service in (*blocked, *owned) if service]
   return ["-b", ",".join(dict.fromkeys(services)), *result]
 
 
@@ -65,6 +77,7 @@ def parse_onroad_args(args: list[str]) -> OnroadPlan:
   explicit = False
   replay_only = False
   alert = False
+  live_controls = False
   visual_preview: set[str] = set()
   prefix = None
   params_snapshot = None
@@ -79,6 +92,10 @@ def parse_onroad_args(args: list[str]) -> OnroadPlan:
       raise ValueError(f"{arg} has no current producer; this developer preview does not start a substitute")
     if arg in ("-alert", "--alert", "--alert-demo"):
       alert = True
+      index += 1
+      continue
+    if arg in ("--live", "--live-controls"):
+      live_controls = True
       index += 1
       continue
     if arg in ("--cem", "--mici-widget-demo", "--widget-demo"):
@@ -149,7 +166,7 @@ def parse_onroad_args(args: list[str]) -> OnroadPlan:
   if (alert or visual_preview) and (replay_only or (explicit and not targets)):
     raise ValueError("Visual previews require a native UI")
   return OnroadPlan(tuple(name for name in ("c3", "c4") if name in targets), explicit, replay_only,
-                    prefix, tuple(replay_args), alert, frozenset(visual_preview), params_snapshot)
+                    prefix, tuple(replay_args), alert, frozenset(visual_preview), params_snapshot, live_controls)
 
 
 def _private_prefix(requested: str | None) -> str:
@@ -312,8 +329,12 @@ def run(plan: OnroadPlan) -> int:
         finally:
           os.close(fd)
         env["SP_REPLAY_CLOCK_PATH"] = str(clock_path)
-        replay_command = [str(replay_binary), *(_block_alert_service(plan.replay_args) if plan.alert else plan.replay_args)]
+        owned = (*(("selfdriveState",) if plan.alert else ()), *(LIVE_CONTROLS_SERVICES if plan.live_controls else ()))
+        replay_command = [str(replay_binary), *(_block_services(plan.replay_args, owned) if owned else plan.replay_args)]
         demos = [[sys.executable, "-m", "openpilot.tools.replay.alert_demo"]] if plan.alert else []
+        if plan.live_controls:
+          print("Running card and controlsd live against the replayed route", flush=True)
+          demos += [[sys.executable, "-m", *module] for module in LIVE_CONTROLS_COMMANDS]
         return supervise(replay_command, ui_commands, env, demo_commands=demos)
     finally:
       marker.rmdir()

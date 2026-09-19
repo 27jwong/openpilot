@@ -14,7 +14,8 @@ import unittest
 from unittest.mock import patch
 
 from openpilot.common.params import Params
-from openpilot.tools.replay.onroad import _block_alert_service, _ipc_root, owned_ipc_namespace, parse_onroad_args, run, seed_replay_params, supervise
+from openpilot.tools.replay.onroad import (LIVE_CONTROLS_SERVICES, _block_alert_service, _block_services, _ipc_root, owned_ipc_namespace,
+                                          parse_onroad_args, run, seed_replay_params, supervise)
 from openpilot.tools.replay.onroad_config import first_log_identifier, parse_replay_args, seed_preview, select_ui_target, replay_device_type
 
 
@@ -105,6 +106,14 @@ class TestOnroadHost(unittest.TestCase):
                      ["-b", "carState,carControl,selfdriveState", "--demo"])
     self.assertFalse(parse_onroad_args(["--c3", "--demo"]).alert)
     self.assertFalse(parse_onroad_args(["--demo"]).visual_preview)
+
+  def test_live_controls_blocks_the_recorded_control_stack(self):
+    plan = parse_onroad_args(["--c3", "--live-controls", "-b", "roadCameraState", "--demo"])
+    self.assertTrue(plan.live_controls)
+    self.assertTrue(parse_onroad_args(["--live", "--demo"]).live_controls)
+    self.assertFalse(parse_onroad_args(["--c3", "--demo"]).live_controls)
+    self.assertEqual(_block_services(plan.replay_args, LIVE_CONTROLS_SERVICES),
+                     ["-b", ",".join(("roadCameraState", *LIVE_CONTROLS_SERVICES)), "--demo"])
 
   def test_cem_csc_aliases_are_ui_only_and_combine_with_alert(self):
     plan = parse_onroad_args(["--c4", "--mici-widget-demo", "--csc-demo", "-alert", "--demo"])
