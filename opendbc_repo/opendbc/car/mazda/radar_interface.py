@@ -38,10 +38,8 @@ class RadarInterface(RadarInterfaceBase):
     ret = structs.RadarData()
     if self.rcp is None:
       return ret
-    errors = []
     if not self.rcp.can_valid:
-      errors.append("canError")
-    ret.errors = errors
+      ret.errors.canError = True
     for addr in range(361,367):
       msg = self.rcp.vl[f"RADAR_TRACK_{addr}"]
       if addr not in self.pts:

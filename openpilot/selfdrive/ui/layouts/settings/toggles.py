@@ -33,6 +33,7 @@ DESCRIPTIONS = {
   'RecordFront': tr_noop("Upload data from the cabin camera and help improve the driver monitoring algorithm."),
   "IsMetric": tr_noop("Display speed in km/h instead of mph."),
   "RecordAudio": tr_noop("Record and store microphone audio while driving. The audio will be included in the dashcam video in comma connect."),
+  "BlendedACC": tr_noop("Let the stock ACC handle acceleration during normal cruising and hand over to openpilot only in experimental mode. Disable to have openpilot control acceleration at all times."),
 }
 
 
@@ -101,6 +102,12 @@ class TogglesLayout(Widget):
         DESCRIPTIONS["IsMetric"],
         "metric.png",
         False,
+      ),
+      "BlendedACC": (
+        lambda: tr("Blended ACC"),
+        DESCRIPTIONS["BlendedACC"],
+        "chffr_wheel.png",
+        True,
       ),
     }
 
