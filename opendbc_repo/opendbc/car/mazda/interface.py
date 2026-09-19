@@ -12,7 +12,7 @@ from openpilot.common.params import Params
 
 NON_LINEAR_TORQUE_PARAMS = {
   CAR.MAZDA_3_2019: (3.650, 1.0, 0.13, 0.3605),
-  CAR.MAZDA_CX_30: (2.082, 1.444, 0.1, 0.238),
+  CAR.MAZDA_CX_30: (6.69417, 0.71168, 0.21504, 0.02331),
   CAR.MAZDA_CX_30_2023: (5.5, 0.79999, 0.18244, 0.38763),
   CAR.MAZDA_CX_50: (3.8818, 0.6873, 0.0999, 0.3605),
 }
@@ -29,15 +29,14 @@ class CarInterface(CarInterfaceBase):
       # This has big effect on the stability about 0 (noise when going straight)
       non_linear_torque_params = NON_LINEAR_TORQUE_PARAMS.get(self.CP.carFingerprint)
       assert non_linear_torque_params, "The params are not defined"
-      a, b, c, _ = non_linear_torque_params
+      a, b, c, d = non_linear_torque_params
       sig_input = a * lateral_acceleration
       sig = np.sign(sig_input) * (1 / (1 + exp(-fabs(sig_input))) - 0.5)
-      steer_torque = (sig * b) + (lateral_acceleration * c)
+      steer_torque = (sig * b) + (lateral_acceleration * c) + d
       return float(steer_torque)
 
     lataccel_values = np.arange(-8.0, 8.0, 0.01)
     torque_values = [torque_from_lateral_accel_siglin_func(x) for x in lataccel_values]
-    print(torque_values)
     assert min(torque_values) < -1 and max(torque_values) > 1, "The torque values should cover the range [-1, 1]"
     return torque_values, lataccel_values
 
@@ -124,13 +123,31 @@ class CarInterface(CarInterfaceBase):
       ret.stopAccel = -.5
       ret.vEgoStarting = .2
       ret.longitudinalActuatorDelay = 0.35 # gas is 0.25s and brake looks like 0.5
-      ret.longitudinalTuning.kpBP = [0., 5., 35.]
-      ret.longitudinalTuning.kpV = [0.0, 0.0, 0.0]
+      # Identified from CX-30 logs: the ACC accel interface is unity-gain and linear
+      # over +-1.6 m/s^2, so the feedforward carries the request and the PI only has to
+      # reject disturbance. The old kp=0/ki=0.1 loop corrected an offset with a ~10s
+      # time constant, which left a slow standing accel error; these gains are IMC-tuned
+      # against the measured first-order plant (tau ~0.42s). kp is only usable because
+      # longcontrol_vehicle_tunes.py low-passes the accel error first; aEgo is a
+      # differentiated wheel speed and is too noisy to feed back raw. kp comes back down
+      # at highway speed: at 0.8 it turned that noise into a 0.3-1.5 Hz back-and-forth
+      # while following a lead, 3x what the planner asked for, and tracked no better.
+      ret.longitudinalTuning.kpBP = [0., 12., 30.]
+      ret.longitudinalTuning.kpV = [0.2, 0.5, 0.4]
       ret.longitudinalTuning.kiBP = [0., 35.]
-      ret.longitudinalTuning.kiV = [0.1, 0.1]
+      ret.longitudinalTuning.kiV = [1.0, 1.0]
       ret.startingState = True
       ret.steerActuatorDelay = 0.335
       ret.steerAtStandstill = True
+
+      if candidate == CAR.MAZDA_CX_30:
+        # Non-stock tire size: 2285mm rolling circumference against the 2179mm the wheel
+        # speed sensors assume, so the car under-reports speed by ~4.9%. Correcting vEgoRaw
+        # here puts vEgo/aEgo in the true ground-speed frame, which matters less for the
+        # long PI gains (a scale error is absorbed into them) than for locationd, paramsd,
+        # lagd and torqued, which all observe vEgo and were being biased by it. carstate
+        # divides the factor back out for vEgoCluster so the UI still matches the dash.
+        ret.wheelSpeedFactor = 2285 / 2179
 
     if candidate in GEN3:
       ret.safetyConfigs[0].safetyParam |= MazdaSafetyFlags.GEN3.value

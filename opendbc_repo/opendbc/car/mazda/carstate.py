@@ -25,6 +25,7 @@ class CarState(CarStateBase):
     self.params = CarControllerParams(CP)
 
     self.distance_button = 0
+    self.distance_setting = 0
     self.ti_ramp_down = False
     self.ti_version = 1
     self.ti_state = TI_STATE.RUN
@@ -182,6 +183,11 @@ class CarState(CarStateBase):
         cp_cam.vl["WHEEL_SPEEDS"]["RR"],
     )
 
+    # The car's own cluster reads uncorrected wheel speed, so undo wheelSpeedFactor to keep
+    # the UI speed agreeing with the dash. Reciprocal by construction, not a second constant.
+    # No-op on the 1.0 default.
+    ret.vEgoCluster = ret.vEgo / (self.CP.wheelSpeedFactor or 1.0)
+
     ret.steeringTorque = cp_body.vl["TI_FEEDBACK"]["STEER_TORQUE_SENSOR"]
     ret.steeringPressed = abs(ret.steeringTorque) > self.params.STEER_DRIVER_ALLOWANCE
 
@@ -208,6 +214,7 @@ class CarState(CarStateBase):
       ret.cruiseState.speed = cp.vl["CRUZE_STATE"]["CRZ_SPEED"] * unit_conversion
       ret.cruiseState.enabled = (cp.vl["CRUZE_STATE"]["CRZ_STATE"] >= 2)
       ret.cruiseState.available = (cp.vl["CRUZE_STATE"]["CRZ_STATE"] != 0)
+      self.distance_setting = int(cp.vl["CRUZE_STATE"]["DISTANCE_SETTING"])
     else:
       ret.cruiseState.speed = cp_body.vl["CRUZE_STATE"]["CRZ_SPEED"] * unit_conversion
       ret.cruiseState.enabled = (cp_body.vl["CRUZE_STATE"]["CRZ_STATE"] >= 3)
@@ -225,8 +232,12 @@ class CarState(CarStateBase):
 
   @staticmethod
   def get_can_parsers(CP):
+    cam_signals = []
+    if not (CP.flags & (MazdaSafetyFlags.GEN2 | MazdaSafetyFlags.GEN3)):
+      cam_signals.append(("CAM_TRAFFIC_SIGNS", 0))
+
     return {
       Bus.pt: CANParser(DBC[CP.carFingerprint][Bus.pt], [], 0),
       Bus.body: CANParser(DBC[CP.carFingerprint][Bus.pt], [], 1),
-      Bus.cam: CANParser(DBC[CP.carFingerprint][Bus.pt], [("CAM_TRAFFIC_SIGNS", 0)], 2),
+      Bus.cam: CANParser(DBC[CP.carFingerprint][Bus.pt], cam_signals, 2),
     }
