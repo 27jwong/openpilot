@@ -418,6 +418,44 @@ class VehicleSettingsManagerView(PanelManagerView):
         "set_state": lambda s: self._controller._on_toggle("NostalgiaMode"),
       })
 
+    if cs.isMazda:
+      toggles.append({
+        "title": tr("Enable Torque Interceptor"),
+        "subtitle": tr("Enable the torque interceptor to control the steering wheel."),
+        "get_state": lambda: self._controller._params.get_bool("TorqueInterceptorEnabled"),
+        "set_state": lambda s: self._controller._on_toggle("TorqueInterceptorEnabled"),
+      })
+      toggles.append({
+        "title": tr("Enable Radar Interceptor"),
+        "subtitle": tr("Enable if you have installed a radar interceptor."),
+        "get_state": lambda: self._controller._params.get_bool("RadarInterceptorEnabled"),
+        "set_state": lambda s: self._controller._on_toggle("RadarInterceptorEnabled"),
+      })
+      toggles.append({
+        "title": tr("Disable Stock MRCC"),
+        "subtitle": tr("Enable if your car does not have stock MRCC."),
+        "get_state": lambda: self._controller._params.get_bool("NoMRCC"),
+        "set_state": lambda s: self._controller._on_toggle("NoMRCC"),
+      })
+      toggles.append({
+        "title": tr("Disable Stock FSC"),
+        "subtitle": tr("Enable if your car does not have stock FSC."),
+        "get_state": lambda: self._controller._params.get_bool("NoFSC"),
+        "set_state": lambda s: self._controller._on_toggle("NoFSC"),
+      })
+      toggles.append({
+        "title": tr("Manual Transmission"),
+        "subtitle": tr("Enable if your car has a manual transmission."),
+        "get_state": lambda: self._controller._params.get_bool("ManualTransmission"),
+        "set_state": lambda s: self._controller._on_toggle("ManualTransmission"),
+      })
+      toggles.append({
+        "title": tr("Blended ACC"),
+        "subtitle": tr("Let the stock ACC handle acceleration during normal cruising and hand over to openpilot only in experimental mode. Disable to have openpilot control acceleration at all times."),
+        "get_state": lambda: self._controller._params.get_bool("BlendedACC"),
+        "set_state": lambda s: self._controller._on_toggle("BlendedACC"),
+      })
+
     return toggles
 
   def _rebuild_toggle_grid(self):
