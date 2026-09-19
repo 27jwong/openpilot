@@ -127,10 +127,11 @@ class CarInterface(CarInterfaceBase):
       # reject disturbance. The old kp=0/ki=0.1 loop corrected an offset with a ~10s
       # time constant, which left a slow standing accel error; these gains are IMC-tuned
       # against the measured first-order plant (tau ~0.42s). kp is only usable because
-      # longcontrol_vehicle_tunes.py low-passes the accel error first; aEgo is a
+      # mazda/longitudinal.py low-passes the accel error first; aEgo is a
       # differentiated wheel speed and is too noisy to feed back raw. kp comes back down
       # at highway speed: at 0.8 it turned that noise into a 0.3-1.5 Hz back-and-forth
       # while following a lead, 3x what the planner asked for, and tracked no better.
+      # Only vehicle policies supply kp now, so mazda/longitudinal.py reads it from here.
       ret.longitudinalTuning.deprecated.kpBP = [0., 12., 30.]
       ret.longitudinalTuning.deprecated.kpV = [0.2, 0.5, 0.4]
       ret.longitudinalTuning.kiBP = [0., 35.]

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import dataclasses
 import math
 import os
 import time
@@ -240,8 +241,11 @@ class Controls:
 
     # accel PID loop
     pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
+    longitudinal_context = dataclasses.replace(self.longitudinal_inputs.context(CC.longActive),
+                                               pitch=(self.calibrated_pose.orientation.pitch
+                                                      if self.calibrated_pose is not None else None))
     longitudinal_output = self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits,
-                                          context=self.longitudinal_inputs.context(CC.longActive))
+                                          context=longitudinal_context)
     actuators.accel = final_output(longitudinal_output)
     if self.longitudinal_inputs.publish_state:
       # Publish the selected launch state to the vehicle controller in this same frame.

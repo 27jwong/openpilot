@@ -91,6 +91,7 @@ class LongControl:
       error = a_target - CS.aEgo
       feedforward, freeze_integrator = a_target, False
       if self.extension is not None:
+        error = self.extension.pre_pid(self.pid, error, context)
         feedforward, freeze_integrator = self.extension.prepare_pid(
           self.pid, a_target, error, CS, self.last_output_accel, accel_limits, should_stop, context)
       output_accel = self.pid.update(error, speed=CS.vEgo, feedforward=feedforward,

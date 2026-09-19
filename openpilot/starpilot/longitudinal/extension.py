@@ -23,6 +23,7 @@ class LongitudinalContext:
   traffic_mode: bool | None = None
   custom_acceleration: bool | None = None
   profile_max_accel: float | None = None
+  pitch: float | None = None
 
 
 class LongitudinalExtension:
@@ -123,6 +124,10 @@ class LongitudinalExtension:
       if shaped is not None:
         return shaped
     return self.vehicle_target(a_target, CS.vEgo, should_stop) if self.vehicle_target is not None else a_target
+
+  def pre_pid(self, pid, error, context):
+    pre_pid = getattr(self.vehicle_policy, "pre_pid", None)
+    return pre_pid(pid, error, context) if pre_pid is not None else error
 
   def prepare_pid(self, pid, a_target, error, CS, last_output, accel_limits, should_stop, context):
     if self.bolt_mode is not None:
