@@ -487,6 +487,13 @@ class Car:
       self.CC_prev = CC
 
   def _update_openpilot_lead_state(self, CC: car.CarControl) -> None:
+    lead = self.sm['radarState'].leadOne
+
+    # Unfiltered lead, for brands that run their own filtering over it (Mazda GEN2 blended ACC)
+    self.CI.CS.openpilot_lead_status = bool(lead.status)
+    self.CI.CS.openpilot_lead_d_rel = float(lead.dRel)
+    self.CI.CS.openpilot_lead_v_rel = float(lead.vRel)
+
     lead_visible = bool(CC.hudControl.leadVisible)
     longitudinal_adjustment_active = lead_visible
     lead_distance = 0.0
@@ -501,12 +508,10 @@ class Car:
         longitudinal_plan.shouldStop or str(longitudinal_plan.longitudinalPlanSource) != "cruise"
       )
 
-    if self.sm.seen['radarState'] and self.sm.valid['radarState']:
-      lead = self.sm['radarState'].leadOne
-      if lead.status:
-        lead_visible = True
-        lead_distance = max(float(lead.dRel), 0.0)
-        lead_rel_speed = float(lead.vRel)
+    if self.sm.seen['radarState'] and self.sm.valid['radarState'] and lead.status:
+      lead_visible = True
+      lead_distance = max(float(lead.dRel), 0.0)
+      lead_rel_speed = float(lead.vRel)
 
     if lead_distance <= OPENPILOT_LEAD_MIN_DISTANCE:
       lead_distance = 0.0

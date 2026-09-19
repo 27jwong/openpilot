@@ -1,5 +1,8 @@
+import math
+import numpy as np
 from opendbc.can import CANPacker
 from opendbc.car import Bus, structs
+from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.lateral import apply_driver_steer_torque_limits
 from opendbc.car.interfaces import CarControllerBase
 from opendbc.car.mazda import mazdacan
@@ -7,9 +10,23 @@ from opendbc.car.mazda.values import CarControllerParams, Buttons, MazdaSafetyFl
 from openpilot.common.realtime import ControlsTimer as Timer, DT_CTRL
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.params import Params
+from openpilot.starpilot.common.experimental_state import CEStatus
 
 VisualAlert = structs.CarControl.HUDControl.VisualAlert
 LongCtrlState = structs.CarControl.Actuators.LongControlState
+
+# crossfade duration between stock MRCC and openpilot long, ramped linearly with speed
+TRANSITION_TIME_MIN = 0.5  # s at standstill, and the hard floor once the lead penalty is applied
+TRANSITION_TIME_SLOPE = (3.0 - TRANSITION_TIME_MIN) / (55.0 * CV.MPH_TO_MS)  # s per m/s, so 3s at 55mph
+# the crossfade shortens as the lead closes in: nothing at a 2s gap, 3s off at 0.5s or less
+LEAD_PENALTY_HEADWAY = [0.5, 2.0]  # s of headway to the lead
+LEAD_PENALTY = [3.0, 0.0]  # s off the crossfade
+# an approaching lead latches on at the engage thresholds and only lets go at the wider
+# release ones, so a lead track that flickers around a boundary cannot chatter the crossfade
+LEAD_ENGAGE_HEADWAY = 0.85  # s of headway
+LEAD_RELEASE_HEADWAY = 1.1  # s of headway
+LEAD_ENGAGE_TTC = 8.0  # s to impact
+LEAD_RELEASE_TTC = 10.0  # s to impact
 
 class CarController(CarControllerBase):
   def __init__(self, dbc_names, CP):
@@ -23,9 +40,30 @@ class CarController(CarControllerBase):
     self.hold_delay = Timer(.5) # delay before we start holding as to not hit the brakes too hard
     self.resume_timer = Timer(0.5)
     self.cancel_delay = Timer(0.07) # 70ms delay to try to avoid a race condition with stock system
+    self.acc_filter = FirstOrderFilter(0.0, .1, DT_CTRL, initialized=False)
+    self.long_active_last = False
+    self.params_memory = Params(memory=True)
+    self.lead_d_filter = FirstOrderFilter(0.0, .075, DT_CTRL, initialized=False)
+    self.lead_v_filter = FirstOrderFilter(0.0, .075, DT_CTRL, initialized=False)
+    self.lead_distance = 0.0
+    self.lead_velocity = 0.0
+    # factor for blending stock MRCC and openpilot long. 0 is fully stock, 1 is fully openpilot
+    self.blend_coeff = 0.0
+    # seconds for a full crossfade in either direction; recomputed every cycle
+    self.transition_time = TRANSITION_TIME_MIN
+    # latched by the engage thresholds, released by the wider ones
+    self.lead_approaching = False
+    self.distance_last = None
+
 
 
   def update(self, CC, CS, now_nanos, starpilot_toggles):
+    # card surfaces radarState's leadOne on CS so opendbc stays free of messaging
+    lead_status = bool(getattr(CS, "openpilot_lead_status", False))  # whether lead is valid
+    if lead_status:
+      self.lead_distance = self.lead_d_filter.update(float(getattr(CS, "openpilot_lead_d_rel", 0.0)))  # relative distance in meters
+      self.lead_velocity = self.lead_v_filter.update(float(getattr(CS, "openpilot_lead_v_rel", 0.0)))  # relative velocity in m/s
+
     can_sends = []
 
     apply_torque = 0
@@ -78,7 +116,23 @@ class CarController(CarControllerBase):
         else:
           self.hold_timer.reset()
 
-          raw_acc_output = CC.actuators.accel * 1150
+          stock_acc = CS.crz_info["ACCEL_CMD"]
+          op_acc = CC.actuators.accel * 1150
+          op_acc = max(-1000, min(op_acc, 1000))
+
+          if getattr(starpilot_toggles, "blended_acc", False):
+            if CC.longActive:
+              if not self.long_active_last:
+                self.acc_filter.initialized = False
+              # Hand longitudinal to openpilot only while experimental mode is actually
+              # resolved on; otherwise let the stock radar ACC command through.
+              target_acc = op_acc if CC.experimentalMode else stock_acc
+              raw_acc_output = self.acc_filter.update(target_acc)
+            else:
+              raw_acc_output = stock_acc
+          else:
+            raw_acc_output = op_acc
+
           raw_acc_output = max(-1000, min(raw_acc_output, 1000))
           CS.crz_info["ACCEL_CMD"] = raw_acc_output
 
@@ -86,8 +140,62 @@ class CarController(CarControllerBase):
           can_sends.extend(mazdacan.create_radar_command(self.packer, self.frame, CC.longActive, CS, hold))
 
     elif self.CP.flags & MazdaSafetyFlags.GEN2:
-      if CC.longActive and self.CP.openpilotLongitudinalControl:
-        CS.acc["ACCEL_CMD"] = (CC.actuators.accel * 200) + 2000
+      blended_acc = bool(getattr(starpilot_toggles, "blended_acc", False))
+
+      if self.CP.openpilotLongitudinalControl and CC.longActive:
+        stock_acc = CS.acc["ACCEL_CMD"]
+        op_acc = (CC.actuators.accel * 200) + 2000
+
+        # Force CEM with the closest distance setting
+        if CS.distance_setting == 1:
+          self.params_memory.put_int("CEStatus", CEStatus["USER_OVERRIDDEN"])
+        elif self.distance_last == 1:
+          self.params_memory.put_int("CEStatus", CEStatus["OFF"])
+
+        if blended_acc:
+          self.distance_last = CS.distance_setting
+
+          # Built from last cycle's coefficient, so a status change lands on the next
+          # cycle instead of stepping the command partway through this one.
+          if self.blend_coeff > 0:
+            CS.acc["ACCEL_CMD"] = (self.blend_coeff * op_acc) + ((1 - self.blend_coeff) * stock_acc)
+
+        else:
+          CS.acc["ACCEL_CMD"] = op_acc
+
+      if blended_acc and self.CP.openpilotLongitudinalControl:
+        # Tracked every cycle, engaged or not, so engaging picks up the coefficient the
+        # situation calls for rather than whatever was frozen at the last disengage.
+        ce_status = self.params_memory.get_int("CEStatus", default=CEStatus["OFF"])
+        lead_headway = self.lead_distance / max(CS.out.vEgo, 0.1) if lead_status else math.inf
+
+        # An approaching lead is its own reason to hand over, and blends straight to
+        # openpilot long rather than switching experimental mode on. Time to impact is
+        # infinite while the lead is not closing, which leaves the headway holding the
+        # latch on its own instead of dropping it every time relative speed crosses zero.
+        lead_ttc = self.lead_distance / -self.lead_velocity if self.lead_velocity < 0 else math.inf
+        headway_thresh, ttc_thresh = ((LEAD_RELEASE_HEADWAY, LEAD_RELEASE_TTC) if self.lead_approaching else
+                                      (LEAD_ENGAGE_HEADWAY, LEAD_ENGAGE_TTC))
+        self.lead_approaching = bool(lead_status and (lead_headway < headway_thresh or lead_ttc < ttc_thresh))
+
+        # Every status at or above USER_OVERRIDDEN is a reason CEM resolved experimental
+        # mode on; OFF and USER_DISABLED both mean it is off.
+        blend_to_op = ce_status >= CEStatus["USER_OVERRIDDEN"] or self.lead_approaching
+
+        # blend in openpilot long
+        if blend_to_op and self.blend_coeff < 1:
+          self.blend_coeff += min((DT_CTRL / self.transition_time), (1 - self.blend_coeff))
+
+        # blend back out to MRCC. The reason to hand over can drop away in one cycle, but
+        # the coefficient still has to decay from wherever it got to.
+        elif not blend_to_op and self.blend_coeff > 0:
+          self.blend_coeff -= min((DT_CTRL / self.transition_time), self.blend_coeff)
+
+        # ramp the crossfade with speed, then shorten it by the lead penalty so a closing
+        # gap hands over faster. Never quicker than the floor, however close the lead is.
+        self.transition_time = max(TRANSITION_TIME_MIN + (TRANSITION_TIME_SLOPE * CS.out.vEgo) -
+                                   float(np.interp(lead_headway, LEAD_PENALTY_HEADWAY, LEAD_PENALTY)),
+                                   TRANSITION_TIME_MIN)
 
       resume = False
       hold = False
@@ -125,6 +233,7 @@ class CarController(CarControllerBase):
     new_actuators.torque = apply_torque / self.ccp.STEER_MAX
     new_actuators.torqueOutputCan = apply_torque
 
+    self.long_active_last = CC.longActive
     self.frame += 1
     Timer.tick()
     return new_actuators, can_sends
