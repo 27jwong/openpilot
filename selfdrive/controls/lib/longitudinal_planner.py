@@ -629,10 +629,6 @@ class LongitudinalPlanner:
     # Two uncertainty tracks (slow/fast) for asymmetric gating
     self.uncert_slow = FirstOrderFilter(0.0, 1.6, self.dt)  # ~lam=0.6
     self.uncert_fast = FirstOrderFilter(0.0, 0.9, self.dt)  # faster cool-down for accel decisions
-    # Lead stability tracking
-    self.prev_lead_dist = None
-    self.last_big_brake_t = 0.0
-    self.stable_lead = False
     # Smoothed lead distance
     self.lead_dist_f = None
 
@@ -2041,6 +2037,14 @@ class LongitudinalPlanner:
       cloudlog.error(f"Longitudinal planner received non-finite vCruise={v_cruise}, falling back to v_ego={v_ego:.2f}")
       v_cruise = max(v_ego, 0.0)
     v_cruise_initialized = sm['carState'].vCruise != V_CRUISE_UNSET
+    if not v_cruise_initialized:
+      # An unset set speed reaches us as V_CRUISE_UNSET clamped to V_CRUISE_MAX, i.e. 145 kph.
+      # The solver runs while we are disengaged and is warm started from its own last
+      # solution, so that placeholder leaves it holding a full-throttle trajectory right up
+      # to the frame the driver first sets a speed, and the step down to the real target then
+      # lands as a brake before the loop settles. Track v_ego instead, so the problem the
+      # solver warms on is the one it gets handed at engage.
+      v_cruise = max(v_ego, 0.0)
 
     long_control_off = sm['controlsState'].longControlState == LongCtrlState.off
     force_slow_decel = sm['controlsState'].forceDecel
@@ -2171,29 +2175,8 @@ class LongitudinalPlanner:
     else:
       self.lead_dist_f += alpha * (float(lead_dist) - self.lead_dist_f)
 
-    # Lead stability estimation and recent-brake timer
     now_t = time.monotonic()
     self.update_experimental_release_accel_state(experimental_mode, now_t, scene_v_ego)
-    # relative speed (ego - lead) positive when closing
-    v_rel = (v_ego - self.lead_one.vLead) if lead_one_active else 0.0
-    if self.prev_lead_dist is None:
-      d_rel_dot = 0.0
-    else:
-      d_rel_dot = (lead_dist - self.prev_lead_dist) / max(self.dt, 1e-3)
-    self.prev_lead_dist = lead_dist
-
-    # Remember time of last non-trivial model brake risk
-    if 'raw_brake_max' in locals() and raw_brake_max is not None and raw_brake_max > 0.02:
-      self.last_big_brake_t = now_t
-
-    # Stable lead heuristic (short window, cheap to compute)
-    recently_braked = (now_t - self.last_big_brake_t) < 0.7
-    self.stable_lead = (
-      lead_one_active and
-      abs(v_rel) < 0.5 and
-      abs(d_rel_dot) < 0.5 and
-      not recently_braked
-    )
 
     # Calculate scene uncertainty from model desire prediction entropy and disengage predictions
     uncertainty = 0.0
@@ -2215,7 +2198,6 @@ class LongitudinalPlanner:
 
       # Disengage prediction risk (intervention likelihood)
       disengage_risk = 0.0
-      raw_brake_max = -1.0
       lam = -1.0
       if hasattr(sm['modelV2'].meta, 'disengagePredictions'):
         # Use brake press probabilities as primary risk indicator
@@ -2226,7 +2208,6 @@ class LongitudinalPlanner:
           # Clip tiny brake blips so they don't inflate uncertainty
           if float(np.max(probs)) < 0.015:
             probs = probs * 0.5
-          raw_brake_max = float(np.max(probs))
           # Time vector assuming model horizon step = DT_MDL
           t = np.arange(len(probs), dtype=float) * DT_MDL
           lam = 0.6  # decay rate per second (tunable: 0.5–0.9 typical)
@@ -2238,9 +2219,8 @@ class LongitudinalPlanner:
       # Update filters
       self.uncert_slow.update(raw_uncertainty)
       self.uncert_fast.update(raw_uncertainty)
-      # Use a more permissive track for accel decisions
+      # The slow track is what every consumer below reads
       uncertainty = self.uncert_slow.x
-    uncertainty_accel = min(self.uncert_slow.x, self.uncert_fast.x)
 
     # --- Slope-based panic bypass ---
     if self._uncert_last_t is None:
