@@ -69,6 +69,7 @@ public:
   uint16_t get_fan_speed();
   void set_ir_pwr(uint16_t ir_pwr);
   std::optional<health_t> get_state();
+  std::optional<aol_safety_health_t> get_aol_safety_state();
   std::optional<can_health_t> get_can_state(uint16_t can_number);
   void set_loopback(bool loopback);
   std::optional<std::vector<uint8_t>> get_firmware_version();
@@ -77,6 +78,7 @@ public:
   void set_power_saving(bool power_saving);
   void enable_deepsleep();
   void send_heartbeat(bool engaged);
+  bool set_aol_axis_request(uint8_t axis_mask);
   void set_can_speed_kbps(uint16_t bus, uint16_t speed);
   void set_can_fd_auto(uint16_t bus, bool enabled);
   void set_data_speed_kbps(uint16_t bus, uint16_t speed);
