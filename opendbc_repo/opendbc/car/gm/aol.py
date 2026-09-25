@@ -1,0 +1,73 @@
+"""Independent lateral axes for exact source-qualified Bolt and Volt owners."""
+
+import math
+
+from opendbc.car.structs import CarParams
+from opendbc.car.gm.values import (control_flags, 
+  CAR, GMFlags, GMSafetyFlags, is_bolt_cc_profile, is_bolt_pedal_profile,
+  is_ordinary_ascm_profile, is_ordinary_camera_profile, is_ordinary_sdgm_profile, is_bolt_euv_longitudinal, is_volt_gateway_profile, is_volt_cc_profile,
+  is_volt_ascm_longitudinal, is_volt_camera_stock, is_volt_camera_longitudinal,
+  is_volt_camera_removed, is_volt_sdgm_profile, is_ordinary_cc_profile, is_conventional_cc_pedal_profile,
+)
+from opendbc.car.gm.lateral import lane_centering_supported
+
+GM_AOL_ALTERNATIVE_EXPERIENCE = 32
+GM_AOL_WORDS = frozenset((
+  0x1001, 0x1401, 0x3001, 0x3401, 0x1003, 0x1403,
+  0x201, 0x601, 0xA01, 0xE01, 0x203, 0x603, 0xA03, 0xE03,
+  5, 7, 20, 0xBD, 0x9D, 0x19D, 0x1CD,
+  0x205, 0x605, 0xA05, 0xE05, 0x4207, 0x4607, 0x4A07, 0x4E07,
+  0x4004, 0xC004, 0x4007, 0x1005, 0x1405, 0x5007, 0x5407,
+  0xC110, 0xC111, 0xC120, 0xC121, 0xC130, 0xC131, 0xC140, 0xC141,
+  0xC150, 0xC151, 0xC160, 0xC170, 0xC171, 0xC172, 0xC173, 0xC180, 0xC181, 0xC182, 0xC183, 0xC184, 0xC185, 0xC186, 0xC187,
+))
+
+
+def qualified_gm(cp) -> bool:
+  try:
+    if (cp.brand != 'gm' or cp.notCar or cp.passive or cp.dashcamOnly or
+        cp.steerControlType != CarParams.SteerControlType.torque or
+        len(cp.safetyConfigs) != 1 or cp.safetyConfigs[0].safetyModel != CarParams.SafetyModel.gm or
+        int(cp.safetyConfigs[0].safetyParam) not in GM_AOL_WORDS or
+        int(cp.alternativeExperience) not in (0, GM_AOL_ALTERNATIVE_EXPERIENCE) or
+        cp.lateralTuning.which() not in ('pid', 'torque')):
+      return False
+    if cp.lateralTuning.which() == 'torque':
+      tune = cp.lateralTuning.torque
+      if (not all(math.isfinite(value) for value in (tune.latAccelFactor, tune.latAccelOffset, tune.friction)) or
+          tune.latAccelFactor <= 0 or tune.friction < 0):
+        return False
+    else:
+      tune = cp.lateralTuning.pid
+      if not all(math.isfinite(value) for value in (*tune.kpBP, *tune.kpV, *tune.kiBP, *tune.kiV, tune.kf)):
+        return False
+    if is_ordinary_camera_profile(cp, longitudinal=cp.openpilotLongitudinalControl):
+      return True
+    if is_ordinary_cc_profile(cp) or is_conventional_cc_pedal_profile(cp):
+      return True
+    if is_ordinary_sdgm_profile(cp, longitudinal=False) or is_ordinary_sdgm_profile(cp, longitudinal=True):
+      return True
+    if is_ordinary_ascm_profile(cp, longitudinal=False) or is_ordinary_ascm_profile(cp, longitudinal=True):
+      return True
+    if ((is_bolt_cc_profile(cp) and control_flags(cp) == int(GMFlags.CC_LONG)) or
+        is_bolt_pedal_profile(cp) or is_bolt_pedal_profile(cp, stock_only=True) or
+        is_bolt_euv_longitudinal(cp)):
+      return True
+    if (is_volt_gateway_profile(cp) or is_volt_cc_profile(cp) or is_volt_ascm_longitudinal(cp) or
+        is_volt_camera_stock(cp) or is_volt_camera_longitudinal(cp) or is_volt_camera_removed(cp) or
+        is_volt_sdgm_profile(cp) or is_volt_sdgm_profile(cp, longitudinal=True)):
+      return True
+    if cp.carFingerprint == CAR.CHEVROLET_VOLT_ASCM:
+      return lane_centering_supported(cp)
+    return (cp.carFingerprint in (CAR.CHEVROLET_BOLT_EUV, CAR.CHEVROLET_BOLT_ACC_2022_2023) and
+            cp.networkLocation == CarParams.NetworkLocation.fwdCamera and control_flags(cp) == 0 and
+            cp.pcmCruise and not cp.openpilotLongitudinalControl and cp.radarUnavailable and
+            int(cp.safetyConfigs[0].safetyParam) == int(GMSafetyFlags.HW_CAM | GMSafetyFlags.EV))
+  except (AttributeError, IndexError, TypeError, ValueError):
+    return False
+
+
+
+def lateral_request(cp, cc) -> bool:
+  """Only a finalized independent-axis owner may relax its cruise-active lateral gate."""
+  return (qualified_gm(cp) and int(cp.alternativeExperience) == GM_AOL_ALTERNATIVE_EXPERIENCE and cc.latActive)

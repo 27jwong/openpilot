@@ -1,0 +1,129 @@
+"""Observed Volt ASCM topology: final admission, continuous commands and legacy isolation."""
+import unittest
+from types import SimpleNamespace
+
+from opendbc.car import structs
+from opendbc.car.gm.carcontroller import CarController
+from opendbc.car.gm.longitudinal import volt_policy_for
+from opendbc.car.gm.profiles import profiles_supported
+from opendbc.car.gm.tests.test_ascm_intercept import params
+from opendbc.car.gm.tests.test_volt_transitions import wire_at_counter
+from opendbc.car.gm.values import CAR, DBC, GMSafetyFlags, is_volt_ascm_longitudinal
+
+
+# Original Volt ASCM wire values, including its .25 m/s stop transition.
+# Phase fields: name, frames, enabled, long-active, speed, acceleration,
+# state, resume, standstill, gas-pressed, brake-pressed, pitch.
+PHASES = (('disabled', 7, False, False, 12.0, 1.0, 'off', False, False, False, False, 0.0),
+ ('positive', 9, True, True, 12.0, 1.005, 'pid', False, False, False, False, 0.0),
+ ('coast', 7, True, True, 12.0, 0.0, 'pid', False, False, False, False, 0.0),
+ ('regen', 9, True, True, 12.0, -0.5, 'pid', False, False, False, False, 0.0),
+ ('friction', 7, True, True, 12.0, -2.0, 'pid', False, False, False, False, 0.0),
+ ('accelerator_override', 9, True, False, 12.0, 2.0, 'pid', False, False, True, False, -0.04),
+ ('override_release', 7, True, True, 12.0, 1.0, 'pid', False, False, False, False, 0.0),
+ ('graded_decel', 9, True, True, 7.0, -1.5, 'pid', False, False, False, False, -0.04),
+ ('stop_above_threshold', 7, True, True, 0.6, -2.0, 'stopping', False, False, False, False, 0.0),
+ ('stop_mid_threshold', 9, True, True, 0.3, -2.0, 'stopping', False, False, False, False, 0.0),
+ ('near_stop_fixed', 7, True, True, 0.1, 1.0, 'stopping', False, False, False, False, 0.0),
+ ('standstill_hold', 9, True, True, 0.0, -4.0, 'stopping', False, True, False, False, 0.0),
+ ('resume_while_stopping', 7, True, True, 0.0, 1.0, 'stopping', True, True, False, False, 0.0),
+ ('starting_standstill', 9, True, True, 0.0, 0.5, 'starting', True, True, False, False, 0.0),
+ ('starting_rolling', 7, True, True, 0.3, 0.5, 'starting', True, False, False, False, 0.0),
+ ('resume_pid', 9, True, True, 2.0, 2.0, 'pid', False, False, False, False, 0.0),
+ ('brake_disengage', 7, False, False, 2.0, -4.0, 'off', False, False, False, True, 0.0),
+ ('disengaged_hold', 9, False, False, 0.0, -4.0, 'stopping', False, True, False, True, 0.0))
+WIRE = {'disabled': (-650, 0, 0, '0042abe001bd5420', '1000f00000'),
+ 'positive': (1070, 0, 2, '8142e1a000bd1e5e', '1000effe02'),
+ 'coast': (45, 0, 0, '0142c19800bd3e68', '1000f00000'),
+ 'regen': (-314, 0, 2, '8142b66000bd499e', '1000effe02'),
+ 'friction': (-650, 132, 0, '0142abe000bd5420', 'af7c508400'),
+ 'accelerator_override': (-650, 0, 2, '8142abe000bd541e', '1000effe02'),
+ 'override_release': (1065, 0, 0, '0142e17800bd1e88', '1000f00000'),
+ 'graded_decel': (-650, 107, 2, '8142abe000bd541e', 'af95506902'),
+ 'stop_above_threshold': (-650, 200, 0, '0142abe000bd5420', 'af3850c800'),
+ 'stop_mid_threshold': (-650, 200, 2, '8142abe000bd541e', 'af3850c602'),
+ 'near_stop_fixed': (-650, 25, 0, '0142abe000bd5420', 'afe7501900'),
+ 'standstill_hold': (-650, 25, 2, '8162abe0009d541e', 'dfe7201702'),
+ 'resume_while_stopping': (-650, 0, 0, '0162abe0009d5420', '1000f00000'),
+ 'starting_standstill': (510, 0, 2, '8142d02000bd2fde', '1000effe02'),
+ 'starting_rolling': (510, 0, 0, '0142d02000bd2fe0', '1000f00000'),
+ 'resume_pid': (2041, 0, 2, '8142fff800bd0006', '1000effe02'),
+ 'brake_disengage': (-650, 0, 0, '0042abe001bd5420', '1000f00000'),
+ 'disengaged_hold': (-650, 0, 2, '8042abe001bd541e', '1000effe02')}
+
+
+class TestVoltAscmControl(unittest.TestCase):
+  def test_exact_observed_admission_and_legacy_isolation(self):
+    for alpha in (False, True):
+      for brake_c9 in (False, True):
+        for radar in (False, True):
+          cp = params(CAR.CHEVROLET_VOLT_ASCM, sascm=True, alpha=alpha, accelerator=not brake_c9, radar=radar)
+          self.assertEqual(is_volt_ascm_longitudinal(cp), alpha)
+          self.assertEqual(volt_policy_for(cp) is not None, alpha)
+          self.assertEqual(profiles_supported(cp), alpha)
+          expected = int(GMSafetyFlags.EV | GMSafetyFlags.HW_CAM | GMSafetyFlags.ASCM_INTERCEPT)
+          if alpha:
+            expected |= int(GMSafetyFlags.HW_CAM_LONG | GMSafetyFlags.VOLT_LONG)
+          if brake_c9:
+            expected |= int(GMSafetyFlags.ASCM_BRAKE_C9)
+          if radar:
+            expected |= int(GMSafetyFlags.ASCM_RADAR)
+          self.assertEqual(cp.safetyConfigs[0].safetyParam, expected)
+          if alpha:
+            for field, value in (('alphaLongitudinalAvailable', False), ('passive', True), ('dashcamOnly', True),
+                                 ('pcmCruise', True), ('flags', 2), ('radarUnavailable', radar)):
+              bad = cp.as_reader().as_builder()
+              setattr(bad, field, value)
+              self.assertFalse(is_volt_ascm_longitudinal(bad), field)
+              self.assertIsNone(volt_policy_for(bad), field)
+            for bit in (GMSafetyFlags.VOLT_GATEWAY_ALT_BRAKE, GMSafetyFlags.PEDAL_LONG, GMSafetyFlags.SDGM):
+              bad = cp.as_reader().as_builder()
+              bad.safetyConfigs[0].safetyParam |= int(bit)
+              self.assertFalse(is_volt_ascm_longitudinal(bad))
+            legacy = cp.as_reader().as_builder()
+            legacy.safetyConfigs[0].safetyParam &= ~int(GMSafetyFlags.VOLT_LONG)
+            self.assertIsNone(volt_policy_for(legacy))
+            self.assertTrue(profiles_supported(legacy))
+            self.assertEqual(CarController(DBC[legacy.carFingerprint], legacy).params.MAX_GAS, 1346.)
+    for sascm, release in ((False, False), (True, True)):
+      cp = params(CAR.CHEVROLET_VOLT_ASCM, sascm=sascm, alpha=True, release=release)
+      self.assertFalse(cp.openpilotLongitudinalControl)
+      self.assertFalse(cp.safetyConfigs[0].safetyParam & GMSafetyFlags.VOLT_LONG)
+      self.assertIsNone(volt_policy_for(cp))
+
+  def test_continuous_original_frames_and_routing(self):
+    for alpha in (False, True):
+      for brake_c9 in (False, True):
+        for radar in (False, True):
+          for alignment in range(4):
+            cp = params(CAR.CHEVROLET_VOLT_ASCM, sascm=True, alpha=alpha, accelerator=not brake_c9, radar=radar)
+            controller = CarController(DBC[cp.carFingerprint], cp)
+            controller.frame = alignment
+            for phase, length, enabled, active, speed, accel, state, resume, still, gas_pressed, brake_pressed, pitch in PHASES:
+              for _ in range(length):
+                frame = controller.frame
+                now = 1_000_000_000 + frame * 10_000_000
+                control = structs.CarControl(enabled=enabled, longActive=alpha and active, orientationNED=[0., pitch, 0.])
+                control.cruiseControl.resume = resume
+                control.actuators.accel = accel
+                control.actuators.longControlState = getattr(structs.CarControl.Actuators.LongControlState, state)
+                car = structs.CarState(vEgo=speed, standstill=still, gasPressed=gas_pressed, brakePressed=brake_pressed)
+                car.cruiseState.available = True
+                car.cruiseState.enabled = enabled and not alpha
+                car.gearShifter = structs.CarState.GearShifter.drive
+                cs = SimpleNamespace(out=car.as_reader(), cam_lka_steering_cmd_counter=0,
+                                     loopback_lka_steering_cmd_updated=False, loopback_lka_steering_cmd_ts_nanos=now,
+                                     pt_lka_steering_cmd_counter=0, buttons_counter=0,
+                                     pscm_status={key: 0 for key in ('HandsOffSWDetectionMode', 'HandsOffSWlDetectionStatus',
+                                       'LKATorqueDeliveredStatus', 'LKADriverAppldTrq', 'LKATorqueDelivered',
+                                       'LKATotalTorqueDelivered', 'RollingCounter', 'PSCMStatusChecksum')})
+                _, frames = controller.update(control.as_reader(), cs, now)
+                actual = [tuple(msg) for msg in frames if msg[0] in (0x2cb, 0x315)]
+                self.assertFalse(any(msg[2] == 1 for msg in frames))
+                self.assertFalse(any(msg[0] in (0x200, 0x1f5) for msg in frames))
+                if not alpha or frame % 4:
+                  self.assertFalse(actual)
+                  continue
+                expected = [(address, payload, 0) for address, payload, _ in wire_at_counter(WIRE[phase], (frame // 4) % 4)]
+                self.assertEqual(actual, expected, (alpha, brake_c9, radar, alignment, phase, frame))
+                self.assertEqual((controller.apply_gas, controller.apply_brake), WIRE[phase][:2])
