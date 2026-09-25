@@ -1,0 +1,46 @@
+"""Local and authenticated presentation of the shared drive-state owner."""
+
+import threading
+import time
+
+from .resolver import Mode
+
+
+LABELS = {Mode.AUTO: 'Auto', Mode.OFFROAD: 'Offroad', Mode.ONROAD: 'Onroad'}
+CYCLE = (Mode.OFFROAD, Mode.ONROAD, Mode.AUTO)
+
+
+class DriveStateControl:
+  def __init__(self, owner, physical, *, effective=None, clock=time.monotonic):
+    self.owner, self.physical, self.effective, self.clock = owner, physical, effective or physical.effective, clock
+    self.cached = None
+    self.lock = threading.Lock()
+
+  def snapshot(self):
+    with self.lock:
+      now = self.clock()
+      if self.cached is None or not 0 <= now - self.cached[0] < 0.5:
+        state = self.owner.snapshot()
+        self.cached = now, state, self.physical.allowed()
+      state = self.cached[1]
+      actual = self.effective()
+      return {'mode': state.mode.value, 'revision': state.revision, 'available': state.available,
+              'effective': 'onroad' if actual is True else 'offroad' if actual is False else None,
+              'overrideAllowed': self.cached[2]}
+
+  def change(self, mode, revision, authorized):
+    result = self.owner.request(mode, expected_revision=revision, authorized=authorized,
+                                override_allowed=self.physical.allowed)
+    with self.lock:
+      self.cached = None
+    return result
+
+  @staticmethod
+  def next_mode(status):
+    mode = Mode(status['mode'])
+    if mode != Mode.AUTO and not status['overrideAllowed']:
+      return Mode.AUTO
+    return CYCLE[(CYCLE.index(mode) + 1) % len(CYCLE)]
+
+  def cycle(self, status, authorized):
+    return self.change(self.next_mode(status).value, status['revision'], authorized)
