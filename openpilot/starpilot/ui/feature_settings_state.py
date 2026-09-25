@@ -1,0 +1,177 @@
+"""Immutable saved-feature settings presentation and guarded user intent."""
+
+from dataclasses import dataclass
+from enum import StrEnum
+from collections.abc import Callable
+
+
+def is_long_confirm_action(key: str) -> bool:
+  return key.startswith(("long_repair:", "long_reset:"))
+
+
+class FeaturePage(StrEnum):
+  HUB = "hub"
+  VEHICLE = "vehicle"
+  SLC = "slc"
+  LANE = "lane"
+  LANE_CHANGE = "lane_change"
+  PROFILES = "profiles"
+  AGGRESSIVE = "aggressive"
+  STANDARD = "standard"
+  RELAXED = "relaxed"
+  TRAFFIC = "traffic"
+  CURVE = "curve"
+  TORQUE = "torque"
+  AOL = "aol"
+  WHEEL = "wheel"
+  CONDITIONAL = "conditional"
+  CONDITIONAL_CEM = "conditional/cem"
+  CONDITIONAL_CCM = "conditional/ccm"
+
+
+TORQUE_CONFIRM_ACTIONS = frozenset(("torque_adopt", "torque_reset", "torque_reset_profile", "torque_rebase", "torque_prepare_firestar", "torque_gain_rebase"))
+SLC_CONFIRM_ACTIONS = frozenset(("slc_adopt", "slc_reset"))
+LANE_CHANGE_CONFIRM_ACTIONS = frozenset(("lane_change:reset",))
+CURVE_CONFIRM_ACTIONS = frozenset(("curve_reset",))
+CONDITIONAL_CONFIRM_ACTIONS = frozenset(("conditional:reset", "conditional:manual_reset"))
+FEATURE_CONFIRM_ACTIONS = (TORQUE_CONFIRM_ACTIONS | SLC_CONFIRM_ACTIONS | LANE_CHANGE_CONFIRM_ACTIONS |
+                           CURVE_CONFIRM_ACTIONS | CONDITIONAL_CONFIRM_ACTIONS | {"reset_profiles", "pip:reset", "sentry:reset"})
+
+
+@dataclass(frozen=True)
+class FeatureRow:
+  key: str
+  label: str
+  value: str
+  source: bytes | None = None
+  choices: tuple[str, ...] = ()
+  step: float = 0.0
+  minimum: float = 0.0
+  maximum: float = 0.0
+  unit: str = ""
+  available: bool = False
+  reason: str = ""
+  page: str = ""
+  related_source: bytes | None = None
+  vehicle_fingerprint: str | None = None
+  capability: tuple | None = None
+  dependencies: tuple[tuple[str, bytes | None], ...] = ()
+  display_unit: str = ""
+  repair_value: str = ""
+
+
+@dataclass(frozen=True)
+class FeatureSettingsState:
+  page: str = FeaturePage.HUB
+  title: str = "Driving Controls"
+  subtitle: str = ""
+  rows: tuple[FeatureRow, ...] = ()
+  parked: bool = False
+  scroll: int = 0
+
+
+@dataclass(frozen=True)
+class FeatureSettingsRequest:
+  key: str
+  expected: bytes | None
+  value: str
+  confirmation: bool = False
+  related_source: bytes | None = None
+  vehicle_fingerprint: str | None = None
+  capability: tuple | None = None
+  dependencies: tuple[tuple[str, bytes | None], ...] = ()
+  display_unit: str = ""
+  direction: int = 0
+
+
+@dataclass(frozen=True)
+class FeatureUiAction:
+  kind: str
+  row: FeatureRow | None = None
+  direction: int = 1
+
+
+class FeatureInput:
+  """Large pane controls; a drag or changed source cancels the held row."""
+
+  def __init__(self, emit: Callable[[FeatureUiAction], None]):
+    self.emit = emit
+    self.held: tuple[float, float, FeatureUiAction] | None = None
+
+  @staticmethod
+  def target(x: float, y: float, state: FeatureSettingsState) -> FeatureUiAction | None:
+    if not 520 <= x <= 2150:
+      return None
+    if 24 <= y <= 95 and 550 <= x <= 760:
+      return FeatureUiAction("back")
+    if 980 <= y <= 1050:
+      return FeatureUiAction("scroll", direction=-1 if x < 1320 else 1)
+    if not 130 <= y < 970:
+      return None
+    index = state.scroll + int((y - 130) // 104)
+    if 0 <= index < len(state.rows):
+      row = state.rows[index]
+      if (row.key in FEATURE_CONFIRM_ACTIONS or row.key.startswith("pip:format:") or
+          is_long_confirm_action(row.key)) and row.available:
+        return FeatureUiAction("reset", row)
+      if x < 920 and row.page and row.available:
+        return FeatureUiAction("open", row)
+      if row.key and x >= (1930 if row.repair_value else 1740) and row.available:
+        return FeatureUiAction("change", row, -1 if x < 1930 else 1)
+      if row.page and row.available:
+        return FeatureUiAction("open", row)
+    return None
+
+  def press(self, x: float, y: float, state: FeatureSettingsState) -> None:
+    target = self.target(x, y, state)
+    self.held = (x, y, target) if target is not None else None
+
+  def move(self, x: float, y: float, state: FeatureSettingsState) -> None:
+    if self.held is not None:
+      px, py, action = self.held
+      if abs(x - px) > 6 or abs(y - py) > 6 or self.target(x, y, state) != action:
+        self.cancel()
+
+  def release(self, x: float, y: float, state: FeatureSettingsState) -> None:
+    self.move(x, y, state)
+    if self.held is not None:
+      self.emit(self.held[2])
+    self.cancel()
+
+  def cancel(self) -> None:
+    self.held = None
+
+
+def row_change(row: FeatureRow, direction: int = 1) -> FeatureSettingsRequest | None:
+  """Bind a press to the displayed source, never a later refreshed value."""
+  if not row.available:
+    return None
+  if row.key in ("Offset1", "Offset2", "Offset3", "Offset4", "Offset5", "Offset6", "Offset7"):
+    if direction not in (-1, 1):
+      return None
+    return FeatureSettingsRequest(row.key, row.source, "", related_source=row.related_source,
+                                  vehicle_fingerprint=row.vehicle_fingerprint, capability=row.capability,
+                                  dependencies=row.dependencies, display_unit=row.display_unit, direction=direction)
+  if row.repair_value:
+    value = row.repair_value
+  elif row.choices and not (row.choices == ("Auto",) and row.step and row.value != "Auto"):
+    if row.key == "SLCFallback":
+      value = "Off" if row.value == "On" else "On"
+    else:
+      if row.value not in row.choices:
+        return None
+      value = row.choices[(row.choices.index(row.value) + direction) % len(row.choices)]
+  elif row.step:
+    try:
+      current = float(row.value)
+    except ValueError:
+      return None
+    precision = 8 if row.key.startswith("torque:") else 4
+    value = str(round(max(row.minimum, min(row.maximum, current + row.step * direction)), precision))
+    if float(value) == current:
+      return None
+  else:
+    return None
+  return FeatureSettingsRequest(row.key, row.source, value, related_source=row.related_source,
+                                vehicle_fingerprint=row.vehicle_fingerprint, capability=row.capability,
+                                dependencies=row.dependencies, display_unit=row.display_unit)
