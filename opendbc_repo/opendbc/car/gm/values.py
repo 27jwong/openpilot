@@ -1,5 +1,6 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum, IntFlag
+from types import MappingProxyType
 
 from opendbc.car import Bus, PlatformConfig, DbcDict, Platforms, CarSpecs
 from opendbc.car.structs import CarParams
@@ -33,10 +34,54 @@ class CarControllerParams:
   ACCEL_MIN = -4.  # m/s^2
 
   def __init__(self, CP):
+    if CP.carFingerprint == CAR.CHEVROLET_SILVERADO_CC:
+      self.NEAR_STOP_BRAKE_PHASE = .25
+    if CP.carFingerprint == CAR.CHEVROLET_BOLT_CC_2017:
+      self.STEER_MAX = 450
+      self.STEER_DELTA_UP = 15
+      self.STEER_DELTA_DOWN = 34
+      self.STEER_DRIVER_ALLOWANCE = 78
+      self.STEER_DRIVER_MULTIPLIER = 6
     # Gas/brake lookups
     self.MAX_BRAKE = 400  # ~ -4.0 m/s^2 with regen
 
-    if CP.carFingerprint in (CAMERA_ACC_CAR | SDGM_CAR):
+    if is_volt_camera_longitudinal(CP) or is_volt_camera_removed(CP, longitudinal=True) or is_volt_sdgm_profile(CP, longitudinal=True):
+      self.MAX_GAS = 2698.0
+      self.MAX_ACC_REGEN = -540.0
+      self.INACTIVE_REGEN = -500.0
+      self.NEAR_STOP_BRAKE_PHASE = 0.25
+      max_regen_acceleration = 0.0
+    elif is_volt_longitudinal(CP):
+      self.MAX_GAS = 2041.0  # Original Volt raw 8191, normalized by raw - 6150.
+      self.MAX_ACC_REGEN = -650.0
+      self.INACTIVE_REGEN = -650.0
+      max_regen_acceleration = -1.0
+      if is_volt_ascm_longitudinal(CP):
+        self.NEAR_STOP_BRAKE_PHASE = 0.25
+    elif is_bolt_euv_longitudinal(CP):
+      self.MAX_GAS = 2698.0  # Original camera raw8848 minus coast6150, exact wire units.
+      self.MAX_ACC_REGEN = -540.0
+      self.INACTIVE_REGEN = -500.0
+      self.NEAR_STOP_BRAKE_PHASE = 0.25
+      max_regen_acceleration = 0.0
+    elif is_ordinary_camera_profile(CP, longitudinal=True):
+      self.MAX_GAS = 2698.0
+      self.MAX_ACC_REGEN = -540.0
+      self.INACTIVE_REGEN = -500.0
+      self.NEAR_STOP_BRAKE_PHASE = 0.25
+      max_regen_acceleration = 0.0
+    elif is_ordinary_sdgm_profile(CP, longitudinal=True):
+      self.MAX_GAS = 2698.0
+      self.MAX_ACC_REGEN = -540.0
+      self.INACTIVE_REGEN = -500.0
+      self.NEAR_STOP_BRAKE_PHASE = 0.25
+      max_regen_acceleration = 0.0
+    elif is_ordinary_ascm_profile(CP, longitudinal=True):
+      self.MAX_GAS = 2041.0
+      self.MAX_ACC_REGEN = self.INACTIVE_REGEN = -650.0
+      self.NEAR_STOP_BRAKE_PHASE = 0.25
+      max_regen_acceleration = -0.1
+    elif CP.carFingerprint in (CAMERA_ACC_CAR | SDGM_CAR | ASCM_INTERCEPT_CAR):
       self.MAX_GAS = 1346.0
       self.MAX_ACC_REGEN = -540.0
       self.INACTIVE_REGEN = -500.0
@@ -63,11 +108,166 @@ class GMSafetyFlags(IntFlag):
   HW_CAM = 1
   HW_CAM_LONG = 2
   EV = 4
+  PEDAL_LONG = 8
+  NO_ACC = 16
+  BOLT_2017 = 32
+  BOLT_ACC_PEDAL = 64
+  PADDLE_SCHED = 128
+  BOLT_GEN2 = 256
+  ASCM_INTERCEPT = 512
+  ASCM_BRAKE_C9 = 1024
+  BRAKE_C9 = 1024  # Shared with SDGM; the source is selected by topology.
+  ASCM_RADAR = 2048
+  SDGM = 4096
+  SDGM_CANCEL_PT = 8192
+  VOLT_LONG = 16384
+  VOLT_GATEWAY_LONG = VOLT_LONG  # Existing gateway profiles retain their numeric word.
+  VOLT_GATEWAY_ALT_BRAKE = 32768
 
 
 class GMFlags(IntFlag):
-  # Detected flags
-  HAS_BSM = 1  # blind spot monitoring
+  PEDAL_LONG = 1
+  HAS_BSM = 16
+  CC_LONG = 2
+  NO_CAMERA = 4
+  VOLT_CAMERA_REMOVED = NO_CAMERA
+  NO_ACCELERATOR_POS_MSG = 8
+  VOLT_CAMERA_NO_ACCEL_POS = NO_ACCELERATOR_POS_MSG
+
+
+def control_flags(cp: CarParams) -> int:
+  """Exclude only the informational BSM bit from exact control-profile admission."""
+  return int(cp.flags) & ~int(GMFlags.HAS_BSM)
+
+
+def uses_camera_stock_controls(cp: CarParams) -> bool:
+  return (is_ordinary_camera_profile(cp, longitudinal=False) or is_ordinary_sdgm_profile(cp, longitudinal=False) or is_volt_sdgm_profile(cp) or
+          cp.carFingerprint in CAMERA_STOCK_CAR and not is_volt_camera_longitudinal(cp) and not is_volt_camera_removed(cp) or
+          cp.carFingerprint == CAR.CHEVROLET_BOLT_ACC_2022_2023 and not cp.openpilotLongitudinalControl or
+          cp.carFingerprint == CAR.CHEVROLET_BOLT_ACC_2022_2023_PEDAL and is_bolt_pedal_profile(cp, stock_only=True))
+
+
+def requires_camera_state_sources(cp: CarParams) -> bool:
+  return (uses_camera_stock_controls(cp) or is_ordinary_camera_profile(cp, longitudinal=True) or is_ordinary_sdgm_profile(cp, longitudinal=True) or
+          is_volt_camera_longitudinal(cp) or is_volt_sdgm_profile(cp, longitudinal=True))
+
+
+def is_bolt_euv_longitudinal(cp: CarParams) -> bool:
+  """Exact factory-ACC Bolt camera-long owner; never an interceptor profile."""
+  try:
+    return (cp.brand == 'gm' and cp.carFingerprint in (CAR.CHEVROLET_BOLT_EUV, CAR.CHEVROLET_BOLT_ACC_2022_2023) and
+            cp.networkLocation == CarParams.NetworkLocation.fwdCamera and cp.alphaLongitudinalAvailable and
+            cp.openpilotLongitudinalControl and not cp.pcmCruise and cp.radarUnavailable and
+            not cp.passive and not cp.dashcamOnly and not cp.notCar and control_flags(cp) == 0 and
+            len(cp.safetyConfigs) == 1 and cp.safetyConfigs[0].safetyModel == CarParams.SafetyModel.gm and
+            int(cp.safetyConfigs[0].safetyParam) == int(GMSafetyFlags.EV | GMSafetyFlags.HW_CAM | GMSafetyFlags.HW_CAM_LONG))
+  except (AttributeError, IndexError, TypeError, ValueError):
+    return False
+
+
+def is_volt_gateway_profile(cp: CarParams) -> bool:
+  """Exact radar-qualified gateway owner, independently of the startup speed choice."""
+  try:
+    return (cp.brand == 'gm' and cp.carFingerprint == CAR.CHEVROLET_VOLT and
+            cp.networkLocation == CarParams.NetworkLocation.gateway and
+            not cp.pcmCruise and
+            not cp.passive and not cp.dashcamOnly and not cp.notCar and not cp.radarUnavailable and
+            control_flags(cp) == 0 and
+            len(cp.safetyConfigs) == 1 and cp.safetyConfigs[0].safetyModel == CarParams.SafetyModel.gm and
+            int(cp.safetyConfigs[0].safetyParam) in (
+              int(GMSafetyFlags.EV | GMSafetyFlags.VOLT_GATEWAY_LONG),
+              int(GMSafetyFlags.EV | GMSafetyFlags.VOLT_GATEWAY_LONG | GMSafetyFlags.VOLT_GATEWAY_ALT_BRAKE)))
+  except (AttributeError, IndexError, TypeError, ValueError):
+    return False
+
+
+def is_volt_gateway_longitudinal(cp: CarParams) -> bool:
+  return is_volt_gateway_profile(cp) and cp.openpilotLongitudinalControl
+
+
+def is_volt_ascm_longitudinal(cp: CarParams) -> bool:
+  """Admit only the observed SASCM Volt with explicit development longitudinal control."""
+  try:
+    required = int(GMSafetyFlags.EV | GMSafetyFlags.HW_CAM | GMSafetyFlags.HW_CAM_LONG |
+                   GMSafetyFlags.ASCM_INTERCEPT | GMSafetyFlags.VOLT_LONG)
+    optional = int(GMSafetyFlags.ASCM_BRAKE_C9 | GMSafetyFlags.ASCM_RADAR)
+    if len(cp.safetyConfigs) != 1:
+      return False
+    flags = int(cp.safetyConfigs[0].safetyParam)
+    return (cp.brand == 'gm' and cp.carFingerprint == CAR.CHEVROLET_VOLT_ASCM and
+            cp.networkLocation == CarParams.NetworkLocation.fwdCamera and cp.alphaLongitudinalAvailable and
+            cp.openpilotLongitudinalControl and not cp.pcmCruise and
+            not cp.passive and not cp.dashcamOnly and not cp.notCar and control_flags(cp) == 0 and
+            cp.safetyConfigs[0].safetyModel == CarParams.SafetyModel.gm and
+            flags & required == required and not flags & ~(required | optional) and
+            bool(flags & int(GMSafetyFlags.ASCM_RADAR)) is not cp.radarUnavailable)
+  except (AttributeError, IndexError, TypeError, ValueError):
+    return False
+
+
+def is_volt_camera_removed(cp: CarParams, *, longitudinal=None) -> bool:
+  """The exact manual Volt with PT state sources and no factory camera."""
+  try:
+    is_long = bool(cp.openpilotLongitudinalControl)
+    allowed_flags = int(GMFlags.VOLT_CAMERA_REMOVED | GMFlags.VOLT_CAMERA_NO_ACCEL_POS)
+    return (cp.brand == 'gm' and cp.carFingerprint == CAR.CHEVROLET_VOLT_CAMERA and
+            cp.networkLocation == CarParams.NetworkLocation.fwdCamera and
+            bool(cp.flags & GMFlags.VOLT_CAMERA_REMOVED) and not control_flags(cp) & ~allowed_flags and
+            (longitudinal is None or is_long == longitudinal) and cp.pcmCruise != is_long and
+            (not is_long or cp.alphaLongitudinalAvailable) and
+            not cp.passive and not cp.dashcamOnly and not cp.notCar and len(cp.safetyConfigs) == 1 and
+            cp.safetyConfigs[0].safetyModel == CarParams.SafetyModel.gm and
+            cp.safetyConfigs[0].safetyParam == (0xC151 if is_long else 0xC150))
+  except (AttributeError, IndexError, TypeError, ValueError):
+    return False
+
+
+def is_volt_camera_stock(cp: CarParams) -> bool:
+  """Camera-present manual stock owner, without borrowing another GM identity."""
+  try:
+    return (cp.brand == 'gm' and cp.carFingerprint == CAR.CHEVROLET_VOLT_CAMERA and
+            cp.networkLocation == CarParams.NetworkLocation.fwdCamera and cp.pcmCruise and
+            not cp.openpilotLongitudinalControl and not cp.passive and not cp.dashcamOnly and
+            not cp.notCar and control_flags(cp) == 0 and len(cp.safetyConfigs) == 1 and
+            cp.safetyConfigs[0].safetyModel == CarParams.SafetyModel.gm and cp.safetyConfigs[0].safetyParam == 5)
+  except (AttributeError, IndexError, TypeError, ValueError):
+    return False
+
+
+def is_volt_camera_longitudinal(cp: CarParams) -> bool:
+  """Exact manual camera Volt development owner; stock and other topologies stay separate."""
+  try:
+    return (cp.brand == 'gm' and cp.carFingerprint == CAR.CHEVROLET_VOLT_CAMERA and
+            cp.networkLocation == CarParams.NetworkLocation.fwdCamera and cp.alphaLongitudinalAvailable and
+            cp.openpilotLongitudinalControl and not cp.pcmCruise and not cp.passive and not cp.dashcamOnly and
+            not cp.notCar and control_flags(cp) == 0 and len(cp.safetyConfigs) == 1 and
+            cp.safetyConfigs[0].safetyModel == CarParams.SafetyModel.gm and
+            cp.safetyConfigs[0].safetyParam == 0x4007)
+  except (AttributeError, IndexError, TypeError, ValueError):
+    return False
+
+
+def is_volt_sdgm_profile(cp: CarParams, *, longitudinal=False) -> bool:
+  try:
+    words = (0x5007, 0x5407) if longitudinal else (0x1005, 0x1405)
+    return (cp.brand == 'gm' and cp.carFingerprint == CAR.CHEVROLET_VOLT_2019 and
+            cp.networkLocation == CarParams.NetworkLocation.fwdCamera and not cp.passive and not cp.dashcamOnly and
+            not cp.notCar and control_flags(cp) == 0 and cp.openpilotLongitudinalControl == longitudinal and
+            cp.pcmCruise != longitudinal and (not longitudinal or cp.alphaLongitudinalAvailable) and
+            len(cp.safetyConfigs) == 1 and cp.safetyConfigs[0].safetyModel == CarParams.SafetyModel.gm and
+            cp.safetyConfigs[0].safetyParam in words)
+  except (AttributeError, IndexError, TypeError, ValueError):
+    return False
+
+
+def is_volt_longitudinal(cp: CarParams) -> bool:
+  return (is_volt_gateway_longitudinal(cp) or is_volt_ascm_longitudinal(cp) or is_volt_camera_longitudinal(cp) or
+          is_volt_sdgm_profile(cp, longitudinal=True) or is_volt_camera_removed(cp, longitudinal=True))
+
+
+def is_volt_gateway_alternate_brake(cp: CarParams) -> bool:
+  """The exact gateway Volt profile using EBCM pedal input and PT friction output."""
+  return is_volt_gateway_profile(cp) and bool(cp.safetyConfigs[0].safetyParam & GMSafetyFlags.VOLT_GATEWAY_ALT_BRAKE)
 
 
 class Footnote(Enum):
@@ -119,6 +319,20 @@ class GMSDGMPlatformConfig(GMPlatformConfig):
     self.car_docs = []
 
 
+@dataclass
+class GMCCGatewayPlatformConfig(GMPlatformConfig):
+  def init(self):
+    # Manual-only identities; installation and route evidence is not available.
+    self.car_docs = []
+
+
+@dataclass
+class GMCameraStockPlatformConfig(GMPlatformConfig):
+  def init(self):
+    # Explicit identities pending independent install and route qualification.
+    self.car_docs = []
+
+
 class CAR(Platforms):
   HOLDEN_ASTRA = GMASCMPlatformConfig(
     [GMCarDocs("Holden Astra 2017")],
@@ -126,7 +340,14 @@ class CAR(Platforms):
   )
   CHEVROLET_VOLT = GMASCMPlatformConfig(
     [GMCarDocs("Chevrolet Volt 2017-18", min_enable_speed=0, video="https://youtu.be/QeMCN_4TFfQ")],
-    GMCarSpecs(mass=1607, wheelbase=2.69, steerRatio=17.7, centerToFrontRatio=0.45, tireStiffnessFactor=0.469),
+    GMCarSpecs(mass=1607, wheelbase=2.69, steerRatio=15.7, centerToFrontRatio=0.45, tireStiffnessFactor=1.0),
+  )
+  CHEVROLET_VOLT_CC = GMPlatformConfig(
+    [],  # Manual development identity; no fingerprint, firmware alias or public driving claim.
+    CHEVROLET_VOLT.specs, dbc_dict=CHEVROLET_VOLT.dbc_dict,
+  )
+  CHEVROLET_VOLT_ASCM = GMASCMPlatformConfig(
+    [GMCarDocs("Chevrolet Volt ASCM Harness 2017-18")], CHEVROLET_VOLT.specs,
   )
   CADILLAC_ATS = GMASCMPlatformConfig(
     [GMCarDocs("Cadillac ATS Premium Performance 2018")],
@@ -136,13 +357,25 @@ class CAR(Platforms):
     [GMCarDocs("Chevrolet Malibu Premier 2017")],
     GMCarSpecs(mass=1496, wheelbase=2.83, steerRatio=15.8, centerToFrontRatio=0.4),
   )
+  CHEVROLET_MALIBU_ASCM = GMASCMPlatformConfig(
+    [GMCarDocs("Chevrolet Malibu ASCM Harness 2017-19")], CHEVROLET_MALIBU.specs,
+  )
   GMC_ACADIA = GMASCMPlatformConfig(
     [GMCarDocs("GMC Acadia 2018", video="https://www.youtube.com/watch?v=0ZN6DdsBUZo")],
     GMCarSpecs(mass=1975, wheelbase=2.86, steerRatio=14.4, centerToFrontRatio=0.4),
   )
+  GMC_ACADIA_ASCM = GMASCMPlatformConfig(
+    [GMCarDocs("GMC Acadia ASCM Harness 2018")], GMC_ACADIA.specs,
+  )
   BUICK_LACROSSE = GMASCMPlatformConfig(
     [GMCarDocs("Buick LaCrosse 2017-19", "Driver Confidence Package 2")],
     GMCarSpecs(mass=1712, wheelbase=2.91, steerRatio=15.8, centerToFrontRatio=0.4),
+  )
+  BUICK_LACROSSE_ASCM = GMASCMPlatformConfig(
+    [GMCarDocs("Buick LaCrosse ASCM Harness 2017-19")], BUICK_LACROSSE.specs,
+  )
+  BUICK_LACROSSE_ASCM_19US = GMASCMPlatformConfig(
+    [GMCarDocs("Buick LaCrosse US ASCM Harness 2019")], BUICK_LACROSSE.specs,
   )
   BUICK_REGAL = GMASCMPlatformConfig(
     [GMCarDocs("Buick Regal Essence 2018")],
@@ -152,6 +385,9 @@ class CAR(Platforms):
     [GMCarDocs("Cadillac Escalade 2017", "Driver Assist Package")],
     GMCarSpecs(mass=2564, wheelbase=2.95, steerRatio=17.3),
   )
+  CADILLAC_ESCALADE_ASCM = GMASCMPlatformConfig(
+    [GMCarDocs("Cadillac Escalade ASCM Harness 2018")], CADILLAC_ESCALADE.specs,
+  )
   CADILLAC_ESCALADE_ESV = GMASCMPlatformConfig(
     [GMCarDocs("Cadillac Escalade ESV 2016", "Adaptive Cruise Control (ACC) & LKAS")],
     GMCarSpecs(mass=2739, wheelbase=3.302, steerRatio=17.3, tireStiffnessFactor=1.0),
@@ -160,6 +396,16 @@ class CAR(Platforms):
     [GMCarDocs("Cadillac Escalade ESV 2019", "Adaptive Cruise Control (ACC) & LKAS")],
     CADILLAC_ESCALADE_ESV.specs,
   )
+  CADILLAC_ESCALADE_ESV_2019_ASCM = GMASCMPlatformConfig(
+    [GMCarDocs("Cadillac Escalade ESV Platinum ASCM Harness 2019")], CADILLAC_ESCALADE_ESV_2019.specs,
+  )
+  CHEVROLET_SUBURBAN = GMPlatformConfig(
+    [], CarSpecs(mass=2731, wheelbase=3.302, steerRatio=17.3, centerToFrontRatio=0.49),
+  )
+  CHEVROLET_SUBURBAN_ASCM = GMASCMPlatformConfig(
+    [GMCarDocs("Chevrolet Suburban Premier ASCM Harness 2016-20")],
+    CHEVROLET_SUBURBAN.specs,
+  )
   CHEVROLET_BOLT_EUV = GMPlatformConfig(
     [
       GMCarDocs("Chevrolet Bolt EUV 2022-23", "Premier or Premier Redline Trim, without Super Cruise Package", video="https://youtu.be/xvwzGMUA210"),
@@ -167,12 +413,31 @@ class CAR(Platforms):
     ],
     GMCarSpecs(mass=1669, wheelbase=2.63779, steerRatio=16.8, centerToFrontRatio=0.4, tireStiffnessFactor=1.0),
   )
+  CHEVROLET_BOLT_ACC_2022_2023 = GMCameraStockPlatformConfig([], CHEVROLET_BOLT_EUV.specs)
+  CHEVROLET_BOLT_CC_2017 = GMPlatformConfig(
+    [GMCarDocs("Chevrolet Bolt EV 2017", "Cruise control with installed pedal interceptor")],
+    CHEVROLET_BOLT_EUV.specs,
+  )
+  CHEVROLET_BOLT_CC_2018_2021 = GMPlatformConfig(
+    [GMCarDocs("Chevrolet Bolt EV 2018-21", "Cruise control with installed pedal interceptor")],
+    CHEVROLET_BOLT_EUV.specs,
+  )
+  CHEVROLET_BOLT_CC_2022_2023 = GMPlatformConfig(
+    [GMCarDocs("Chevrolet Bolt EV (cruise control with pedal interceptor) 2022-23", "Cruise control with installed pedal interceptor"),
+     GMCarDocs("Chevrolet Bolt EUV (cruise control with pedal interceptor) 2022-23", "Cruise control with installed pedal interceptor")],
+    CHEVROLET_BOLT_EUV.specs,
+  )
+  CHEVROLET_BOLT_ACC_2022_2023_PEDAL = GMPlatformConfig(
+    [GMCarDocs("Chevrolet Bolt EV (ACC with pedal interceptor) 2022-23", "ACC with installed pedal interceptor"),
+     GMCarDocs("Chevrolet Bolt EUV (ACC with pedal interceptor) 2022-23", "ACC with installed pedal interceptor")],
+    CHEVROLET_BOLT_EUV.specs,
+  )
   CHEVROLET_SILVERADO = GMPlatformConfig(
     [
       GMCarDocs("Chevrolet Silverado 1500 2020-21", "Safety Package II"),
       GMCarDocs("GMC Sierra 1500 2020-21", "Driver Alert Package II", video="https://youtu.be/5HbNoBLzRwE"),
     ],
-    GMCarSpecs(mass=2450, wheelbase=3.75, steerRatio=16.3, tireStiffnessFactor=1.0),
+    GMCarSpecs(mass=2994, wheelbase=3.75, steerRatio=16.3, tireStiffnessFactor=1.0),
   )
   CHEVROLET_EQUINOX = GMPlatformConfig(
     [GMCarDocs("Chevrolet Equinox 2019-22")],
@@ -186,6 +451,18 @@ class CAR(Platforms):
     [GMCarDocs("Cadillac XT4 2023", "Driver Assist Package")],
     GMCarSpecs(mass=1660, wheelbase=2.78, steerRatio=14.4, centerToFrontRatio=0.4),
   )
+  CADILLAC_XT5 = GMSDGMPlatformConfig(
+    [GMCarDocs("Cadillac XT5 2022", "Driver Assist Package")],
+    GMCarSpecs(mass=1810, wheelbase=2.86, steerRatio=16.34, centerToFrontRatio=0.5, tireStiffnessFactor=1.0),
+  )
+  CADILLAC_XT6 = GMSDGMPlatformConfig(
+    [GMCarDocs("Cadillac XT6 2020", "Driver Assist Package")],
+    GMCarSpecs(mass=2050, wheelbase=2.86, steerRatio=16.5, centerToFrontRatio=0.4),
+  )
+  CHEVROLET_BLAZER = GMSDGMPlatformConfig(
+    [GMCarDocs("Chevrolet Blazer 2019-25", "Driver Assist Package")],
+    GMCarSpecs(mass=1850, wheelbase=3.10, steerRatio=17.9, centerToFrontRatio=0.4, tireStiffnessFactor=1.0),
+  )
   CHEVROLET_VOLT_2019 = GMSDGMPlatformConfig(
     [GMCarDocs("Chevrolet Volt 2019", "Adaptive Cruise Control (ACC) & LKAS")],
     GMCarSpecs(mass=1607, wheelbase=2.69, steerRatio=15.7, centerToFrontRatio=0.45),
@@ -194,10 +471,38 @@ class CAR(Platforms):
     [GMCarDocs("Chevrolet Traverse 2022-23", "RS, Premier, or High Country Trim")],
     GMCarSpecs(mass=1955, wheelbase=3.07, steerRatio=17.9, centerToFrontRatio=0.4),
   )
+  CHEVROLET_MALIBU_SDGM = GMSDGMPlatformConfig(
+    [GMCarDocs("Chevrolet Malibu 2019", "SDGM Harness")],
+    CHEVROLET_MALIBU.specs,
+  )
+  BUICK_BABYENCLAVE = GMSDGMPlatformConfig(
+    [GMCarDocs("Buick Baby Enclave 2020-23", "Driver Assist Package")],
+    GMCarSpecs(mass=2050, wheelbase=2.86, steerRatio=16.0, centerToFrontRatio=0.5, tireStiffnessFactor=1.0),
+  )
   GMC_YUKON = GMPlatformConfig(
     [GMCarDocs("GMC Yukon 2019-20", "Adaptive Cruise Control (ACC) & LKAS")],
     GMCarSpecs(mass=2490, wheelbase=2.94, steerRatio=17.3, centerToFrontRatio=0.5, tireStiffnessFactor=1.0),
   )
+  CHEVROLET_SUBURBAN_CAMERA = GMCameraStockPlatformConfig(
+    [], CarSpecs(mass=2731, wheelbase=3.302, steerRatio=17.3, centerToFrontRatio=0.49),
+  )
+  CHEVROLET_TRAX = GMCameraStockPlatformConfig(
+    [], CarSpecs(mass=1365, wheelbase=2.7, steerRatio=16.4, centerToFrontRatio=0.4),
+  )
+  CHEVROLET_VOLT_CAMERA = GMCameraStockPlatformConfig(
+    [], GMCarSpecs(mass=1607, wheelbase=2.69, steerRatio=15.7, centerToFrontRatio=0.45, tireStiffnessFactor=1.0),
+    dbc_dict=CHEVROLET_VOLT.dbc_dict,
+  )
+  CADILLAC_CT6_CC = GMCCGatewayPlatformConfig([], GMCarSpecs(mass=2358, wheelbase=3.11, steerRatio=17.7, centerToFrontRatio=0.4, tireStiffnessFactor=1.0))
+  CADILLAC_XT4_CC = GMCCGatewayPlatformConfig([], CADILLAC_XT4.specs)
+  CADILLAC_XT5_CC = GMCCGatewayPlatformConfig([], replace(CADILLAC_XT5.specs, tireStiffnessFactor=1.0))
+  CHEVROLET_EQUINOX_CC = GMCCGatewayPlatformConfig([], CHEVROLET_EQUINOX.specs)
+  CHEVROLET_MALIBU_CC = GMCCGatewayPlatformConfig([], GMCarSpecs(mass=1450, wheelbase=2.8, steerRatio=18.25,
+                                                                  centerToFrontRatio=0.4, tireStiffnessFactor=0.997))
+  CHEVROLET_SILVERADO_CC = GMCCGatewayPlatformConfig([], GMCarSpecs(mass=2994, wheelbase=3.75, steerRatio=16.3, tireStiffnessFactor=1.0))
+  CHEVROLET_SUBURBAN_CC = GMCCGatewayPlatformConfig([], replace(CHEVROLET_SUBURBAN_ASCM.specs, tireStiffnessFactor=1.0))
+  CHEVROLET_TRAILBLAZER_CC = GMCCGatewayPlatformConfig([], CHEVROLET_TRAILBLAZER.specs)
+  GMC_YUKON_CC = GMCCGatewayPlatformConfig([], GMCarSpecs(mass=2541, wheelbase=2.95, steerRatio=16.3, centerToFrontRatio=0.4, tireStiffnessFactor=1.0))
 
 
 class CruiseButtons:
@@ -276,17 +581,246 @@ FW_QUERY_CONFIG = FwQueryConfig(
 )
 
 # TODO: detect most of these sets live
-EV_CAR = {CAR.CHEVROLET_VOLT, CAR.CHEVROLET_VOLT_2019, CAR.CHEVROLET_BOLT_EUV}
+PEDAL_BOLT_CAR = {
+  CAR.CHEVROLET_BOLT_CC_2017,
+  CAR.CHEVROLET_BOLT_CC_2018_2021,
+  CAR.CHEVROLET_BOLT_CC_2022_2023,
+  CAR.CHEVROLET_BOLT_ACC_2022_2023_PEDAL,
+}
+NO_ACC_BOLT_CAR = PEDAL_BOLT_CAR - {CAR.CHEVROLET_BOLT_ACC_2022_2023_PEDAL}
+VOLT_BSM_CAR = {CAR.CHEVROLET_VOLT, CAR.CHEVROLET_VOLT_ASCM, CAR.CHEVROLET_VOLT_2019,
+                CAR.CHEVROLET_VOLT_CAMERA}
+EV_CAR = {CAR.CHEVROLET_VOLT_CC, CAR.CHEVROLET_VOLT, CAR.CHEVROLET_VOLT_ASCM, CAR.CHEVROLET_VOLT_2019,
+          CAR.CHEVROLET_VOLT_CAMERA, CAR.CHEVROLET_BOLT_EUV, CAR.CHEVROLET_BOLT_ACC_2022_2023} | PEDAL_BOLT_CAR
+
+ASCM_INTERCEPT_CAR = {
+  CAR.CHEVROLET_VOLT_ASCM, CAR.CHEVROLET_MALIBU_ASCM, CAR.GMC_ACADIA_ASCM,
+  CAR.BUICK_LACROSSE_ASCM, CAR.BUICK_LACROSSE_ASCM_19US, CAR.CADILLAC_ESCALADE_ASCM,
+  CAR.CADILLAC_ESCALADE_ESV_2019_ASCM, CAR.CHEVROLET_SUBURBAN_ASCM,
+}
 
 # We're integrated at the camera with VOACC on these cars (instead of ASCM w/ OBD-II harness)
-CAMERA_ACC_CAR = {CAR.CHEVROLET_BOLT_EUV, CAR.CHEVROLET_SILVERADO, CAR.CHEVROLET_EQUINOX, CAR.CHEVROLET_TRAILBLAZER, CAR.GMC_YUKON}
+CAMERA_STOCK_CAR = {CAR.CHEVROLET_SUBURBAN_CAMERA,
+                    CAR.CHEVROLET_TRAX, CAR.CHEVROLET_VOLT_CAMERA}
+CAMERA_ACC_CAR = ({CAR.CHEVROLET_BOLT_EUV, CAR.CHEVROLET_BOLT_ACC_2022_2023, CAR.CHEVROLET_SILVERADO, CAR.CHEVROLET_EQUINOX,
+                   CAR.CHEVROLET_TRAILBLAZER, CAR.GMC_YUKON} | PEDAL_BOLT_CAR | CAMERA_STOCK_CAR)
 
 # Alt ASCMActiveCruiseControlStatus
-ALT_ACCS = {CAR.GMC_YUKON}
+ALT_ACCS = {CAR.GMC_YUKON, CAR.CHEVROLET_SUBURBAN_CAMERA}
 
 # We're integrated at the Safety Data Gateway Module on these cars
-SDGM_CAR = {CAR.CADILLAC_XT4, CAR.CHEVROLET_VOLT_2019, CAR.CHEVROLET_TRAVERSE}
+SDGM_STOCK_CAR = {
+  CAR.CADILLAC_XT5, CAR.CADILLAC_XT6, CAR.BUICK_BABYENCLAVE,
+  CAR.CHEVROLET_BLAZER, CAR.CHEVROLET_MALIBU_SDGM,
+}
+SDGM_CANCEL_PT_CAR = {CAR.CADILLAC_XT4, CAR.CADILLAC_XT5, CAR.CADILLAC_XT6, CAR.BUICK_BABYENCLAVE}
+SDGM_CAR = {CAR.CADILLAC_XT4, CAR.CHEVROLET_VOLT_2019, CAR.CHEVROLET_TRAVERSE} | SDGM_STOCK_CAR
+
+# Explicit selection only: frozen fingerprints alias ACC siblings, and no disjoint firmware exists.
+CC_GATEWAY_STOCK_CAR = {
+  CAR.CADILLAC_CT6_CC, CAR.CADILLAC_XT4_CC, CAR.CADILLAC_XT5_CC,
+  CAR.CHEVROLET_EQUINOX_CC, CAR.CHEVROLET_MALIBU_CC, CAR.CHEVROLET_SILVERADO_CC,
+  CAR.CHEVROLET_SUBURBAN_CC, CAR.CHEVROLET_TRAILBLAZER_CC, CAR.GMC_YUKON_CC,
+}
 
 STEER_THRESHOLD = 1.0
 
 DBC = CAR.create_dbc_map()
+
+
+def is_volt_cc_profile(cp: CarParams) -> bool:
+  """Exact development-only conventional-cruise owner, with either startup speed choice."""
+  try:
+    return (cp.brand == 'gm' and cp.carFingerprint == CAR.CHEVROLET_VOLT_CC and
+            cp.networkLocation == CarParams.NetworkLocation.gateway and not cp.alphaLongitudinalAvailable and
+            not cp.pcmCruise and cp.radarUnavailable and
+            not cp.passive and not cp.dashcamOnly and not cp.notCar and control_flags(cp) == int(GMFlags.CC_LONG) and
+            len(cp.safetyConfigs) == 1 and cp.safetyConfigs[0].safetyModel == CarParams.SafetyModel.gm and
+            int(cp.safetyConfigs[0].safetyParam) == int(GMSafetyFlags.EV | GMSafetyFlags.NO_ACC))
+  except (AttributeError, IndexError, TypeError, ValueError):
+    return False
+
+
+def is_volt_cc_longitudinal(cp: CarParams) -> bool:
+  return is_volt_cc_profile(cp) and cp.openpilotLongitudinalControl
+
+
+BOLT_CC_WORDS = {
+  CAR.CHEVROLET_BOLT_ACC_2022_2023_PEDAL: (0xC140, 0xC141),
+  CAR.CHEVROLET_BOLT_CC_2017: (0xC110, 0xC111),
+  CAR.CHEVROLET_BOLT_CC_2018_2021: (0xC120, 0xC121),
+  CAR.CHEVROLET_BOLT_CC_2022_2023: (0xC130, 0xC131),
+}
+
+def is_bolt_cc_profile(cp):
+  return (cp.brand == "gm" and cp.carFingerprint in BOLT_CC_WORDS and
+          len(cp.safetyConfigs) == 1 and cp.safetyConfigs[0].safetyModel == CarParams.SafetyModel.gm and
+          cp.networkLocation == CarParams.NetworkLocation.fwdCamera and
+          not (cp.passive or cp.dashcamOnly or cp.notCar or cp.alphaLongitudinalAvailable) and
+          bool(cp.flags & GMFlags.CC_LONG.value) and not cp.flags & GMFlags.PEDAL_LONG.value and
+          not cp.pcmCruise and cp.safetyConfigs[0].safetyParam is not None and
+          cp.safetyConfigs[0].safetyParam in BOLT_CC_WORDS[cp.carFingerprint])
+
+_BOLT_PEDAL_BASE = GMSafetyFlags.HW_CAM | GMSafetyFlags.EV | GMSafetyFlags.PEDAL_LONG | GMSafetyFlags.PADDLE_SCHED
+BOLT_PEDAL_WORDS = MappingProxyType({
+  CAR.CHEVROLET_BOLT_CC_2017: _BOLT_PEDAL_BASE | GMSafetyFlags.NO_ACC | GMSafetyFlags.BOLT_2017,
+  CAR.CHEVROLET_BOLT_CC_2018_2021: _BOLT_PEDAL_BASE | GMSafetyFlags.NO_ACC,
+  CAR.CHEVROLET_BOLT_CC_2022_2023: _BOLT_PEDAL_BASE | GMSafetyFlags.NO_ACC | GMSafetyFlags.BOLT_GEN2,
+  CAR.CHEVROLET_BOLT_ACC_2022_2023_PEDAL: _BOLT_PEDAL_BASE | GMSafetyFlags.BOLT_ACC_PEDAL | GMSafetyFlags.BOLT_GEN2,
+})
+BOLT_PEDAL_STOCK_WORDS = MappingProxyType({**BOLT_PEDAL_WORDS,
+                                         CAR.CHEVROLET_BOLT_ACC_2022_2023_PEDAL: GMSafetyFlags.HW_CAM | GMSafetyFlags.EV})
+
+
+def is_bolt_pedal_profile(cp, *, stock_only=False):
+  """Exact selected interceptor profile, including its startup authority reduction."""
+  words = BOLT_PEDAL_STOCK_WORDS if stock_only else BOLT_PEDAL_WORDS
+  return (cp.brand == 'gm' and cp.carFingerprint in words and
+          cp.networkLocation == CarParams.NetworkLocation.fwdCamera and
+          not (cp.passive or cp.dashcamOnly or cp.notCar or cp.alphaLongitudinalAvailable) and
+          bool(cp.openpilotLongitudinalControl) is not stock_only and bool(cp.pcmCruise) is stock_only and
+          control_flags(cp) == GMFlags.PEDAL_LONG.value and len(cp.safetyConfigs) == 1 and
+          cp.safetyConfigs[0].safetyModel == CarParams.SafetyModel.gm and
+          cp.safetyConfigs[0].safetyParam == words[cp.carFingerprint])
+
+
+def is_bolt_pedal_stock_denied(cp):
+  """Recognize only the saved-disable topology denial, for recovery UI."""
+  return (cp.brand == 'gm' and cp.carFingerprint == CAR.CHEVROLET_BOLT_ACC_2022_2023_PEDAL and
+          cp.networkLocation == CarParams.NetworkLocation.fwdCamera and
+          cp.passive and cp.dashcamOnly and not cp.notCar and not cp.alphaLongitudinalAvailable and
+          not cp.openpilotLongitudinalControl and cp.pcmCruise and control_flags(cp) == GMFlags.PEDAL_LONG.value and
+          len(cp.safetyConfigs) == 1 and cp.safetyConfigs[0].safetyModel == CarParams.SafetyModel.noOutput and
+          cp.safetyConfigs[0].safetyParam == 0)
+
+
+ORDINARY_ASCM_CAR = ASCM_INTERCEPT_CAR - {CAR.CHEVROLET_VOLT_ASCM}
+
+
+def is_ordinary_ascm_profile(cp, *, longitudinal):
+  """Exact ordinary ASCM source and authority selection."""
+  try:
+    required = int(GMSafetyFlags.HW_CAM | GMSafetyFlags.ASCM_INTERCEPT)
+    if longitudinal:
+      required |= int(GMSafetyFlags.HW_CAM_LONG)
+    optional = int(GMSafetyFlags.ASCM_BRAKE_C9 | GMSafetyFlags.ASCM_RADAR)
+    configs = cp.safetyConfigs
+    word = int(configs[0].safetyParam)
+    return (cp.brand == "gm" and cp.carFingerprint in ORDINARY_ASCM_CAR and
+            cp.networkLocation == CarParams.NetworkLocation.fwdCamera and
+            not cp.passive and not cp.dashcamOnly and not cp.notCar and cp.flags == 0 and
+            cp.openpilotLongitudinalControl == longitudinal and cp.pcmCruise != longitudinal and
+            (not longitudinal or cp.alphaLongitudinalAvailable) and
+            len(configs) == 1 and configs[0].safetyModel == CarParams.SafetyModel.gm and
+            word & ~optional == required and
+            bool(word & int(GMSafetyFlags.ASCM_RADAR)) == (not cp.radarUnavailable))
+  except (AttributeError, IndexError, TypeError, ValueError):
+    return False
+
+
+ORDINARY_SDGM_CAR = SDGM_CAR - {CAR.CHEVROLET_VOLT_2019}
+
+def is_ordinary_sdgm_profile(cp, *, longitudinal):
+  """Exact ordinary SDGM source and authority selection."""
+  try:
+    required = int(GMSafetyFlags.HW_CAM | GMSafetyFlags.SDGM)
+    if longitudinal:
+      required |= int(GMSafetyFlags.HW_CAM_LONG)
+    elif cp.carFingerprint in SDGM_CANCEL_PT_CAR:
+      required |= int(GMSafetyFlags.SDGM_CANCEL_PT)
+    optional = int(GMSafetyFlags.BRAKE_C9)
+    configs = cp.safetyConfigs
+    return (cp.brand == 'gm' and cp.carFingerprint in ORDINARY_SDGM_CAR and
+            cp.networkLocation == CarParams.NetworkLocation.fwdCamera and
+            not cp.passive and not cp.dashcamOnly and not cp.notCar and cp.flags == 0 and
+            cp.openpilotLongitudinalControl == longitudinal and cp.pcmCruise != longitudinal and
+            (not longitudinal or cp.alphaLongitudinalAvailable) and
+            len(configs) == 1 and configs[0].safetyModel == CarParams.SafetyModel.gm and
+            int(configs[0].safetyParam) & ~optional == required)
+  except (AttributeError, IndexError, TypeError, ValueError):
+    return False
+
+
+ORDINARY_CC_CAR = CC_GATEWAY_STOCK_CAR - {CAR.CHEVROLET_SILVERADO_CC}
+ORDINARY_CC_WORD = 0xC160
+
+def is_ordinary_cc_profile(cp):
+  """Exact non-Volt conventional-cruise source; no pedal ownership."""
+  try:
+    configs = cp.safetyConfigs
+    return (cp.brand == 'gm' and cp.carFingerprint in ORDINARY_CC_CAR and
+            cp.networkLocation == CarParams.NetworkLocation.gateway and cp.radarUnavailable and not cp.pcmCruise and
+            not cp.alphaLongitudinalAvailable and not cp.passive and not cp.dashcamOnly and not cp.notCar and
+            cp.flags == int(GMFlags.CC_LONG) and len(configs) == 1 and
+            configs[0].safetyModel == CarParams.SafetyModel.gm and int(configs[0].safetyParam) == ORDINARY_CC_WORD)
+  except (AttributeError, IndexError, TypeError, ValueError):
+    return False
+
+
+ORDINARY_CAMERA_ALPHA_CAR = frozenset((CAR.CHEVROLET_SILVERADO, CAR.CHEVROLET_EQUINOX,
+                                      CAR.CHEVROLET_TRAILBLAZER, CAR.CHEVROLET_TRAX))
+ORDINARY_CAMERA_CAR = ORDINARY_CAMERA_ALPHA_CAR | frozenset((CAR.GMC_YUKON, CAR.CHEVROLET_SUBURBAN_CAMERA))
+
+
+def is_ordinary_camera_profile(cp, *, longitudinal=False):
+  try:
+    return (cp.brand == 'gm' and cp.carFingerprint in ORDINARY_CAMERA_CAR and
+            cp.networkLocation == CarParams.NetworkLocation.fwdCamera and cp.radarUnavailable and
+            not cp.passive and not cp.dashcamOnly and not cp.notCar and
+            control_flags(cp) in (0, int(GMFlags.NO_ACCELERATOR_POS_MSG), int(GMFlags.NO_CAMERA),
+                             int(GMFlags.NO_CAMERA | GMFlags.NO_ACCELERATOR_POS_MSG)) and
+            bool(cp.openpilotLongitudinalControl) is longitudinal and bool(cp.pcmCruise) is not longitudinal and
+            len(cp.safetyConfigs) == 1 and cp.safetyConfigs[0].safetyModel == CarParams.SafetyModel.gm and
+            (not longitudinal or cp.carFingerprint in ORDINARY_CAMERA_ALPHA_CAR and cp.alphaLongitudinalAvailable) and
+            int(cp.safetyConfigs[0].safetyParam) == ((0xC173 if longitudinal else 0xC172) if cp.flags & GMFlags.NO_CAMERA else
+                                                      (0xC170 if longitudinal else 0xC171)))
+  except (AttributeError, IndexError, TypeError, ValueError):
+    return False
+
+
+def is_ordinary_camera_removed(cp):
+  try:
+    return is_ordinary_camera_profile(cp, longitudinal=cp.openpilotLongitudinalControl) and bool(cp.flags & GMFlags.NO_CAMERA)
+  except (AttributeError, TypeError, ValueError):
+    return False
+
+
+CONVENTIONAL_CC_PEDAL_WORDS = (0xC180, 0xC181)
+CONVENTIONAL_CC_PEDAL_STOCK_WORDS = (0xC186, 0xC187)
+
+
+def is_conventional_cc_pedal_profile(cp):
+  if is_silverado_cc_pedal_profile(cp):
+    return True
+  try:
+    flags = control_flags(cp)
+    removed = bool(flags & GMFlags.NO_CAMERA)
+    return (cp.brand == 'gm' and cp.carFingerprint in ORDINARY_CC_CAR and
+            cp.networkLocation == CarParams.NetworkLocation.fwdCamera and cp.radarUnavailable and
+            not cp.passive and not cp.dashcamOnly and not cp.notCar and
+            bool(flags & GMFlags.PEDAL_LONG) and not flags & ~int(GMFlags.PEDAL_LONG | GMFlags.NO_CAMERA | GMFlags.NO_ACCELERATOR_POS_MSG) and
+            not cp.pcmCruise and len(cp.safetyConfigs) == 1 and
+            cp.safetyConfigs[0].safetyModel == CarParams.SafetyModel.gm and
+            int(cp.safetyConfigs[0].safetyParam) ==
+              (CONVENTIONAL_CC_PEDAL_WORDS if cp.openpilotLongitudinalControl else CONVENTIONAL_CC_PEDAL_STOCK_WORDS)[removed])
+  except (AttributeError, IndexError, TypeError, ValueError):
+    return False
+
+
+SILVERADO_CC_PEDAL_WORDS = ((0xC182, 0xC183), (0xC184, 0xC185))
+
+
+def is_silverado_cc_pedal_profile(cp):
+  """Exact Silverado interceptor owner, including its distinct stock cancellation."""
+  try:
+    flags = control_flags(cp)
+    removed = bool(flags & GMFlags.NO_CAMERA)
+    word = SILVERADO_CC_PEDAL_WORDS[not cp.openpilotLongitudinalControl][removed]
+    return (cp.brand == 'gm' and cp.carFingerprint == CAR.CHEVROLET_SILVERADO_CC and
+            cp.networkLocation == CarParams.NetworkLocation.fwdCamera and cp.radarUnavailable and
+            not cp.passive and not cp.dashcamOnly and not cp.notCar and
+            bool(flags & GMFlags.PEDAL_LONG) and not flags & ~int(GMFlags.PEDAL_LONG | GMFlags.NO_CAMERA | GMFlags.NO_ACCELERATOR_POS_MSG) and
+            not cp.pcmCruise and not cp.alphaLongitudinalAvailable and len(cp.safetyConfigs) == 1 and
+            cp.safetyConfigs[0].safetyModel == CarParams.SafetyModel.gm and int(cp.safetyConfigs[0].safetyParam) == word)
+  except (AttributeError, IndexError, TypeError, ValueError):
+    return False

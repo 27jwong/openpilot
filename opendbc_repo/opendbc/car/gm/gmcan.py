@@ -19,6 +19,39 @@ def create_buttons(packer, bus, idx, button):
   return packer.make_can_msg("ASCMSteeringButton", bus, values)
 
 
+def create_pedal_command(packer, gas_fraction, idx):
+  enabled = gas_fraction > 0.001
+  values = {"ENABLE": enabled, "COUNTER_PEDAL": idx & 0xF}
+  if enabled:
+    values["GAS_COMMAND"] = gas_fraction * 255.
+    values["GAS_COMMAND2"] = gas_fraction * 255.
+  packed = packer.make_can_msg("GAS_COMMAND", 0, values)
+  data = bytearray(packed[1])
+  data[5] = pedal_crc(data)
+  return CanData(0x200, bytes(data), 0)
+
+
+def pedal_crc(data):
+  crc = 0xFF
+  for byte in reversed(data[:5]):
+    crc ^= byte
+    for _ in range(8):
+      crc = ((crc << 1) ^ 0xD5) & 0xFF if crc & 0x80 else (crc << 1) & 0xFF
+  return crc
+
+
+def create_bolt_regen_paddle(packer, pressed):
+  return packer.make_can_msg("EBCMRegenPaddle", 0, {"RegenPaddle": 2 if pressed else 0})
+
+
+def create_bolt_regen_gear(packer, pressed, gen2):
+  packed = packer.make_can_msg("ECMPRDNL2", 0, {
+    "PRNDL2": (5 if gen2 else 7) if pressed else 6,
+    "ManualMode": int(pressed), "TransmissionState": 1,
+  })
+  return CanData(0x1F5, b"\x0c\x0c" + packed[1][2:], 0)
+
+
 def create_pscm_status(packer, bus, pscm_status):
   values = {s: pscm_status[s] for s in [
     "HandsOffSWDetectionMode",
@@ -74,7 +107,7 @@ def create_friction_brake_command(packer, bus, apply_brake, idx, enabled, near_s
   mode = 0x1
 
   # TODO: Understand this better. Volts and ICE Camera ACC cars are 0x1 when enabled with no brake
-  if enabled and CP.carFingerprint in (CAR.CHEVROLET_BOLT_EUV,):
+  if enabled and CP.carFingerprint in (CAR.CHEVROLET_BOLT_EUV, CAR.CHEVROLET_BOLT_ACC_2022_2023, CAR.CHEVROLET_BOLT_ACC_2022_2023_PEDAL):
     mode = 0x9
 
   if apply_brake > 0:
@@ -100,20 +133,22 @@ def create_friction_brake_command(packer, bus, apply_brake, idx, enabled, near_s
   return packer.make_can_msg("EBCMFrictionBrakeCmd", bus, values)
 
 
-def create_acc_dashboard_command(packer, bus, enabled, target_speed_kph, hud_control, fcw):
+def create_acc_dashboard_command(packer, bus, enabled, target_speed_kph, hud_control, fcw, cruise_state=None, *, fcw_alert=None, acc_always_one=1):
   target_speed = min(target_speed_kph, 255)
 
   values = {
-    "ACCAlwaysOne": 1,
+    "ACCAlwaysOne": acc_always_one,
     "ACCResumeButton": 0,
     "ACCSpeedSetpoint": target_speed,
     "ACCGapLevel": hud_control.leadDistanceBars * enabled,  # 3 "far", 0 "inactive"
     "ACCCmdActive": enabled,
-    "ACCAlwaysOne2": 1,
+    "ACCAlwaysOne2": acc_always_one,
     "ACCLeadCar": hud_control.leadVisible,
-    "FCWAlert": 0x3 if fcw else 0
+    "FCWAlert": (0x3 if fcw else 0) if fcw_alert is None else int(fcw_alert) & 0x3
   }
 
+  if cruise_state is not None:
+    values["ACCCruiseState"] = cruise_state
   return packer.make_can_msg("ASCMActiveCruiseControlStatus", bus, values)
 
 
@@ -169,3 +204,7 @@ def create_lka_icon_command(bus, active, critical, steer):
   else:
     dat = b"\x00\x00\x00"
   return CanData(0x104c006c, dat, bus)
+
+
+def create_acc_2cd_command(bus, idx):
+  return CanData(0x2CD, bytes([idx << 6, 0x2c, 0x03, 0xd3, 0xfd - idx]), bus)

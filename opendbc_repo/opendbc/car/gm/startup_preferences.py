@@ -1,0 +1,27 @@
+"""Finalized GM speed-control choices; existing native envelopes are retained."""
+
+from opendbc.car.gm.values import (is_volt_gateway_profile, is_volt_cc_profile, is_ordinary_cc_profile,
+                                  is_conventional_cc_pedal_profile, is_silverado_cc_pedal_profile, SILVERADO_CC_PEDAL_WORDS,
+                                  CONVENTIONAL_CC_PEDAL_STOCK_WORDS, GMFlags)
+
+
+def disable_long_supported(cp) -> bool:
+  return is_conventional_cc_pedal_profile(cp) or is_ordinary_cc_profile(cp) or is_volt_gateway_profile(cp) or is_volt_cc_profile(cp)
+
+
+def prepare_disable_longitudinal(cp, requested: bool) -> None:
+  if requested and disable_long_supported(cp):
+    silverado = is_silverado_cc_pedal_profile(cp)
+    ordinary_pedal = is_conventional_cc_pedal_profile(cp) and not silverado
+    cp.openpilotLongitudinalControl = False
+    if silverado:
+      cp.safetyConfigs[0].safetyParam = SILVERADO_CC_PEDAL_WORDS[1][bool(cp.flags & GMFlags.NO_CAMERA)]
+    elif ordinary_pedal:
+      cp.safetyConfigs[0].safetyParam = CONVENTIONAL_CC_PEDAL_STOCK_WORDS[bool(cp.flags & GMFlags.NO_CAMERA)]
+
+
+def gateway_sources_current(source_ns, now_ns: int) -> bool:
+  # The selected brake is supplied by the exact finalized gateway profile.
+  limits = (300_000_000, 300_000_000, 100_000_000, 100_000_000, 100_000_000, 100_000_000, 100_000_000)
+  return (isinstance(source_ns, tuple) and len(source_ns) == len(limits) and
+          all(source > 0 and 0 <= now_ns - source <= limit for source, limit in zip(source_ns, limits, strict=True)))
