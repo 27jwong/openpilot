@@ -6,6 +6,11 @@ from functools import cache
 
 from opendbc import DBC_PATH, get_generated_dbcs
 
+try:
+  from opendbc.can._raw_value import get_raw_value as _native_raw_value
+except ImportError:
+  _native_raw_value = None
+
 # TODO: these should just be passed in along with the DBC file
 from opendbc.car.honda.hondacan import honda_checksum
 from opendbc.car.toyota.toyotacan import toyota_checksum
@@ -61,6 +66,24 @@ class Signal:
   checksum_fields: tuple['Signal', ...] = ()
 
   def get_raw_value(self, dat: bytes | bytearray) -> int:
+    if _native_raw_value is not None:
+      value = _native_raw_value(self, dat, Signal)
+      if value is not NotImplemented:
+        return value
+    msb_byte = self.msb // 8
+    lsb_byte = self.lsb // 8
+    if self.is_little_endian:
+      first, last = lsb_byte, msb_byte
+      contiguous = self.size == self.msb - self.lsb + 1
+      byteorder = "little"
+    else:
+      first, last = msb_byte, lsb_byte
+      contiguous = self.size == 8 * (last - first) + self.msb % 8 - self.lsb % 8 + 1
+      byteorder = "big"
+    if contiguous and 0 < self.size and 0 <= first <= last < len(dat):
+      raw = dat[first] if first == last else int.from_bytes(dat[first:last + 1], byteorder)
+      return (raw >> (self.lsb % 8)) & ((1 << self.size) - 1)
+
     ret = 0
     i = self.msb // 8
     bits = self.size
@@ -274,6 +297,8 @@ def get_checksum_state(dbc_name: str) -> ChecksumState | None:
 
 def set_signal_type(sig: Signal, chk: ChecksumState | None, dbc_name: str, line_num: int, address: int) -> None:
   sig.calc_checksum = None
+  if dbc_name == "hyundai_palisade_2023_generated" and address in (0x50, 0x51, 0x2A4):
+    chk = ChecksumState(SignalType.HKG_CAN_FD_CHECKSUM, hkg_can_fd_checksum)
   if chk:
     if chk.setup_signal:
       chk.setup_signal(sig, dbc_name, line_num)
