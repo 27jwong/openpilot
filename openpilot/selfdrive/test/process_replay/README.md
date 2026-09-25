@@ -43,7 +43,7 @@ To generate new logs:
 
 `./test_processes.py`
 
-Then, check in the new logs using git-lfs. Make sure to also update the `ref_commit` file to the current commit.
+Then, check in the new logs through the external test-data catalog. Make sure to also update the `ref_commit` file to the current commit.
 
 ## API
 
@@ -85,18 +85,22 @@ Supported processes:
 * modeld
 * dmonitoringmodeld
 
-Certain processes may require an initial state, which is usually supplied within `Params` and persists from segment to segment (for example `CalibrationParams` or the learner cache keys like `LiveParametersV2`). The `custom_params` is a dictionary used to prepopulate `Params` with arbitrary values. The `get_custom_params_from_lr` helper is provided to fetch meaningful values from log files.
+Certain processes require saved initial state in `Params`, such as `CalibrationParams`
+or `LiveParametersV2`. Managed schema caches in `custom_params` must contain verified
+envelopes created by `openpilot.starpilot.schema_cache.put_cache` from current-schema
+messages whose origin is known. Synthetic current-schema fixtures can use this path.
 
-```py
-from openpilot.selfdrive.test.process_replay import get_custom_params_from_lr
+Historical logs require source schema provenance and an explicit schema-specific
+conversion before their values can seed these caches. Reading old bytes through the
+current schema does not establish compatibility. `get_custom_params_from_lr` now
+refuses this operation, and automatic firmware `CarParamsCache` seeding also refuses
+unless a verified envelope was supplied. Configuration is checked before Params
+writes. An explicit current vehicle fingerprint can avoid firmware-cache seeding,
+but does not qualify the remaining logged messages.
 
-previous_segment_lr = LogReader(...)
-current_segment_lr = LogReader(...)
-
-custom_params = get_custom_params_from_lr(previous_segment_lr, 'last')
-
-output_logs = replay_process_with_name('calibrationd', lr, custom_params=custom_params)
-```
+The complete historical process-replay suite is not currently qualified: cases
+depending on these implicit caches are blocked pending fixture conversion. Do not
+regenerate expected outputs to hide that boundary or count these cases as passing.
 
 Replaying processes that use VisionIPC (e.g. modeld, dmonitoringmodeld) require additional `frs` dictionary with camera states as keys and `FrameReader` objects as values.
 
