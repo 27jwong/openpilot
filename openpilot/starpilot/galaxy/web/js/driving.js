@@ -1,0 +1,57 @@
+export const DRIVING_PAGES = Object.freeze({
+  aol: "aol",
+  conditional: "conditional",
+  curve: "curve",
+  slc: "slc",
+  torque: "torque",
+  profiles: "profiles",
+  traffic: "traffic",
+  lane: "lane",
+  lane_change: "lane_change",
+})
+
+export const DRIVING_GROUPS = Object.freeze([
+  { title: "Steering and buttons", items: [
+    { page: "aol", title: "Always On Lateral", detail: "Steering assistance independent of cruise control" },
+    { page: "lane", title: "Lane centering", detail: "Saved steering behavior" },
+    { page: "lane_change", title: "Lane changes", detail: "Saved lane-change choices" },
+    { page: "torque", title: "Torque tuning", detail: "Saved steering tune and vehicle-source selection" },
+  ] },
+  { title: "Speed and longitudinal", items: [
+    { page: "conditional", title: "Conditional driving modes", detail: "Experimental and Chill conditions" },
+    { page: "curve", title: "Curve Speed Controller", detail: "Saved curve-speed choices" },
+    { page: "slc", title: "Speed Limit Controller", detail: "Dashboard and qualified vision source choices" },
+    { page: "profiles", title: "Longitudinal profiles", detail: "Saved acceleration, braking, and following profiles" },
+    { page: "traffic", title: "Traffic Mode", detail: "Saved follow, jerk, and profile curves" },
+  ] },
+])
+
+export function drivingPage(path) {
+  const match = /^\/driving\/([a-z_]+)$/.exec(path)
+  return match && DRIVING_PAGES[match[1]] || null
+}
+
+export const DrivingPage = {
+  props: { mode: { type: String, required: true }, go: { type: Function, required: true } },
+  data: () => ({ groups: DRIVING_GROUPS }),
+  template: `
+    <section class="gx-driving" aria-label="Driving features">
+      <div class="gx-card gx-driving__intro"><p class="gx-eyebrow">Driving features</p><h2>Driving Settings</h2>
+        <p>Choose how StarPilot steers and controls speed.</p></div>
+      <div v-if="mode !== 'local'" class="gx-card gx-message" role="status">Local driving settings are unavailable in preview.</div>
+      <template v-else>
+        <section v-for="group in groups" :key="group.title" class="gx-driving__group">
+          <h3>{{ group.title }}</h3>
+          <div class="gx-driving__grid">
+            <button v-for="item in group.items" :key="item.page" type="button" class="gx-card gx-driving__link"
+              @click="go('/driving/' + item.page)">
+              <span><strong>{{ item.title }}</strong><small>{{ item.detail }}</small></span><i class="bi bi-chevron-right" aria-hidden="true"></i>
+            </button>
+          </div>
+        </section>
+        <div class="gx-driving__extras"><button type="button" class="gx-btn gx-btn--tonal" @click="go('/driving/longitudinal-curves')">Edit longitudinal curves</button>
+          <button type="button" class="gx-btn gx-btn--tonal" @click="go('/tuning/plots')">Live plots</button>
+          <button type="button" class="gx-btn gx-btn--tonal" @click="go('/tuning/flm')">Offline FLM diagnostics</button></div>
+      </template>
+    </section>`,
+}
