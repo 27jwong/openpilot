@@ -35,6 +35,7 @@
 #define SAFETY_RIVIAN 33U
 #define SAFETY_VOLKSWAGEN_MEB 34U
 #define SAFETY_BYD 35U
+#define SAFETY_VOLVO 36U
 #define SAFETY_MG 38U
 
 #define GET_BIT(msg, b) ((bool)!!(((msg)->data[((b) / 8U)] >> ((b) % 8U)) & 0x1U))
@@ -92,6 +93,7 @@ typedef struct {
   int len;
   bool check_relay;              // if true, trigger relay malfunction if existence on destination bus and block forwarding to destination bus
   bool disable_static_blocking;  // if true, static blocking is disabled so safety mode can dynamically handle it (e.g. selective AEB pass-through)
+  bool check_relay_immediately;   // if true, skip the usual transition grace for this exact TX address and bus
 } CanMsg;
 
 typedef enum {
@@ -224,6 +226,7 @@ typedef bool (*fwd_hook)(int bus_num, int addr);      // returns true if the mes
 typedef struct {
   safety_hook_init init;
   rx_hook rx;
+  rx_hook optional_rx;
   tx_hook tx;
   fwd_hook fwd;
   get_checksum_t get_checksum;
@@ -256,6 +259,24 @@ void safety_tick(void);
 
 // This can be set by the safety hooks
 extern bool controls_allowed;
+// Vehicle modes register a policy only for their qualified AOL safety profile.
+typedef struct {
+  void (*reset)(void);
+  void (*host_request)(uint8_t axis_mask);
+  uint8_t (*request_mask)(void);
+  uint8_t (*permission_mask)(void);
+  void (*rx_invalid)(void);
+} AolSafetyPolicy;
+extern const AolSafetyPolicy *aol_policy;
+extern uint8_t aol_host_axis_mask;
+extern uint32_t aol_host_request_ts;
+#define AOL_HOST_REQUEST_TIMEOUT_US 300000U
+bool aol_rx_healthy(void);
+bool lateral_controls_allowed(void);
+bool longitudinal_controls_allowed(void);
+void aol_set_host_request(uint8_t axis_mask);
+uint8_t aol_get_permission_mask(void);
+uint8_t aol_get_request_mask(void);
 extern bool relay_malfunction;
 extern bool gas_pressed;
 extern bool gas_pressed_prev;
@@ -321,6 +342,8 @@ extern CurvatureSteeringState curvature_state;
 
 // This flag allows AEB to be commanded from openpilot.
 #define ALT_EXP_ALLOW_AEB 16
+#define ALT_EXP_TOYOTA_AUTO_HOLD 128
+#define ALT_EXP_TOYOTA_AEB_HOLD 256
 
 extern int alternative_experience;
 
@@ -357,6 +380,7 @@ extern const safety_hooks nissan_hooks;
 extern const safety_hooks subaru_hooks;
 extern const safety_hooks subaru_preglobal_hooks;
 extern const safety_hooks tesla_hooks;
+extern const safety_hooks tesla_hw1_hooks;
 extern const safety_hooks toyota_hooks;
 extern const safety_hooks volkswagen_mlb_hooks;
 extern const safety_hooks volkswagen_mqb_hooks;
@@ -366,3 +390,5 @@ extern const safety_hooks rivian_hooks;
 extern const safety_hooks psa_hooks;
 extern const safety_hooks byd_hooks;
 extern const safety_hooks mg_hooks;
+
+extern const safety_hooks volvo_c1_hooks;

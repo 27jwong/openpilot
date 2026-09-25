@@ -65,6 +65,25 @@ int comms_control_handler(ControlPacket_t *req, uint8_t *resp) {
   uint32_t time;
 
   switch (req->request) {
+    // Fork-local read-only AOL capability and actual native permissions.
+    // Older firmware returns no matching packet, so the host fails closed.
+    case 0xd5:
+      {
+        aol_safety_health_t status = {
+          .magic = AOL_SAFETY_PROTOCOL_MAGIC,
+          .version = AOL_SAFETY_PROTOCOL_VERSION,
+          .request_mask = aol_get_request_mask(),
+          .permission_mask = aol_get_permission_mask(),
+          .safety_mode = (uint8_t)current_safety_mode,
+          .safety_param = current_safety_param,
+          .capability_flags = (aol_policy != NULL) ? 0x1U : 0U,
+        };
+        for (unsigned int i = 0U; i < sizeof(status); i++) {
+          resp[i] = ((uint8_t *)&status)[i];
+        }
+        resp_len = sizeof(status);
+      }
+      break;
     // **** 0xa8: get microsecond timer
     case 0xa8:
       time = microsecond_timer_get();
@@ -292,6 +311,11 @@ int comms_control_handler(ControlPacket_t *req, uint8_t *resp) {
       if (!is_car_safety_mode(current_safety_mode)) {
         heartbeat_disabled = true;
       }
+      break;
+    // A separate short-lived axis request leaves the legacy heartbeat protocol
+    // unchanged for every car without the exact Honda AOL safety parameter.
+    case 0xf5:
+      aol_set_host_request((uint8_t)req->param1);
       break;
     // **** 0xf9: set CAN FD data bitrate
     case 0xf9:

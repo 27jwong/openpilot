@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 import argparse
+import hashlib
 import io
+import json
+import multiprocessing
 import os
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -74,6 +78,30 @@ class MutantResult:
   outcome: str  # killed | survived | infra_error
   test_sec: float
   details: str
+  failure_kind: str | None = None
+  exit_code: int | None = None
+  stderr_tail: str = ""
+  stdout_tail: str = ""
+  unittest_output_tail: str = ""
+
+
+@dataclass(frozen=True)
+class TestRun:
+  ran: int
+  skipped: int
+  suppressed: int
+  failures: tuple[str, ...]
+  errors: tuple[str, ...]
+  output_tail: str = ""
+
+
+class IsolatedRunError(RuntimeError):
+  def __init__(self, kind: str, message: str, *, exit_code: int | None, stderr: str, stdout: str):
+    super().__init__(message)
+    self.kind = kind
+    self.exit_code = exit_code
+    self.stderr_tail = stderr[-32768:]
+    self.stdout_tail = stdout[-8192:]
 
 
 def colorize(text, color):
@@ -273,16 +301,15 @@ def _build_core_tests(catalog):
       method_freq[method] = method_freq.get(method, 0) + 1
       if method not in method_by_module:
         method_by_module[method] = {}
-      if name not in method_by_module[method]:
-        method_by_module[method][name] = test_id
+      method_by_module[method].setdefault(name, []).append(test_id)
   # Round-robin: first instance of each method (by freq), then second, etc.
   # This ensures diverse early coverage with failfast.
   sorted_methods = sorted(method_freq, key=lambda m: -method_freq[m])
   ordered = []
-  max_implementations = max(len(module_map) for module_map in method_by_module.values())
+  max_implementations = max(sum(len(ids) for ids in module_map.values()) for module_map in method_by_module.values())
   for round_idx in range(max_implementations):
     for m in sorted_methods:
-      ids = [method_by_module[m][module] for module in sorted(method_by_module[m])]
+      ids = [test_id for module in sorted(method_by_module[m]) for test_id in method_by_module[m][module]]
       if round_idx < len(ids):
         ordered.append(ids[round_idx])
   return ordered
@@ -291,16 +318,20 @@ def _build_core_tests(catalog):
 def build_priority_tests(site, catalog, core_tests):
   """Build an ordered list of test IDs for a mutation site.
 
-  For mode files: all tests from the matching test_<mode>.py module.
-  For core files: uses the pre-computed core_tests ordering.
+  For mode files: all tests for the mode's vehicle family, including newer variant suites.
+  For core files: uses the complete pre-computed core_tests ordering.
   """
   src = site.origin_file
   rel_parts = src.relative_to(ROOT).parts
   is_mode = len(rel_parts) >= 4 and rel_parts[:3] == ("opendbc", "safety", "modes")
 
   if is_mode:
-    mode_file = f"test_{src.stem}.py"
-    return list(catalog.get(mode_file, []))
+    family = src.stem.split("_", 1)[0]
+    family_modules = [name for name in sorted(catalog) if name == f"test_{family}.py" or name.startswith(f"test_{family}_")]
+    if family_modules:
+      return [test_id for name in family_modules for test_id in catalog[name]]
+    # Unmapped mode files still exercise the full safety suite rather than receive zero targets.
+    return [test_id for name in sorted(catalog) for test_id in catalog[name]]
   return core_tests
 
 
@@ -381,11 +412,25 @@ def run_unittest(targets, lib_path, mutant_id, verbose):
   for target in targets:
     suite.addTests(loader.loadTestsFromName(target))
   result = runner.run(suite)
-  if result.failures:
-    return result.failures[0][0].id()
-  if result.errors:
-    return result.errors[0][0].id()
-  return None
+  suppressed_indices = set()
+  method_skips = 0
+  for test, _reason in result.skipped:
+    skipped_id = test.id()
+    class_match = re.fullmatch(r"setUpClass \(([^)]+)\)", skipped_id)
+    module_match = re.fullmatch(r"setUpModule \(([^)]+)\)", skipped_id)
+    if class_match or module_match:
+      prefix = (class_match or module_match).group(1) + "."
+      matched = {index for index, target in enumerate(targets) if target.startswith(prefix)}
+      if not matched:
+        raise RuntimeError(f"unmatched unittest skip holder: {skipped_id}")
+      suppressed_indices.update(matched)
+    elif skipped_id in targets:
+      method_skips += 1
+    else:
+      raise RuntimeError(f"unexpected unittest skip holder: {skipped_id}")
+  return TestRun(result.testsRun, method_skips, len(suppressed_indices),
+                 tuple(test.id() for test, _ in result.failures),
+                 tuple(test.id() for test, _ in result.errors), stream.getvalue()[-32768:])
 
 
 def _instrument_source(source, sites):
@@ -466,16 +511,153 @@ def compile_mutated_library(preprocessed_source, sites, output_so):
   ], cwd=ROOT, check=True)
 
 
-def eval_mutant(site, targets, lib_path, verbose):
+def _run_isolated_unittest(site_id, targets, lib_path, timeout_sec):
+  script = """import faulthandler, json, sys
+from pathlib import Path
+from dataclasses import asdict
+from opendbc.safety.tests import mutation
+faulthandler.enable(all_threads=True)
+request = json.loads(sys.stdin.read())
+result = mutation.run_unittest(request['targets'], Path(request['library']), request['site_id'], False)
+print(json.dumps(asdict(result)), flush=True)
+"""
+  request = json.dumps({"targets": targets, "library": str(lib_path), "site_id": site_id})
+  child_env = dict(os.environ, PWD=str(ROOT))
+  proc = subprocess.Popen([sys.executable, "-c", script], cwd=ROOT, stdin=subprocess.PIPE,
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True, env=child_env)
+  try:
+    stdout, stderr = proc.communicate(request, timeout=timeout_sec)
+  except subprocess.TimeoutExpired as exc:
+    os.killpg(proc.pid, signal.SIGKILL)
+    stdout, stderr = proc.communicate()
+    raise IsolatedRunError("timeout", f"isolated mutant timed out after {timeout_sec:.1f}s",
+                           exit_code=proc.returncode, stderr=stderr, stdout=stdout) from exc
+  if proc.returncode != 0:
+    raise IsolatedRunError("signal" if proc.returncode < 0 else "child_exit",
+                           f"isolated mutant exit={proc.returncode}", exit_code=proc.returncode,
+                           stderr=stderr, stdout=stdout)
+  try:
+    data = json.loads(stdout.splitlines()[-1])
+    return TestRun(**data)
+  except (IndexError, ValueError, TypeError) as exc:
+    raise IsolatedRunError("missing_result", "isolated mutant missing result", exit_code=proc.returncode,
+                           stderr=stderr, stdout=stdout) from exc
+
+
+def eval_mutant(site, targets, lib_path, verbose, timeout_sec):
   try:
     t0 = time.perf_counter()
-    failed_test = run_unittest(targets, lib_path, mutant_id=site.site_id, verbose=verbose)
+    run = _run_isolated_unittest(site.site_id, targets, lib_path, timeout_sec)
     duration = time.perf_counter() - t0
-    if failed_test is not None:
-      return MutantResult(site, "killed", duration, "")
+    if run.errors or ((run.ran + run.suppressed != len(targets)) and not run.failures) or run.ran == run.skipped:
+      return MutantResult(site, "infra_error", duration, f"unittest errors={run.errors} ran={run.ran} skipped={run.skipped} suppressed={run.suppressed}",
+                          failure_kind="unittest_error", unittest_output_tail=run.output_tail)
+    if run.failures:
+      return MutantResult(site, "killed", duration, run.failures[0], unittest_output_tail=run.output_tail)
     return MutantResult(site, "survived", duration, "")
+  except IsolatedRunError as exc:
+    return MutantResult(site, "infra_error", 0.0, str(exc), failure_kind=exc.kind,
+                        exit_code=exc.exit_code, stderr_tail=exc.stderr_tail, stdout_tail=exc.stdout_tail)
   except Exception as exc:
-    return MutantResult(site, "infra_error", 0.0, str(exc))
+    return MutantResult(site, "infra_error", 0.0, str(exc), failure_kind="worker_exception")
+
+
+def completed_mutant_result(future, site):
+  """A failed worker is infrastructure loss, not proof that a mutant was killed."""
+  try:
+    return future.result()
+  except Exception as exc:
+    return MutantResult(site, "infra_error", 0.0, f"{type(exc).__name__}: {exc}", failure_kind="pool_exception")
+
+
+def require_full_baseline(catalog, sites, lib_path, verbose):
+  """Validate every discovered test before any mutant is submitted to workers."""
+  if not catalog or any(not ids for ids in catalog.values()):
+    raise RuntimeError("empty safety test catalog or module")
+  baseline_ids = [test_id for module in sorted(catalog) for test_id in catalog[module]]
+  baseline = run_unittest(baseline_ids, lib_path, mutant_id=-1, verbose=verbose)
+  if (baseline.failures or baseline.errors or baseline.ran + baseline.suppressed != len(baseline_ids) or
+      baseline.ran == baseline.skipped):
+    raise RuntimeError(f"unmutated full safety baseline failed: {baseline}")
+
+  core_tests = _build_core_tests(catalog)
+  targets = {site.site_id: build_priority_tests(site, catalog, core_tests) for site in sites}
+  missing = [site_id for site_id, ids in targets.items() if not ids]
+  if missing:
+    raise RuntimeError(f"mutants lack test targets: {missing[:20]} ({len(missing)} total)")
+  return targets
+
+
+def write_results_json(path: Path, *, discovered_sites, pruned_ids, results, site_targets,
+                       preprocessed_source: str, baseline_sec: float) -> None:
+  """Retain complete bounded diagnostics without changing mutation verdicts."""
+  expected_ids = {site.site_id for site in discovered_sites} - set(pruned_ids)
+  result_ids = [result.site.site_id for result in results]
+  if len(result_ids) != len(set(result_ids)) or set(result_ids) != expected_ids:
+    raise RuntimeError("mutation result artifact requires one outcome for every executed site")
+  target_sets: list[list[str]] = []
+  target_indexes: dict[tuple[str, ...], int] = {}
+  records = []
+  for result in sorted(results, key=lambda item: item.site.site_id):
+    targets = tuple(site_targets[result.site.site_id])
+    if targets not in target_indexes:
+      target_indexes[targets] = len(target_sets)
+      target_sets.append(list(targets))
+    site = result.site
+    records.append({
+      "site_id": site.site_id,
+      "source": str(site.origin_file.relative_to(ROOT)),
+      "line": site.origin_line,
+      "mutator": site.mutator,
+      "original_op": site.original_op,
+      "mutated_op": site.mutated_op,
+      "selected_test_set": target_indexes[targets],
+      "selected_test_count": len(targets),
+      "outcome": result.outcome,
+      "test_sec": result.test_sec,
+      "details": result.details,
+      "failure_kind": result.failure_kind,
+      "exit_code": result.exit_code,
+      "stderr_tail": result.stderr_tail,
+      "stdout_tail": result.stdout_tail,
+      "unittest_output_tail": result.unittest_output_tail,
+    })
+  sources = {str(site.origin_file.relative_to(ROOT)): hashlib.sha256(site.origin_file.read_bytes()).hexdigest()
+             for site in discovered_sites}
+  artifact = {
+    "schema_version": 1,
+    "safety_input_sha256": hashlib.sha256((ROOT / SAFETY_C_REL).read_bytes()).hexdigest(),
+    "source_sha256": sources,
+    "preprocessed_source_sha256": hashlib.sha256(preprocessed_source.encode()).hexdigest(),
+    "mutation_runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+    "baseline_sec": baseline_sec,
+    "discovered": len(discovered_sites),
+    "pruned_build_incompatible": [{
+      "site_id": site.site_id,
+      "source": str(site.origin_file.relative_to(ROOT)),
+      "line": site.origin_line,
+      "mutator": site.mutator,
+      "original_op": site.original_op,
+      "mutated_op": site.mutated_op,
+    } for site in discovered_sites if site.site_id in pruned_ids],
+    "target_sets": target_sets,
+    "results": records,
+  }
+  path.parent.mkdir(parents=True, exist_ok=True)
+  temporary = None
+  try:
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", prefix=f".{path.name}.",
+                                     suffix=".tmp", dir=path.parent, delete=False) as stream:
+      temporary = Path(stream.name)
+      json.dump(artifact, stream, indent=2, sort_keys=True)
+      stream.write("\n")
+      stream.flush()
+      os.fsync(stream.fileno())
+    os.replace(temporary, path)
+    temporary = None
+  finally:
+    if temporary is not None:
+      temporary.unlink(missing_ok=True)
 
 
 def main():
@@ -484,7 +666,10 @@ def main():
   parser.add_argument("--max-mutants", type=int, default=0, help="optional limit for debugging (0 means all)")
   parser.add_argument("--list-only", action="store_true", help="list discovered candidates and exit")
   parser.add_argument("--verbose", action="store_true", help="print extra debug output")
+  parser.add_argument("--results-json", type=Path, help="optional per-candidate result and diagnostic artifact")
   args = parser.parse_args()
+  if args.list_only and args.results_json is not None:
+    parser.error("--results-json requires a full mutation run")
 
   start = time.perf_counter()
 
@@ -495,6 +680,7 @@ def main():
 
     if args.max_mutants > 0:
       sites = sites[: args.max_mutants]
+    discovered_sites = sites
 
     mutator_summary = ", ".join(f"{name} ({c})" for name in MUTATOR_FAMILIES if (c := mutator_counts.get(name, 0)) > 0)
     print(f"Found {len(sites)} unique candidates: {mutator_summary}", flush=True)
@@ -524,48 +710,49 @@ def main():
     # Forked workers inherit these imports, eliminating per-worker import cost.
     catalog = _discover_test_catalog()
 
-    # Baseline smoke check
-    baseline_ids = catalog.get("test_defaults.py", [])[:5]
-    baseline_failed = run_unittest(baseline_ids, mutation_lib, mutant_id=-1, verbose=args.verbose)
-    if baseline_failed is not None:
-      print("Baseline smoke failed with mutant_id=-1; aborting to avoid false kill signals.", flush=True)
-      print(f"  failed_test: {baseline_failed}", flush=True)
+    # A mutant-induced assertion or exception counts as killed only after this
+    # same complete test catalog has passed against the unmutated library.
+    try:
+      baseline_start = time.perf_counter()
+      site_targets = require_full_baseline(catalog, sites, mutation_lib, args.verbose)
+      baseline_sec = time.perf_counter() - baseline_start
+    except RuntimeError as exc:
+      print(f"Mutation baseline or target selection failed: {exc}", flush=True)
       return 2
-
-    # Pre-compute test targets per mutation site
-    core_tests = _build_core_tests(catalog)
-    site_targets = {site.site_id: build_priority_tests(site, catalog, core_tests) for site in sites}
 
     results = []
     counts = Counter()
+    timeout_sec = max(60.0, min(300.0, baseline_sec * 4.0))
+    print(f"Isolated mutant timeout: {timeout_sec:.1f}s (unmutated full baseline {baseline_sec:.1f}s)", flush=True)
 
-    with ProcessPoolExecutor(max_workers=args.j) as pool:
+    with ProcessPoolExecutor(max_workers=args.j, mp_context=multiprocessing.get_context("spawn")) as pool:
       future_map = {
-        pool.submit(eval_mutant, site, site_targets[site.site_id], mutation_lib, args.verbose): site for site in sites
+        pool.submit(eval_mutant, site, site_targets[site.site_id], mutation_lib, args.verbose, timeout_sec): site for site in sites
       }
       print_live_status(render_progress(0, len(sites), 0, 0, 0, 0.0))
       try:
         for fut in as_completed(future_map):
-          try:
-            res = fut.result()
-          except Exception:
-            site = future_map[fut]
-            res = MutantResult(site, "killed", 0.0, "worker process crashed")
+          res = completed_mutant_result(fut, future_map[fut])
           results.append(res)
           counts[res.outcome] += 1
           elapsed_now = time.perf_counter() - start
           done = len(results) == len(sites)
           print_live_status(render_progress(len(results), len(sites), counts["killed"], counts["survived"],
                                             counts["infra_error"], elapsed_now), final=done)
-      except Exception:
-        # Pool broken — mark all unfinished mutants as killed (crash = behavioral change detected)
+      except Exception as exc:
+        # An interrupted pool cannot establish which mutations changed behavior.
         completed_ids = {r.site.site_id for r in results}
         for site in sites:
           if site.site_id not in completed_ids:
-            results.append(MutantResult(site, "killed", 0.0, "pool broken"))
-            counts["killed"] += 1
+            results.append(MutantResult(site, "infra_error", 0.0, f"pool interrupted: {type(exc).__name__}: {exc}"))
+            counts["infra_error"] += 1
         elapsed_now = time.perf_counter() - start
         print_live_status(render_progress(len(results), len(sites), counts["killed"], counts["survived"], counts["infra_error"], elapsed_now), final=True)
+
+    if args.results_json is not None:
+      write_results_json(args.results_json, discovered_sites=discovered_sites,
+                         pruned_ids=build_incompatible_ids, results=results, site_targets=site_targets,
+                         preprocessed_source=preprocessed_source, baseline_sec=baseline_sec)
 
     survivors = sorted((r for r in results if r.outcome == "survived"), key=lambda r: r.site.site_id)
     if survivors:

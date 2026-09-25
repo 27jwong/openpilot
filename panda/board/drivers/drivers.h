@@ -3,6 +3,7 @@
 #include "board/can.h"
 #include "board/health.h"
 #include "board/crc.h"
+#include "opendbc/safety/can_tx.h"
 #ifdef STM32H7
 #include "board/stm32h7/lladc_declarations.h"
 #endif
@@ -71,9 +72,7 @@ extern bus_config_t bus_config[PANDA_CAN_CNT];
 void can_init_all(void);
 void can_set_orientation(bool flipped);
 bool can_tx_check_min_slots_free(uint32_t min);
-void can_set_checksum(CANPacket_t *packet);
 bool can_check_checksum(CANPacket_t *packet);
-void can_send(CANPacket_t *to_push, uint8_t bus_number, bool skip_tx_hook);
 bool is_speed_valid(uint32_t speed, const uint32_t *all_speeds, uint8_t len);
 
 // ******************** clock_source ********************
