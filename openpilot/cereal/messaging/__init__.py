@@ -180,8 +180,8 @@ class FrequencyTracker:
 
 class SubMaster:
   def __init__(self, services: list[str], poll: str | None = None,
-               ignore_alive: list[str] | None = None, ignore_avg_freq: list[str] | None = None,
-               ignore_valid: list[str] | None = None, addr: str = "127.0.0.1", frequency: float | None = None):
+               ignore_alive: list[str] | set[str] | None = None, ignore_avg_freq: list[str] | set[str] | None = None,
+               ignore_valid: list[str] | set[str] | None = None, addr: str = "127.0.0.1", frequency: float | None = None):
     self.frame = -1
     self.services = services
     self.seen = dict.fromkeys(services, False)
@@ -234,7 +234,9 @@ class SubMaster:
 
   def update(self, timeout: int = 100) -> None:
     msgs = []
-    for sock in self.poller.poll(timeout):
+    # Empty native polls can yield even with a zero timeout.
+    socks = (self.sock[s] for s in self.services if s not in self.non_polled_services) if timeout == 0 else self.poller.poll(timeout)
+    for sock in socks:
       msgs.append(recv_one_or_none(sock))
 
     # non-blocking receive for non-polled sockets
@@ -266,13 +268,43 @@ class SubMaster:
       self.freq_ok[s] = self.freq_tracker[s].valid or self.simulation
 
   def all_alive(self, service_list: list[str] | None = None) -> bool:
-    return all(self.alive[s] for s in (service_list or self.services) if s not in self.ignore_alive)
+    for s in (service_list or self.services):
+      try:
+        if s in self.ignore_alive:
+          continue
+        value = self.alive[s]
+      except StopIteration as exc:
+        raise RuntimeError('generator raised StopIteration') from exc
+      if not value:
+        return False
+      del value
+    return True
 
   def all_freq_ok(self, service_list: list[str] | None = None) -> bool:
-    return all(self.freq_ok[s] for s in (service_list or self.services) if self._check_avg_freq(s))
+    for s in (service_list or self.services):
+      try:
+        if not self._check_avg_freq(s):
+          continue
+        value = self.freq_ok[s]
+      except StopIteration as exc:
+        raise RuntimeError('generator raised StopIteration') from exc
+      if not value:
+        return False
+      del value
+    return True
 
   def all_valid(self, service_list: list[str] | None = None) -> bool:
-    return all(self.valid[s] for s in (service_list or self.services) if s not in self.ignore_valid)
+    for s in (service_list or self.services):
+      try:
+        if s in self.ignore_valid:
+          continue
+        value = self.valid[s]
+      except StopIteration as exc:
+        raise RuntimeError('generator raised StopIteration') from exc
+      if not value:
+        return False
+      del value
+    return True
 
   def all_checks(self, service_list: list[str] | None = None) -> bool:
     return self.all_alive(service_list) and self.all_freq_ok(service_list) and self.all_valid(service_list)
