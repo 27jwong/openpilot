@@ -26,6 +26,16 @@ LEAD_ENGAGE_HEADWAY = 0.85  # s of headway
 LEAD_RELEASE_HEADWAY = 1.1  # s of headway
 LEAD_ENGAGE_TTC = 8.0  # s to impact
 LEAD_RELEASE_TTC = 10.0  # s to impact
+# MRCC keeps crawl-speed following behind a lead its own radar sees: close in, radar beats
+# vision, and MRCC's stop is far smoother than openpilot's. Hysteresis on speed so creeping
+# around the boundary cannot hand over back and forth.
+MRCC_CRAWL_ENTER_SPEED = 10.0 * CV.MPH_TO_MS
+MRCC_CRAWL_EXIT_SPEED = 15.0 * CV.MPH_TO_MS
+# the most jerk the crossfade itself may add to the command, so two controllers that disagree
+# hand over slowly while two that agree still swap at transition_time
+BLEND_JERK_MAX = 1.5  # m/s^3
+# ACCEL_CMD counts per m/s^2
+ACCEL_CMD_SCALE = 200
 
 class CarController(CarControllerBase):
   def __init__(self, dbc_names, CP):
@@ -53,6 +63,8 @@ class CarController(CarControllerBase):
     self.transition_time = TRANSITION_TIME_MIN
     # latched by the engage thresholds, released by the wider ones
     self.lead_approaching = False
+    # below the crawl speed band, latched by the enter speed and released by the exit one
+    self.crawling = False
 
 
 
@@ -143,9 +155,15 @@ class CarController(CarControllerBase):
     elif self.CP.flags & MazdaSafetyFlags.GEN2:
       blended_acc = self.blended_acc
 
+      # how far apart the two commands are, in m/s^2, while there is a command to write
+      acc_gap = None
+
       if self.CP.openpilotLongitudinalControl and CC.longActive:
         stock_acc = CS.acc["ACCEL_CMD"]
-        op_acc = (CC.actuators.accel * 200) + 2000
+        op_acc = (CC.actuators.accel * ACCEL_CMD_SCALE) + 2000
+        # stock reads a 4000 sentinel until MRCC engages, which is no request to measure against
+        if CS.acc["ACC_ENABLED"]:
+          acc_gap = abs(op_acc - stock_acc) / ACCEL_CMD_SCALE
 
         if blended_acc:
           # Built from last cycle's coefficient, so a status change lands on the next
@@ -170,18 +188,32 @@ class CarController(CarControllerBase):
                                       (LEAD_ENGAGE_HEADWAY, LEAD_ENGAGE_TTC))
         self.lead_approaching = bool(lead_status and (lead_headway < headway_thresh or lead_ttc < ttc_thresh))
 
-        # Experimental mode as the stack resolved it. The closest distance setting on the
-        # stalk lets the driver demand openpilot long from the wheel.
-        blend_to_op = experimental_mode or CS.distance_setting == 1 or self.lead_approaching
+        self.crawling = CS.out.vEgo < (MRCC_CRAWL_EXIT_SPEED if self.crawling else MRCC_CRAWL_ENTER_SPEED)
+        mrcc_crawl = self.crawling and CS.radar_lead
+
+        # The closest distance setting on the stalk is the driver demanding openpilot long, a
+        # manual override that still hands over in the crawl zone. Resolved experimental mode is
+        # treated like CEM's automatic reasons: in the crawl zone they and the approach latch are
+        # what traded the car back and forth in the last seconds of a stop.
+        manual_to_op = CS.distance_setting == 1
+        cem_to_op = experimental_mode and not mrcc_crawl
+        approach_to_op = self.lead_approaching and not mrcc_crawl
+        blend_to_op = manual_to_op or cem_to_op or approach_to_op
+
+        # transition_time sets the fastest crossfade; the jerk cap slows it when the two
+        # commands are far apart. An approaching lead is urgent and keeps the full rate.
+        blend_step = DT_CTRL / self.transition_time
+        if acc_gap and not approach_to_op:
+          blend_step = min(blend_step, BLEND_JERK_MAX * DT_CTRL / acc_gap)
 
         # blend in openpilot long
         if blend_to_op and self.blend_coeff < 1:
-          self.blend_coeff += min((DT_CTRL / self.transition_time), (1 - self.blend_coeff))
+          self.blend_coeff += min(blend_step, 1 - self.blend_coeff)
 
         # blend back out to MRCC. The reason to hand over can drop away in one cycle, but
         # the coefficient still has to decay from wherever it got to.
         elif not blend_to_op and self.blend_coeff > 0:
-          self.blend_coeff -= min((DT_CTRL / self.transition_time), self.blend_coeff)
+          self.blend_coeff -= min(blend_step, self.blend_coeff)
 
         # ramp the crossfade with speed, then shorten it by the lead penalty so a closing
         # gap hands over faster. Never quicker than the floor, however close the lead is.
