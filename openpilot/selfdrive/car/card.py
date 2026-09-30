@@ -1738,7 +1738,7 @@ class Car:
     lead = self.sm['radarState'].leadOne
 
     # Unfiltered lead, for brands that run their own filtering over it (Mazda GEN2 blended ACC)
-    self.CI.CS.openpilot_lead_status = bool(lead.status)
+    self.CI.CS.openpilot_lead_status = bool(lead.present)
     self.CI.CS.openpilot_lead_d_rel = float(lead.dRel)
     self.CI.CS.openpilot_lead_v_rel = float(lead.vRel)
     self.CI.CS.openpilot_experimental_mode = bool(self.sm['selfdriveState'].experimentalMode)
