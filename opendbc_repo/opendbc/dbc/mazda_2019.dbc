@@ -546,6 +546,7 @@ BO_ 1087 BRAKE_PEDAL_SLOW: 8 XXX
  SG_ NEW_SIGNAL_5 : 47|4@0+ (1,0) [0|15] "" XXX
 
 BO_ 1098 CRUZE_STATE: 8 XXX
+ SG_ LEAD_DETECTED : 0|1@0+ (1,0) [0|1] "" XXX
  SG_ NEW_SIGNAL_7 : 1|1@0+ (1,0) [0|1] "" XXX
  SG_ CRZ_STATE : 6|3@0+ (1,0) [0|15] "" XXX
  SG_ NEW_SIGNAL_1 : 13|1@0+ (1,0) [0|1] "" XXX
@@ -621,6 +622,7 @@ BO_ 1868 TI_FEEDBACK3: 8 XXX
  SG_ OUT4 : 55|16@0- (-1,0) [0|65535] "" XXX
 
 CM_ SG_ 31 GEAR "13-P, 12-R, 11-N, 1-6-D";
+CM_ SG_ 1098 LEAD_DETECTED "Forward radar has a lead. Only reads while ACC is engaged; low otherwise even with a lead present";
 VAL_ 31 GEAR 13 "P" 12 "R" 11 "N" 1 "D" 2 "D" 3 "D" 4 "D" 5 "D" 6 "D";
 VAL_ 133 LKAS_REQUEST -430 "DISABLED";
 VAL_ 537 GEAR 0 "P" 1 "D" 2 "R";
