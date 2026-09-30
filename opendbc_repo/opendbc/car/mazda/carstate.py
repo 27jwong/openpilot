@@ -26,6 +26,7 @@ class CarState(CarStateBase):
 
     self.distance_button = 0
     self.distance_setting = 0
+    self.radar_lead = False
     self.ti_ramp_down = False
     self.ti_version = 1
     self.ti_state = TI_STATE.RUN
@@ -215,6 +216,8 @@ class CarState(CarStateBase):
       ret.cruiseState.enabled = (cp.vl["CRUZE_STATE"]["CRZ_STATE"] >= 2)
       ret.cruiseState.available = (cp.vl["CRUZE_STATE"]["CRZ_STATE"] != 0)
       self.distance_setting = int(cp.vl["CRUZE_STATE"]["DISTANCE_SETTING"])
+      # the radar's own lead flag, which only reads while ACC is engaged
+      self.radar_lead = bool(cp.vl["CRUZE_STATE"]["LEAD_DETECTED"])
     else:
       ret.cruiseState.speed = cp_body.vl["CRUZE_STATE"]["CRZ_SPEED"] * unit_conversion
       ret.cruiseState.enabled = (cp_body.vl["CRUZE_STATE"]["CRZ_STATE"] >= 3)
