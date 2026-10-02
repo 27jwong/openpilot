@@ -33,7 +33,8 @@ COLOR_PRESETS = ["Stock", "#FFFFFF", "#178644", "#3B82F6", "#E63956", "#8B5CF6",
 CAMERA_VIEWS = ["Auto", "Driver", "Standard", "Wide"]
 
 # Keys are the int values stored in DeveloperSidebarMetric{1..7}; values are the
-# human-readable labels shown in both the row value and the picker dialog.
+# human-readable labels shown in both the row value and the picker dialog,
+# which lists them in the order they appear here.
 DEVELOPER_SIDEBAR_METRIC_OPTIONS: dict[int, str] = {
   0:  "None",
   1:  "Acceleration: Current",
@@ -48,6 +49,7 @@ DEVELOPER_SIDEBAR_METRIC_OPTIONS: dict[int, str] = {
   10: "Lateral Control: Steering Angle",
   11: "Lateral Control: Torque % Used",
   12: "Longitudinal Control: Actuator Acceleration Output",
+  18: "Longitudinal Control: Blended ACC Factor",
   13: "Longitudinal MPC: Danger Factor",
   14: "Longitudinal MPC Jerk: Acceleration",
   15: "Longitudinal MPC Jerk: Danger Zone",

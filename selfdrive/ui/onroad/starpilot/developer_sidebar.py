@@ -213,6 +213,7 @@ class DeveloperSidebar:
     sm = ui_state.sm
     car_state = sm["carState"] if sm.valid.get("carState", False) else None
     car_control = sm["carControl"] if sm.valid.get("carControl", False) else None
+    starpilot_car_control = sm["starpilotCarControl"] if sm.valid.get("starpilotCarControl", False) else None
     starpilot_plan = sm["starpilotPlan"] if sm.valid.get("starpilotPlan", False) else None
     live_delay = sm["liveDelay"] if sm.valid.get("liveDelay", False) else None
     live_parameters = sm["liveParameters"] if sm.valid.get("liveParameters", False) else None
@@ -307,6 +308,8 @@ class DeveloperSidebar:
     danger_factor = (starpilot_plan.dangerFactor if starpilot_plan else 0.0) * 100.0
     danger_jerk = starpilot_plan.dangerJerk if starpilot_plan else 0.0
     speed_jerk = starpilot_plan.speedJerk if starpilot_plan else 0.0
+    blended_acc_info = starpilot_car_control.blendedAccInfo if starpilot_car_control else None
+    acc_blend_label = f"{blended_acc_info.blendFactor:.2f}" if (blended_acc_info and blended_acc_info.valid) else "N/A"
 
     fallback_use_custom_steer_ratio = force_auto_tune_off or (_setting_changed(self._cached_ratio, self._cached_ratio_stock) and not force_auto_tune)
     use_custom_steer_ratio = self._toggle_bool(toggles, "use_custom_steerRatio", fallback_use_custom_steer_ratio)
@@ -364,7 +367,8 @@ class DeveloperSidebar:
       14: ("ACCEL JERK", f"{accel_jerk}"),
       15: ("DANGER JERK", f"{danger_jerk}"),
       16: ("SPEED JERK", f"{speed_jerk}"),
-      17: (model_name, "")
+      17: (model_name, ""),
+      18: ("ACC BLEND", acc_blend_label),
     }
 
   def render(self, sidebar_rect: rl.Rectangle):

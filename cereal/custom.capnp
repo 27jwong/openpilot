@@ -15,6 +15,7 @@ using Car = import "car.capnp";
 struct StarPilotCarControl @0x81c2f05a394cf4af {
   hudControl @0 :HUDControl;
   steeringLimitInfo @1 :SteeringLimitInfo;
+  blendedAccInfo @2 :BlendedAccInfo;
 
   struct HUDControl {
     audibleAlert @0 :AudibleAlert;
@@ -59,6 +60,12 @@ struct StarPilotCarControl @0x81c2f05a394cf4af {
     cooperativeOffsetDeg @4 :Float32;
     monoTime @5 :UInt64;
     combinedLimitErrorDeg @6 :Float32;
+  }
+
+  # Ports that crossfade their stock ACC command with openpilot long (Mazda GEN2 blended ACC)
+  struct BlendedAccInfo {
+    valid @0 :Bool;
+    blendFactor @1 :Float32;  # 0 is fully stock ACC, 1 is fully openpilot long
   }
 }
 

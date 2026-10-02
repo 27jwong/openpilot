@@ -44,7 +44,8 @@ SLC_SOURCE_NONE = "None"
 EventName = log.OnroadEvent.EventName
 
 
-def _build_starpilot_car_control(steering_limit_info: dict[str, bool | float | int] | None, valid: bool):
+def _build_starpilot_car_control(steering_limit_info: dict[str, bool | float | int] | None, valid: bool,
+                                 acc_blend_factor: float | None = None):
   message = messaging.new_message('starpilotCarControl')
   message.valid = valid
   if steering_limit_info is not None:
@@ -56,6 +57,9 @@ def _build_starpilot_car_control(steering_limit_info: dict[str, bool | float | i
     info.cooperativeOffsetDeg = float(steering_limit_info.get("cooperativeOffsetDeg", 0.0))
     info.monoTime = int(steering_limit_info.get("monoTime", 0))
     info.combinedLimitErrorDeg = float(steering_limit_info.get("combinedLimitErrorDeg", 0.0))
+  if acc_blend_factor is not None:
+    message.starpilotCarControl.blendedAccInfo.valid = True
+    message.starpilotCarControl.blendedAccInfo.blendFactor = float(acc_blend_factor)
   return message
 
 
@@ -116,6 +120,7 @@ class Car:
 
     self.last_actuators_output = structs.CarControl.Actuators()
     self.last_steering_limit_info: dict[str, bool | float | int] | None = None
+    self.last_acc_blend_factor: float | None = None
 
     self.params = Params()
     self.params_memory = Params(memory=True)
@@ -423,6 +428,7 @@ class Car:
     starpilot_control_send = _build_starpilot_car_control(
       self.last_steering_limit_info,
       CS.canValid and self.sm.all_checks(['carControl']),
+      self.last_acc_blend_factor,
     )
     self.pm.send('starpilotCarControl', starpilot_control_send)
 
@@ -482,6 +488,8 @@ class Car:
       self.last_actuators_output, can_sends = self.CI.apply(CC, now_nanos, self.starpilot_toggles)
       get_steering_limit_info = getattr(self.CI.CC, "get_steering_limit_info", None)
       self.last_steering_limit_info = get_steering_limit_info() if get_steering_limit_info is not None else None
+      get_acc_blend_factor = getattr(self.CI.CC, "get_acc_blend_factor", None)
+      self.last_acc_blend_factor = get_acc_blend_factor() if get_acc_blend_factor is not None else None
       self.pm.send('sendcan', can_list_to_can_capnp(can_sends, msgtype='sendcan', valid=CS.canValid))
 
       self.CC_prev = CC
