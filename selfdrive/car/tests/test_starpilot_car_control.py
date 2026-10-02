@@ -28,3 +28,18 @@ def test_stock_car_output_has_no_fork_specific_fields():
   actuators = car.CarOutput.new_message().actuatorsOutput
 
   assert "steeringLimitInfo" not in actuators.to_dict()
+
+
+def test_blended_acc_info_carries_blend_factor():
+  message = _build_starpilot_car_control(None, True, 0.375)
+  info = messaging.log_from_bytes(message.to_bytes()).starpilotCarControl.blendedAccInfo
+
+  assert info.valid
+  assert info.blendFactor == 0.375
+
+
+def test_blended_acc_info_invalid_without_blend_factor():
+  message = _build_starpilot_car_control(None, True)
+  info = messaging.log_from_bytes(message.to_bytes()).starpilotCarControl.blendedAccInfo
+
+  assert not info.valid
