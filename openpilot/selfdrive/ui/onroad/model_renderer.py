@@ -5,7 +5,6 @@ import pyray as rl
 from openpilot.cereal import messaging
 from opendbc.car.structs import car
 from dataclasses import dataclass, field
-from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.params import Params
 from openpilot.starpilot.ui.rainbow_path import RainbowPath
 from openpilot.starpilot.ui.road_colors import edge_gradient, lane_color, path_mode, solid_gradient
@@ -13,25 +12,12 @@ from openpilot.starpilot.ui.onroad_customization import ROAD_COLORS
 from openpilot.starpilot.lateral.lane_feedback import BLUE, direction as lane_centering_direction
 from openpilot.selfdrive.locationd.calibrationd import HEIGHT_INIT
 from openpilot.selfdrive.ui.ui_state import ui_state
-from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.shader_polygon import draw_polygon, Gradient
 from openpilot.system.ui.widgets import Widget
 
 CLIP_MARGIN = 500
 MIN_DRAW_DISTANCE = 10.0
 MAX_DRAW_DISTANCE = 100.0
-
-THROTTLE_COLORS = [
-  rl.Color(13, 248, 122, 102),   # HSLF(148/360, 0.94, 0.51, 0.4)
-  rl.Color(114, 255, 92, 89),    # HSLF(112/360, 1.0, 0.68, 0.35)
-  rl.Color(114, 255, 92, 0),     # HSLF(112/360, 1.0, 0.68, 0.0)
-]
-
-NO_THROTTLE_COLORS = [
-  rl.Color(242, 242, 242, 102), # HSLF(148/360, 0.0, 0.95, 0.4)
-  rl.Color(242, 242, 242, 89),  # HSLF(112/360, 0.0, 0.95, 0.35)
-  rl.Color(242, 242, 242, 0),   # HSLF(112/360, 0.0, 0.95, 0.0)
-]
 
 
 @dataclass
@@ -52,10 +38,6 @@ class ModelRenderer(Widget):
     super().__init__()
     self._longitudinal_control = False
     self._experimental_mode = False
-    self._blend_filter = FirstOrderFilter(1.0, 0.25, 1 / gui_app.target_fps)
-    self._prev_allow_throttle = True
-    self._default_path_gradient = None
-    self._default_path_blend_factor = None
     self._lane_line_probs = np.zeros(4, dtype=np.float32)
     self._lane_centering_direction = 0
     self._road_edge_stds = np.zeros(2, dtype=np.float32)
@@ -213,9 +195,7 @@ class ModelRenderer(Widget):
     self._update_experimental_gradient()
 
   def _update_experimental_gradient(self):
-    """Pre-calculate experimental mode gradient colors"""
-    if not self._experimental_mode:
-      return
+    """Pre-calculate the planned acceleration gradient colors, in every mode"""
 
     max_len = min(len(self._path.projected_points) // 2, len(self._acceleration_x))
 
@@ -303,12 +283,9 @@ class ModelRenderer(Widget):
       draw_polygon(self._rect, road_edge.projected_points, color)
 
   def _draw_path(self, sm):
-    """Draw path with dynamic coloring based on mode and throttle state."""
+    """Draw path colored by rainbow, the configured path color, or planned acceleration."""
     if not self._path.projected_points.size:
       return
-
-    allow_throttle = sm['longitudinalPlan'].allowThrottle or not self._longitudinal_control
-    self._blend_filter.update(int(allow_throttle))
 
     now_ns = time.monotonic_ns()
     style = getattr(self, "road_style", {})
@@ -328,25 +305,11 @@ class ModelRenderer(Widget):
       draw_polygon(self._rect, self._path.projected_points, gradient=solid_gradient(style.get("path", ROAD_COLORS["path"])))
       return
 
-    if self._experimental_mode:
-      # Draw with acceleration coloring
-      if len(self._exp_gradient.colors) > 1:
-        draw_polygon(self._rect, self._path.projected_points, gradient=self._exp_gradient)
-      else:
-        draw_polygon(self._rect, self._path.projected_points, rl.Color(255, 255, 255, 30))
+    # Acceleration coloring in every mode, not only experimental
+    if len(self._exp_gradient.colors) > 1:
+      draw_polygon(self._rect, self._path.projected_points, gradient=self._exp_gradient)
     else:
-      # Blend throttle/no throttle colors based on transition
-      blend_factor = round(self._blend_filter.x * 100) / 100
-      if blend_factor != getattr(self, "_default_path_blend_factor", None):
-        self._default_path_gradient = Gradient(
-          start=(0.0, 1.0),  # Bottom of path
-          end=(0.0, 0.0),  # Top of path
-          colors=self._blend_colors(NO_THROTTLE_COLORS, THROTTLE_COLORS, blend_factor),
-          stops=[0.0, 0.5, 1.0],
-        )
-        self._default_path_blend_factor = blend_factor
-      gradient = self._default_path_gradient
-      draw_polygon(self._rect, self._path.projected_points, gradient=gradient)
+      draw_polygon(self._rect, self._path.projected_points, rl.Color(255, 255, 255, 30))
 
   def _draw_lead_indicator(self):
     # Draw lead vehicles if available
@@ -463,18 +426,3 @@ class ModelRenderer(Widget):
       int(rgb[2] * 255),
       int(a * 255)
     )
-
-  @staticmethod
-  def _blend_colors(begin_colors, end_colors, t):
-    if t >= 1.0:
-      return end_colors
-    if t <= 0.0:
-      return begin_colors
-
-    inv_t = 1.0 - t
-    return [rl.Color(
-      int(inv_t * start.r + t * end.r),
-      int(inv_t * start.g + t * end.g),
-      int(inv_t * start.b + t * end.b),
-      int(inv_t * start.a + t * end.a)
-    ) for start, end in zip(begin_colors, end_colors, strict=True)]

@@ -136,7 +136,7 @@ def test_covered_model_keeps_filters_geometry_leads_and_reveal_pixels(monkeypatc
       renderer._render(renderer._rect)
       if not paint:
         draw.assert_not_called()
-    for field in ('_torque_filter', '_blend_filter', '_acceleration_x_filter', '_acceleration_x_filter2'):
+    for field in ('_torque_filter', '_acceleration_x_filter', '_acceleration_x_filter2'):
       assert getattr(visible, field).x == getattr(covered, field).x
     assert visible._lane_centering_direction == covered._lane_centering_direction
     assert vars(visible._rainbow_path) == vars(covered._rainbow_path) | {'refresh_enabled': visible._rainbow_path.refresh_enabled}
