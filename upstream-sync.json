@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "upstream": {
+    "url": "https://github.com/commaai/openpilot.git",
+    "commit": "ec95db3f1fa19f76940497fedfdb62e09ea19912"
+  },
+  "dependencies": [
+    {
+      "path": "msgq_repo",
+      "url": "https://github.com/commaai/msgq.git",
+      "commit": "0e266c1dbcf7328beee3e57b4a8688555387c877",
+      "tree": "380b9182bd1ac533eabe527b4f6fb6f6614dfe57",
+      "exclude": []
+    },
+    {
+      "path": "opendbc_repo",
+      "url": "https://github.com/commaai/opendbc.git",
+      "commit": "35f7e0813462607ef1d703e52313e7571e31405d",
+      "tree": "fe3f2be71c3f865fb672b458c37347ec4843c982",
+      "exclude": []
+    },
+    {
+      "path": "panda",
+      "url": "https://github.com/commaai/panda.git",
+      "commit": "92eb565169fd553f4dfaf508c1a3f8dbc14fbfbf",
+      "tree": "d95b794ba2355ea4362ebd342c942715f0100e77",
+      "exclude": []
+    },
+    {
+      "path": "rednose_repo",
+      "url": "https://github.com/commaai/rednose.git",
+      "commit": "8671c17c3a4cdc4be5df07a068039e2da5b94eaa",
+      "tree": "6ce3aa5c97c7cdb43c2cb046fc8f51e9c2518fe1",
+      "exclude": []
+    },
+    {
+      "path": "teleoprtc_repo",
+      "url": "https://github.com/commaai/teleoprtc.git",
+      "commit": "1aa8fc433bef1519a95c0700c96258c3be6dfb34",
+      "tree": "bd9739faee9e432d23f167c9134bd17eebdc0d9b",
+      "exclude": []
+    },
+    {
+      "path": "tinygrad_repo",
+      "url": "https://github.com/tinygrad/tinygrad.git",
+      "commit": "9d0446a4ba8a532c8b674fb6ad795af015cd9dcf",
+      "tree": "03f35edac84fbe516023911c1a135e5a577f5d95",
+      "exclude": [
+        "AGENTS.md"
+      ]
+    }
+  ]
+}

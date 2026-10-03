@@ -1,0 +1,23 @@
+* text=auto eol=lf
+
+# to move existing files into LFS:
+# git add --renormalize .
+*.onnx    -text
+openpilot/selfdrive/modeld/models/big_*_tinygrad.pkl    -text
+*.svg    -text
+*.png    -text
+*.gif    -text
+*.ttf    -text
+*.otf    -text
+*.wav    -text
+
+openpilot/selfdrive/car/tests/test_models_segs.txt    -text
+openpilot/common/hardware/comma/updater    -text
+
+# Dependency snapshots keep their own storage attributes.
+msgq_repo/** !filter !diff !merge -text
+opendbc_repo/** !filter !diff !merge -text
+panda/** !filter !diff !merge -text
+rednose_repo/** !filter !diff !merge -text
+teleoprtc_repo/** !filter !diff !merge -text
+tinygrad_repo/** !filter !diff !merge -text
