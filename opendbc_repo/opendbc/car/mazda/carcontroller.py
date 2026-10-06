@@ -16,22 +16,22 @@ VisualAlert = structs.CarControl.HUDControl.VisualAlert
 LongCtrlState = structs.CarControl.Actuators.LongControlState
 
 # crossfade duration between stock MRCC and openpilot long, ramped linearly with speed
-TRANSITION_TIME_MIN = 0.5  # s at standstill, and the hard floor once the lead penalty is applied
+TRANSITION_TIME_MIN = 0.5  # s at standstill, and the floor once the lead penalty is applied
 TRANSITION_TIME_SLOPE = (3.0 - TRANSITION_TIME_MIN) / (55.0 * CV.MPH_TO_MS)  # s per m/s, so 3s at 55mph
 # the crossfade shortens as the lead closes in: nothing at a 2s gap, 3s off at 0.5s or less
 LEAD_PENALTY_HEADWAY = [0.5, 2.0]  # s of headway to the lead
 LEAD_PENALTY = [3.0, 0.0]  # s off the crossfade
-# an approaching lead latches on at the engage thresholds and only lets go at the wider
-# release ones, so a lead track that flickers around a boundary cannot chatter the crossfade
-LEAD_ENGAGE_HEADWAY = 0.85  # s of headway
-LEAD_RELEASE_HEADWAY = 1.1  # s of headway
-LEAD_ENGAGE_TTC = 8.0  # s to impact
-LEAD_RELEASE_TTC = 10.0  # s to impact
+# an approaching lead hands over inside either threshold. No hysteresis: the crossfade's own
+# rate limit is what keeps a lead track flickering around a boundary from chattering the command.
+LEAD_ENGAGE_HEADWAY = 1.1  # s of headway
+LEAD_ENGAGE_TTC = 10.0  # s to impact
+# a closing lead is urgent and crossfades in at half the time; one that is merely close, with
+# nothing else asking for openpilot, takes half again as long
+LEAD_TTC_TRANSITION_SCALE = 0.5
+LEAD_HEADWAY_TRANSITION_SCALE = 1.5
 # MRCC keeps crawl-speed following behind a lead its own radar sees: close in, radar beats
-# vision, and MRCC's stop is far smoother than openpilot's. Hysteresis on speed so creeping
-# around the boundary cannot hand over back and forth.
-MRCC_CRAWL_ENTER_SPEED = 10.0 * CV.MPH_TO_MS
-MRCC_CRAWL_EXIT_SPEED = 15.0 * CV.MPH_TO_MS
+# vision, and MRCC's stop is far smoother than openpilot's.
+MRCC_CRAWL_SPEED = 5.0 * CV.MPH_TO_MS
 # the most jerk the crossfade itself may add to the command, so two controllers that disagree
 # hand over slowly while two that agree still swap at transition_time
 BLEND_JERK_MAX = 1.5  # m/s^3
@@ -63,10 +63,6 @@ class CarController(CarControllerBase):
     self.blending_acc = False
     # seconds for a full crossfade in either direction; recomputed every cycle
     self.transition_time = TRANSITION_TIME_MIN
-    # latched by the engage thresholds, released by the wider ones
-    self.lead_approaching = False
-    # below the crawl speed band, latched by the enter speed and released by the exit one
-    self.crawling = False
     self.distance_last = None
 
 
@@ -196,29 +192,33 @@ class CarController(CarControllerBase):
 
         # An approaching lead is its own reason to hand over, and blends straight to
         # openpilot long rather than switching experimental mode on. Time to impact is
-        # infinite while the lead is not closing, which leaves the headway holding the
-        # latch on its own instead of dropping it every time relative speed crosses zero.
-        lead_ttc = self.lead_distance / -self.lead_velocity if self.lead_velocity < 0 else math.inf
-        headway_thresh, ttc_thresh = ((LEAD_RELEASE_HEADWAY, LEAD_RELEASE_TTC) if self.lead_approaching else
-                                      (LEAD_ENGAGE_HEADWAY, LEAD_ENGAGE_TTC))
-        self.lead_approaching = bool(lead_status and (lead_headway < headway_thresh or lead_ttc < ttc_thresh))
+        # infinite while the lead is not closing, which leaves the headway to trigger alone.
+        lead_ttc = self.lead_distance / -self.lead_velocity if lead_status and self.lead_velocity < 0 else math.inf
 
-        self.crawling = CS.out.vEgo < (MRCC_CRAWL_EXIT_SPEED if self.crawling else MRCC_CRAWL_ENTER_SPEED)
-        mrcc_crawl = self.crawling and CS.radar_lead
+        mrcc_crawl = CS.out.vEgo < MRCC_CRAWL_SPEED and CS.radar_lead
 
         # Every status above USER_OVERRIDDEN is an automatic reason CEM resolved experimental
         # mode on; OFF and USER_DISABLED both mean it is off. In the crawl zone only a manual
-        # override still hands over, since the automatic reasons and the approach latch are
+        # override still hands over, since the automatic reasons and the approaching lead are
         # what traded the car back and forth in the last seconds of a stop.
         manual_to_op = ce_status == CEStatus["USER_OVERRIDDEN"]
         cem_to_op = ce_status > CEStatus["USER_OVERRIDDEN"] and not mrcc_crawl
-        approach_to_op = self.lead_approaching and not mrcc_crawl
-        blend_to_op = manual_to_op or cem_to_op or approach_to_op
+        ttc_to_op = lead_ttc < LEAD_ENGAGE_TTC and not mrcc_crawl
+        headway_to_op = lead_headway < LEAD_ENGAGE_HEADWAY and not mrcc_crawl
+        blend_to_op = manual_to_op or cem_to_op or ttc_to_op or headway_to_op
+
+        # A closing lead shortens the crossfade whatever else is asking; a close one only
+        # lengthens it when it is the sole reason, so it never slows a manual or CEM handover.
+        transition_time = self.transition_time
+        if ttc_to_op:
+          transition_time *= LEAD_TTC_TRANSITION_SCALE
+        elif headway_to_op and not (manual_to_op or cem_to_op):
+          transition_time *= LEAD_HEADWAY_TRANSITION_SCALE
 
         # transition_time sets the fastest crossfade; the jerk cap slows it when the two
-        # commands are far apart. An approaching lead is urgent and keeps the full rate.
-        blend_step = DT_CTRL / self.transition_time
-        if acc_gap and not approach_to_op:
+        # commands are far apart. A closing lead is urgent and keeps the full rate.
+        blend_step = DT_CTRL / transition_time
+        if acc_gap and not ttc_to_op:
           blend_step = min(blend_step, BLEND_JERK_MAX * DT_CTRL / acc_gap)
 
         # blend in openpilot long
@@ -231,7 +231,8 @@ class CarController(CarControllerBase):
           self.blend_coeff -= min(blend_step, self.blend_coeff)
 
         # ramp the crossfade with speed, then shorten it by the lead penalty so a closing
-        # gap hands over faster. Never quicker than the floor, however close the lead is.
+        # gap hands over faster. Never quicker than the floor, however close the lead is,
+        # until a closing lead halves it.
         self.transition_time = max(TRANSITION_TIME_MIN + (TRANSITION_TIME_SLOPE * CS.out.vEgo) -
                                    float(np.interp(lead_headway, LEAD_PENALTY_HEADWAY, LEAD_PENALTY)),
                                    TRANSITION_TIME_MIN)
