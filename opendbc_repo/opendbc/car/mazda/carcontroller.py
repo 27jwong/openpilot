@@ -30,10 +30,10 @@ LEAD_TTC_TRANSITION_SCALE = 0.5
 LEAD_HEADWAY_TRANSITION_SCALE = 1.5
 # MRCC keeps crawl-speed following behind a lead its own radar sees: close in, radar beats
 # vision, and MRCC's stop is far smoother than openpilot's.
-MRCC_CRAWL_SPEED = 5.0 * CV.MPH_TO_MS
+MRCC_CRAWL_SPEED = 6.5 * CV.MPH_TO_MS
 # the most jerk the crossfade itself may add to the command, so two controllers that disagree
 # hand over slowly while two that agree still swap at transition_time
-BLEND_JERK_MAX = 1.5  # m/s^3
+BLEND_JERK_MAX = 1.25  # m/s^3
 # ACCEL_CMD counts per m/s^2
 ACCEL_CMD_SCALE = 200
 
