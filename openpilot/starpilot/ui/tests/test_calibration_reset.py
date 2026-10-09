@@ -49,7 +49,7 @@ class TestCalibrationReset(unittest.TestCase):
     self.pushed.call_args.args[0]._confirm_callback()
 
   def test_native_confirmation_returns_during_params_contention_and_coalesces(self):
-    keys = ("CalibrationParams", "LiveTorqueParameters", "LiveParametersV2", "LiveDelay")
+    keys = ("CalibrationParams", "LiveTorqueParameters", "LiveParametersV2", "LiveDelay", "LiveLongitudinalDelay")
     for key in keys:
       self.params.put(key, b"existing learned cache", block=True)
     self.params.put_bool("ShowSpeedLimits", False, block=True)

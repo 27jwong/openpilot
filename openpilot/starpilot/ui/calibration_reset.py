@@ -27,7 +27,7 @@ class CalibrationReset:
 
   def _run(self, params: Params) -> None:
     try:
-      for key in ("CalibrationParams", "LiveTorqueParameters", "LiveParametersV2", "LiveDelay"):
+      for key in ("CalibrationParams", "LiveTorqueParameters", "LiveParametersV2", "LiveDelay", "LiveLongitudinalDelay"):
         params.remove(key)
         if os.path.lexists(params.get_param_path(key)):
           raise OSError(f"Could not clear {key}")

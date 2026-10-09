@@ -59,10 +59,14 @@ class CarController(CarControllerBase):
     self.lead_velocity = 0.0
     # factor for blending stock MRCC and openpilot long. 0 is fully stock, 1 is fully openpilot
     self.blend_coeff = 0.0
+    # whether blend_coeff is being tracked this drive (GEN2, openpilot long, blended ACC on)
+    self.blending_acc = False
     # seconds for a full crossfade in either direction; recomputed every cycle
     self.transition_time = TRANSITION_TIME_MIN
 
-
+  def get_acc_blend_factor(self) -> float | None:
+    # surfaced on starpilotCarState for longlagd, which only learns from openpilot's own command; None while not blending
+    return self.blend_coeff if self.blending_acc else None
 
   def update(self, CC, CS, now_nanos):
     # card surfaces radarState's leadOne and the resolved experimental mode (after conditional
@@ -150,6 +154,7 @@ class CarController(CarControllerBase):
 
     elif self.CP.flags & MazdaSafetyFlags.GEN2:
       blended_acc = self.blended_acc
+      self.blending_acc = blended_acc and self.CP.openpilotLongitudinalControl
 
       # how far apart the two commands are, in m/s^2, while there is a command to write
       acc_gap = None
@@ -170,7 +175,7 @@ class CarController(CarControllerBase):
         else:
           CS.acc["ACCEL_CMD"] = op_acc
 
-      if blended_acc and self.CP.openpilotLongitudinalControl:
+      if self.blending_acc:
         # Tracked every cycle, engaged or not, so engaging picks up the coefficient the
         # situation calls for rather than whatever was frozen at the last disengage.
         lead_headway = self.lead_distance / max(CS.out.vEgo, 0.1) if lead_status else math.inf

@@ -151,6 +151,7 @@ class Car:
   curve_replay = False
   car_params_published = False
   mazda_lead_passthrough = False
+  last_acc_blend_factor: float | None = None
 
   def __init__(self, CI=None, RI: RadarInterfaceBase | None = None, startup_owner=None) -> None:
     prewarm_cache_contracts(("CarParamsCache", "CarParamsPersistent", "CarParamsPrevRoute"))
@@ -860,6 +861,14 @@ class Car:
       companion = messaging.new_message('starpilotCarState', valid=bool(cs_send.valid), logMonoTime=int(cs_send.logMonoTime))
       companion.starpilotCarState.lateralAuthorityUnavailable = bool(steering_authority.latched)
       companion.starpilotCarState.sourceCarStateMonoTime = int(cs_send.logMonoTime)
+    acc_blend_factor = getattr(self, "last_acc_blend_factor", None)
+    if acc_blend_factor is not None:
+      # Mazda GEN2 blended ACC: longlagd only learns from cycles where openpilot alone sent the command
+      if companion is None:
+        companion = messaging.new_message('starpilotCarState', valid=bool(cs_send.valid), logMonoTime=int(cs_send.logMonoTime))
+        companion.starpilotCarState.sourceCarStateMonoTime = int(cs_send.logMonoTime)
+      companion.starpilotCarState.blendedAccInfo.valid = True
+      companion.starpilotCarState.blendedAccInfo.blendFactor = float(acc_blend_factor)
     self.car_gps_publisher.update(self.CI.CS, self.pm, companion)
     self.timing_mark('car_state_send_start')
     self.pm.send('carState', cs_send)
@@ -1312,6 +1321,9 @@ class Car:
       self.timing_mark('controller_apply_start')
       self.last_actuators_output, can_sends = self.CI.apply(CC, now_nanos)
       self.timing_mark('controller_apply_end')
+      if self.mazda_lead_passthrough:
+        get_acc_blend_factor = getattr(self.CI.CC, "get_acc_blend_factor", None)
+        self.last_acc_blend_factor = get_acc_blend_factor() if get_acc_blend_factor is not None else None
       self.publish_sendcan(can_sends, valid=CS.canValid)
 
       self.CC_prev = CC

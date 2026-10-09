@@ -2612,6 +2612,7 @@ struct Event {
     deviceState @6 :DeviceState;
     chestnutState @152 :ChestnutState;
     chestnutGpuState @153 :ChestnutState;
+    starpilotLongitudinalDelay @154 :Custom.StarPilotLongitudinalDelay;
     logMessage @18 :Text;
     errorLogMessage @85 :Text;
 

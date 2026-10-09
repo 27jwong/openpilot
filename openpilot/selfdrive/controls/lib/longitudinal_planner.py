@@ -33,6 +33,7 @@ from openpilot.starpilot.longitudinal.follow_jerk import FollowJerk
 from openpilot.starpilot.longitudinal.lead_takeoff import LeadTakeoff, project as project_takeoff
 from openpilot.starpilot.longitudinal.lead_behavior import adjust as adjust_lead_behavior
 from openpilot.starpilot.longitudinal.lead_approach import LeadApproach, LeadApproachKey, project as project_approach
+from openpilot.starpilot.longitudinal.longitudinal_delay import brake_weight, get_long_delays
 from openpilot.starpilot.lateral.lane_change_preferences import LaneChangePolicy
 
 A_CRUISE_MAX_VALS = [1.6, 1.2, 0.8, 0.6]
@@ -85,6 +86,27 @@ def get_cruise_accel(e2e, v_cruise, v_ego, a_cruise_prev, angle_steers, CP, dt, 
   return target_accel
 
 
+def get_accel_from_plan_split(accel_from_delay, v_ego, gas_delay, brake_delay):
+  """Sample the plan with separate gas and brake lookaheads. The brake lookahead decides which
+  one applies, so braking starts as early as its longer delay needs, and the two targets are
+  crossfaded across the brake threshold so the output never steps. Equal delays reduce to the
+  single-delay sample."""
+  a_gas, stop_gas = accel_from_delay(gas_delay)
+  if brake_delay == gas_delay:
+    return a_gas, stop_gas
+  a_brake, stop_brake = accel_from_delay(brake_delay)
+  w = brake_weight(a_brake, v_ego)
+  return a_gas + w * (a_brake - a_gas), (stop_brake if w > 0.5 else stop_gas)
+
+
+def get_live_long_delay(sm):
+  """longlagd's learned delays, once it has published. Planner tests pass a stand-in bus."""
+  seen = getattr(sm, 'seen', None)
+  if seen is None or not seen.get('starpilotLongitudinalDelay', False):
+    return None
+  return sm['starpilotLongitudinalDelay']
+
+
 class LongitudinalPlanner:
   def __init__(self, CP, init_v=0.0, init_a=0.0, dt=DT_MDL, clock_ns: Callable[[], int] = time.monotonic_ns):
     self.CP = CP
@@ -100,6 +122,8 @@ class LongitudinalPlanner:
     self.lane_change_gap = LaneChangeGap()
     self.experimental_release = ExperimentalRelease()
     self.lead_approach = LeadApproach(dt, CP.longitudinalActuatorDelay)
+    # lookaheads for requests the powertrain meets and ones that need the brakes; refreshed each update
+    self.gas_delay = self.brake_delay = CP.longitudinalActuatorDelay
 
     self.v_desired_filter = FirstOrderFilter(init_v, 2.0, self.dt)
     self.a_cruise = init_a
@@ -140,6 +164,9 @@ class LongitudinalPlanner:
       accel_coast = ACCEL_MAX
 
     v_ego = sm['carState'].vEgo
+    self.gas_delay, self.brake_delay = get_long_delays(self.CP, get_live_long_delay(sm))
+    # lead reaction time is about how soon the brakes answer
+    self.lead_approach.actuator_delay = self.brake_delay
     v_cruise_kph = min(sm['carState'].vCruise, V_CRUISE_MAX)
     v_cruise = v_cruise_kph * CV.KPH_TO_MS
     ceiling = select_cruise_ceiling(
@@ -306,12 +333,14 @@ class LongitudinalPlanner:
     # Save starting point for next iteration
     a_prev = self.output_a_target
 
-    action_t =  self.CP.longitudinalActuatorDelay + DT_MDL
-    output_a_target_mpc = get_accel_from_plan(self.v_desired_trajectory, self.a_desired_trajectory, CONTROL_N_T_IDX,
-                                              action_t=action_t)
-    output_should_stop_mpc = forecast_should_stop(
-      self.CP, self.v_desired_trajectory, CONTROL_N_T_IDX, action_t,
-      fallback=should_stop(v_ego, output_a_target_mpc))
+    def accel_from_delay(delay):
+      action_t = delay + DT_MDL
+      a_target = get_accel_from_plan(self.v_desired_trajectory, self.a_desired_trajectory, CONTROL_N_T_IDX,
+                                     action_t=action_t)
+      return a_target, forecast_should_stop(self.CP, self.v_desired_trajectory, CONTROL_N_T_IDX, action_t,
+                                            fallback=should_stop(v_ego, a_target))
+    output_a_target_mpc, output_should_stop_mpc = get_accel_from_plan_split(accel_from_delay, v_ego,
+                                                                            self.gas_delay, self.brake_delay)
     output_a_target_e2e = sm['modelV2'].action.desiredAcceleration
     output_should_stop_e2e = sm['modelV2'].action.shouldStop
 

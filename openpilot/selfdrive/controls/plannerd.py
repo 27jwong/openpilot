@@ -21,6 +21,7 @@ from openpilot.starpilot.longitudinal.lead_takeoff_preferences import TakeoffPre
 from openpilot.starpilot.longitudinal.force_stop_runtime import ForceStopRuntime
 from openpilot.starpilot.longitudinal.stop_resume import collect_resume
 from openpilot.starpilot.longitudinal.lead_approach_runtime import LeadApproachPreferences
+from openpilot.starpilot.longitudinal.longitudinal_delay import split_delay_enabled
 from openpilot.starpilot.curve_speed.host import CurveHost
 from openpilot.starpilot.curve_speed.runtime import DriverEvent as CurveDriverEvent
 from openpilot.starpilot.curve_speed.preferences import PreferenceHost as CurvePreferenceHost
@@ -397,7 +398,11 @@ def starpilot_main():
   optional_slc = ['slcDashboardObservation', 'slcVisionObservation'] if slc_available else []
   subscribed_services.extend(optional_slc)
   subscribed_services.append('starpilotNavigation')
-  optional_conditional = ['starpilotNavigation'] + (['starpilotRadarState'] if conditional_host is not None else []) + optional_slc
+  # longlagd's learned gas/brake delays; the planner keeps the base delay until it publishes
+  optional_delay = ['starpilotLongitudinalDelay'] if split_delay_enabled(CP) else []
+  subscribed_services.extend(optional_delay)
+  optional_conditional = (['starpilotNavigation'] + (['starpilotRadarState'] if conditional_host is not None else []) +
+                          optional_slc + optional_delay)
   sm = messaging.SubMaster(subscribed_services, poll='modelV2',
                            ignore_alive=optional_conditional, ignore_valid=optional_conditional,
                            ignore_avg_freq=optional_conditional)
