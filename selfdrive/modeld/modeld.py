@@ -72,6 +72,7 @@ from openpilot.starpilot.common.model_lab import (
   load_model_lab_config,
   model_lab_manifest_eligible,
 )
+from openpilot.starpilot.common.longitudinal_delay import base_long_delay
 from openpilot.starpilot.common.model_versions import is_tinygrad_model_version
 from openpilot.starpilot.common.starpilot_variables import get_starpilot_toggles, MODELS_PATH, params_memory
 
@@ -1284,7 +1285,9 @@ def main(demo=False):
     sm.update(0)
 
     long_smooth_seconds = _model_smooth_seconds(params, "LongSmoothSeconds", LONG_SMOOTH_SECONDS)
-    long_delay = CP.longitudinalActuatorDelay + long_smooth_seconds
+    # the base delay only: the learned gas/brake split is the planner's, since some models take
+    # the action time as an input and switching it would feed back into their own output
+    long_delay = base_long_delay(CP, starpilot_toggles) + long_smooth_seconds
     desire = DH.desire
     is_rhd = sm["driverMonitoringState"].isRHD
     frame_id = sm["roadCameraState"].frameId

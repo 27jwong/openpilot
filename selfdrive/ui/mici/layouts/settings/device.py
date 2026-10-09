@@ -240,6 +240,7 @@ class DeviceLayoutMici(NavScroller):
       params.remove("LiveParameters")
       params.remove("LiveParametersV2")
       params.remove("LiveDelay")
+      params.remove("LiveLongitudinalDelay")
       params.put_bool("OnroadCycleRequested", True)
 
     def reset_driver_monitoring_callback():

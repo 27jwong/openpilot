@@ -329,7 +329,28 @@ struct StarPilotLateralState @0xc2243c65e0340384 {
   unwindDetected @7 :Bool;
 }
 
-struct CustomReserved12 @0x9ccdc8676701b412 {
+# Learned longitudinal actuator delay, split by whether a request is met by the powertrain
+# (gas, including closing the throttle) or needs the brakes. Published by longlagd.
+struct StarPilotLongitudinalDelay @0x9ccdc8676701b412 {
+  gas @0 :Regime;
+  brake @1 :Regime;
+  brakeThreshold @2 :Float32;  # m/s^2, at the current speed: requests below this need the brakes
+
+  struct Regime {
+    delay @0 :Float32;  # learned once estimated, otherwise the car's default
+    status @1 :Status;
+    delayEstimate @2 :Float32;
+    delayEstimateStd @3 :Float32;
+    validBlocks @4 :Int32;
+    calPerc @5 :Int8;
+    points @6 :List(Float32);
+  }
+
+  enum Status {
+    unestimated @0;
+    estimated @1;
+    invalid @2;
+  }
 }
 
 struct CustomReserved13 @0xcd96dafb67a082d0 {

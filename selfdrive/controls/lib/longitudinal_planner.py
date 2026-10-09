@@ -8,6 +8,7 @@ from openpilot.common.constants import CV
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.realtime import DT_MDL
 from openpilot.selfdrive.modeld.constants import ModelConstants
+from openpilot.starpilot.common.longitudinal_delay import brake_weight, get_long_delays
 from openpilot.starpilot.common.model_versions import is_tinygrad_model_version
 from openpilot.starpilot.controls.lib.starpilot_vcruise import FT_TO_M, OFFSET_FT_MAX, OFFSET_FT_MIN
 from openpilot.selfdrive.controls.lib.longcontrol import LongCtrlState
@@ -538,18 +539,18 @@ def get_planner_v_ego(CP, car_state):
   return float(v_ego)
 
 
-def get_accel_from_plan_classic(CP, speeds, accels, vEgoStopping):
+def get_accel_from_plan_classic(delay, speeds, accels, vEgoStopping):
   if len(speeds) == CONTROL_N:
     v_target_now = np.interp(DT_MDL, CONTROL_N_T_IDX, speeds)
     a_target_now = np.interp(DT_MDL, CONTROL_N_T_IDX, accels)
 
-    v_target = np.interp(CP.longitudinalActuatorDelay + DT_MDL, CONTROL_N_T_IDX, speeds)
+    v_target = np.interp(delay + DT_MDL, CONTROL_N_T_IDX, speeds)
     if v_target != v_target_now:
-      a_target = 2 * (v_target - v_target_now) / CP.longitudinalActuatorDelay - a_target_now
+      a_target = 2 * (v_target - v_target_now) / delay - a_target_now
     else:
       a_target = a_target_now
 
-    v_target_1sec = np.interp(CP.longitudinalActuatorDelay + DT_MDL + 1.0, CONTROL_N_T_IDX, speeds)
+    v_target_1sec = np.interp(delay + DT_MDL + 1.0, CONTROL_N_T_IDX, speeds)
   else:
     v_target = 0.0
     v_target_1sec = 0.0
@@ -576,12 +577,35 @@ def get_accel_from_plan(speeds, accels, action_t=DT_MDL, vEgoStopping=0.05):
   return a_target, should_stop
 
 
+def get_accel_from_plan_split(accel_from_delay, v_ego, gas_delay, brake_delay):
+  """Sample the plan with separate gas and brake lookaheads. The brake lookahead decides which
+  one applies, so braking starts as early as its longer delay needs, and the two targets are
+  crossfaded across the brake threshold so the output never steps. Equal delays reduce to the
+  single-delay sample."""
+  a_gas, stop_gas = accel_from_delay(gas_delay)
+  if brake_delay == gas_delay:
+    return a_gas, stop_gas
+  a_brake, stop_brake = accel_from_delay(brake_delay)
+  w = brake_weight(a_brake, v_ego)
+  return a_gas + w * (a_brake - a_gas), (stop_brake if w > 0.5 else stop_gas)
+
+
+def get_live_long_delay(sm):
+  """longlagd's learned delays, once it has published. Planner tests pass a plain dict."""
+  seen = getattr(sm, "seen", None)
+  if seen is None or not seen.get('starpilotLongitudinalDelay', False):
+    return None
+  return sm['starpilotLongitudinalDelay']
+
+
 class LongitudinalPlanner:
   def __init__(self, CP, init_v=0.0, init_a=0.0, dt=DT_MDL):
     self.CP = CP
     self.mpc = LongitudinalMpc(dt=dt)
     self.fcw = False
     self.dt = dt
+    # lookaheads for requests the powertrain meets and ones that need the brakes; refreshed each update
+    self.gas_delay = self.brake_delay = CP.longitudinalActuatorDelay
     self.model_allow_throttle = True
     self.model_allow_throttle_transition_t = 0.0
     self.allow_throttle = True
@@ -741,7 +765,7 @@ class LongitudinalPlanner:
       return None
 
     lead_brake = max(0.0, -float(lead.aLeadK))
-    reaction_t = max(self.CP.longitudinalActuatorDelay, self.dt)
+    reaction_t = max(self.brake_delay, self.dt)
     closing_speed = max(0.0, v_ego - lead.vLead)
     projected_closing_speed = closing_speed + lead_brake * reaction_t
     if projected_closing_speed < 0.1 and lead_brake < 0.5:
@@ -812,7 +836,7 @@ class LongitudinalPlanner:
       return None
 
     lead_brake = max(0.0, -float(lead.aLeadK))
-    reaction_t = max(self.CP.longitudinalActuatorDelay, self.dt)
+    reaction_t = max(self.brake_delay, self.dt)
     closing_speed = max(0.0, v_ego - lead.vLead)
     projected_closing_speed = closing_speed + lead_brake * reaction_t
     if projected_closing_speed < VISION_LEAD_APPROACH_MIN_CLOSING_SPEED:
@@ -867,7 +891,7 @@ class LongitudinalPlanner:
     lead_prob = float(getattr(lead, "modelProb", 0.0))
 
     lead_brake = max(0.0, -float(lead.aLeadK))
-    reaction_t = max(self.CP.longitudinalActuatorDelay, self.dt)
+    reaction_t = max(self.brake_delay, self.dt)
     closing_speed = max(0.0, v_ego - lead.vLead)
     projected_closing_speed = closing_speed + lead_brake * reaction_t
     closing_ratio = projected_closing_speed / max(float(v_ego), 0.1)
@@ -1036,7 +1060,7 @@ class LongitudinalPlanner:
       return None
 
     lead_brake = max(0.0, -float(lead.aLeadK))
-    reaction_t = max(self.CP.longitudinalActuatorDelay, self.dt)
+    reaction_t = max(self.brake_delay, self.dt)
     closing_speed = max(0.0, v_ego - lead.vLead)
     projected_closing_speed = closing_speed + lead_brake * reaction_t
     if projected_closing_speed < VISION_SLOW_LEAD_MIN_CLOSING_SPEED:
@@ -1066,7 +1090,7 @@ class LongitudinalPlanner:
 
   def tracked_vision_lead_approach_needs_immediate_brake(self, lead, v_ego, approach_cap):
     lead_brake = max(0.0, -float(getattr(lead, "aLeadK", 0.0)))
-    reaction_t = max(self.CP.longitudinalActuatorDelay, self.dt)
+    reaction_t = max(self.brake_delay, self.dt)
     projected_closing_speed = max(0.0, v_ego - float(lead.vLead)) + lead_brake * reaction_t
     bypass_distance = max(VISION_LEAD_APPROACH_CONFIRM_BYPASS_DISTANCE_MIN,
                           VISION_LEAD_APPROACH_CONFIRM_BYPASS_DISTANCE_TIME * float(v_ego))
@@ -1090,7 +1114,7 @@ class LongitudinalPlanner:
           desired_gap = float(desired_follow_distance(v_ego, lead.vLead, base_t_follow))
           approach_window = max(LEAD_APPROACH_TFOLLOW_WINDOW_MIN, LEAD_APPROACH_TFOLLOW_WINDOW_GAIN * float(v_ego))
           if float(lead.dRel) <= desired_gap + approach_window:
-            reaction_t = max(self.CP.longitudinalActuatorDelay, self.dt)
+            reaction_t = max(self.brake_delay, self.dt)
             projected_closing_speed = closing_speed + 0.5 * lead_brake * reaction_t
             gap_to_follow = max(float(lead.dRel) - desired_gap, 0.0)
             time_to_follow = gap_to_follow / max(projected_closing_speed, 0.1)
@@ -1872,7 +1896,7 @@ class LongitudinalPlanner:
       return None
 
     lead_brake = max(0.0, -float(getattr(lead, "aLeadK", 0.0)))
-    reaction_t = max(self.CP.longitudinalActuatorDelay, self.dt)
+    reaction_t = max(self.brake_delay, self.dt)
     projected_closing_speed = max(0.0, float(v_ego) - float(lead.vLead)) + lead_brake * reaction_t
     if projected_closing_speed < TRACKED_VISION_MODEL_FLOOR_MIN_CLOSING_SPEED:
       return None
@@ -1914,7 +1938,7 @@ class LongitudinalPlanner:
     if lead_brake > TRACKED_VISION_MODEL_CAP_MAX_LEAD_BRAKE:
       return None
 
-    reaction_t = max(self.CP.longitudinalActuatorDelay, self.dt)
+    reaction_t = max(self.brake_delay, self.dt)
     projected_closing_speed = max(0.0, float(v_ego) - float(lead.vLead)) + lead_brake * reaction_t
     if not (TRACKED_VISION_MODEL_CAP_MIN_CLOSING_SPEED <= projected_closing_speed <= TRACKED_VISION_MODEL_CAP_MAX_CLOSING_SPEED):
       return None
@@ -2032,6 +2056,7 @@ class LongitudinalPlanner:
 
     v_ego = get_planner_v_ego(self.CP, sm['carState'])
     scene_v_ego = float(sm['carState'].vEgo)
+    self.gas_delay, self.brake_delay = get_long_delays(self.CP, starpilot_toggles, get_live_long_delay(sm))
     v_cruise = sm['starpilotPlan'].vCruise
     if not np.isfinite(v_cruise):
       cloudlog.error(f"Longitudinal planner received non-finite vCruise={v_cruise}, falling back to v_ego={v_ego:.2f}")
@@ -2418,19 +2443,23 @@ class LongitudinalPlanner:
     classic_model = bool(getattr(starpilot_toggles, "classic_model", False))
     tinygrad_model = bool(getattr(starpilot_toggles, "tinygrad_model", False))
     experimental_mlsim = bool(tinygrad_model and self.mlsim and self.mode != 'acc')
-    action_t = self.CP.longitudinalActuatorDelay + DT_MDL
+    # positive-accel uses (launch, cruise cap, merge floor) only ever ask the powertrain
+    action_t = self.gas_delay + DT_MDL
     prev_output_a_target = float(self.output_a_target)
     model_launch_accel = None
     if self.model_launch_armed and not bool(sm['modelV2'].action.shouldStop):
       model_launch_accel = self.get_model_launch_accel(model_launch_v, model_launch_a, action_t, scene_v_ego)
 
     if classic_model:
-      output_a_target, output_should_stop = get_accel_from_plan_classic(
-        self.CP, self.v_desired_trajectory, self.a_desired_trajectory, starpilot_toggles.vEgoStopping)
+      output_a_target, output_should_stop = get_accel_from_plan_split(
+        lambda delay: get_accel_from_plan_classic(delay, self.v_desired_trajectory, self.a_desired_trajectory,
+                                                  starpilot_toggles.vEgoStopping),
+        v_ego, self.gas_delay, self.brake_delay)
     elif tinygrad_model:
-      output_a_target_mpc, output_should_stop_mpc = get_accel_from_plan(
-        self.v_desired_trajectory, self.a_desired_trajectory,
-        action_t=action_t, vEgoStopping=starpilot_toggles.vEgoStopping)
+      output_a_target_mpc, output_should_stop_mpc = get_accel_from_plan_split(
+        lambda delay: get_accel_from_plan(self.v_desired_trajectory, self.a_desired_trajectory,
+                                          action_t=delay + DT_MDL, vEgoStopping=starpilot_toggles.vEgoStopping),
+        v_ego, self.gas_delay, self.brake_delay)
       output_a_target_e2e = sm['modelV2'].action.desiredAcceleration
       output_should_stop_e2e = sm['modelV2'].action.shouldStop
 
@@ -2461,9 +2490,10 @@ class LongitudinalPlanner:
           output_a_target, output_a_target_mpc, output_a_target_e2e, speed_handoff,
         )
     else:
-      output_a_target, output_should_stop = get_accel_from_plan(
-        self.v_desired_trajectory, self.a_desired_trajectory,
-        action_t=action_t, vEgoStopping=starpilot_toggles.vEgoStopping)
+      output_a_target, output_should_stop = get_accel_from_plan_split(
+        lambda delay: get_accel_from_plan(self.v_desired_trajectory, self.a_desired_trajectory,
+                                          action_t=delay + DT_MDL, vEgoStopping=starpilot_toggles.vEgoStopping),
+        v_ego, self.gas_delay, self.brake_delay)
 
     comfort_output_accel_min = get_vehicle_min_accel(self.CP, v_ego) if experimental_mlsim else accel_limits_turns[0]
     vision_cap_accel_min = min(comfort_output_accel_min, get_vehicle_min_accel(self.CP, v_ego))
