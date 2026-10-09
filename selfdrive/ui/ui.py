@@ -3,13 +3,20 @@ import os
 import time
 
 from openpilot.system.hardware import TICI
-from openpilot.common.realtime import Priority, config_realtime_process, set_core_affinity
+from openpilot.common.realtime import Priority, config_realtime_process
 from openpilot.common.watchdog import kick_watchdog
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.selfdrive.ui.stall_monitor import UIStallMonitor
 from openpilot.selfdrive.ui.ui_state import ui_state
 
 BIG_UI = gui_app.big_ui()
+
+# Once rendering, run on core 7 below both models there (modeld FIFO 54, dmonitoringmodeld
+# FIFO 5) so the UI only takes their leftovers. On core 5, selfdrived, plannerd, radard and
+# starpilot_process all outrank it and left it ~10 fps. Core 6 is out: camerad runs there
+# without RT priority and would lose to any FIFO task.
+UI_CORES = {7, }
+UI_PRIORITY = 4
 
 
 def _stall_context() -> dict[str, object]:
@@ -44,7 +51,6 @@ def _stall_context() -> dict[str, object]:
 
 
 def main():
-  cores = {5, }
   config_realtime_process(0, Priority.UI)
 
   stall_monitor = UIStallMonitor("raylib_ui")
@@ -82,9 +88,10 @@ def main():
         context_update_time = now
       if should_render:
         # reaffine after power save offlines our core
-        if TICI and os.sched_getaffinity(0) != cores:
+        if TICI and os.sched_getaffinity(0) != UI_CORES:
           try:
-            set_core_affinity(list(cores))
+            os.sched_setaffinity(0, UI_CORES)
+            os.sched_setscheduler(0, os.SCHED_FIFO, os.sched_param(UI_PRIORITY))
           except OSError:
             pass
       stall_monitor.progress("ui.loop_idle")
