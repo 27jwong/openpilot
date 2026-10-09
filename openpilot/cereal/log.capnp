@@ -2342,10 +2342,22 @@ struct LateralDelay @0x98dfdb22c44df8d4 {
   calPerc @6 :Int8;
   version @7 :Int32;
 
+  # per-speed learning; lateralDelay is interpolated across these at the current vEgo
+  speedBins @8 :List(SpeedBin);
+
   enum Status {
     unestimated @0;
     estimated @1;
     invalid @2;
+  }
+
+  struct SpeedBin {
+    speed @0 :Float32;  # interpolation anchor (m/s)
+    lateralDelay @1 :Float32;  # applied value, blended toward the all-speed estimate until learned
+    lateralDelayEstimate @2 :Float32;
+    lateralDelayEstimateStd @3 :Float32;
+    validBlocks @4 :Int32;
+    status @5 :Status;
   }
 }
 
