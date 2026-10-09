@@ -23,8 +23,8 @@ LEAD_PENALTY_HEADWAY = [0.5, 2.0]  # s of headway to the lead
 LEAD_PENALTY = [3.0, 0.0]  # s off the crossfade
 # an approaching lead hands over inside either threshold. No hysteresis: the crossfade's own
 # rate limit is what keeps a lead track flickering around a boundary from chattering the command.
-LEAD_ENGAGE_HEADWAY = 1.1  # s of headway
-LEAD_ENGAGE_TTC = 10.0  # s to impact
+LEAD_ENGAGE_HEADWAY = 0.9  # s of headway
+LEAD_ENGAGE_TTC = 12.0  # s to impact
 # a closing lead is urgent and crossfades in at half the time; one that is merely close, with
 # nothing else asking for openpilot, takes half again as long
 LEAD_TTC_TRANSITION_SCALE = 0.5
@@ -34,7 +34,7 @@ LEAD_HEADWAY_TRANSITION_SCALE = 1.5
 MRCC_CRAWL_SPEED = 6.5 * CV.MPH_TO_MS
 # the most jerk the crossfade itself may add to the command, so two controllers that disagree
 # hand over slowly while two that agree still swap at transition_time
-BLEND_JERK_MAX = 1.25  # m/s^3
+BLEND_JERK_MAX = 1.2  # m/s^3
 # ACCEL_CMD counts per m/s^2
 ACCEL_CMD_SCALE = 200
 
