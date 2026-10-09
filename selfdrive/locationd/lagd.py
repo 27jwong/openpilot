@@ -22,7 +22,7 @@ BLOCK_NUM_NEEDED = 5
 MOVING_WINDOW_SEC = 60.0
 MIN_OKAY_WINDOW_SEC = 25.0
 MIN_RECOVERY_BUFFER_SEC = 2.0
-MIN_VEGO = 15.0
+MIN_VEGO = 8.0
 MIN_ABS_YAW_RATE = 0.0
 MAX_YAW_RATE_SANITY_CHECK = 1.0
 MIN_NCC = 0.95
@@ -36,6 +36,16 @@ CORR_BORDER_OFFSET = 5
 LAG_CANDIDATE_CORR_THRESHOLD = 0.9
 SMOOTH_K = 5
 SMOOTH_SIGMA = 1.0
+
+# Speed bins (m/s). Each bin learns its own delay, and lateralDelay is interpolated between the bin
+# speeds at the current vEgo. The edges are 4.5 m/s apart and sit halfway between 5 mph steps
+# (19.0 m/s = 42.5 mph), so steady cruising at a common set speed never straddles two bins.
+SPEED_BIN_EDGES = [14.5, 19.0, 23.5, 28.0, 32.5]
+SPEED_BIN_SPEEDS = [11.25, 16.75, 21.25, 25.75, 30.25, 34.75]
+SPEED_BIN_HYSTERESIS = 0.5
+# A bin's window joins separate visits end to end. Masking the first MAX_LAG (plus smoothing) of each
+# visit keeps the cross-correlation from pairing samples across that seam.
+SPEED_BIN_ENTRY_BUFFER_SEC = 1.0
 
 
 def masked_symmetric_moving_average(x: np.ndarray, mask: np.ndarray, k: int, sigma: float) -> np.ndarray:
@@ -169,6 +179,28 @@ class BlockAverage:
     return valid_mean, valid_std, current_mean, current_std
 
 
+class SpeedBin:
+  def __init__(self, speed: float, window_len: int, num_blocks: int, block_size: int, valid_blocks: int, initial_value: float):
+    self.speed = speed
+    self.points = Points(window_len)
+    self.block_avg = BlockAverage(num_blocks, block_size, valid_blocks, initial_value)
+    self.last_estimate_t = 0.0
+    self.last_checked_t = 0.0
+
+
+def speed_bin_idx(v_ego: float, prev_idx: int | None, min_vego: float) -> int | None:
+  if v_ego <= min_vego:
+    return None
+
+  idx = int(np.searchsorted(SPEED_BIN_EDGES, v_ego, side='right'))
+  if prev_idx is not None and idx != prev_idx:
+    lo = SPEED_BIN_EDGES[prev_idx - 1] if prev_idx > 0 else -np.inf
+    hi = SPEED_BIN_EDGES[prev_idx] if prev_idx < len(SPEED_BIN_EDGES) else np.inf
+    if lo - SPEED_BIN_HYSTERESIS <= v_ego < hi + SPEED_BIN_HYSTERESIS:
+      idx = prev_idx
+  return idx
+
+
 class LateralLagEstimator:
   inputs = {"carControl", "carState", "controlsState", "liveCalibration", "livePose"}
 
@@ -208,14 +240,40 @@ class LateralLagEstimator:
     self.last_pose_invalid_t = 0.0
     self.last_estimate_t = 0.0
 
+    self.speed_bin = None
+    self.speed_bin_entry_t = 0.0
+
     self.calibrator = PoseCalibrator()
 
     self.reset(self.initial_lag, 0)
 
-  def reset(self, initial_lag: float, valid_blocks: int):
+  def reset(self, initial_lag: float, valid_blocks: int, bin_states: list[tuple[float, int] | None] | None = None):
     window_len = int(self.window_sec / self.dt)
     self.points = Points(window_len)
     self.block_avg = BlockAverage(self.block_count, self.block_size, valid_blocks, initial_lag)
+
+    if bin_states is None:
+      bin_states = [None] * len(SPEED_BIN_SPEEDS)
+    self.speed_bins = []
+    for speed, state in zip(SPEED_BIN_SPEEDS, bin_states, strict=True):
+      bin_lag, bin_valid_blocks = state if state is not None else (initial_lag, 0)
+      self.speed_bins.append(SpeedBin(speed, window_len, self.block_count, self.block_size, bin_valid_blocks, bin_lag))
+
+  def get_status(self, block_avg: BlockAverage) -> log.LiveDelayData.Status:
+    valid_mean_lag, valid_std, _, _ = block_avg.get()
+    if block_avg.valid_blocks >= self.min_valid_block_count and not np.isnan(valid_mean_lag) and not np.isnan(valid_std):
+      if valid_std > MAX_LAG_STD:
+        return log.LiveDelayData.Status.invalid
+      return log.LiveDelayData.Status.estimated
+    return log.LiveDelayData.Status.unestimated
+
+  def get_bin_lag(self, speed_bin: SpeedBin, fallback_lag: float) -> float:
+    # shrink a bin toward the all-speed value until it has learned enough blocks of its own
+    valid_mean_lag, valid_std, _, _ = speed_bin.block_avg.get()
+    if np.isnan(valid_mean_lag) or valid_std > MAX_LAG_STD:
+      return fallback_lag
+    weight = min(speed_bin.block_avg.valid_blocks / self.min_valid_block_count, 1.0)
+    return weight * valid_mean_lag + (1.0 - weight) * fallback_lag
 
   def get_msg(self, valid: bool, debug: bool = False) -> capnp._DynamicStructBuilder:
     msg = messaging.new_message('liveDelay')
@@ -224,36 +282,41 @@ class LateralLagEstimator:
 
     liveDelay = msg.liveDelay
 
-    valid_mean_lag, valid_std, current_mean_lag, current_std = self.block_avg.get()
-    if self.block_avg.valid_blocks >= self.min_valid_block_count and not np.isnan(valid_mean_lag) and not np.isnan(valid_std):
-      if valid_std > MAX_LAG_STD:
-        liveDelay.status = log.LiveDelayData.Status.invalid
-      else:
-        liveDelay.status = log.LiveDelayData.Status.estimated
-    else:
-      liveDelay.status = log.LiveDelayData.Status.unestimated
+    valid_mean_lag, _, current_mean_lag, current_std = self.block_avg.get()
+    liveDelay.status = self.get_status(self.block_avg)
+
+    global_lag = valid_mean_lag if liveDelay.status == log.LiveDelayData.Status.estimated else self.initial_lag
+    bin_lags = [self.get_bin_lag(speed_bin, global_lag) for speed_bin in self.speed_bins]
 
     if self.starpilot_toggles.use_custom_steerActuatorDelay:
       liveDelay.lateralDelay = self.starpilot_toggles.steerActuatorDelay
-    elif liveDelay.status == log.LiveDelayData.Status.estimated:
-      liveDelay.lateralDelay = valid_mean_lag
     else:
-      liveDelay.lateralDelay = self.initial_lag
+      liveDelay.lateralDelay = float(np.interp(self.v_ego, SPEED_BIN_SPEEDS, bin_lags))
 
-    if not np.isnan(current_mean_lag) and not np.isnan(current_std):
-      liveDelay.lateralDelayEstimate = current_mean_lag
-      liveDelay.lateralDelayEstimateStd = current_std
-    else:
-      liveDelay.lateralDelayEstimate = self.initial_lag
-      liveDelay.lateralDelayEstimateStd = 0.0
+    liveDelay.lateralDelayEstimate, liveDelay.lateralDelayEstimateStd = self.get_estimate(current_mean_lag, current_std)
 
     liveDelay.validBlocks = self.block_avg.valid_blocks
     liveDelay.calPerc = min(100 * (self.block_avg.valid_blocks * self.block_size + self.block_avg.idx) //
                             (self.min_valid_block_count * self.block_size), 100)
+
+    speed_bins = liveDelay.init('speedBins', len(self.speed_bins))
+    for msg_bin, speed_bin, bin_lag in zip(speed_bins, self.speed_bins, bin_lags, strict=True):
+      _, _, bin_current_mean_lag, bin_current_std = speed_bin.block_avg.get()
+      msg_bin.speed = speed_bin.speed
+      msg_bin.lateralDelay = bin_lag
+      msg_bin.lateralDelayEstimate, msg_bin.lateralDelayEstimateStd = self.get_estimate(bin_current_mean_lag, bin_current_std)
+      msg_bin.validBlocks = speed_bin.block_avg.valid_blocks
+      msg_bin.status = self.get_status(speed_bin.block_avg)
+
     if debug:
       liveDelay.points = self.block_avg.values.flatten().tolist()
 
     return msg
+
+  def get_estimate(self, current_mean_lag: float, current_std: float) -> tuple[float, float]:
+    if not np.isnan(current_mean_lag) and not np.isnan(current_std):
+      return current_mean_lag, current_std
+    return self.initial_lag, 0.0
 
   def handle_log(self, t: float, which: str, msg: capnp._DynamicStructReader):
     if which == "carControl":
@@ -274,11 +337,11 @@ class LateralLagEstimator:
       self.pose_valid = msg.angularVelocityDevice.valid and msg.posenetOK and msg.inputsOK
     self.t = t
 
-  def points_enough(self):
-    return self.points.num_points >= int(self.okay_window_sec / self.dt)
+  def points_enough(self, points: Points):
+    return points.num_points >= int(self.okay_window_sec / self.dt)
 
-  def points_valid(self):
-    return self.points.num_okay >= int(self.okay_window_sec / self.dt)
+  def points_valid(self, points: Points):
+    return points.num_okay >= int(self.okay_window_sec / self.dt)
 
   def update_points(self):
     la_desired = self.desired_curvature * self.v_ego * self.v_ego
@@ -308,26 +371,49 @@ class LateralLagEstimator:
 
     self.points.update(self.t, la_desired, la_actual_pose, okay)
 
-  def update_estimate(self):
-    if not self.points_enough():
-      return
+    # each bin only sees the samples taken while driving in its speed range
+    speed_bin = speed_bin_idx(self.v_ego, self.speed_bin, self.min_vego)
+    if speed_bin != self.speed_bin:
+      self.speed_bin = speed_bin
+      self.speed_bin_entry_t = self.t
+    if speed_bin is not None:
+      bin_okay = okay and self.t - self.speed_bin_entry_t >= SPEED_BIN_ENTRY_BUFFER_SEC
+      self.speed_bins[speed_bin].points.update(self.t, la_desired, la_actual_pose, bin_okay)
 
-    times, desired, actual, okay = self.points.get()
+  def update_estimate(self):
+    if (delay := self.estimate(self.points, self.last_estimate_t)) is not None:
+      self.block_avg.update(delay)
+      self.last_estimate_t = self.t
+
+    for speed_bin in self.speed_bins:
+      # bins we aren't driving in don't change, so only re-check one once it has new samples
+      if speed_bin.points.times[-1] <= speed_bin.last_checked_t:
+        continue
+      speed_bin.last_checked_t = speed_bin.points.times[-1]
+      if (delay := self.estimate(speed_bin.points, speed_bin.last_estimate_t)) is not None:
+        speed_bin.block_avg.update(delay)
+        speed_bin.last_estimate_t = self.t
+
+  def estimate(self, points: Points, last_estimate_t: float) -> float | None:
+    if not self.points_enough(points):
+      return None
+
+    times, desired, actual, okay = points.get()
     # check if there are any new valid data points since the last update
-    is_valid = self.points_valid() and (actual.max() - actual.min() >= MIN_LAT_ACCEL_RANGE)
-    if self.last_estimate_t != 0 and times[0] <= self.last_estimate_t:
-      new_values_start_idx = next(-i for i, t in enumerate(reversed(times)) if t <= self.last_estimate_t)
+    is_valid = self.points_valid(points) and (actual.max() - actual.min() >= MIN_LAT_ACCEL_RANGE)
+    if last_estimate_t != 0 and times[0] <= last_estimate_t:
+      new_values_start_idx = next(-i for i, t in enumerate(reversed(times)) if t <= last_estimate_t)
       is_valid = is_valid and not (new_values_start_idx == 0 or not np.any(okay[new_values_start_idx:]))
+    if not is_valid:
+      return None
 
     desired = masked_symmetric_moving_average(desired, okay, SMOOTH_K, SMOOTH_SIGMA)
     actual = masked_symmetric_moving_average(actual, okay, SMOOTH_K, SMOOTH_SIGMA)
 
     delay, corr, confidence = self.actuator_delay(desired, actual, okay, self.dt, MAX_LAG)
-    if corr < self.min_ncc or confidence < self.min_confidence or not is_valid:
-      return
-
-    self.block_avg.update(delay)
-    self.last_estimate_t = self.t
+    if corr < self.min_ncc or confidence < self.min_confidence:
+      return None
+    return delay
 
   @staticmethod
   def actuator_delay(expected_sig: np.ndarray, actual_sig: np.ndarray, mask: np.ndarray, dt: float, max_lag: float) -> tuple[float, float, float]:
@@ -377,7 +463,15 @@ def retrieve_initial_lag(params: Params, CP: car.CarParams):
         lag, valid_blocks, status = ld.lateralDelayEstimate, ld.validBlocks, ld.status
         assert valid_blocks <= BLOCK_NUM, "Invalid number of valid blocks"
         assert status != log.LiveDelayData.Status.invalid, "Lag estimate is invalid"
-        return lag, valid_blocks
+
+        # saved bins are only reused if they were learned with the same bin layout
+        bin_states = None
+        saved_speeds = [b.speed for b in ld.speedBins]
+        if len(saved_speeds) == len(SPEED_BIN_SPEEDS) and np.allclose(saved_speeds, SPEED_BIN_SPEEDS):
+          bin_states = [(b.lateralDelayEstimate, b.validBlocks)
+                        if 0 <= b.validBlocks <= BLOCK_NUM and b.status != log.LiveDelayData.Status.invalid else None
+                        for b in ld.speedBins]
+        return lag, valid_blocks, bin_states
     except Exception as e:
       cloudlog.error(f"Failed to retrieve initial lag: {e}")
       params.remove("LiveDelay")
@@ -398,8 +492,8 @@ def main():
 
   lag_learner = LateralLagEstimator(CP, 1. / SERVICE_LIST['livePose'].frequency)
   if (initial_lag_params := retrieve_initial_lag(params, CP)) is not None:
-    lag, valid_blocks = initial_lag_params
-    lag_learner.reset(lag, valid_blocks)
+    lag, valid_blocks, bin_states = initial_lag_params
+    lag_learner.reset(lag, valid_blocks, bin_states)
 
   sm = sm.extend(['starpilotPlan'])
 
