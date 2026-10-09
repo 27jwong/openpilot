@@ -113,6 +113,7 @@ _services: dict[str, tuple] = {
   "starpilotCarParams": (True, 0.02, 1),
   "starpilotCarState": (True, 100., 10),
   "starpilotDeviceState": (True, 2., 1),
+  "starpilotLongitudinalDelay": (True, 4., 1),
   "starpilotModelV2": (True, 20.),
   "starpilotOnroadEvents": (True, 1., 1),
   "starpilotPlan": (True, 20., 10),
