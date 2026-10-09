@@ -10,12 +10,14 @@ from difflib import SequenceMatcher
 
 from cereal import log
 from opendbc.car.hyundai.values import CAR as HYUNDAI_CAR
+from opendbc.car.lateral import apply_center_deadzone
 from openpilot.common.constants import ACCELERATION_DUE_TO_GRAVITY
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.params import Params
 from openpilot.common.pid import PIDController
 from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N
 from openpilot.selfdrive.controls.lib.latcontrol import LatControl
+from openpilot.selfdrive.controls.lib.latcontrol_vehicle_tunes import get_standard_friction_threshold
 from openpilot.selfdrive.modeld.constants import ModelConstants
 
 from openpilot.starpilot.common.starpilot_variables import NNFF_MODELS_PATH, get_nnff_model_files, get_nnff_substitutes
@@ -159,6 +161,13 @@ def get_nn_model_path(car, eps_firmware) -> str | None:
 
   return find_valid_model(*queries)
 
+def get_friction_torque(friction_input, lateral_accel_deadzone, friction_threshold, torque_params) -> float:
+  # opendbc's get_friction scales by latAccelFactor so LatControlTorque can add it before its torque
+  # conversion. This controller works in torque, which is also the unit torqued learns friction in.
+  return float(np.interp(apply_center_deadzone(friction_input, lateral_accel_deadzone),
+                         [-friction_threshold, friction_threshold],
+                         [-torque_params.friction, torque_params.friction]))
+
 def get_predicted_lateral_jerk(lat_accels, t_diffs):
   # compute finite difference between subsequent model_data.acceleration.y values
   # this is just two calls of np.diff followed by an element-wise division
@@ -256,6 +265,7 @@ class LatControlNNFF(LatControl):
       setpoint = desired_lateral_accel + low_speed_factor * desired_curvature
       measurement = actual_lateral_accel + low_speed_factor * actual_curvature
       gravity_adjusted_lateral_accel = desired_lateral_accel - roll_compensation
+      friction_threshold = get_standard_friction_threshold(CS.vEgo)
       if self.nnff_loaded and starpilot_toggles.nnff or starpilot_toggles.nnff_lite:
         actual_curvature_rate = -VM.calc_curvature(math.radians(CS.steeringRateDeg), CS.vEgo, 0.0)
         actual_lateral_jerk = actual_curvature_rate * CS.vEgo ** 2
@@ -274,7 +284,6 @@ class LatControlNNFF(LatControl):
 
           if lookahead_lateral_jerk == 0.0:
             actual_lateral_jerk = 0.0
-            self.lat_accel_friction_factor = 1.0
 
           lateral_jerk_setpoint = self.lat_jerk_friction_factor * lookahead_lateral_jerk
           lateral_jerk_measurement = self.lat_jerk_friction_factor * actual_lateral_jerk
@@ -282,6 +291,11 @@ class LatControlNNFF(LatControl):
           lateral_jerk_setpoint = 0
           lateral_jerk_measurement = 0
           lookahead_lateral_jerk = 0
+
+        # Without a deliberate jerk to share it with, the lat accel error drives friction on its own.
+        # Decided per frame: this used to overwrite the attribute, which pinned it at 1.0 for the
+        # rest of the drive after the first straight.
+        lat_accel_friction_factor = 1.0 if lookahead_lateral_jerk == 0.0 else self.lat_accel_friction_factor
 
         if self.nnff_loaded and model_good and starpilot_toggles.nnff:
           # update past data
@@ -323,13 +337,14 @@ class LatControlNNFF(LatControl):
 
           # compute feedforward (same as nn setpoint output)
           error = setpoint - measurement
-          friction_input = self.lat_accel_friction_factor * error + self.lat_jerk_friction_factor * lookahead_lateral_jerk
+          friction_input = lat_accel_friction_factor * error + self.lat_jerk_friction_factor * lookahead_lateral_jerk
           nn_input = [CS.vEgo, desired_lateral_accel, friction_input, roll] + past_lateral_accels_desired + future_lateral_accels + nnff_common
           ff = self.lat_torque_nn_model.evaluate(nn_input)
 
-          # apply friction override for cars with low NN friction response
+          # apply friction override for cars with low NN friction response. It goes in the feedforward,
+          # like LatControlTorque's friction, so the integrator doesn't accumulate it through a long turn.
           if self.nn_friction_override:
-            pid_log.error += self.torque_from_lateral_accel(0.0, self.torque_params)
+            ff += get_friction_torque(friction_input, lateral_accel_deadzone, friction_threshold, self.torque_params)
         else:
           torque_from_measurement = self.torque_from_lateral_accel(measurement, self.torque_params)
           torque_from_setpoint = self.torque_from_lateral_accel(setpoint, self.torque_params)
@@ -337,8 +352,9 @@ class LatControlNNFF(LatControl):
           pid_log.error = float(torque_from_setpoint - torque_from_measurement)
 
           error = desired_lateral_accel - actual_lateral_accel
-          friction_input = self.lat_accel_friction_factor * error + self.lat_jerk_friction_factor * lookahead_lateral_jerk
+          friction_input = lat_accel_friction_factor * error + self.lat_jerk_friction_factor * lookahead_lateral_jerk
           ff = self.torque_from_lateral_accel(gravity_adjusted_lateral_accel, self.torque_params)
+          ff += get_friction_torque(friction_input, lateral_accel_deadzone, friction_threshold, self.torque_params)
       else:
         torque_from_measurement = self.torque_from_lateral_accel(measurement, self.torque_params)
         torque_from_setpoint = self.torque_from_lateral_accel(setpoint, self.torque_params)
@@ -346,6 +362,7 @@ class LatControlNNFF(LatControl):
         pid_log.error = float(torque_from_setpoint - torque_from_measurement)
 
         ff = self.torque_from_lateral_accel(gravity_adjusted_lateral_accel, self.torque_params)
+        ff += get_friction_torque(desired_lateral_accel - actual_lateral_accel, lateral_accel_deadzone, friction_threshold, self.torque_params)
 
       freeze_integrator = steer_limited_by_safety or CS.steeringPressed or CS.vEgo < 5
       output_torque = self.pid.update(pid_log.error,
