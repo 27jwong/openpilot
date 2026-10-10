@@ -28,7 +28,7 @@ from openpilot.starpilot.common.maps_download_progress import (
   selection_key,
   storage_bytes,
 )
-from openpilot.starpilot.common.theme_asset_names import find_matching_theme_asset_file
+from openpilot.starpilot.common.theme_asset_names import canonicalize_theme_asset_name, find_matching_theme_asset_file
 from openpilot.starpilot.common.starpilot_utilities import get_starpilot_api_info, is_url_pingable, run_cmd
 from openpilot.starpilot.common.starpilot_variables import (
   ERROR_LOGS_PATH, STARPILOT_API, HD_LOGS_PATH, KONIK_LOGS_PATH, MAPS_PATH, THEME_SAVE_PATH,
@@ -166,7 +166,9 @@ def update_boot_logo(starpilot=False, stock=False, selected_logo=None):
     if selected_logo:
       selected = selected_logo.decode("utf-8", "ignore") if isinstance(selected_logo, (bytes, bytearray)) else str(selected_logo)
       selected = selected.strip()
-      if selected.lower() not in {"", "stock", "default"}:
+      # "starpilot" is the built-in logo, so use the repo file. The saved bootlogos/starpilot.jpg copy is only
+      # refreshed by ThemeManager later in boot, which leaves it a boot behind after the shipped logo changes.
+      if selected.lower() not in {"", "stock", "default"} and canonicalize_theme_asset_name(selected) != "starpilot":
         matched_logo = find_matching_theme_asset_file(THEME_SAVE_PATH / "bootlogos", selected)
         if matched_logo is not None:
           target_logo = matched_logo

@@ -133,6 +133,41 @@ def test_update_boot_logo_writes_agnos_jpeg_and_png(monkeypatch, tmp_path, exten
   assert len([command for command in commands if command[:2] == ["sudo", "cp"]]) == 2
 
 
+@pytest.mark.parametrize("selected_logo", ["starpilot", "Starpilot", b"StarPilot"])
+def test_update_boot_logo_builtin_starpilot_uses_shipped_logo_over_stale_saved_copy(monkeypatch, tmp_path, selected_logo):
+  shipped_logo = tmp_path / "repo" / "starpilot" / "assets" / "other_images" / "starpilot_boot_logo.jpg"
+  stale_saved_logo = tmp_path / "themes" / "bootlogos" / "starpilot.jpg"
+  shipped_logo.parent.mkdir(parents=True)
+  stale_saved_logo.parent.mkdir(parents=True)
+  Image.new("RGB", (24, 12), (200, 30, 30)).save(shipped_logo, format="JPEG", quality=100)
+  Image.new("RGB", (24, 12), (30, 30, 200)).save(stale_saved_logo, format="JPEG", quality=100)
+
+  jpeg_destination = tmp_path / "usr" / "comma" / "bg.jpg"
+  jpeg_destination.parent.mkdir(parents=True)
+  jpeg_destination.write_bytes(b"old jpeg")
+
+  def fake_run_cmd(command, *_args, **_kwargs):
+    if command[0] == "findmnt":
+      return "ro,relatime"
+    if command[:2] == ["sudo", "cp"]:
+      shutil.copy2(command[2], command[3])
+    return ""
+
+  monkeypatch.setattr(sf.HARDWARE, "get_device_type", lambda: "mici")
+  monkeypatch.setattr(sf, "BASEDIR", str(tmp_path / "repo"))
+  monkeypatch.setattr(sf, "THEME_SAVE_PATH", tmp_path / "themes")
+  monkeypatch.setattr(sf, "BOOT_LOGO_JPEG_PATH", jpeg_destination)
+  monkeypatch.setattr(sf, "BOOT_LOGO_PNG_PATH", tmp_path / "usr" / "comma" / "bg.png")
+  monkeypatch.setattr(sf, "BOOT_LOGO_MAGIC_PATH", tmp_path / "usr" / "comma" / "magic.py")
+  monkeypatch.setattr(sf, "run_cmd", fake_run_cmd)
+
+  sf.update_boot_logo(starpilot=True, selected_logo=selected_logo)
+
+  with Image.open(jpeg_destination) as installed_logo:
+    red, _, blue = installed_logo.convert("RGB").getpixel((0, 0))
+  assert red > 150 > blue
+
+
 def test_update_boot_logo_does_not_create_png_on_legacy_agnos(monkeypatch, tmp_path):
   themes_path = tmp_path / "themes"
   custom_logo = themes_path / "bootlogos" / "custom.png"
