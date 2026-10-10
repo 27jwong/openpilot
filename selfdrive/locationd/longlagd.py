@@ -25,16 +25,17 @@ import capnp
 import numpy as np
 
 import cereal.messaging as messaging
-from cereal import car, log
+from cereal import car, custom, log
 from cereal.services import SERVICE_LIST
 from openpilot.common.params import Params
 from openpilot.common.realtime import config_realtime_process
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.locationd.helpers import parabolic_peak_interp
 from openpilot.selfdrive.locationd.lagd import BlockAverage, masked_symmetric_moving_average
-from openpilot.starpilot.common.longitudinal_delay import MIN_LONG_DELAY, MAX_LONG_DELAY, LongDelayStatus, brake_threshold
+from openpilot.starpilot.common.longitudinal_delay import MIN_LONG_DELAY, MAX_LONG_DELAY, brake_threshold
 
 LongCtrlState = car.CarControl.Actuators.LongControlState
+LongDelayStatus = custom.StarPilotLongitudinalDelay.Status
 
 BLOCK_NUM = 50
 BLOCK_NUM_NEEDED = 5

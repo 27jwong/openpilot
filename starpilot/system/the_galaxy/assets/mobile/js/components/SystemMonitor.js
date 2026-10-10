@@ -35,6 +35,7 @@ const PROCESS_FEATURES = new Map(Object.entries({
   "selfdrive.locationd.torqued": "Steering torque calibration",
   "selfdrive.locationd.paramsd": "Vehicle parameter learning",
   "selfdrive.locationd.lagd": "Steering delay estimation",
+  "selfdrive.locationd.longlagd": "Gas and brake delay estimation",
   "system.hardware.hardwared": "Power and temperature management",
   "system.loggerd.deleter": "Recording cleanup",
   "system.loggerd.uploader": "Log uploads",
