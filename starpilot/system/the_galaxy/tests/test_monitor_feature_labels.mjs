@@ -8,6 +8,8 @@ assert.equal(processFeature({name:'starpilot.system.speed_limit_vision'}), 'Visi
 assert.equal(processFeature({name:'starpilot.system.wheel_controls.wheel_controlsd'}), 'Bluetooth controller actions');
 assert.equal(processFeature({name:'openpilot.starpilot.system.model_statsd'}), 'Model statistics');
 assert.equal(processFeature({name:'./pandad'}), 'Vehicle CAN communication');
+assert.equal(processFeature({name:'selfdrive.locationd.longlagd'}), 'Gas and brake delay estimation');
+assert.equal(processFeature({name:'selfdrive.locationd.lagd'}), 'Steering delay estimation');
 for (const name of ['python', 'bash', 'unknown.adj_spot_monitor_vision', 'constructor', 'toString', '', null]) {
   assert.equal(processFeature({name}), '', 'Do not guess from generic or unknown process names');
 }

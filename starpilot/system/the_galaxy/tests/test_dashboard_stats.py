@@ -2168,6 +2168,57 @@ def test_troubleshoot_steer_delay_preserves_real_custom_values():
   assert server._normalize_troubleshoot_current_display_value("LongitudinalActuatorDelay", 0.1, 0.3) == 0.1
 
 
+def _stub_long_delay_learner(monkeypatch, server, *, brand="mazda", flags=2, op_long=True, prev_fingerprint="MAZDA_CX_30",
+                             saved=True):
+  cars = {
+    b"current": SimpleNamespace(carFingerprint="MAZDA_CX_30", brand=brand, flags=flags, openpilotLongitudinalControl=op_long),
+    b"previous": SimpleNamespace(carFingerprint=prev_fingerprint, brand=brand, flags=flags, openpilotLongitudinalControl=op_long),
+  }
+
+  class _CarParams:
+    def __init__(self, raw):
+      self.cp = cars[raw]
+
+    def __enter__(self):
+      return self.cp
+
+    def __exit__(self, *args):
+      return False
+
+  raw = {"CarParamsPersistent": b"current", "CarParamsPrevRoute": b"previous", "LiveLongitudinalDelay": b"saved" if saved else None}
+  long_delay = SimpleNamespace(
+    gas=SimpleNamespace(status="estimated", delayEstimate=0.262, calPerc=100),
+    brake=SimpleNamespace(status="unestimated", delayEstimate=0.35, calPerc=40),
+  )
+  monkeypatch.setattr(server, "_safe_params_get_live_raw", lambda key: raw.get(key))
+  monkeypatch.setattr(server.car, "CarParams", SimpleNamespace(from_bytes=_CarParams), raising=False)
+  monkeypatch.setattr(server.messaging, "log_from_bytes", lambda *args, **kwargs: SimpleNamespace(starpilotLongitudinalDelay=long_delay))
+
+
+def test_troubleshoot_shows_learned_gas_and_brake_delay(monkeypatch):
+  server = _load_server_module()
+  _stub_long_delay_learner(monkeypatch, server)
+
+  learned = server._get_troubleshoot_learned_values()
+  assert learned["LongitudinalActuatorDelay"] == "Gas 0.26s · Brake learning 40% (0.35s)"
+
+
+def test_troubleshoot_marks_long_delay_learned_in_shadow_mode(monkeypatch):
+  server = _load_server_module()
+  _stub_long_delay_learner(monkeypatch, server, brand="toyota", flags=0)
+
+  assert server._get_long_delay_learned_text().endswith(" · not applied on this car")
+
+
+@pytest.mark.parametrize("case", [{"saved": False}, {"op_long": False}, {"prev_fingerprint": "MAZDA_3_2019"}])
+def test_troubleshoot_hides_long_delay_without_a_learner_for_this_car(monkeypatch, case):
+  server = _load_server_module()
+  _stub_long_delay_learner(monkeypatch, server, **case)
+
+  # None keeps the Advanced Longitudinal section free of a learned column on cars without one
+  assert server._get_long_delay_learned_text() is None
+
+
 def test_stats_endpoint_keeps_existing_keys_and_adds_dashboard(monkeypatch):
   server = _load_server_module()
   assert server._import_galaxy_web_symbols()

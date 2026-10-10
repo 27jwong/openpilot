@@ -2,10 +2,7 @@ import math
 
 import numpy as np
 
-from cereal import custom
 from opendbc.car.mazda.values import MazdaSafetyFlags
-
-LongDelayStatus = custom.StarPilotLongitudinalDelay.Status
 
 # Bounds on any lookahead the planner will use, learned or set by hand.
 MIN_LONG_DELAY = 0.05
@@ -59,9 +56,9 @@ def get_long_delays(CP, starpilot_toggles, live_delay=None) -> tuple[float, floa
   base = base_long_delay(CP, starpilot_toggles)
   gas = brake = base
 
+  # capnp enums compare equal to their names; keeps cereal out of this module's imports (Galaxy uses it)
   learned = (live_delay is not None and split_delay_enabled(CP) and
-             live_delay.gas.status == LongDelayStatus.estimated and
-             live_delay.brake.status == LongDelayStatus.estimated)
+             live_delay.gas.status == "estimated" and live_delay.brake.status == "estimated")
   if learned:
     gas, brake = float(live_delay.gas.delay), float(live_delay.brake.delay)
     if getattr(starpilot_toggles, "use_custom_longitudinalActuatorDelay", False):

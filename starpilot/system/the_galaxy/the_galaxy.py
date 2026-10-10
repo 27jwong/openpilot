@@ -133,6 +133,7 @@ from openpilot.starpilot.common.favorite_slots import (
   trigger_favorite_action,
 )
 from openpilot.starpilot.common.lateral_delay import full_lateral_delay
+from openpilot.starpilot.common.longitudinal_delay import split_delay_enabled
 from openpilot.starpilot.common.longitudinal_personality_profiles import (
   ACCELERATION_PRESETS,
   ACCELERATION_SPEEDS_MPH,
@@ -4225,11 +4226,8 @@ def _normalize_live_delay_status(status):
 
   return status_text
 
-def _get_steer_delay_learned_text():
-  live_delay_bytes = _safe_params_get_live_raw("LiveDelay")
-  if not live_delay_bytes:
-    return "Unavailable"
-
+def _learned_values_match_car():
+  """Learned values are saved against the previous route's car; they mean nothing on another one."""
   current_cp_bytes = _safe_params_get_live_raw("CarParamsPersistent")
   previous_cp_bytes = _safe_params_get_live_raw("CarParamsPrevRoute")
   if current_cp_bytes and previous_cp_bytes:
@@ -4238,9 +4236,18 @@ def _get_steer_delay_learned_text():
         current_fingerprint = str(getattr(current_cp, "carFingerprint", "") or "")
         previous_fingerprint = str(getattr(previous_cp, "carFingerprint", "") or "")
         if current_fingerprint and previous_fingerprint and current_fingerprint != previous_fingerprint:
-          return "Unavailable"
+          return False
     except Exception:
       pass
+  return True
+
+def _get_steer_delay_learned_text():
+  live_delay_bytes = _safe_params_get_live_raw("LiveDelay")
+  if not live_delay_bytes:
+    return "Unavailable"
+
+  if not _learned_values_match_car():
+    return "Unavailable"
 
   try:
     live_delay = messaging.log_from_bytes(live_delay_bytes, log.Event).liveDelay
@@ -4260,9 +4267,41 @@ def _get_steer_delay_learned_text():
 
   return f"{estimate:.2f}s"
 
+def _get_long_delay_learned_text():
+  """longlagd's gas and brake delays, or None for cars it has nothing for."""
+  long_delay_bytes = _safe_params_get_live_raw("LiveLongitudinalDelay")
+  current_cp_bytes = _safe_params_get_live_raw("CarParamsPersistent")
+  if not long_delay_bytes or not current_cp_bytes or not _learned_values_match_car():
+    return None
+
+  try:
+    with car.CarParams.from_bytes(current_cp_bytes) as current_cp:
+      if not current_cp.openpilotLongitudinalControl:
+        return None
+      applied = split_delay_enabled(current_cp)
+    long_delay = messaging.log_from_bytes(long_delay_bytes, log.Event).starpilotLongitudinalDelay
+    regimes = (("Gas", long_delay.gas), ("Brake", long_delay.brake))
+  except Exception:
+    return "Unavailable"
+
+  parts = []
+  for label, regime in regimes:
+    estimate = _safe_float(getattr(regime, "delayEstimate", 0.0), 0.0)
+    status = _normalize_live_delay_status(getattr(regime, "status", ""))
+    if status == "estimated":
+      parts.append(f"{label} {estimate:.2f}s")
+    elif status == "invalid":
+      parts.append(f"{label} invalid ({estimate:.2f}s)")
+    else:
+      cal_perc = int(max(0, min(100, _safe_float(getattr(regime, "calPerc", 0), 0))))
+      parts.append(f"{label} learning {cal_perc}% ({estimate:.2f}s)")
+  # elsewhere longlagd only learns in shadow mode; the planner keeps the single delay
+  return " · ".join(parts) + ("" if applied else " · not applied on this car")
+
 def _get_troubleshoot_learned_values():
   return {
     "SteerDelay": _get_steer_delay_learned_text(),
+    "LongitudinalActuatorDelay": _get_long_delay_learned_text(),
   }
 
 def _get_safety_snapshot_text():
