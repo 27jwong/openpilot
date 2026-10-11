@@ -241,9 +241,11 @@ class Controls:
 
     # accel PID loop
     pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
-    longitudinal_context = dataclasses.replace(self.longitudinal_inputs.context(CC.longActive),
-                                               pitch=(self.calibrated_pose.orientation.pitch
-                                                      if self.calibrated_pose is not None else None))
+    longitudinal_context = self.longitudinal_inputs.context(CC.longActive)
+    # tests build Controls without __init__, so the pose may not exist at all
+    calibrated_pose = getattr(self, 'calibrated_pose', None)
+    if calibrated_pose is not None:
+      longitudinal_context = dataclasses.replace(longitudinal_context, pitch=calibrated_pose.orientation.pitch)
     longitudinal_output = self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits,
                                           context=longitudinal_context)
     actuators.accel = final_output(longitudinal_output)
