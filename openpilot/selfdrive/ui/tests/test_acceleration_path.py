@@ -1,8 +1,8 @@
+import unittest
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import numpy as np
-import pytest
 
 import openpilot.selfdrive.ui.mici.onroad.model_renderer as mici_model_renderer
 import openpilot.selfdrive.ui.onroad.model_renderer as model_renderer
@@ -28,21 +28,25 @@ def _make_renderer(module, experimental_mode):
   return renderer
 
 
-@pytest.mark.parametrize("module", [model_renderer, mici_model_renderer], ids=["big", "mici"])
-@pytest.mark.parametrize("experimental_mode", [False, True], ids=["chill", "experimental"])
-def test_acceleration_path_colors_path_in_every_mode(monkeypatch, module, experimental_mode):
-  drawn = []
-  monkeypatch.setattr(module, "draw_polygon", lambda *args, **kwargs: drawn.append(kwargs.get("gradient")))
-  monkeypatch.setattr(module, "ui_state", SimpleNamespace(params=object()))
-  renderer = _make_renderer(module, experimental_mode)
+class TestAccelerationPath(unittest.TestCase):
+  def test_acceleration_path_colors_path_in_every_mode(self):
+    for module in (model_renderer, mici_model_renderer):
+      for experimental_mode in (False, True):
+        with self.subTest(module=module.__name__, experimental_mode=experimental_mode):
+          with (patch.object(module, "draw_polygon") as draw_polygon,
+                patch.object(module, "ui_state", SimpleNamespace(params=object()))):
+            renderer = _make_renderer(module, experimental_mode)
+            renderer._update_experimental_gradient()
+            renderer._draw_path({"longitudinalPlan": SimpleNamespace(allowThrottle=False)})
 
-  renderer._update_experimental_gradient()
-  renderer._draw_path({"longitudinalPlan": SimpleNamespace(allowThrottle=False)})
+          colors = renderer._exp_gradient.colors
+          self.assertGreater(len(colors), 1)
+          self.assertEqual([c.kwargs.get("gradient") for c in draw_polygon.call_args_list], [renderer._exp_gradient])
 
-  colors = renderer._exp_gradient.colors
-  assert len(colors) > 1
-  assert drawn == [renderer._exp_gradient]
+          # Speeding up near the car reads green, slowing down further out reads red
+          self.assertGreater(colors[0].g, colors[0].r)
+          self.assertGreater(colors[-1].r, colors[-1].g)
 
-  # Speeding up near the car reads green, slowing down further out reads red
-  assert colors[0].g > colors[0].r
-  assert colors[-1].r > colors[-1].g
+
+if __name__ == "__main__":
+  unittest.main()
