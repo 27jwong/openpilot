@@ -16,14 +16,21 @@ Answers the three questions a longitudinal tune actually turns on:
      starpilot/common/longitudinal_delay.py, and times individual steps without any model.
      --replay-learner runs longlagd itself over the route, to see how fast it converges.
 
-Usage:
-  ./analyze_longitudinal.py <dongle>/<route>
+Usage, on the device, by the folder names in /data/media/0/realdata (whole drive, or one segment):
+  ./analyze_longitudinal.py 00000005--58d6714619 --replay-learner
+  ./analyze_longitudinal.py 00000005--58d6714619--47
+
+On a PC, with segment folders copied off the device, or from comma connect:
+  ./analyze_longitudinal.py 00000005--58d6714619 --log-dir D:/logs/realdata
+  ./analyze_longitudinal.py path/to/00000005--58d6714619--47
   ./analyze_longitudinal.py <dongle>/<route> --mode rlog
-  ./analyze_longitudinal.py <dongle>/<route> --replay-learner
+
+Local routes are read from their rlogs, one segment at a time so a long drive fits in memory.
 """
 import argparse
 import math
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 
@@ -31,7 +38,9 @@ from openpilot.common.realtime import DT_CTRL
 from openpilot.selfdrive.locationd import longlagd
 from openpilot.selfdrive.locationd.lagd import LateralLagEstimator
 from openpilot.starpilot.common.longitudinal_delay import BRAKE_THRESHOLD_BP, brake_threshold
+from openpilot.system.hardware.hw import Paths
 from openpilot.tools.lib.logreader import LogReader, ReadMode
+from openpilot.tools.tuning.train_nnff import SEGMENT_RE, find_segments
 
 # The car has to hold a near-constant command for this long before the sample counts
 # as steady state, otherwise the plant's own lag pollutes the gain estimate.
@@ -464,15 +473,48 @@ class LearnerReplay:
       print(f"  {h[0] / 60:6.1f} {h[2]:7.3f}s {h[3]:2d} blk {h[5]:7.3f}s {h[6]:2d} blk")
 
 
+def resolve_route(identifier: str, log_dirs: list[Path]) -> list[str]:
+  """What to hand LogReader, one entry per read. A local route or segment, named the way its
+  folders are in /data/media/0/realdata, becomes its rlogs in segment order, so each segment can
+  be read on its own. Anything else (dongle/route, a file, a URL) is passed through as it is."""
+  path = Path(identifier)
+  if path.is_dir():
+    routes = find_segments([path])
+    if len(routes) != 1:
+      raise SystemExit(f"{identifier} holds {len(routes)} routes' segments; point at one route's folders")
+    return [str(p) for _, p in next(iter(routes.values()))]
+  if path.exists() or "/" in identifier or "|" in identifier:
+    return [identifier]
+
+  searched = [d for d in log_dirs if d.is_dir()]
+  routes = find_segments(searched)
+  # a whole route first: its random part can be all digits and look like a segment number
+  if identifier in routes:
+    return [str(p) for _, p in routes[identifier]]
+  m = SEGMENT_RE.match(identifier)
+  if m is not None and m["route"] in routes:
+    segment = [str(p) for n, p in routes[m["route"]] if n == int(m["segment"])]
+    if segment:
+      print(f"Reading one segment (about a minute). Give {m['route']} for the whole drive.")
+      return segment
+  where = ', '.join(map(str, log_dirs)) or 'no log folders'
+  raise SystemExit(f"No rlogs for {identifier!r} in {where}. Give a route or segment folder name, a path, or dongle/route.")
+
+
 def main() -> None:
   parser = argparse.ArgumentParser(description="Analyze a route for longitudinal tuning opportunities.")
-  parser.add_argument("route", help="Route name, e.g. dongle/route")
-  parser.add_argument("--mode", choices=("auto", "qlog", "rlog"), default="rlog")
+  parser.add_argument("route", help="local route or segment (00000005--58d6714619[--47]), a path, or dongle/route")
+  parser.add_argument("--log-dir", action="append", type=Path, default=[],
+                      help="also look for local routes here (default: the device's realdata folder)")
+  parser.add_argument("--mode", choices=("auto", "qlog", "rlog"), default="rlog", help="for dongle/route; local routes use rlogs")
   parser.add_argument("--replay-learner", action="store_true", help="run longlagd over the route and report how it converges")
   args = parser.parse_args()
 
   mode_map = {"auto": ReadMode.AUTO, "qlog": ReadMode.QLOG, "rlog": ReadMode.RLOG}
-  log_reader = LogReader(args.route, default_mode=mode_map[args.mode], sort_by_time=True)
+  identifiers = resolve_route(args.route, [Path(Paths.log_root()), *args.log_dir])
+  # A fresh LogReader per local segment: one LogReader keeps every segment it has read in memory.
+  messages = (msg for identifier in identifiers
+              for msg in LogReader(identifier, default_mode=mode_map[args.mode], sort_by_time=True))
 
   car_params = None
   latest: dict = {}
@@ -481,12 +523,12 @@ def main() -> None:
   pressure_probe = None
   pressure = math.nan
   blend_ok = True
-  for msg in log_reader:
+  for msg in messages:
     which = msg.which()
     if learner is not None:
       learner.feed(msg)
     if which == "carParams" and car_params is None:
-      car_params = msg.carParams
+      car_params = msg.carParams.as_builder()  # a copy, so the first segment isn't held for it
       pressure_probe = _brake_pressure_probe(car_params)
       if args.replay_learner:
         learner = LearnerReplay(car_params)
