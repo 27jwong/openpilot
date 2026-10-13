@@ -21,20 +21,25 @@ Usage, on the device, by the folder names in /data/media/0/realdata (whole drive
   ./analyze_longitudinal.py 00000005--58d6714619--47
   ./analyze_longitudinal.py --all --replay-learner              # pool every drive on the device
   ./analyze_longitudinal.py 00000005--58d6714619 00000006--0a1b2c3d4e   # pool these drives
+  ./analyze_longitudinal.py --all --replay-only                 # just longlagd's replay, in flat memory
 
 On a PC, with segment folders copied off the device, or from comma connect:
   ./analyze_longitudinal.py 00000005--58d6714619 --log-dir D:/logs/realdata
   ./analyze_longitudinal.py path/to/00000005--58d6714619--47
   ./analyze_longitudinal.py <dongle>/<route> --mode rlog
 
-Local routes are read from their rlogs, one segment at a time so a long drive fits in memory.
-One drive rarely holds enough braking to compare gas and brake; pooled drives usually do. A verdict
-is only printed when halves of the data agree on it.
+Local routes are read from their rlogs, one segment at a time, and each drive is cut down to its
+engaged stretches as soon as it's read, so memory follows the usable minutes rather than the logged
+ones. One drive rarely holds enough braking to compare gas and brake; pooled drives usually do. A
+verdict is only printed when halves of the data agree on it.
 """
 import argparse
+import ctypes
+import gc
 import math
+import sys
+from array import array
 from collections import Counter
-from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -75,35 +80,29 @@ MIN_VERDICT_BLOCKS = 6
 VERDICT_MIN_GAP_S = 0.05
 # Not-engaged padding between pooled drives, so no run, filter or lag window spans two of them.
 ROUTE_GAP_S = 2.0
+# Kept either side of an engaged run when a drive is cut down to its runs: past the half-width of the
+# widest filter (longlagd's 6s detrend), so a run never sees the data beside it.
+SPAN_PAD_S = 3.5
 
 
-@dataclass
-class Sample:
-  t: float
-  v_ego: float
-  a_ego: float
-  a_target: float
-  accel_cmd: float
-  long_active: bool
-  gas_pressed: bool
-  brake_pressed: bool
-  long_control_state: int
-  has_lead: bool
-  v_ego_raw: float = 0.0
-  blend_ok: bool = True
-  brake_pressure: float = math.nan
+# One logged sample is one row of these, in a flat array('d'): 8 bytes a value, where an object per
+# sample costs several hundred. Hours of 100Hz carState are millions of rows.
+INTERPOLATED = ("v_ego", "a_ego", "a_target", "accel_cmd", "v_ego_raw", "brake_pressure")
+HELD = ("long_active", "gas_pressed", "brake_pressed", "long_control_state", "has_lead", "blend_ok")
+FIELDS = ("t", *INTERPOLATED, *HELD)
 
 
-def _resample(samples: list[Sample]) -> dict[str, np.ndarray]:
+def _resample(rows: array) -> dict[str, np.ndarray]:
   """Put every signal on a uniform DT_CTRL grid so the fits below are well posed."""
-  t = np.array([s.t for s in samples])
+  columns = np.frombuffer(rows, dtype=np.float64).reshape(-1, len(FIELDS)).T
+  t = columns[0]
   grid = np.arange(t[0], t[-1], DT_CTRL)
   out = {"t": grid}
-  for name in ("v_ego", "a_ego", "a_target", "accel_cmd", "v_ego_raw", "brake_pressure"):
-    out[name] = np.interp(grid, t, np.array([getattr(s, name) for s in samples]))
-  for name in ("long_active", "gas_pressed", "brake_pressed", "long_control_state", "has_lead", "blend_ok"):
-    raw = np.array([float(getattr(s, name)) for s in samples])
-    out[name] = raw[np.clip(np.searchsorted(t, grid, side="right") - 1, 0, len(t) - 1)]
+  for name, column in zip(FIELDS[1:], columns[1:], strict=True):
+    if name in INTERPOLATED:
+      out[name] = np.interp(grid, t, column)
+    else:
+      out[name] = column[np.clip(np.searchsorted(t, grid, side="right") - 1, 0, len(t) - 1)]
   return out
 
 
@@ -569,8 +568,9 @@ class LearnerReplay:
         if self.estimator.last_fit is not None:
           self.r2.append(self.estimator.last_fit.r2)
         ld = self.estimator.get_msg(True).starpilotLongitudinalDelay
-        self.history.append((t - self.t0, ld.gas.status, ld.gas.delayEstimate, ld.gas.validBlocks,
-                             ld.brake.status, ld.brake.delayEstimate, ld.brake.validBlocks))
+        # str(): an enum field keeps its whole message alive, which at four ticks a second is hundreds of MB per hour
+        self.history.append((t - self.t0, str(ld.gas.status), ld.gas.delayEstimate, ld.gas.validBlocks,
+                             str(ld.brake.status), ld.brake.delayEstimate, ld.brake.validBlocks))
       self.frame += 1
 
   def final_state(self) -> dict[str, tuple[float, int]]:
@@ -648,15 +648,16 @@ def resolve_route(identifier: str, log_dirs: list[Path]) -> list[str]:
   raise SystemExit(f"No rlogs for {identifier!r} in {where}. Give a route or segment folder name, a path, or dongle/route.")
 
 
-def read_route(identifiers: list[str], mode: ReadMode, replay: bool, initial: dict | None, learner_kwargs: dict):
-  """One drive on the DT_CTRL grid (None if it's too short), its CarParams, and longlagd replayed
-  over it when asked. Only the resampled arrays are kept, so pooled drives stay small."""
+def read_route(identifiers: list[str], mode: ReadMode, replay: bool, initial: dict | None, learner_kwargs: dict,
+               keep_samples: bool = True):
+  """One drive on the DT_CTRL grid (None if it's too short, or if keep_samples is off), its
+  CarParams, and longlagd replayed over it when asked. Only the resampled arrays are kept."""
   # A fresh LogReader per local segment: one LogReader keeps every segment it has read in memory.
   messages = (msg for identifier in identifiers for msg in LogReader(identifier, default_mode=mode, sort_by_time=True))
 
   car_params = None
   latest: dict = {}
-  samples: list[Sample] = []
+  rows = array("d")
   learner: LearnerReplay | None = None
   pressure_probe = None
   pressure = math.nan
@@ -677,15 +678,14 @@ def read_route(identifiers: list[str], mode: ReadMode, replay: bool, initial: di
       blend_ok = not info.valid or info.blendFactor >= 0.99
     elif which in ("carControl", "longitudinalPlan"):
       latest[which] = getattr(msg, which)
-    elif which == "carState" and "carControl" in latest and "longitudinalPlan" in latest:
+    elif which == "carState" and keep_samples and "carControl" in latest and "longitudinalPlan" in latest:
       cs, cc, lp = msg.carState, latest["carControl"], latest["longitudinalPlan"]
-      samples.append(Sample(
-        t=msg.logMonoTime * 1e-9, v_ego=cs.vEgo, a_ego=cs.aEgo, a_target=lp.aTarget,
-        accel_cmd=cc.actuators.accel, long_active=cc.longActive, gas_pressed=cs.gasPressed,
-        brake_pressed=cs.brakePressed, long_control_state=int(cc.actuators.longControlState.raw),
-        has_lead=lp.hasLead, v_ego_raw=cs.vEgoRaw, blend_ok=blend_ok, brake_pressure=pressure,
+      # in FIELDS order
+      rows.extend((
+        msg.logMonoTime * 1e-9, cs.vEgo, cs.aEgo, lp.aTarget, cc.actuators.accel, cs.vEgoRaw, pressure,
+        cc.longActive, cs.gasPressed, cs.brakePressed, int(cc.actuators.longControlState.raw), lp.hasLead, blend_ok,
       ))
-  return (_resample(samples) if len(samples) >= 1000 else None), car_params, learner
+  return (_resample(rows) if len(rows) >= 1000 * len(FIELDS) else None), car_params, learner
 
 
 def _concat_routes(ds: list[dict[str, np.ndarray]]) -> dict[str, np.ndarray]:
@@ -710,6 +710,48 @@ def _concat_routes(ds: list[dict[str, np.ndarray]]) -> dict[str, np.ndarray]:
       parts[key].append(d[key] + (t_next - d["t"][0]) if key == "t" else d[key])
     t_next = parts["t"][-1][-1] + DT_CTRL
   return {key: np.concatenate(value) for key, value in parts.items()}
+
+
+def engaged_spans(d: dict[str, np.ndarray]) -> list[dict[str, np.ndarray]]:
+  """A drive cut down to its engaged runs, each with SPAN_PAD_S either side (overlapping pads
+  merge), as copies so the whole drive can be freed. Everything below reads inside runs or through
+  the usable mask, so the cut loses nothing, and _concat_routes keeps the pieces apart."""
+  pad = int(round(SPAN_PAD_S / DT_CTRL))
+  bounds: list[list[int]] = []
+  for a, b in _engaged_runs(d):
+    a, b = max(a - pad, 0), min(b + pad, len(d["t"]))
+    if bounds and a <= bounds[-1][1]:
+      bounds[-1][1] = max(bounds[-1][1], b)
+    else:
+      bounds.append([a, b])
+  return [{key: value[a:b].copy() for key, value in d.items()} for a, b in bounds]
+
+
+def _memory() -> str:
+  """This process's peak memory and what the machine has left, for finding out what runs out."""
+  parts = []
+  try:
+    import resource
+    peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * (1 if sys.platform == "darwin" else 1024)
+    parts.append(f"peak {peak / 2**20:.0f} MB")
+  except (ImportError, OSError):
+    pass
+  try:
+    for line in Path("/proc/meminfo").read_text().splitlines():
+      if line.startswith("MemAvailable:"):
+        parts.append(f"{int(line.split()[1]) / 1024:.0f} MB free")
+  except OSError:
+    pass
+  return ", ".join(parts)
+
+
+def _release_memory() -> None:
+  """Hand freed memory back to the system, which Python's allocator won't do on its own."""
+  gc.collect()
+  try:
+    ctypes.CDLL("libc.so.6").malloc_trim(0)
+  except (OSError, AttributeError):
+    pass
 
 
 def coverage(d: dict[str, np.ndarray]) -> Counter:
@@ -742,6 +784,8 @@ def main() -> None:
                       help="also look for local routes here (default: the device's realdata folder)")
   parser.add_argument("--mode", choices=("auto", "qlog", "rlog"), default="rlog", help="for dongle/route; local routes use rlogs")
   parser.add_argument("--replay-learner", action="store_true", help="run longlagd over the drives and report how it converges")
+  parser.add_argument("--replay-only", action="store_true",
+                      help="only the longlagd replay: keeps no samples, so memory stays flat however many drives")
   parser.add_argument("--learner-min-r2", type=float, default=longlagd.MIN_R2, help="replay with this window r2 threshold")
   parser.add_argument("--learner-min-sharpness", type=float, default=longlagd.MIN_SHARPNESS,
                       help="replay with this delay sharpness threshold")
@@ -757,13 +801,16 @@ def main() -> None:
 
   mode_map = {"auto": ReadMode.AUTO, "qlog": ReadMode.QLOG, "rlog": ReadMode.RLOG}
   learner_kwargs = {"min_r2": args.learner_min_r2, "min_sharpness": args.learner_min_sharpness}
+  replay = args.replay_learner or args.replay_only
   car_params = None
-  ds: list[dict[str, np.ndarray]] = []
+  ds: list[dict[str, np.ndarray]] = []  # engaged spans of every drive, not the drives
+  drives = 0
   total = Counter()
   replays: list[tuple[str, LearnerReplay]] = []
   initial = None
   for name in routes:
-    d, cp, learner = read_route(resolve_route(name, log_dirs), mode_map[args.mode], args.replay_learner, initial, learner_kwargs)
+    d, cp, learner = read_route(resolve_route(name, log_dirs), mode_map[args.mode], replay, initial, learner_kwargs,
+                                keep_samples=not args.replay_only)
     if cp is not None and car_params is not None and cp.carFingerprint != car_params.carFingerprint:
       print(f"{name}: skipped, it's a {cp.carFingerprint}, not a {car_params.carFingerprint}")
       continue
@@ -772,28 +819,39 @@ def main() -> None:
     if learner is not None:
       replays.append((name, learner))
       initial = learner.final_state()
+    if args.replay_only:
+      print(f"{name}: replayed ({_memory()})")
+      continue
     if d is None:
       print(f"{name}: too short, skipped")
       continue
     drive = coverage(d)
     total.update(drive)  # not +=, which drops the zero counts
-    ds.append(d)
+    drives += 1
+    ds.extend(engaged_spans(d))
+    del d
+    _release_memory()
     if len(routes) > 1:
-      print(f"{name}: {drive['logs'] / 60:.1f} min, {drive['usable'] / 60:.1f} usable")
+      print(f"{name}: {drive['logs'] / 60:.1f} min, {drive['usable'] / 60:.1f} usable ({_memory()})")
 
-  if not ds:
+  if args.replay_only:
+    report_replay(replays)
+    print(f"\nmemory: {_memory()}")
+    return
+  if not drives:
     print("Not enough samples in these logs.")
     return
 
-  d = _concat_routes(ds)
-  runs = _engaged_runs(d)
-  engaged_min = sum(b - a for a, b in runs) * DT_CTRL / 60
   if car_params is not None:
     print(f"{car_params.carFingerprint}: kpV={list(car_params.longitudinalTuning.kpV)} " +
           f"kiV={list(car_params.longitudinalTuning.kiV)} " +
           f"actuatorDelay={car_params.longitudinalActuatorDelay:.2f}s")
-  summarize_coverage(total, len(ds))
-  print(f"{engaged_min:.1f} min of engaged longitudinal in {len(runs)} runs")
+  summarize_coverage(total, drives)
+  d = _concat_routes(ds) if ds else None
+  del ds
+  runs = _engaged_runs(d) if d is not None else []
+  engaged_min = sum(b - a for a, b in runs) * DT_CTRL / 60
+  print(f"{engaged_min:.1f} min of engaged longitudinal in {len(runs)} runs ({_memory()})")
   if engaged_min < 2.0:
     print("Too little engaged driving to tune from.")
     if replays:
@@ -813,6 +871,7 @@ def main() -> None:
   summarize_brake_pressure(s)
   if replays:
     report_replay(replays)
+  print(f"\nmemory: {_memory()}")
 
 
 if __name__ == "__main__":

@@ -249,7 +249,8 @@ class LongitudinalLagEstimator:
   def handle_log(self, t: float, which: str, msg: capnp._DynamicStructReader):
     if which == "carControl":
       self.long_active = msg.longActive
-      self.long_control_state = msg.actuators.longControlState
+      # .raw, a plain int: the enum itself keeps the whole message it was read from alive
+      self.long_control_state = msg.actuators.longControlState.raw
       self.accel_cmd = msg.actuators.accel
     elif which == "carState":
       self.v_t = t
