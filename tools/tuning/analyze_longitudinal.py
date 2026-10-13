@@ -19,6 +19,8 @@ Answers the three questions a longitudinal tune actually turns on:
 Usage, on the device, by the folder names in /data/media/0/realdata (whole drive, or one segment):
   ./analyze_longitudinal.py 00000005--58d6714619 --replay-learner
   ./analyze_longitudinal.py 00000005--58d6714619--47
+  ./analyze_longitudinal.py --all --replay-learner              # pool every drive on the device
+  ./analyze_longitudinal.py 00000005--58d6714619 00000006--0a1b2c3d4e   # pool these drives
 
 On a PC, with segment folders copied off the device, or from comma connect:
   ./analyze_longitudinal.py 00000005--58d6714619 --log-dir D:/logs/realdata
@@ -26,9 +28,12 @@ On a PC, with segment folders copied off the device, or from comma connect:
   ./analyze_longitudinal.py <dongle>/<route> --mode rlog
 
 Local routes are read from their rlogs, one segment at a time so a long drive fits in memory.
+One drive rarely holds enough braking to compare gas and brake; pooled drives usually do. A verdict
+is only printed when halves of the data agree on it.
 """
 import argparse
 import math
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -56,7 +61,20 @@ LongCtrlStatePid = 1
 DELAY_DECIMATION = 5
 DELAY_DT = DT_CTRL * DELAY_DECIMATION
 SPEED_BANDS = (("5-15 m/s", 5.0, 15.0), ("15-25 m/s", 15.0, 25.0), ("25+ m/s", 25.0, math.inf))
-THRESHOLD_OFFSETS = np.round(np.arange(-0.3, 0.301, 0.05), 2)
+# Wide enough on the low side that "no separate brake path" shows up as a best fit at the bottom.
+THRESHOLD_OFFSETS = np.round(np.arange(-0.8, 0.301, 0.05), 2)
+# Less r2 than this across the whole sweep and the data can't place the threshold at all.
+FLAT_R2 = 0.01
+# The gas-vs-brake verdict is refitted on this many random halves of the engaged driving, cut into
+# blocks of up to a minute, and only stated when both delays are pinned down in this share of them.
+HALF_SAMPLES = 40
+VERDICT_SHARE = 0.8
+VERDICT_BLOCK_S = 60.0
+MIN_VERDICT_BLOCKS = 6
+# Gaps smaller than one planner step don't change what it asks for, so they count as alike.
+VERDICT_MIN_GAP_S = 0.05
+# Not-engaged padding between pooled drives, so no run, filter or lag window spans two of them.
+ROUTE_GAP_S = 2.0
 
 
 @dataclass
@@ -107,13 +125,11 @@ def _lowpass(x: np.ndarray, cutoff_hz: float) -> np.ndarray:
 
 
 def _simulate(cmd: np.ndarray, dead_frames: int, tau: float, a0: float) -> np.ndarray:
+  from scipy.signal import lfilter
   alpha = DT_CTRL / (tau + DT_CTRL)
   delayed = np.concatenate((np.full(dead_frames, cmd[0]), cmd[:-dead_frames])) if dead_frames else cmd
-  out = np.empty_like(cmd)
-  state = a0
-  for i, x in enumerate(delayed):
-    state += alpha * (x - state)
-    out[i] = state
+  # state += alpha * (x - state), as a filter: hours of pooled driving are too slow in a Python loop
+  out, _ = lfilter([alpha], [1.0, alpha - 1.0], delayed, zi=[(1.0 - alpha) * a0])
   return out
 
 
@@ -250,11 +266,23 @@ def _bands(s):
     yield label, lo, hi, s["usable"] & (s["v"] >= lo) & (s["v"] < hi)
 
 
+REGIME_BY_NAME = {regime.name: regime for regime in longlagd.REGIMES}
+
+
+def _pinned(name: str, result) -> bool:
+  """Whether the data pins a regime's delay down, by the same tests longlagd applies to a window."""
+  regime = REGIME_BY_NAME[name]
+  return (result.seconds >= regime.min_okay_sec and result.cmd_range >= regime.min_cmd_range and
+          result.sharpness >= longlagd.MIN_SHARPNESS and longlagd.MIN_GAIN <= result.gain <= longlagd.MAX_GAIN and
+          longlagd.MIN_LONG_DELAY <= result.delay < longlagd.MAX_LAG)
+
+
 def _print_fit(label: str, fit) -> None:
   if fit is None:
     print(f"  {label:10s} not enough data")
     return
-  parts = [f"{name} {r.delay:.2f}s (gain {r.gain:.2f}, sharp {r.sharpness:.4f}, {r.seconds:4.0f}s)" for name, r in fit.regimes.items()]
+  parts = [f"{name} {r.delay:.2f}s (gain {r.gain:.2f}, sharp {r.sharpness:.4f}, {r.seconds:4.0f}s)" +
+           ("" if _pinned(name, r) else " not pinned down") for name, r in fit.regimes.items()]
   print(f"  {label:10s} r2 {fit.r2:.2f}  " + "  ".join(parts))
 
 
@@ -267,49 +295,126 @@ def summarize_measurement_lag(s) -> None:
   ref, a_ego = longlagd.band_pass(s["accel"], usable), longlagd.band_pass(s["a_ego"], usable)
   lag, corr, _ = LateralLagEstimator.actuator_delay(ref, a_ego, usable, DELAY_DT, 1.0)
   print(f"\naEgo trails the zero-phase wheel-speed accel by {1000 * lag:.0f} ms (corr {corr:.2f}).")
+  print("  The plant deadtime above is fitted to aEgo, so about this much of it is aEgo's own lag.")
 
 
 def summarize_delay_split(s) -> None:
   """Fit longlagd's two-path model: the powertrain answers down to the brake threshold after one
   delay, the brakes the rest after another. Delays here include the plant's lag, so they are the
   lookaheads the planner wants rather than pure deadtime."""
-  print("\nDelay by regime (longlagd's two-path fit):")
-  fit = longlagd.fit_split_delay(s["cmd"], s["accel"], s["thr"], s["usable"], DELAY_DT)
-  _print_fit("all", fit)
+  print("\nDelay by regime (longlagd's two-path fit, at the current brake threshold table):")
+  _print_fit("all", longlagd.fit_split_delay(s["cmd"], s["accel"], s["thr"], s["usable"], DELAY_DT))
   for label, _, _, band in _bands(s):
     _print_fit(label, longlagd.fit_split_delay(s["cmd"], s["accel"], s["thr"], band, DELAY_DT))
-  print(f"  a delay is only pinned down with sharpness >= {longlagd.MIN_SHARPNESS} and some tens of seconds in its regime")
-  if fit is not None:
-    gap = fit.regimes["brake"].delay - fit.regimes["gas"].delay
-    print(f"  -> the brakes answer {1000 * abs(gap):.0f} ms {'later' if gap > 0 else 'sooner'} than the powertrain")
 
 
-def summarize_brake_threshold(s) -> None:
+def _classify_sweep(r2s: list[float | None]) -> tuple[str, int | None]:
+  """Read a threshold sweep: 'flat' (can't place it), 'single' (best with no brake path in range),
+  'edge' (best at the top), or 'interior' with the index of the best offset."""
+  values = [r for r in r2s if r is not None]
+  if len(values) < 3:
+    return "no data", None
+  if max(values) - min(values) < FLAT_R2:
+    return "flat", None
+  best = max(range(len(r2s)), key=lambda i: -math.inf if r2s[i] is None else r2s[i])
+  if best == 0:
+    return "single", best
+  if best == len(r2s) - 1:
+    return "edge", best
+  return "interior", best
+
+
+SWEEP_VERDICTS = {
+  "no data": "not enough data",
+  "flat": "flat: this data can't place the threshold",
+  "single": "a single delay fits best (no separate brake path in range)",
+  "edge": "best at the top of the sweep: can't place it",
+}
+
+
+def summarize_brake_threshold(s) -> tuple[str, float | None]:
   """Move the assumed brake threshold and see where the two-path model fits best. The threshold
   is where requests stop being met by closing the throttle, so it should get more negative
-  with speed as drag and engine braking grow."""
+  with speed as drag and engine braking grow. Returns how the all-speeds sweep reads, and its
+  best offset when there is an interior one."""
   print("\nBrake threshold sweep (r2 of the two-path fit, offset from the current table):")
-  bands = list(_bands(s))
-  print(f"  {'offset':>7} " + " ".join(f"{label:>10}" for label, *_ in bands))
-  best: dict[str, tuple[float, float]] = {}
+  columns = [("all", 0.0, math.inf, s["usable"]), *_bands(s)]
+  print(f"  {'offset':>7} " + " ".join(f"{label:>10}" for label, *_ in columns))
+  r2s: dict[str, list[float | None]] = {label: [] for label, *_ in columns}
+  fits: dict[str, list] = {label: [] for label, *_ in columns}
   for offset in THRESHOLD_OFFSETS:
     row = []
-    for label, _, _, band in bands:
-      fit = longlagd.fit_split_delay(s["cmd"], s["accel"], s["thr"] + offset, band, DELAY_DT)
+    for label, _, _, mask in columns:
+      fit = longlagd.fit_split_delay(s["cmd"], s["accel"], s["thr"] + offset, mask, DELAY_DT)
+      r2s[label].append(fit.r2 if fit is not None else None)
+      fits[label].append(fit)
       row.append(f"{fit.r2:10.3f}" if fit is not None else f"{'-':>10}")
-      if fit is not None and fit.r2 > best.get(label, (-math.inf, 0.0))[0]:
-        best[label] = (fit.r2, float(offset))
     print(f"  {offset:+7.2f} " + " ".join(row))
 
-  if best:
-    centers, values = [], []
-    for label, lo, hi, _ in bands:
-      if label in best:
+  centers, values = [], []
+  for label, lo, hi, _ in columns:
+    kind, best = _classify_sweep(r2s[label])
+    if kind == "interior":
+      brake = fits[label][best].regimes["brake"]
+      if not _pinned("brake", brake):
+        print(f"  {label:10s} best at {THRESHOLD_OFFSETS[best]:+.2f}, but its braking isn't pinned down ({brake.seconds:.0f}s)")
+        continue
+      print(f"  {label:10s} best at {THRESHOLD_OFFSETS[best]:+.2f}")
+      if label != "all":
         center = (lo + min(hi, 35.0)) / 2
         centers.append(center)
-        values.append(round(brake_threshold(center) + best[label][1], 2))
+        values.append(round(brake_threshold(center) + float(THRESHOLD_OFFSETS[best]), 2))
+    else:
+      print(f"  {label:10s} {SWEEP_VERDICTS[kind]}")
+  if centers:
     print(f"  current: BRAKE_THRESHOLD_BP = {BRAKE_THRESHOLD_BP}")
     print(f"  suggest: BRAKE_THRESHOLD_BP = {centers}, BRAKE_THRESHOLD_V = {values}")
+
+  kind, best = _classify_sweep(r2s["all"])
+  return kind, (float(THRESHOLD_OFFSETS[best]) if kind == "interior" else None)
+
+
+def _blocks_of(mask: np.ndarray, block: int) -> list[tuple[int, int]]:
+  """Contiguous stretches of mask, cut into pieces of at most block samples."""
+  edges = np.flatnonzero(np.diff(np.concatenate(([0], mask.astype(np.int8), [0]))))
+  return [(a, min(a + block, b)) for start, b in zip(edges[::2], edges[1::2], strict=True) for a in range(start, b, block)]
+
+
+def gas_brake_verdict(s, sweep: str, offset: float | None, seed: int = 0) -> str:
+  """Compare the brake and gas delays only as far as the data supports: refit on random halves of
+  the engaged driving (in blocks of up to a minute), and require both delays to be pinned down in
+  most halves before saying anything. A gap whose spread crosses zero means they answer alike."""
+  blocks = _blocks_of(s["usable"], int(round(VERDICT_BLOCK_S / DELAY_DT)))
+  if len(blocks) < MIN_VERDICT_BLOCKS:
+    return f"Only {len(blocks)} minute-long blocks of engaged driving: too few to check a gas/brake gap holds up."
+  rng = np.random.default_rng(seed)
+  thr = s["thr"] + (offset if offset is not None else 0.0)
+  gaps, pinned = [], 0
+  for _ in range(HALF_SAMPLES):
+    mask = np.zeros_like(s["usable"])
+    for i in rng.choice(len(blocks), size=len(blocks) // 2, replace=False):
+      mask[blocks[i][0]:blocks[i][1]] = True
+    fit = longlagd.fit_split_delay(s["cmd"], s["accel"], thr, mask & s["usable"], DELAY_DT)
+    if fit is not None and all(_pinned(name, r) for name, r in fit.regimes.items()):
+      pinned += 1
+      gaps.append(fit.regimes["brake"].delay - fit.regimes["gas"].delay)
+
+  if pinned < VERDICT_SHARE * HALF_SAMPLES:
+    full = longlagd.fit_split_delay(s["cmd"], s["accel"], thr, s["usable"], DELAY_DT)
+    brake_s = full.regimes["brake"].seconds if full is not None else 0.0
+    return (f"Can't tell: both delays were pinned down in only {pinned} of {HALF_SAMPLES} halves of the data " +
+            f"({brake_s:.0f}s in the brake range).")
+  lo, mid, hi = (1000 * np.percentile(gaps, q) for q in (10, 50, 90))
+  spread = f"brake minus gas {mid:+.0f} ms, {lo:+.0f} to {hi:+.0f} ms across halves of the data"
+  margin = 1000 * VERDICT_MIN_GAP_S
+  if -margin <= lo and hi <= margin:
+    return f"Gas and brake answer alike, within {margin:.0f} ms: {spread}."
+  if lo <= margin and hi >= -margin:
+    return f"Can't tell: {spread}."
+  if sweep != "interior":
+    return f"Tentative, since the data can't place the brake threshold: {spread}."
+  return (f"The brakes answer {abs(mid):.0f} ms {'later' if mid > 0 else 'sooner'} than the powertrain " +
+          f"({spread}; threshold offset {offset:+.2f}).")
 
 
 def _half_time(x: np.ndarray, x0: float, step: float) -> float | None:
@@ -330,7 +435,8 @@ def summarize_step_events(s) -> None:
   dt = DELAY_DT
   cmd, usable, thr = s["cmd"], s["usable"], s["thr"]
   accel = np.nan_to_num(longlagd.masked_symmetric_moving_average(s["accel"], usable, longlagd.SMOOTH_K, longlagd.SMOOTH_SIGMA))
-  pre, rise, settle = int(round(0.5 / dt)), int(round(0.6 / dt)), int(round(1.5 / dt))
+  # the planner ramps more than it steps, so a change within a second counts
+  pre, rise, settle = int(round(0.5 / dt)), int(round(1.0 / dt)), int(round(1.5 / dt))
 
   events: dict[tuple[str, str], list[float]] = {}
   i = pre
@@ -338,7 +444,7 @@ def summarize_step_events(s) -> None:
     span = slice(i - pre, i + rise + settle)
     c0 = cmd[i - pre:i]
     step = cmd[i + rise] - c0.mean()
-    if not usable[span].all() or np.ptp(c0) > 0.1 or abs(step) < 0.4:
+    if not usable[span].all() or np.ptp(c0) > 0.15 or abs(step) < 0.3:
       i += 1
       continue
 
@@ -430,14 +536,20 @@ def summarize_brake_pressure(s) -> None:
 
 class LearnerReplay:
   """Drives longlagd the way its main() does: carState, carControl and starpilotCarControl update
-  its state, livePose clocks the points, and every fifth livePose an estimate."""
+  its state, livePose clocks the points, and every fifth livePose an estimate. A drive can start
+  from where the previous one left off, as it does on the car."""
+  TICK_S = 0.25  # one estimate per five 20Hz livePose frames
 
-  def __init__(self, CP):
-    self.estimator = longlagd.LongitudinalLagEstimator(CP, 0.05)
+  def __init__(self, CP, initial: dict | None = None, **estimator_kwargs):
+    self.estimator = longlagd.LongitudinalLagEstimator(CP, 0.05, **estimator_kwargs)
+    if initial:
+      self.estimator.reset(initial)
     self.frame = 0
     self.car_state_updated = False
     self.t0: float | None = None
     self.history: list[tuple] = []
+    self.outcomes = {regime.name: Counter() for regime in longlagd.REGIMES}
+    self.r2: list[float] = []
 
   def feed(self, msg) -> None:
     which, t = msg.which(), msg.logMonoTime * 1e-9
@@ -452,25 +564,60 @@ class LearnerReplay:
         self.car_state_updated = False
       if self.frame % 5 == 0:
         self.estimator.update_estimate()
+        for name, outcome in self.estimator.last_outcome.items():
+          self.outcomes[name][outcome] += 1
+        if self.estimator.last_fit is not None:
+          self.r2.append(self.estimator.last_fit.r2)
         ld = self.estimator.get_msg(True).starpilotLongitudinalDelay
         self.history.append((t - self.t0, ld.gas.status, ld.gas.delayEstimate, ld.gas.validBlocks,
                              ld.brake.status, ld.brake.delayEstimate, ld.brake.validBlocks))
       self.frame += 1
 
-  def report(self) -> None:
-    print("\nlonglagd replay:")
-    if not self.history:
-      print("  no livePose in this log, so nothing clocked the learner")
-      return
-    for offset, name in ((1, "gas"), (4, "brake")):
-      first = next((h[0] for h in self.history if h[offset] == "estimated"), None)
-      last = self.history[-1]
-      when = f"estimated after {first / 60:.1f} min" if first is not None else "never estimated"
-      print(f"  {name:5s} {when}, ends at {last[offset + 1]:.3f}s with {last[offset + 2]} blocks ({last[offset]})")
+  def final_state(self) -> dict[str, tuple[float, int]]:
+    return longlagd.initial_from_saved(self.estimator.get_msg(True).starpilotLongitudinalDelay)
+
+
+def report_replay(replays: list[tuple[str, LearnerReplay]]) -> None:
+  replays = [(name, r) for name, r in replays if r.history]
+  print("\nlonglagd replay" + (f" across {len(replays)} drives, carrying over between them:" if len(replays) > 1 else ":"))
+  if not replays:
+    print("  no livePose in these logs, so nothing clocked the learner")
+    return
+
+  elapsed = 0.0
+  for offset, name in ((1, "gas"), (4, "brake")):
+    first, elapsed = None, 0.0
+    for _, replay in replays:
+      hit = next((h[0] for h in replay.history if h[offset] == "estimated"), None)
+      if hit is not None and first is None:
+        first = elapsed + hit
+      elapsed += replay.history[-1][0]
+    last = replays[-1][1].history[-1]
+    when = f"estimated after {first / 60:.1f} min of logs" if first is not None else "never estimated"
+    print(f"  {name:5s} {when}, ends at {last[offset + 1]:.3f}s with {last[offset + 2]} blocks ({last[offset]})")
+
+  if len(replays) == 1:
+    history = replays[0][1].history
     print(f"  {'min':>6} {'gas':>16} {'brake':>16}")
-    step = max(1, len(self.history) // 12)
-    for h in self.history[::step]:
+    for h in history[::max(1, len(history) // 12)]:
       print(f"  {h[0] / 60:6.1f} {h[2]:7.3f}s {h[3]:2d} blk {h[5]:7.3f}s {h[6]:2d} blk")
+  else:
+    print(f"  {'drive':24s} {'min':>5} {'gas':>16} {'brake':>16}")
+    for name, replay in replays:
+      h = replay.history[-1]
+      print(f"  {name:24s} {h[0] / 60:5.1f} {h[2]:7.3f}s {h[3]:2d} blk {h[5]:7.3f}s {h[6]:2d} blk")
+
+  # what kept the learner from taking estimates, to tune its thresholds against
+  print("  why windows were or weren't learned from (minutes; 'no fit' includes time not engaged):")
+  for regime in longlagd.REGIMES:
+    total = sum((r.outcomes[regime.name] for _, r in replays), Counter())
+    parts = [f"{outcome} {count * LearnerReplay.TICK_S / 60:.1f}" for outcome, count in total.most_common()]
+    print(f"    {regime.name:5s} " + ", ".join(parts))
+  r2 = np.concatenate([r.r2 for _, r in replays]) if any(r.r2 for _, r in replays) else np.array([])
+  if len(r2):
+    p10, p50, p90 = np.percentile(r2, [10, 50, 90])
+    print(f"  window r2: 10% {p10:.2f}, median {p50:.2f}, 90% {p90:.2f}; " +
+          f"min r2 {replays[-1][1].estimator.min_r2} passes {100 * np.mean(r2 >= replays[-1][1].estimator.min_r2):.0f}%")
 
 
 def resolve_route(identifier: str, log_dirs: list[Path]) -> list[str]:
@@ -501,20 +648,11 @@ def resolve_route(identifier: str, log_dirs: list[Path]) -> list[str]:
   raise SystemExit(f"No rlogs for {identifier!r} in {where}. Give a route or segment folder name, a path, or dongle/route.")
 
 
-def main() -> None:
-  parser = argparse.ArgumentParser(description="Analyze a route for longitudinal tuning opportunities.")
-  parser.add_argument("route", help="local route or segment (00000005--58d6714619[--47]), a path, or dongle/route")
-  parser.add_argument("--log-dir", action="append", type=Path, default=[],
-                      help="also look for local routes here (default: the device's realdata folder)")
-  parser.add_argument("--mode", choices=("auto", "qlog", "rlog"), default="rlog", help="for dongle/route; local routes use rlogs")
-  parser.add_argument("--replay-learner", action="store_true", help="run longlagd over the route and report how it converges")
-  args = parser.parse_args()
-
-  mode_map = {"auto": ReadMode.AUTO, "qlog": ReadMode.QLOG, "rlog": ReadMode.RLOG}
-  identifiers = resolve_route(args.route, [Path(Paths.log_root()), *args.log_dir])
+def read_route(identifiers: list[str], mode: ReadMode, replay: bool, initial: dict | None, learner_kwargs: dict):
+  """One drive on the DT_CTRL grid (None if it's too short), its CarParams, and longlagd replayed
+  over it when asked. Only the resampled arrays are kept, so pooled drives stay small."""
   # A fresh LogReader per local segment: one LogReader keeps every segment it has read in memory.
-  messages = (msg for identifier in identifiers
-              for msg in LogReader(identifier, default_mode=mode_map[args.mode], sort_by_time=True))
+  messages = (msg for identifier in identifiers for msg in LogReader(identifier, default_mode=mode, sort_by_time=True))
 
   car_params = None
   latest: dict = {}
@@ -530,8 +668,8 @@ def main() -> None:
     if which == "carParams" and car_params is None:
       car_params = msg.carParams.as_builder()  # a copy, so the first segment isn't held for it
       pressure_probe = _brake_pressure_probe(car_params)
-      if args.replay_learner:
-        learner = LearnerReplay(car_params)
+      if replay:
+        learner = LearnerReplay(car_params, initial, **learner_kwargs)
     elif which == "can" and pressure_probe is not None:
       pressure = pressure_probe(msg.can, pressure)
     elif which == "starpilotCarControl":
@@ -547,21 +685,119 @@ def main() -> None:
         brake_pressed=cs.brakePressed, long_control_state=int(cc.actuators.longControlState.raw),
         has_lead=lp.hasLead, v_ego_raw=cs.vEgoRaw, blend_ok=blend_ok, brake_pressure=pressure,
       ))
+  return (_resample(samples) if len(samples) >= 1000 else None), car_params, learner
 
-  if len(samples) < 1000:
-    print("Not enough samples in this route.")
+
+def _concat_routes(ds: list[dict[str, np.ndarray]]) -> dict[str, np.ndarray]:
+  """Pool drives into one set of arrays: time runs on across them, and a stretch of not-engaged
+  padding in between keeps every engaged run, filter and lag window inside a single drive."""
+  if len(ds) == 1:
+    return ds[0]
+  gap = int(round(ROUTE_GAP_S / DT_CTRL))
+  parts: dict[str, list[np.ndarray]] = {key: [] for key in ds[0]}
+  t_next = 0.0
+  for i, d in enumerate(ds):
+    if i:
+      for key in parts:
+        if key == "t":
+          parts[key].append(t_next + np.arange(gap) * DT_CTRL)
+        elif key in ("v_ego", "v_ego_raw"):
+          parts[key].append(np.full(gap, d[key][0]))
+        else:
+          parts[key].append(np.full(gap, math.nan if key == "brake_pressure" else 0.0))
+      t_next += gap * DT_CTRL
+    for key in parts:
+      parts[key].append(d[key] + (t_next - d["t"][0]) if key == "t" else d[key])
+    t_next = parts["t"][-1][-1] + DT_CTRL
+  return {key: np.concatenate(value) for key, value in parts.items()}
+
+
+def coverage(d: dict[str, np.ndarray]) -> Counter:
+  """Seconds of a drive by what happened to them, most of which never reach the fits."""
+  active = d["long_active"] > 0.5
+  blended = active & (d["blend_ok"] < 0.5)
+  pedals = active & ~blended & ((d["gas_pressed"] > 0.5) | (d["brake_pressed"] > 0.5))
+  not_pid = active & ~blended & ~pedals & (np.abs(d["long_control_state"] - LongCtrlStatePid) > 0.1)
+  ok = active & ~blended & ~pedals & ~not_pid
+  usable = sum(b - a for a, b in _engaged_runs(d))
+  seconds = {"logs": len(d["t"]), "active": active.sum(), "blended": blended.sum(), "pedals": pedals.sum(),
+             "not_pid": not_pid.sum(), "short": ok.sum() - usable, "usable": usable}
+  return Counter({key: float(value) * DT_CTRL for key, value in seconds.items()})
+
+
+def summarize_coverage(total: Counter, drives: int) -> None:
+  m = {key: total.get(key, 0.0) / 60 for key in ("logs", "active", "usable", "blended", "pedals", "not_pid", "short")}
+  print(f"{m['logs']:.1f} min of logs" + (f" over {drives} drives" if drives > 1 else "") +
+        f"; openpilot long active {m['active']:.1f}; usable {m['usable']:.1f} " +
+        f"(blended to stock ACC {m['blended']:.1f}, pedals {m['pedals']:.1f}, stopping/starting {m['not_pid']:.1f}, " +
+        f"runs under 3 s {m['short']:.1f})")
+
+
+def main() -> None:
+  parser = argparse.ArgumentParser(description="Analyze drives for longitudinal tuning opportunities.")
+  parser.add_argument("routes", nargs="*",
+                      help="local routes or segments (00000005--58d6714619[--47]), paths, or dongle/route; several are pooled")
+  parser.add_argument("--all", action="store_true", help="pool every local route in the log folders")
+  parser.add_argument("--log-dir", action="append", type=Path, default=[],
+                      help="also look for local routes here (default: the device's realdata folder)")
+  parser.add_argument("--mode", choices=("auto", "qlog", "rlog"), default="rlog", help="for dongle/route; local routes use rlogs")
+  parser.add_argument("--replay-learner", action="store_true", help="run longlagd over the drives and report how it converges")
+  parser.add_argument("--learner-min-r2", type=float, default=longlagd.MIN_R2, help="replay with this window r2 threshold")
+  parser.add_argument("--learner-min-sharpness", type=float, default=longlagd.MIN_SHARPNESS,
+                      help="replay with this delay sharpness threshold")
+  args = parser.parse_args()
+
+  log_dirs = [Path(Paths.log_root()), *args.log_dir]
+  if args.all:
+    routes = list(find_segments([d for d in log_dirs if d.is_dir()]))
+  else:
+    routes = args.routes
+  if not routes:
+    parser.error("give one or more routes, or --all")
+
+  mode_map = {"auto": ReadMode.AUTO, "qlog": ReadMode.QLOG, "rlog": ReadMode.RLOG}
+  learner_kwargs = {"min_r2": args.learner_min_r2, "min_sharpness": args.learner_min_sharpness}
+  car_params = None
+  ds: list[dict[str, np.ndarray]] = []
+  total = Counter()
+  replays: list[tuple[str, LearnerReplay]] = []
+  initial = None
+  for name in routes:
+    d, cp, learner = read_route(resolve_route(name, log_dirs), mode_map[args.mode], args.replay_learner, initial, learner_kwargs)
+    if cp is not None and car_params is not None and cp.carFingerprint != car_params.carFingerprint:
+      print(f"{name}: skipped, it's a {cp.carFingerprint}, not a {car_params.carFingerprint}")
+      continue
+    if car_params is None:
+      car_params = cp
+    if learner is not None:
+      replays.append((name, learner))
+      initial = learner.final_state()
+    if d is None:
+      print(f"{name}: too short, skipped")
+      continue
+    drive = coverage(d)
+    total.update(drive)  # not +=, which drops the zero counts
+    ds.append(d)
+    if len(routes) > 1:
+      print(f"{name}: {drive['logs'] / 60:.1f} min, {drive['usable'] / 60:.1f} usable")
+
+  if not ds:
+    print("Not enough samples in these logs.")
     return
 
-  d = _resample(samples)
+  d = _concat_routes(ds)
   runs = _engaged_runs(d)
   engaged_min = sum(b - a for a, b in runs) * DT_CTRL / 60
   if car_params is not None:
     print(f"{car_params.carFingerprint}: kpV={list(car_params.longitudinalTuning.kpV)} " +
           f"kiV={list(car_params.longitudinalTuning.kiV)} " +
           f"actuatorDelay={car_params.longitudinalActuatorDelay:.2f}s")
+  summarize_coverage(total, len(ds))
   print(f"{engaged_min:.1f} min of engaged longitudinal in {len(runs)} runs")
   if engaged_min < 2.0:
     print("Too little engaged driving to tune from.")
+    if replays:
+      report_replay(replays)
     return
 
   summarize_static_map(runs, d)
@@ -571,11 +807,12 @@ def main() -> None:
   s = _delay_series(runs, d)
   summarize_measurement_lag(s)
   summarize_delay_split(s)
-  summarize_brake_threshold(s)
+  sweep, offset = summarize_brake_threshold(s)
+  print("\nGas vs brake: " + gas_brake_verdict(s, sweep, offset))
   summarize_step_events(s)
   summarize_brake_pressure(s)
-  if learner is not None:
-    learner.report()
+  if replays:
+    report_replay(replays)
 
 
 if __name__ == "__main__":

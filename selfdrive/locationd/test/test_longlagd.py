@@ -151,3 +151,17 @@ class TestLonglagd:
     other_CP = car.CarParams(carFingerprint="MAZDA_3_2019")
     assert retrieve_initial_lag(params, other_CP) is None
     assert params.get("LiveLongitudinalDelay") is None
+
+  def test_outcomes_say_why_estimates_were_taken_or_not(self):
+    t, cmd = make_command(300, seed=3)
+    estimator = make_estimator()
+    run_estimator(estimator, t, cmd, simulate(cmd, 0.25, 0.5))
+    # a clean two-path drive: every regime is either learning or waiting for new data
+    assert set(estimator.last_outcome.values()) <= {"accepted", "no new data"}
+
+    # wheel speed that has nothing to do with the command can't be fitted at all
+    rng = np.random.default_rng(0)
+    estimator = make_estimator()
+    run_estimator(estimator, t, cmd, V0 + rng.normal(0, 0.05, len(t)).cumsum() * 0.05)
+    assert set(estimator.last_outcome.values()) == {"fit r2"}
+    assert estimator.last_fit is not None and estimator.last_fit.r2 < estimator.min_r2
