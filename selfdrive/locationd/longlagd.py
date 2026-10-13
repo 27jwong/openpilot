@@ -233,6 +233,8 @@ class LongitudinalLagEstimator:
     self.last_invalid_t = 0.0
     self.last_estimate_t = {r.name: 0.0 for r in REGIMES}
     self.last_fit: SplitFit | None = None
+    # why each regime's last estimate was or wasn't taken, for tuning the thresholds from replays
+    self.last_outcome: dict[str, str] = {r.name: "no fit" for r in REGIMES}
 
     self.points = Points(int(self.window_sec / self.dt))
     self.block_avg = {r.name: BlockAverage(BLOCK_NUM, r.block_size, 0, self.initial_lag) for r in REGIMES}
@@ -292,24 +294,32 @@ class LongitudinalLagEstimator:
     fit = fit_split_delay(cmd, accel, thr, usable, self.dt)
     self.last_fit = fit
     if fit is None or fit.r2 < self.min_r2:
+      self.last_outcome = dict.fromkeys(self.last_outcome, "no fit" if fit is None else "fit r2")
       return
 
     margin = cmd - thr
     for regime in REGIMES:
-      result = fit.regimes[regime.name]
-      if result.seconds < regime.min_okay_sec or result.cmd_range < regime.min_cmd_range:
-        continue
-      if result.sharpness < self.min_sharpness or not (MIN_GAIN <= result.gain <= MAX_GAIN):
-        continue
-      if not (MIN_LONG_DELAY <= result.delay < MAX_LAG):
-        continue
-      # only estimate again once this regime has seen new data
-      last_t = self.last_estimate_t[regime.name]
-      if last_t != 0 and not np.any(usable[times > last_t] & (margin[times > last_t] * regime.sign > REGIME_DEADBAND)):
-        continue
+      self.last_outcome[regime.name] = self._judge(regime, fit.regimes[regime.name], times, usable, margin)
+      if self.last_outcome[regime.name] == "accepted":
+        self.block_avg[regime.name].update(fit.regimes[regime.name].delay)
+        self.last_estimate_t[regime.name] = self.t
 
-      self.block_avg[regime.name].update(result.delay)
-      self.last_estimate_t[regime.name] = self.t
+  def _judge(self, regime: Regime, result: RegimeFit, times: np.ndarray, usable: np.ndarray, margin: np.ndarray) -> str:
+    if result.seconds < regime.min_okay_sec:
+      return "too little data"
+    if result.cmd_range < regime.min_cmd_range:
+      return "command range"
+    if result.sharpness < self.min_sharpness:
+      return "sharpness"
+    if not (MIN_GAIN <= result.gain <= MAX_GAIN):
+      return "gain"
+    if not (MIN_LONG_DELAY <= result.delay < MAX_LAG):
+      return "delay bounds"
+    # only estimate again once this regime has seen new data
+    last_t = self.last_estimate_t[regime.name]
+    if last_t != 0 and not np.any(usable[times > last_t] & (margin[times > last_t] * regime.sign > REGIME_DEADBAND)):
+      return "no new data"
+    return "accepted"
 
   def _fill_regime(self, out, regime: Regime, debug: bool):
     block_avg = self.block_avg[regime.name]
@@ -345,6 +355,18 @@ class LongitudinalLagEstimator:
     return msg
 
 
+def initial_from_saved(saved_delay) -> dict[str, tuple[float, int]]:
+  """What a drive starts from, given the last one's message: {name: (lag, valid_blocks)}."""
+  initial = {}
+  for regime in REGIMES:
+    saved = getattr(saved_delay, regime.name)
+    assert saved.validBlocks <= BLOCK_NUM, "Invalid number of valid blocks"
+    # a regime whose blocks disagreed starts over; the other keeps what it learned
+    if saved.status != LongDelayStatus.invalid:
+      initial[regime.name] = (saved.delayEstimate, saved.validBlocks)
+  return initial
+
+
 def retrieve_initial_lag(params: Params, CP: car.CarParams) -> dict[str, tuple[float, int]] | None:
   last_lag_data = params.get("LiveLongitudinalDelay")
   last_carparams_data = params.get("CarParamsPrevRoute")
@@ -355,14 +377,7 @@ def retrieve_initial_lag(params: Params, CP: car.CarParams) -> dict[str, tuple[f
         if last_CP.carFingerprint != CP.carFingerprint:
           raise Exception("Car model mismatch")
 
-        initial = {}
-        for regime in REGIMES:
-          saved = getattr(last_lag_msg.starpilotLongitudinalDelay, regime.name)
-          assert saved.validBlocks <= BLOCK_NUM, "Invalid number of valid blocks"
-          # a regime whose blocks disagreed starts over; the other keeps what it learned
-          if saved.status != LongDelayStatus.invalid:
-            initial[regime.name] = (saved.delayEstimate, saved.validBlocks)
-        return initial
+        return initial_from_saved(last_lag_msg.starpilotLongitudinalDelay)
     except Exception as e:
       cloudlog.error(f"Failed to retrieve initial longitudinal lag: {e}")
       params.remove("LiveLongitudinalDelay")
