@@ -14,10 +14,14 @@ Then train from the same folder:
 
   python tools/tuning/train_nnff.py D:/logs/realdata
 
-The device's SSH must be on (Settings > Developer), with your public key added. Segments already on
-your PC with the same size are skipped, so reruns only fetch what's new, and an interrupted run
-resumes where it stopped. The segment being recorded right now (it holds an rlog.lock) is skipped, so
-copy while the car is off.
+The device's SSH must be on (Settings > Developer > Enable SSH), and it only accepts the keys on the
+GitHub account you entered under SSH Keys, as they were when you entered it: add your PC's public key
+to GitHub first, then (re)enter your username on the device. Test with "ssh comma@<ip>" before this
+script. If your key has a passphrase, load it into ssh-agent (ssh-add) so this doesn't keep asking.
+
+Segments already on your PC with the same size are skipped, so reruns only fetch what's new, and an
+interrupted run resumes where it stopped. The segment being recorded right now (it holds an
+rlog.lock) is skipped, so copy while the car is off.
 
 Folders are saved flat as <dest>/<route>--<segment>/rlog.zst, the layout train_nnff.py reads, whichever
 of the device's realdata, realdata_HD or realdata_konik folders they came from.
@@ -39,13 +43,24 @@ SEGMENT_RE = re.compile(r"^.+--\d+$")
 
 
 def ssh_command(ssh: str, host: str, port: int | None, identity: str | None, remote: str) -> list[str]:
-  cmd = [ssh, "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=15",
+  # no password fallback (the device has none), but still lets ssh ask for a key's passphrase
+  cmd = [ssh, "-o", "PasswordAuthentication=no", "-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=15",
          "-o", "StrictHostKeyChecking=accept-new"]
   if port is not None:
     cmd += ["-p", str(port)]
   if identity is not None:
     cmd += ["-i", identity]
   return cmd + [host, remote]
+
+
+def ssh_hint(stderr: str) -> str:
+  if "Permission denied" in stderr:
+    return ("The device refused your key. It only trusts the keys GitHub listed for the username entered under\n"
+            "Settings > Developer > SSH Keys, as of when you entered it. Check that your PC's key is on\n"
+            "github.com/<username>.keys, then remove and re-add the username on the device to refresh it.\n"
+            "Try \"ssh -v comma@<ip>\" by hand to see which key your PC offers; if it's not your default key,\n"
+            "pass it with -i. If the key has a passphrase, run ssh-add first.")
+  return "Check the IP, that the device is on the same network, and that SSH is enabled in Settings > Developer."
 
 
 def list_device_rlogs(ssh_cmd, base: str, roots: tuple[str, ...]) -> tuple[dict[str, int], int]:
@@ -55,8 +70,7 @@ def list_device_rlogs(ssh_cmd, base: str, roots: tuple[str, ...]) -> tuple[dict[
             r"\( -name 'rlog*' -o -name '*.lock' \) -printf '%p\t%s\n' 2>/dev/null; exit 0")
   proc = subprocess.run(ssh_cmd(remote), capture_output=True, text=True)
   if proc.returncode == 255:
-    raise SystemExit(f"couldn't SSH to the device:\n{proc.stderr.strip()}\n"
-                     "Check the IP, that SSH is enabled in Settings > Developer, and that your key is added.")
+    raise SystemExit(f"couldn't SSH to the device:\n{proc.stderr.strip()}\n" + ssh_hint(proc.stderr))
   if proc.returncode != 0:
     raise SystemExit(f"{base} isn't on the device (exit {proc.returncode}): {proc.stderr.strip()}")
 
