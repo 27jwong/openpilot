@@ -1,4 +1,5 @@
 import json
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -203,3 +204,83 @@ def test_cli_writes_a_loadable_model(log_dir, tmp_path, capsys):
   assert "siglin" in printed
   model = FluxModel(out)
   assert model.evaluate([20.0, 1.0, 0.0, 0.0] + [1.0] * 7 + [0.0] * 7) > 0.0
+
+
+def fake_log(monkeypatch, events):
+  """Stand in for the cereal schema, handing extract_segment these events instead of a decoded rlog."""
+  monkeypatch.setattr(T, "load_log_schema", lambda cereal_dir=None: SimpleNamespace(
+    Event=SimpleNamespace(read_multiple_bytes=lambda data: iter(events))))
+  monkeypatch.setattr(T, "read_log_bytes", lambda path: b"")
+
+
+def fake_event(which, t, **fields):
+  return SimpleNamespace(which=lambda: which, logMonoTime=int(t * 1e9), **{which: SimpleNamespace(**fields)})
+
+
+CAR_STATE = dict(vEgo=20.0, steeringPressed=False, steerFaultTemporary=False, steerFaultPermanent=False)
+
+
+def assert_columns_line_up(seg):
+  for t_key, _, value_keys in T.REQUIRED_SERVICES:
+    for k in value_keys:
+      assert len(seg.get(k, [])) == len(seg.get(t_key, []))
+
+
+def test_a_message_that_fails_midway_leaves_every_column_the_same_length(monkeypatch):
+  class Torque:  # a carOutput whose torque can't be read, like a message cut short
+    @property
+    def torque(self):
+      raise RuntimeError("Message ends prematurely")
+
+  fake_log(monkeypatch, [fake_event("carState", 1.0, **CAR_STATE), fake_event("carState", 1.01, **CAR_STATE),
+                         SimpleNamespace(which=lambda: "carOutput", logMonoTime=int(1.02e9), carOutput=SimpleNamespace(actuatorsOutput=Torque()))])
+  seg = T.extract_segment("rlog.zst")
+  assert len(seg["cs_t"]) == 2
+  assert_columns_line_up(seg)  # co_t has no stray entry without a torque to go with it
+
+
+def test_a_truncated_rlog_keeps_everything_before_the_cut(tmp_path):
+  path = tmp_path / "00000000--abcdef0--0" / "rlog.zst"
+  write_segment(path, 0.0, 5.0, phase=0)
+  raw = zstandard.ZstdDecompressor().stream_reader(path.read_bytes()).read()
+  path.write_bytes(zstandard.ZstdCompressor().compress(raw[:-40]))  # mid-message
+  seg = T.extract_segment(path)
+  assert len(seg["cs_t"]) > 400
+  assert_columns_line_up(seg)
+
+
+def test_logs_with_fields_the_schema_lacks_raise_instead_of_looking_truncated(monkeypatch):
+  class OldOutput:  # a cereal where Actuators has no torque
+    @property
+    def actuatorsOutput(self):
+      raise AttributeError("struct has no such member: torque")
+
+  fake_log(monkeypatch, [fake_event("carState", 1.0, **CAR_STATE),
+                         SimpleNamespace(which=lambda: "carOutput", logMonoTime=int(1.01e9), carOutput=OldOutput())])
+  with pytest.raises(AttributeError, match="torque"):
+    T.extract_segment("rlog.zst")
+
+
+def test_a_route_missing_a_service_is_skipped_and_says_what_its_logs_do_hold(tmp_path):
+  path = tmp_path / "00000000--abcdef0--0" / "rlog.zst"
+  write_segment(path, 0.0, 5.0, phase=0)
+  seg = T.extract_segment(path)
+  for key in ("cs_t", "v_ego", "steering_pressed", "steer_fault"):
+    del seg[key]
+  skipped = []
+  assert T.assemble_route("r", [seg, seg], skipped) is None
+  route, service, detail = skipped[0]
+  assert (route, service) == ("r", "carState")
+  assert "carOutput x" in detail
+
+
+def test_columns_that_dont_line_up_skip_the_route_instead_of_crashing(tmp_path):
+  # what a cache written by an older version of the script could hand back
+  path = tmp_path / "00000000--abcdef0--0" / "rlog.zst"
+  write_segment(path, 0.0, 5.0, phase=0)
+  seg = T.extract_segment(path)
+  del seg["torque"]
+  skipped = []
+  assert T.assemble_route("r", [seg, seg], skipped) is None
+  assert skipped[0][1] == "carOutput"
+  assert "--no-cache" in skipped[0][2]

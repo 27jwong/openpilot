@@ -49,7 +49,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 DT = 0.01
 GRAVITY = 9.81
-EXTRACT_VERSION = 1  # bump when extract_segment's output changes, to invalidate caches
+EXTRACT_VERSION = 2  # bump when extract_segment's output changes, to invalidate caches
 
 # These must match LatControlNNFF (starpilot/controls/lib/neural_network_feedforward.py):
 # past_times, future_times, and the order it assembles nn_input in.
@@ -115,41 +115,45 @@ def extract_segment(path: Path, cereal_dir: Path | None = None) -> dict[str, np.
   """Pull the handful of signals training needs out of one rlog, at their native rates."""
   log = load_log_schema(cereal_dir)
   cols = defaultdict(list)
+  seen: Counter = Counter()
   meta = {"fingerprint": "", "steer_actuator_delay": np.nan}
+
+  def add(**row):
+    # every column of a message goes in together, so a failure can't leave them different lengths
+    for k, v in row.items():
+      cols[k].append(v)
+
   try:
     for evt in log.Event.read_multiple_bytes(read_log_bytes(path)):
       which = evt.which()
+      seen[which] += 1
       t = evt.logMonoTime * 1e-9
       if which == "carState":
         cs = evt.carState
-        cols["cs_t"].append(t)
-        cols["v_ego"].append(cs.vEgo)
-        cols["steering_pressed"].append(cs.steeringPressed)
-        cols["steer_fault"].append(cs.steerFaultTemporary or cs.steerFaultPermanent)
+        add(cs_t=t, v_ego=cs.vEgo, steering_pressed=cs.steeringPressed,
+            steer_fault=cs.steerFaultTemporary or cs.steerFaultPermanent)
       elif which == "carControl":
-        cols["cc_t"].append(t)
-        cols["lat_active"].append(evt.carControl.latActive)
+        add(cc_t=t, lat_active=evt.carControl.latActive)
       elif which == "carOutput":
-        cols["co_t"].append(t)
-        cols["torque"].append(evt.carOutput.actuatorsOutput.torque)
+        add(co_t=t, torque=evt.carOutput.actuatorsOutput.torque)
       elif which == "controlsState":
-        cols["ctl_t"].append(t)
-        cols["curvature"].append(evt.controlsState.curvature)
+        add(ctl_t=t, curvature=evt.controlsState.curvature)
       elif which == "liveParameters":
-        cols["lp_t"].append(t)
-        cols["roll"].append(evt.liveParameters.roll)
+        add(lp_t=t, roll=evt.liveParameters.roll)
       elif which == "liveDelay":
-        cols["ld_t"].append(t)
-        cols["lateral_delay"].append(evt.liveDelay.lateralDelay)
+        add(ld_t=t, lateral_delay=evt.liveDelay.lateralDelay)
       elif which == "carParams" and not meta["fingerprint"]:
         meta["fingerprint"] = evt.carParams.carFingerprint
         meta["steer_actuator_delay"] = evt.carParams.steerActuatorDelay
+  except AttributeError:
+    raise  # the logs have a field the cereal schema doesn't: not a damaged log, so say so (see load_routes)
   except Exception as e:  # a truncated final message; everything before it is usable
     print(f"warning: {path}: stopped reading at {e!r}", file=sys.stderr)
 
   out = {k: np.asarray(v, dtype=np.float64) for k, v in cols.items()}
   out["fingerprint"] = np.asarray(meta["fingerprint"])
   out["steer_actuator_delay"] = np.asarray(meta["steer_actuator_delay"])
+  out["services"] = np.asarray(json.dumps(dict(seen.most_common(8))))  # to explain a skipped route
   return out
 
 
@@ -210,15 +214,43 @@ def _moving_average(x: np.ndarray, n: int) -> np.ndarray:
   return np.convolve(pad, np.ones(n) / n, mode="valid")
 
 
-def assemble_route(name: str, segments: list[dict[str, np.ndarray]]) -> Route | None:
+def describe_services(segments: list[dict[str, np.ndarray]]) -> str:
+  """What a route's logs actually hold, for explaining why it was skipped."""
+  total: Counter = Counter()
+  for s in segments:
+    if "services" in s:
+      total.update(json.loads(str(s["services"])))
+  return ", ".join(f"{k} x{v}" for k, v in total.most_common(5)) or "no messages at all"
+
+
+# each time column and the value columns that must be exactly as long
+REQUIRED_SERVICES = (("cs_t", "carState", ("v_ego", "steering_pressed", "steer_fault")),
+                     ("cc_t", "carControl", ("lat_active",)),
+                     ("co_t", "carOutput", ("torque",)),
+                     ("ctl_t", "controlsState", ("curvature",)),
+                     ("lp_t", "liveParameters", ("roll",)))
+
+
+def assemble_route(name: str, segments: list[dict[str, np.ndarray]], skipped: list | None = None) -> Route | None:
+  """skipped, if given, collects (route, service, what the logs held) for each route passed over, so the
+  caller can report them together instead of one warning apiece."""
+  def skip(service: str, detail: str = ""):
+    if skipped is None:
+      print(f"warning: route {name} has no usable {service} messages ({detail or describe_services(segments)}), skipping", file=sys.stderr)
+    else:
+      skipped.append((name, service, detail or describe_services(segments)))
+
   cat = {}
   for key in ("cs_t", "v_ego", "steering_pressed", "steer_fault", "cc_t", "lat_active", "co_t", "torque",
               "ctl_t", "curvature", "lp_t", "roll", "ld_t", "lateral_delay"):
     cat[key] = np.concatenate([np.zeros(0)] + [s[key] for s in segments if key in s])
-  for t_key, service in (("cs_t", "carState"), ("cc_t", "carControl"), ("co_t", "carOutput"), ("ctl_t", "controlsState"),
-                         ("lp_t", "liveParameters")):
+  for t_key, service, value_keys in REQUIRED_SERVICES:
     if len(cat[t_key]) < 2:
-      print(f"warning: route {name} has no {service} messages (a qlog, or a log from before it existed), skipping", file=sys.stderr)
+      skip(service)
+      return None
+    if any(len(cat[k]) != len(cat[t_key]) for k in value_keys):
+      # only a cache from an older version of this script should get here
+      skip(service, "its extracted columns don't line up; rerun with --no-cache")
       return None
 
   fingerprints = Counter(str(s["fingerprint"]) for s in segments if str(s["fingerprint"]))
@@ -502,22 +534,41 @@ def load_routes(log_dirs, cache_dir, cereal_dir, workers) -> list[Route]:
   print(f"reading {len(jobs)} segments from {len(segments_by_route)} routes")
 
   extracted = defaultdict(dict)
+  failures: dict[str, list[Path]] = defaultdict(list)
   with ProcessPoolExecutor(max_workers=workers) as pool:
-    futures = {pool.submit(extract_segment_cached, path, cache_dir, cereal_dir): (route, seg) for route, seg, path in jobs}
+    futures = {pool.submit(extract_segment_cached, path, cache_dir, cereal_dir): (route, seg, path) for route, seg, path in jobs}
     for n, fut in enumerate(futures, 1):
-      route, seg = futures[fut]
+      route, seg, path = futures[fut]
       try:
         extracted[route][seg] = fut.result()
       except Exception as e:
-        print(f"warning: {route}--{seg}: {e!r}", file=sys.stderr)
+        failures[f"{type(e).__name__}: {str(e).strip().splitlines()[0][:160] if str(e).strip() else ''}"].append(path)
       if n % 25 == 0 or n == len(futures):
         print(f"  {n}/{len(futures)} segments")
 
-  routes = []
+  for message, paths in failures.items():
+    print(f"warning: {len(paths)} segments couldn't be read ({message}), e.g. {paths[0]}", file=sys.stderr)
+    if message.startswith("AttributeError"):
+      print("  The logs hold a field that the cereal schema in use doesn't have, so that cereal is from a different\n"
+            "  openpilot version than the one that recorded these logs. Run this script from an up-to-date checkout of\n"
+            "  the same fork the car runs (git pull), without --cereal, or point --cereal at that checkout's cereal folder.", file=sys.stderr)
+  if len(failures) and not extracted:
+    raise SystemExit("none of the logs could be read")
+
+  routes, skipped = [], []
   for route, segs in extracted.items():
-    r = assemble_route(route, [segs[k] for k in sorted(segs)])
+    r = assemble_route(route, [segs[k] for k in sorted(segs)], skipped)
     if r is not None:
       routes.append(r)
+  by_service = defaultdict(list)
+  for route, service, detail in skipped:
+    by_service[service].append((route, detail))
+  for service, items in by_service.items():
+    print(f"warning: {len(items)} routes skipped for lacking usable {service} messages", file=sys.stderr)
+    for route, detail in items[:3]:
+      print(f"  {route}: {detail}", file=sys.stderr)
+    if len(items) > 3:
+      print(f"  ... and {len(items) - 3} more", file=sys.stderr)
   return routes
 
 
@@ -540,7 +591,7 @@ def main(argv=None):
   parser.add_argument("--cache", type=Path, default=Path.home() / ".cache" / "nnff_train",
                       help="where extracted segments are cached between runs")
   parser.add_argument("--no-cache", action="store_true")
-  parser.add_argument("--cereal", type=Path, help="cereal schema folder (default: this repo's)")
+  parser.add_argument("--cereal", type=Path, help="cereal schema folder (default: this repo's); it must be from the same openpilot version that recorded the logs")
   parser.add_argument("--dump", type=Path, help="also save the validation rows and predictions to this .npz")
   args = parser.parse_args(argv)
 
