@@ -34,6 +34,7 @@ import argparse
 import bz2
 import datetime
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -92,6 +93,77 @@ def load_log_schema(cereal_dir: Path | None = None):
       capnp.remove_import_hook()
       _log_schema = capnp.load(str(Path(cereal_dir) / "log.capnp"), imports=[str(cereal_dir)])
   return _log_schema
+
+
+IMPORT_RE = re.compile(r'import\s+"([^"]+)"')
+FILE_ID_RE = re.compile(r"^@0x[0-9a-fA-F]+\s*;", re.M)
+
+# every message field extract_segment reads, to confirm a cereal schema has them before reading a single log
+SCHEMA_PROBE = (("carState", "vEgo"), ("carState", "steeringPressed"), ("carState", "steerFaultTemporary"),
+                ("carState", "steerFaultPermanent"), ("carControl", "latActive"), ("carOutput", "actuatorsOutput.torque"),
+                ("controlsState", "curvature"), ("liveParameters", "roll"), ("liveDelay", "lateralDelay"),
+                ("carParams", "carFingerprint"), ("carParams", "steerActuatorDelay"))
+
+
+def schema_problem(root: Path) -> str | None:
+  """Why the capnp files under root can't be loaded, if so. Looked for up front because capnp doesn't raise on
+  a broken schema, it aborts the whole process with nothing useful printed."""
+  queue, seen = [root / "log.capnp"], set()
+  while queue:
+    path = queue.pop()
+    if path in seen:
+      continue
+    seen.add(path)
+    if not path.is_file():
+      return f"{path} is missing" + (" (a symlink pointing nowhere)" if path.is_symlink() else "")
+    text = path.read_text(encoding="utf-8", errors="replace")
+    if not FILE_ID_RE.search(text):
+      stub = text.strip()
+      target = (path.parent / stub).resolve() if stub and len(stub) < 200 and "\n" not in stub else None
+      if target is not None:
+        fix = f' Fix: copy "{target}" "{path}"' if target.is_file() else ""
+        return (f"{path} is a {len(stub)}-character text file ({stub}), not a schema: git left a symlink as a text stub "
+                f"(Windows only makes real symlinks with symlinks enabled).{fix}")
+      return f"{path} isn't a capnp schema"
+    for name in IMPORT_RE.findall(text):
+      found = next((c for c in (path.parent / name, root / name.lstrip("/")) if c.is_file()), None)
+      if found is not None:
+        queue.append(found)
+      elif not name.startswith("/"):  # absolute imports can come from capnp's own include folder
+        return f"{path.name} imports {name}, which isn't in {path.parent}" + (" (a symlink pointing nowhere)" if (path.parent / name).is_symlink() else "")
+  return None
+
+
+def check_schema(cereal_dir: Path | None) -> None:
+  """Stop early, and say why, if the cereal schema can't be loaded or lacks fields this script reads."""
+  advice = ("Run this script from inside a checkout of this fork (tools/tuning/train_nnff.py with no --cereal), or "
+            "point --cereal at that checkout's cereal folder.")
+  where = Path(cereal_dir) if cereal_dir is not None else REPO_ROOT / "cereal"
+  if (where / "log.capnp").is_file():
+    problem = schema_problem(where)
+    if problem:
+      raise SystemExit(f"can't load the cereal schema from {where}: {problem}")
+  elif cereal_dir is not None:
+    raise SystemExit(f"--cereal {where} has no log.capnp in it. {advice}")
+  elif importlib.util.find_spec("cereal") is None:
+    raise SystemExit(f"can't find the cereal schema. This script is in {Path(__file__).resolve().parent}, so it looked for "
+                     f"the repo's cereal folder at {where}, which isn't there. {advice}")
+  try:
+    log = load_log_schema(cereal_dir)
+  except Exception as e:
+    raise SystemExit(f"couldn't load the cereal schema from {where}: {type(e).__name__}: {str(e).strip().splitlines()[0] if str(e).strip() else ''}") from e
+
+  missing = []
+  for which, field in SCHEMA_PROBE:
+    try:
+      obj = log.Event.new_message().init(which)
+      for part in field.split("."):
+        obj = getattr(obj, part)
+    except Exception:
+      missing.append(f"{which}.{field}")
+  if missing:
+    raise SystemExit(f"the cereal schema in {where} has no {', '.join(missing)}, which this script reads, so it's from "
+                     f"an older openpilot than this fork's. Update that checkout (git pull). {advice}")
 
 
 def read_log_bytes(path: Path) -> bytes:
@@ -595,6 +667,7 @@ def main(argv=None):
   parser.add_argument("--dump", type=Path, help="also save the validation rows and predictions to this .npz")
   args = parser.parse_args(argv)
 
+  check_schema(args.cereal)
   routes = load_routes(args.log_dirs, None if args.no_cache else args.cache, args.cereal, args.workers)
   # carParams is only logged every ~50 s, so a short partial route may not name its car
   fingerprints = Counter(r.fingerprint for r in routes if r.fingerprint)
