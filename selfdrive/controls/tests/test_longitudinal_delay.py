@@ -82,7 +82,9 @@ class TestSplitSampling:
     assert get_accel_from_plan_split(sampler(speeds, accels), V_EGO, 0.35, 0.35) == expected
 
   def test_braking_uses_brake_lookahead(self):
-    speeds, accels = plan_ramp(-2.0)
+    # the brake lookahead only sees about a third of the ramp's final accel, so this has to be deep
+    # enough that it lands past the brake threshold (-0.75 at this speed) plus half the crossfade
+    speeds, accels = plan_ramp(-3.0)
     a_target, _ = get_accel_from_plan_split(sampler(speeds, accels), V_EGO, 0.25, 0.55)
     a_brake, _ = sampler(speeds, accels)(0.55)
     a_gas, _ = sampler(speeds, accels)(0.25)
@@ -97,7 +99,10 @@ class TestSplitSampling:
 
   def test_no_step_across_threshold(self):
     thr = brake_threshold(V_EGO)
-    finals = np.linspace(thr - 3 * REGIME_BLEND, thr + 3 * REGIME_BLEND, 400)
+    # plan_ramp(f) only reaches a fraction of f at the brake lookahead, and the crossfade is decided
+    # there; scale the sweep so the request it sees crosses the whole blend, not just its edge
+    seen_per_final = abs(sampler(*plan_ramp(-1.0))(0.55)[0])
+    finals = np.linspace(thr - 3 * REGIME_BLEND, thr + 3 * REGIME_BLEND, 400) / seen_per_final
     targets = [get_accel_from_plan_split(sampler(*plan_ramp(f)), V_EGO, 0.25, 0.55)[0] for f in finals]
     steps = np.abs(np.diff(targets))
     # a smooth crossfade moves no faster than the plan itself does, give or take the blend's slope
