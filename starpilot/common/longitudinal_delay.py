@@ -10,10 +10,18 @@ MAX_LONG_DELAY = 1.2
 
 # Accel request (m/s^2) below which the car has to apply its brakes rather than just close
 # the throttle. It drops with speed because coast-down decel (drag, rolling resistance, engine
-# braking) grows with it. Placeholder until tools/tuning/analyze_longitudinal.py has been run
-# on routes for the platform.
-BRAKE_THRESHOLD_BP = [0., 10., 25.]
-BRAKE_THRESHOLD_V = [-0.15, -0.30, -0.45]
+# braking) grows with it.
+#
+# Placed from 86 min of CX-30 driving (tools/tuning/analyze_longitudinal.py threshold sweep).
+# The two-path fit was best 0.45 below the old table in 5-15 m/s and 0.35 below it in 15-25 m/s,
+# which is -0.75 at both 10 and 20 m/s; above 25 m/s the sweep is flat and can't place it. The
+# sweep's r2 is a broad plateau (within 0.004 for offsets of -0.65 to -0.25 from the old table), so
+# this is the middle of a range, not a sharp optimum. longlagd learns nothing under 5 m/s (MIN_VEGO), so rather than
+# hold -0.75 where there is no data and drag is least, the table ramps back to the old -0.15 at a
+# standstill. Only the CX-30 has been measured; on any other platform longlagd runs in shadow
+# mode and the planner's crossfade is a no-op (see split_delay_enabled).
+BRAKE_THRESHOLD_BP = [0., 10., 20.]
+BRAKE_THRESHOLD_V = [-0.15, -0.75, -0.75]
 
 # Half-width (m/s^2) of the crossfade between the gas and brake lookaheads around the threshold.
 REGIME_BLEND = 0.15

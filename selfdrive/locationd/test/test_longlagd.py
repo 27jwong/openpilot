@@ -86,7 +86,9 @@ class TestLonglagd:
       assert regime.calPerc == 0
 
   def test_estimator_learns_split(self):
-    t, cmd = make_command(600, seed=3)
+    # with the brake threshold at -0.75 only the harder braking counts as the brake regime, so the
+    # brake side needs about three times the drive it did at the old placeholder table
+    t, cmd = make_command(900, seed=3)
     v = simulate(cmd, 0.25, 0.5)
     msg = run_estimator(make_estimator(), t, cmd, v)
 
