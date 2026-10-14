@@ -3,8 +3,8 @@ import pytest
 
 from cereal import messaging, car
 from openpilot.common.params import Params
-from openpilot.selfdrive.locationd.longlagd import LongitudinalLagEstimator, fit_split_delay, retrieve_initial_lag, true_accel, \
-                                                   BLOCK_NUM_NEEDED
+from openpilot.selfdrive.locationd.longlagd import LongitudinalLagEstimator, SavedRegime, fit_split_delay, initial_from_saved, \
+                                                   retrieve_initial_lag, true_accel, BLOCK_NUM, BLOCK_NUM_NEEDED, MAX_LAG_SE
 from openpilot.starpilot.common.longitudinal_delay import brake_threshold
 
 DT = 0.05
@@ -33,6 +33,26 @@ def simulate(cmd, d_gas, d_brake, noise=0.0, grade_amp=0.0, seed=1):
     if i:
       v[i] = v[i - 1] + (accel[i - 1] + accel[i]) / 2 * DT
   return v + rng.normal(0, noise, len(v))
+
+
+def sparse_braking_command(seconds, seed, event_every=60.0):
+  """Mostly small requests with a hard braking event now and then, each followed by the throttle the
+  car gives back, so speed stays near V0. About what the CX-30's openpilot-only driving looks like:
+  braking past the threshold is a few percent of the time."""
+  rng = np.random.default_rng(seed)
+  t = np.arange(int(seconds / DT)) * DT
+  freqs = rng.uniform(0.05, 0.7, 8)
+  cmd = sum(np.sin(2 * np.pi * f * t + rng.uniform(0, 2 * np.pi)) / (1 + 3 * f) for f in freqs)
+  cmd = 0.25 * cmd / np.std(cmd)
+  start = rng.uniform(5, event_every)
+  while start < seconds - 20:
+    depth, dur = rng.choice([-1.0, -1.3, -1.7]), rng.uniform(3, 5)
+    cmd = cmd + depth * np.clip(np.minimum((t - start) / 1.0, (start + dur - t) / 1.0), 0, 1) * ((t >= start) & (t <= start + dur))
+    # give back most of the speed over the next ten seconds (a half sine of 10s has area 10 * 2 / pi per unit height)
+    height = 0.9 * -depth * (dur - 1) / (10 * 2 / np.pi)
+    cmd = cmd + height * np.sin(np.pi * np.clip((t - start - dur) / 10.0, 0, 1)) * ((t > start + dur) & (t < start + dur + 10))
+    start += rng.exponential(event_every) + dur + 10
+  return t, cmd
 
 
 def run_estimator(estimator, t, cmd, v, long_active=True, gas_pressed=False, blend_factor=None):
@@ -146,13 +166,105 @@ class TestLonglagd:
 
     initial = retrieve_initial_lag(params, CP)
     assert initial is not None
-    assert initial["gas"] == (pytest.approx(0.27), 7)
+    # a save from before the blocks were kept still restarts from its average
+    assert initial["gas"].lag == pytest.approx(0.27) and initial["gas"].valid_blocks == 7 and initial["gas"].values is None
     # blocks that disagreed start over rather than carrying over
     assert "brake" not in initial
 
     other_CP = car.CarParams(carFingerprint="MAZDA_3_2019")
     assert retrieve_initial_lag(params, other_CP) is None
     assert params.get("LiveLongitudinalDelay") is None
+
+  def test_state_survives_a_restart(self):
+    t, cmd = make_command(500, seed=3)
+    v = simulate(cmd, 0.25, 0.5)
+    first = make_estimator()
+    run_estimator(first, t, cmd, v)
+    saved = first.get_msg(True, persist=True).starpilotLongitudinalDelay
+    # the live message leaves the blocks out; the saved one carries them, and the filling block
+    assert len(first.get_msg(True).starpilotLongitudinalDelay.gas.points) == 0
+    assert len(saved.gas.points) == BLOCK_NUM and saved.brake.blockFill > 0
+
+    second = make_estimator()
+    second.reset(initial_from_saved(saved))
+    restored = second.get_msg(True, persist=True).starpilotLongitudinalDelay
+    for name in ("gas", "brake"):
+      a, b = getattr(saved, name), getattr(restored, name)
+      assert (b.status, b.validBlocks, b.blockIndex, b.blockFill) == (a.status, a.validBlocks, a.blockIndex, a.blockFill)
+      assert b.delay == pytest.approx(a.delay) and b.delayEstimate == pytest.approx(a.delayEstimate)
+      assert list(b.points) == pytest.approx(list(a.points))
+
+    # and it carries on from there: the next drive's estimates land in the same blocks
+    t2, cmd2 = make_command(200, seed=4)
+    run_estimator(second, t2, cmd2, simulate(cmd2, 0.25, 0.5))
+    assert second.get_msg(True).starpilotLongitudinalDelay.gas.validBlocks > saved.gas.validBlocks
+
+  def test_unusable_saved_blocks_fall_back_to_the_average(self):
+    t, cmd = make_command(500, seed=3)
+    first = make_estimator()
+    run_estimator(first, t, cmd, simulate(cmd, 0.25, 0.5))
+    saved = initial_from_saved(first.get_msg(True, persist=True).starpilotLongitudinalDelay)
+
+    saved["gas"].values[3] = float('nan')
+    saved["brake"].values = saved["brake"].values[:-1]
+    estimator = make_estimator()
+    estimator.reset(saved)
+    msg = estimator.get_msg(True, persist=True).starpilotLongitudinalDelay
+    for name in ("gas", "brake"):
+      regime = getattr(msg, name)
+      assert regime.validBlocks == saved[name].valid_blocks and regime.blockFill == 0
+      assert list(regime.points) == pytest.approx([saved[name].lag] * BLOCK_NUM)
+
+  @pytest.mark.parametrize("blocks, expected", [
+    ([0.08, 0.32] * 3, 'unestimated'),   # six blocks 0.12s apart: mean good to 0.049s, not yet
+    ([0.08, 0.32] * 9, 'estimated'),     # eighteen of them: good to 0.028s
+    ([0.0, 0.6] * 9, 'invalid'),         # scatter of 0.3s is no single delay
+    ([0.2] * 4, 'unestimated'),          # too few blocks however steady
+    ([0.2, 0.21] * 3, 'estimated'),
+  ])
+  def test_delay_is_trusted_once_its_mean_is_pinned_down(self, blocks, expected):
+    estimator = make_estimator()
+    saved = np.full(BLOCK_NUM, 0.2)
+    saved[:len(blocks)] = blocks
+    estimator.reset({"brake": SavedRegime(float(np.mean(blocks)), len(blocks), saved.tolist(), len(blocks), 0)})
+    regime = estimator.get_msg(True).starpilotLongitudinalDelay.brake
+    assert regime.status == expected
+    assert (regime.calPerc == 100) == (expected == 'estimated')
+    if expected == 'estimated':
+      assert regime.delay == pytest.approx(np.mean(blocks), abs=1e-6)
+      assert np.std(blocks) / np.sqrt(len(blocks)) <= MAX_LAG_SE
+
+  def test_brake_is_learned_across_short_drives(self):
+    # what the CX-30 gives it: a few minutes engaged per drive, a hard braking event every minute or so.
+    # Before partial blocks were kept, 50s of braking had to land in one drive; now it adds up.
+    saved, statuses = None, []
+    for drive in range(10):
+      t, cmd = sparse_braking_command(300, seed=drive)
+      v = simulate(cmd, 0.4, 0.2, noise=0.005)
+      assert v.min() > 9.0, "the scenario is meant to hold speed"
+      estimator = make_estimator()
+      if saved is not None:
+        estimator.reset(initial_from_saved(saved))
+      msg = run_estimator(estimator, t, cmd, v)
+      saved = estimator.get_msg(True, persist=True).starpilotLongitudinalDelay
+      statuses.append((msg.gas.status, msg.brake.status))
+
+    assert statuses[-1] == ('estimated', 'estimated'), statuses
+    assert msg.gas.delay == pytest.approx(0.4, abs=0.04)
+    assert msg.brake.delay == pytest.approx(0.2, abs=0.05)
+    # not on the first drive, which has too little braking to settle anything
+    assert statuses[0][1] != 'estimated'
+
+  def test_noisy_windows_are_learned_without_bias(self):
+    # wheel-speed noise puts the windows' r2 in the 0.5-0.7 band the gate now lets through
+    t, cmd = make_command(1800, seed=4)
+    v = simulate(cmd, 0.4, 0.2, noise=0.15, grade_amp=0.2)
+    estimator = make_estimator()
+    msg = run_estimator(estimator, t, cmd, v)
+    assert 0.5 <= estimator.last_fit.r2 < 0.7, estimator.last_fit.r2
+    assert msg.gas.status == msg.brake.status == 'estimated'
+    assert msg.gas.delay == pytest.approx(0.4, abs=0.04)
+    assert msg.brake.delay == pytest.approx(0.2, abs=0.05)
 
   def test_outcomes_say_why_estimates_were_taken_or_not(self):
     t, cmd = make_command(300, seed=3)

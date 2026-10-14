@@ -63,11 +63,17 @@ class TestGetLongDelays:
     toggles = SimpleNamespace(longitudinalActuatorDelay=0.5, use_custom_longitudinalActuatorDelay=True)
     assert get_long_delays(gen2_CP(), toggles) == (pytest.approx(0.5), pytest.approx(0.5))
 
-  def test_slider_recentres_learned_split(self):
+  def test_slider_sets_gas_delay_of_learned_split(self):
     toggles = SimpleNamespace(longitudinalActuatorDelay=0.5, use_custom_longitudinalActuatorDelay=True)
     gas, brake = get_long_delays(gen2_CP(), toggles, live_delay(0.25, 0.55))
-    assert gas == pytest.approx(0.35)
-    assert brake == pytest.approx(0.65)
+    assert gas == pytest.approx(0.5)
+    assert brake == pytest.approx(0.8)  # the learned 0.3s gap above gas is kept
+
+    # the CX-30's split has the brakes answering sooner: a 0.42 setting stays the gas delay
+    gas, brake = get_long_delays(gen2_CP(), SimpleNamespace(longitudinalActuatorDelay=0.42, use_custom_longitudinalActuatorDelay=True),
+                                 live_delay(0.44, 0.20))
+    assert gas == pytest.approx(0.42)
+    assert brake == pytest.approx(0.18)
 
   def test_delays_are_bounded(self):
     assert get_long_delays(gen2_CP(), SimpleNamespace(), live_delay(0.0, 3.0)) == (pytest.approx(0.05), pytest.approx(MAX_LONG_DELAY))

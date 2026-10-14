@@ -16,6 +16,12 @@ gas/brake transition belong to both.
 The response is a zero-phase derivative of vEgoRaw. Each estimate is a batch over the buffered
 window, so a non-causal filter costs nothing, and it keeps the filter lag in aEgo (a Kalman
 filter) and livePose (an EKF) out of the measured delay.
+
+Braking is a few percent of openpilot-only driving, so the brake delay is built up over many drives:
+every block's mean and the partly filled block are saved (also on shutdown) and picked up by the next
+drive, and a delay is trusted once the standard error of its block means is small, however much the
+blocks scatter. Windows are taken at a modest r2 because the plant also lags, which a pure-delay
+model can't explain.
 """
 import os
 from collections import deque
@@ -44,9 +50,16 @@ MIN_RECOVERY_BUFFER_SEC = 2.0
 MIN_VEGO = 5.0
 MAX_ABS_ACCEL = 4.0
 MAX_LAG = MAX_LONG_DELAY
-MAX_LAG_STD = 0.1
-# Share of the (band-passed) accel the two-path model has to explain.
-MIN_R2 = 0.7
+# Block means scattered more than this (std, s) aren't one delay at all.
+MAX_LAG_STD = 0.25
+# A delay is trusted once its mean is pinned down this well (standard error of the block means, s).
+# The scatter between blocks can be wide: braking is seen a few events at a time, and the answer
+# still firms up as more of them come in. Judging the scatter itself (lagd's way, for a steady
+# lateral delay) kept the brake regime invalid on real driving.
+MAX_LAG_SE = 0.04
+# Share of the (band-passed) accel the two-path model has to explain. The CX-30's real windows
+# reach a median of 0.66 with a pure-delay model (the plant also lags), so 0.7 threw most of them away.
+MIN_R2 = 0.5
 # How much worse the fit has to get, as a share of the accel's energy, when a delay is moved
 # SHARPNESS_SEC either way. A flat cost means the window can't pin that delay down.
 MIN_SHARPNESS = 0.003
@@ -72,10 +85,13 @@ class Regime:
   min_cmd_range: float
 
 
-# Braking is a small share of driving, so the brake regime is allowed to estimate from less data.
+# Braking is a small share of driving (a few percent on the CX-30, at the -0.75 threshold), so the brake
+# regime is allowed to estimate from much less data: on sparse-braking drives 2.5s learns about 1.5x
+# faster than 4s with the same delay, and the sharpness test and the block scatter still catch windows
+# that say nothing.
 REGIMES = (
   Regime("gas", 1, block_size=100, min_okay_sec=20.0, min_cmd_range=0.3),
-  Regime("brake", -1, block_size=40, min_okay_sec=8.0, min_cmd_range=0.3),
+  Regime("brake", -1, block_size=40, min_okay_sec=2.5, min_cmd_range=0.3),
 )
 
 
@@ -92,6 +108,17 @@ class RegimeFit:
 class SplitFit:
   r2: float
   regimes: dict[str, RegimeFit]
+
+
+@dataclass
+class SavedRegime:
+  """What a regime carries from one drive to the next. The block means and the partly filled
+  block come with it when the drive saved them; older saves only have an average to restart from."""
+  lag: float
+  valid_blocks: int
+  values: list[float] | None = None
+  block_idx: int = 0
+  fill: int = 0
 
 
 class Points:
@@ -239,12 +266,27 @@ class LongitudinalLagEstimator:
     self.points = Points(int(self.window_sec / self.dt))
     self.block_avg = {r.name: BlockAverage(BLOCK_NUM, r.block_size, 0, self.initial_lag) for r in REGIMES}
 
-  def reset(self, initial: dict[str, tuple[float, int]]):
-    """Restore regimes from a previous drive: {name: (lag, valid_blocks)}."""
+  def reset(self, initial: dict[str, SavedRegime | tuple[float, int]]):
+    """Restore regimes from a previous drive."""
     for regime in REGIMES:
-      if regime.name in initial:
-        lag, valid_blocks = initial[regime.name]
-        self.block_avg[regime.name] = BlockAverage(BLOCK_NUM, regime.block_size, valid_blocks, lag)
+      if regime.name not in initial:
+        continue
+      saved = initial[regime.name]
+      if not isinstance(saved, SavedRegime):
+        saved = SavedRegime(*saved)
+      block_avg = BlockAverage(BLOCK_NUM, regime.block_size, saved.valid_blocks, saved.lag)
+
+      values = None if saved.values is None else np.asarray(saved.values, dtype=np.float64)
+      # the saved blocks have to agree with the count they came with: before the buffer wraps the
+      # filling block is the one after the valid ones, and it is always one of the blocks
+      consistent = (values is not None and values.shape == (BLOCK_NUM,) and np.all(np.isfinite(values)) and
+                    0 <= saved.block_idx < BLOCK_NUM and 0 <= saved.fill < regime.block_size and
+                    (saved.valid_blocks >= BLOCK_NUM or saved.block_idx == saved.valid_blocks))
+      if consistent:
+        block_avg.values = values.reshape(BLOCK_NUM, 1)
+        block_avg.block_idx = saved.block_idx
+        block_avg.idx = saved.fill
+      self.block_avg[regime.name] = block_avg
 
   def handle_log(self, t: float, which: str, msg: capnp._DynamicStructReader):
     if which == "carControl":
@@ -322,14 +364,19 @@ class LongitudinalLagEstimator:
       return "no new data"
     return "accepted"
 
-  def _fill_regime(self, out, regime: Regime, debug: bool):
+  def _fill_regime(self, out, regime: Regime, with_blocks: bool):
     block_avg = self.block_avg[regime.name]
     valid_mean, valid_std, current_mean, current_std = block_avg.get()
+    # get() leaves out the block that is filling, which is one of the valid ones once the buffer wraps
+    n_valid = block_avg.valid_blocks - (1 if block_avg.valid_blocks >= block_avg.num_blocks else 0)
+    std_err = valid_std / np.sqrt(n_valid) if n_valid > 0 else np.nan
 
-    if block_avg.valid_blocks >= self.min_valid_block_count and not np.isnan(valid_mean) and not np.isnan(valid_std):
-      out.status = LongDelayStatus.invalid if valid_std > MAX_LAG_STD else LongDelayStatus.estimated
-    else:
-      out.status = LongDelayStatus.unestimated
+    out.status = LongDelayStatus.unestimated
+    if n_valid >= self.min_valid_block_count and np.isfinite(valid_mean) and np.isfinite(valid_std):
+      if valid_std > MAX_LAG_STD:
+        out.status = LongDelayStatus.invalid
+      elif std_err <= MAX_LAG_SE:
+        out.status = LongDelayStatus.estimated
 
     out.delay = valid_mean if out.status == LongDelayStatus.estimated else self.initial_lag
     if not np.isnan(current_mean) and not np.isnan(current_std):
@@ -340,35 +387,43 @@ class LongitudinalLagEstimator:
       out.delayEstimateStd = 0.0
 
     out.validBlocks = block_avg.valid_blocks
-    out.calPerc = min(100 * (block_avg.valid_blocks * block_avg.block_size + block_avg.idx) //
-                      (self.min_valid_block_count * block_avg.block_size), 100)
-    if debug:
+    # progress to "estimated": enough blocks, and then a mean pinned down well enough
+    progress = (block_avg.valid_blocks * block_avg.block_size + block_avg.idx) / (self.min_valid_block_count * block_avg.block_size)
+    if n_valid >= self.min_valid_block_count and np.isfinite(std_err) and std_err > 0:
+      progress = min(progress, MAX_LAG_SE / std_err)
+    out.calPerc = 100 if out.status == LongDelayStatus.estimated else min(int(100 * progress), 99)
+    out.blockIndex = block_avg.block_idx
+    out.blockFill = block_avg.idx
+    if with_blocks:
       out.points = block_avg.values.flatten().tolist()
 
-  def get_msg(self, valid: bool, debug: bool = False) -> capnp._DynamicStructBuilder:
+  def get_msg(self, valid: bool, debug: bool = False, persist: bool = False) -> capnp._DynamicStructBuilder:
+    """The live message. `persist` adds every block's mean, which is what a drive saves so the next
+    one can carry on from the same state; it is left out of the 4Hz message to keep the logs small."""
     msg = messaging.new_message('starpilotLongitudinalDelay')
     msg.valid = valid
 
     long_delay = msg.starpilotLongitudinalDelay
     for regime in REGIMES:
-      self._fill_regime(getattr(long_delay, regime.name), regime, debug)
+      self._fill_regime(getattr(long_delay, regime.name), regime, debug or persist)
     long_delay.brakeThreshold = brake_threshold(self.v_ego)
     return msg
 
 
-def initial_from_saved(saved_delay) -> dict[str, tuple[float, int]]:
-  """What a drive starts from, given the last one's message: {name: (lag, valid_blocks)}."""
+def initial_from_saved(saved_delay) -> dict[str, SavedRegime]:
+  """What a drive starts from, given the last one's saved message (get_msg(persist=True))."""
   initial = {}
   for regime in REGIMES:
     saved = getattr(saved_delay, regime.name)
     assert saved.validBlocks <= BLOCK_NUM, "Invalid number of valid blocks"
-    # a regime whose blocks disagreed starts over; the other keeps what it learned
+    # a regime whose blocks disagreed wildly starts over; the other keeps what it learned
     if saved.status != LongDelayStatus.invalid:
-      initial[regime.name] = (saved.delayEstimate, saved.validBlocks)
+      initial[regime.name] = SavedRegime(saved.delayEstimate, saved.validBlocks, list(saved.points) or None,
+                                         saved.blockIndex, saved.blockFill)
   return initial
 
 
-def retrieve_initial_lag(params: Params, CP: car.CarParams) -> dict[str, tuple[float, int]] | None:
+def retrieve_initial_lag(params: Params, CP: car.CarParams) -> dict[str, SavedRegime] | None:
   last_lag_data = params.get("LiveLongitudinalDelay")
   last_carparams_data = params.get("CarParamsPrevRoute")
 
@@ -402,24 +457,28 @@ def main():
   if (initial := retrieve_initial_lag(params, CP)) is not None:
     lag_learner.reset(initial)
 
-  while True:
-    sm.update()
-    valid = sm.all_checks(['carState', 'carControl'])
-    if valid:
-      for which in sorted(sm.updated.keys(), key=lambda x: sm.logMonoTime[x]):
-        if sm.updated[which]:
-          lag_learner.handle_log(sm.logMonoTime[which] * 1e-9, which, sm[which])
-      if sm.updated['carState']:
-        lag_learner.update_points()
+  try:
+    while True:
+      sm.update()
+      valid = sm.all_checks(['carState', 'carControl'])
+      if valid:
+        for which in sorted(sm.updated.keys(), key=lambda x: sm.logMonoTime[x]):
+          if sm.updated[which]:
+            lag_learner.handle_log(sm.logMonoTime[which] * 1e-9, which, sm[which])
+        if sm.updated['carState']:
+          lag_learner.update_points()
 
-    # 4Hz driven by livePose
-    if sm.frame % 5 == 0:
-      lag_learner.update_estimate()
-      lag_msg_dat = lag_learner.get_msg(valid, DEBUG).to_bytes()
-      pm.send('starpilotLongitudinalDelay', lag_msg_dat)
+      # 4Hz driven by livePose
+      if sm.frame % 5 == 0:
+        lag_learner.update_estimate()
+        pm.send('starpilotLongitudinalDelay', lag_learner.get_msg(valid, DEBUG).to_bytes())
 
-      if sm.frame % 1200 == 0:  # cache every 60 seconds
-        params.put_nonblocking("LiveLongitudinalDelay", lag_msg_dat)
+        if sm.frame % 1200 == 0:  # cache every 60 seconds
+          params.put_nonblocking("LiveLongitudinalDelay", lag_learner.get_msg(valid, persist=True).to_bytes())
+  finally:
+    # braking is a minute or so of a drive, so don't lose the end of it to the shutdown
+    if lag_learner.points.num_points > 0:
+      params.put("LiveLongitudinalDelay", lag_learner.get_msg(True, persist=True).to_bytes())
 
 
 if __name__ == "__main__":

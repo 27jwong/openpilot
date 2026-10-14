@@ -1,9 +1,11 @@
 from array import array
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
+from cereal import car
 from openpilot.common.realtime import DT_CTRL
 from openpilot.selfdrive.locationd import longlagd
 from openpilot.selfdrive.locationd.test.test_longlagd import DT, make_command, simulate
@@ -243,3 +245,48 @@ def test_error_bands_below_the_share_say_nothing():
   # only the band that is over the share is remarked on
   notes = A.error_band_notes(0.1, 0.6, 0.0, 0.13)
   assert len(notes) == 1 and "0.3-0.8 Hz" in notes[0]
+
+
+# *** what the replay says about the learner ***
+
+
+def fit_rows(n, r2, gas_delay=0.4, brake_delay=0.2, brake_seconds=10.0, sharpness=0.01):
+  rows = array("d")
+  for _ in range(n):
+    rows.extend((r2, gas_delay, sharpness, 30.0, brake_delay, sharpness, brake_seconds))
+  return rows
+
+
+def test_delay_by_r2_compares_the_bands_on_windows_that_pass_the_other_gates():
+  low, high = fit_rows(40, 0.6, brake_delay=0.22), fit_rows(60, 0.85, brake_delay=0.20)
+  # windows with too little braking or too flat a fit would not have been taken at any r2
+  low.extend(fit_rows(50, 0.6, brake_delay=0.9, brake_seconds=1.0))
+  low.extend(fit_rows(50, 0.6, brake_delay=0.9, sharpness=0.0))
+  replays = [("a", SimpleNamespace(fit_rows=low)), ("b", SimpleNamespace(fit_rows=high))]
+
+  table = A.delay_by_r2(replays)
+  cells = dict(zip(A.R2_BANDS[:-1], table["brake"], strict=True))
+  assert cells[0.5][1] == pytest.approx(0.22) and cells[0.7][1] == pytest.approx(0.20)
+  assert cells[0.5][0] == pytest.approx(40 * A.LearnerReplay.TICK_S / 60)
+  assert cells[0.0] is None and cells[0.3] is None   # nothing there, or too little to say
+  assert table["gas"][2][1] == pytest.approx(0.4)    # gas passed its gates in every one of those windows
+
+
+def test_replay_hands_the_next_drive_its_blocks():
+  CP = car.CarParams(longitudinalActuatorDelay=0.35, openpilotLongitudinalControl=True)
+  replay = A.LearnerReplay(CP)
+  state = replay.final_state()
+  assert set(state) == {"gas", "brake"} and all(isinstance(s, longlagd.SavedRegime) for s in state.values())
+  assert all(len(s.values) == longlagd.BLOCK_NUM for s in state.values())
+  A.LearnerReplay(CP, state)   # and a drive can start from it
+
+
+def test_sweep_shows_how_the_delays_move_with_the_threshold(capsys):
+  t, cmd = make_command(900, seed=2)
+  A.summarize_brake_threshold(delay_series(cmd, simulate(cmd, 0.25, 0.5)))
+  out = capsys.readouterr().out
+  assert "brake dly" in out and "brake s" in out
+  row = next(line for line in out.splitlines() if line.strip().startswith(("+0.00", "-0.00")))
+  # at the table the simulation was made with, the delays printed are the true ones
+  assert float(row.split()[-3].rstrip("s")) == pytest.approx(0.25, abs=0.03)
+  assert float(row.split()[-2].rstrip("s")) == pytest.approx(0.5, abs=0.03)
