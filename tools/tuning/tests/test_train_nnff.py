@@ -284,3 +284,50 @@ def test_columns_that_dont_line_up_skip_the_route_instead_of_crashing(tmp_path):
   assert T.assemble_route("r", [seg, seg], skipped) is None
   assert skipped[0][1] == "carOutput"
   assert "--no-cache" in skipped[0][2]
+
+
+FILE_ID = "@0xbd6ef6bac5ee3b9f;\n"
+
+
+def test_check_schema_accepts_this_repos_cereal():
+  T.check_schema(None)
+
+
+def test_check_schema_explains_a_cereal_folder_with_no_schema(tmp_path):
+  with pytest.raises(SystemExit, match="no log.capnp"):
+    T.check_schema(tmp_path)
+
+
+def test_check_schema_recognizes_a_symlink_that_git_left_as_a_text_stub(tmp_path):
+  # capnp aborts the whole process on a file like this rather than raising, so it has to be caught beforehand
+  (tmp_path / "log.capnp").write_text('using Car = import "car.capnp";\n' + FILE_ID)
+  (tmp_path / "car.capnp").write_text("../opendbc_repo/opendbc/car/car.capnp")
+  with pytest.raises(SystemExit, match="text stub"):
+    T.check_schema(tmp_path)
+
+
+def test_check_schema_names_a_symlink_pointing_nowhere(tmp_path):
+  (tmp_path / "log.capnp").write_text('using Car = import "car.capnp";\n' + FILE_ID)
+  try:
+    (tmp_path / "car.capnp").symlink_to(tmp_path / "nowhere" / "car.capnp")
+  except OSError:
+    pytest.skip("can't make symlinks here")
+  with pytest.raises(SystemExit, match="pointing nowhere"):
+    T.check_schema(tmp_path)
+
+
+def test_check_schema_says_when_the_schema_predates_a_field_the_script_reads(tmp_path, monkeypatch):
+  (tmp_path / "log.capnp").write_text(FILE_ID)
+
+  class Message:  # every field exists except Actuators.torque, as in an older cereal
+    def init(self, which):
+      return Message()
+
+    def __getattr__(self, name):
+      if name == "torque":
+        raise AttributeError(name)
+      return Message()
+
+  monkeypatch.setattr(T, "load_log_schema", lambda cereal_dir=None: SimpleNamespace(Event=SimpleNamespace(new_message=Message)))
+  with pytest.raises(SystemExit, match=r"no carOutput\.actuatorsOutput\.torque"):
+    T.check_schema(tmp_path)
