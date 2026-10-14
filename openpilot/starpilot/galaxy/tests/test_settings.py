@@ -290,6 +290,16 @@ class SettingsGatewayTest(unittest.TestCase):
     self.assertFalse(self.gateway.confirm(intent["intent"], self.session, self.generation))
     self.assertEqual(Path(self.params.get_param_path("BlindSpotMetrics")).read_bytes(), b"bad")
 
+  def test_developer_sidebar_uses_the_shared_saved_choice(self):
+    self.context.value = AuthorityContext(False, None, None)
+    for desired in ("Off", "On"):
+      page = self.page("appearance")
+      index, row = next((i, row) for i, row in enumerate(page["rows"]) if row["label"] == "Developer Sidebar")
+      self.assertEqual(row["defaultValue"], "Off")
+      intent = self.gateway.preview(page["view"], index, 0, self.session, self.generation, value=desired)
+      self.assertTrue(self.gateway.confirm(intent["intent"], self.session, self.generation))
+      self.assertEqual(self.params.get_bool("DeveloperSidebar"), desired == "On")
+
   def test_onroad_visual_choice_rechecks_session_and_vehicle_source(self):
     self.context.value = AuthorityContext(False, None, b"car-a")
     page = self.page("appearance")
@@ -908,8 +918,8 @@ class SettingsGatewayTest(unittest.TestCase):
     page = self.page("torque")
     learning = next(i for i, row in enumerate(page["rows"]) if row["label"] == "Use StarPilot Auto Learn")
     self.assertTrue(page["rows"][learning]["action"])
-    self.assertIn("StarPilot Controller uses its vehicle tune", page["rows"][learning]["reason"])
-    self.assertIn("automatic learning is currently unavailable", page["rows"][learning]["reason"])
+    self.assertIn("automatically correct torque profiles", page["rows"][learning]["reason"])
+    self.assertTrue(page["rows"][learning]["reason"].startswith("StarPilot’s FLM tuning will attempt to automatically correct torque profiles as you drive."))
     self.assertFalse(learning_allowed(self.params, ioniq))
     before_cp = ioniq.as_reader().as_builder().to_bytes()
     before_tune = read_saved(self.params, "TorqueOverrideDocument", 65536)[0]

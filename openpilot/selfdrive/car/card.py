@@ -161,7 +161,7 @@ class Car:
     self.conditional_replay = os.getenv('CONDITIONAL_MODE_REPLAY_RUNTIME') == '1' or feature_requested(self.params, 'conditional')
     subscribed_services = ['pandaStates', 'carControl', 'onroadEvents', 'deviceState']
     if self.aol_replay:
-      subscribed_services.extend(('aolSafetyWire', 'managerState', 'aolAxisState'))
+      subscribed_services.extend(('aolSafetyWire', 'managerState', 'aolAxisState', 'selfdriveState'))
     if self.slc_replay:
       subscribed_services.append('slcState')
     self.sm = messaging.SubMaster(subscribed_services)
@@ -227,7 +227,7 @@ class Car:
       enroll_missing_preference(self.params, cp)
       if not self.aol_replay and feature_requested(self.params, 'aol'):
         self.aol_replay = True
-        subscribed_services.extend(('aolSafetyWire', 'managerState', 'aolAxisState'))
+        subscribed_services.extend(('aolSafetyWire', 'managerState', 'aolAxisState', 'selfdriveState'))
         self.sm = messaging.SubMaster(subscribed_services)
         self.pm.sock['aolIntentWire'] = messaging.pub_sock('aolIntentWire')
 
@@ -349,7 +349,7 @@ class Car:
     aol_policy = aol_policy_for(self.CP)
     if aol_policy.full_axis_runtime_required and not self.aol_replay:
       self.aol_replay = True
-      subscribed_services.extend(('aolSafetyWire', 'managerState', 'aolAxisState'))
+      subscribed_services.extend(('aolSafetyWire', 'managerState', 'aolAxisState', 'selfdriveState'))
       self.sm = messaging.SubMaster(subscribed_services)
       self.pm.sock['aolIntentWire'] = messaging.pub_sock('aolIntentWire')
     initialize_aol_preference(self.CP)
@@ -370,6 +370,15 @@ class Car:
       config.safetyParam |= aol_policy.safety_param_addition
       self.CP.alternativeExperience |= aol_policy.alternative_experience_addition
     self.vehicle_startup.finalize_aol_configuration(self.CI)
+    self.learning_stamp_observer = None
+    self.learning_send_mono_ns = self.learning_send_committed_mono_ns = 0
+    self.learning_car_state_source_ns = 0
+    self.learning_applied_evidence = self.learning_previous_applied_evidence = None
+    try:
+      from opendbc.car.steering_projection import install_observer
+      self.learning_stamp_observer = self.record_learning_send_stamp if install_observer(self.CI) else None
+    except Exception:
+      pass  # Optional learning setup cannot stop native startup.
     self.aol_transport_feedback = TransportPauseFeedback(self.CP) if self.aol_replay else None
     if isinstance(self.CI, GMInterface) and self.CI.CC is not None and self.CI.CC.volt_sng_plan_input is not None:
       self.CI.CC.volt_sng_plan_input.boottime = self.volt_startup_keepalive()
@@ -605,15 +614,23 @@ class Car:
           fault_active = True
       rejected = native_reset or native_latch_rejected(self.CP, native, state=CS if angle_panda_ready else None)
       rejection_ns = now_ns if native_reset else int(native.observedMonoTime) if rejected else 0
-      engagement_observation = ({"standard_active": bool(host_enabled and
-        (self.sm['carControl'].latActive or self.sm['carControl'].longActive))}
-        if getattr(self.aol_card_intent, 'observe_active_engagement', False) else {})
       observe_physical = getattr(self.aol_card_intent, 'observe_physical_samples', None)
       if observe_physical is not None:
         observe_physical(self.CI.CS, now_ns=now_ns)
       self.aol_card_intent.update(CS, fault_active=fault_active, now_ns=now_ns, native_rejection_ns=rejection_ns,
                                   standard_enabled=(host_enabled if getattr(self.aol_card_intent, 'observe_stock_engagement', False)
-                                                    else host_control_enabled), **engagement_observation)
+                                                    else host_control_enabled))
+      # Observe ordinary state directly: independent AOL actuator activity is
+      # not evidence that ordinary preEnabled has become active engagement.
+      engagement_ns = int(self.sm.logMonoTime.get('selfdriveState', 0))
+      engagement_seen = self.sm.seen.get('selfdriveState', False)
+      engagement = self.sm['selfdriveState'] if engagement_seen else None
+      self.aol_card_intent.observe_full_engagement(
+        CS, enabled=bool(engagement is not None and engagement.enabled),
+        active=bool(engagement is not None and engagement.active), source_ns=engagement_ns,
+        now_ns=now_ns, fault_active=fault_active, native_rejection_ns=rejection_ns,
+        observation_valid=bool(engagement_seen and self.sm.valid['selfdriveState'] and self.sm.alive['selfdriveState'] and
+          0 < engagement_ns <= now_ns and now_ns - engagement_ns <= AXIS_MAX_AGE_NS))
     if self.aol_card_intent is not None and preap_aol:
       self.CI.CS.preap_lateral_authorized = bool(
         native is not None and native.lateralAllowed and self.aol_card_intent.allowed_latch and
@@ -638,7 +655,8 @@ class Car:
       manual_snapshot = self.manual_settings_owner.refresh(now_ns)
       manual_drive_id = int(self.sm['deviceState'].startedMonoTime)
       manual_verdict = self.manual_settings_owner.verdict(manual_snapshot, now_mono_ns=now_ns, drive_id=manual_drive_id)
-      manual_fingerprint = (settings_fingerprint(manual_snapshot) if manual_verdict.status == 'ready' and manual_verdict.safe_mode is False and
+      manual_fingerprint = (settings_fingerprint(manual_snapshot, owner=self.manual_settings_owner)
+                            if manual_verdict.status == 'ready' and manual_verdict.safe_mode is False and
                             manual_verdict.selection is not None and manual_verdict.selection.choice in (ModeChoice.CEM, ModeChoice.CCM)
                             else None)
       self.manual_button_tracker.keep_claim(manual_drive_id, manual_fingerprint)
@@ -809,7 +827,8 @@ class Car:
       events = [event for event in events if not
                 (event.name in AVAILABILITY_EVENTS and event.softDisable and not event.immediateDisable)]
     if getattr(self.aol_transport_feedback, 'temporary_host_qualified', False):
-      events = [event for event in events if not (event.name == log.OnroadEvent.EventName.locationdTemporaryError and
+      events = [event for event in events if not (event.name in
+                (log.OnroadEvent.EventName.locationdTemporaryError, log.OnroadEvent.EventName.commIssue) and
                 event.softDisable and not event.immediateDisable)]
     return intent_disarming_fault(self.CP, events, CS,
       startup_calibration_pending=bool(getattr(self.aol_card_intent, 'startup_calibration_pending', False) and
@@ -949,8 +968,22 @@ class Car:
       companion = messaging.new_message('starpilotCarState', valid=bool(cs_send.valid), logMonoTime=int(cs_send.logMonoTime))
       companion.starpilotCarState.lateralAuthorityUnavailable = bool(steering_authority.latched)
       companion.starpilotCarState.sourceCarStateMonoTime = int(cs_send.logMonoTime)
+    if getattr(self, 'learning_applied_evidence', None) is not None:
+      try:
+        from openpilot.starpilot.flm.evidence_hooks import applied_message
+        # Commit the optional child only after it is complete. A failed writer
+        # must not publish partial trust or discard existing GM authority/GPS.
+        learning_companion = (companion.as_reader().as_builder() if companion is not None else
+          messaging.new_message('starpilotCarState', valid=bool(cs_send.valid), logMonoTime=int(cs_send.logMonoTime)))
+        if applied_message(learning_companion, self.learning_applied_evidence) is not True:
+          raise ValueError('optional applied evidence write failed')
+        companion = learning_companion
+      except Exception:
+        self._clear_learning_evidence()
     self.car_gps_publisher.update(self.CI.CS, self.pm, companion)
     self.pm.send('carState', cs_send)
+    if getattr(self, 'learning_stamp_observer', None) is not None:
+      self.learning_car_state_source_ns = int(cs_send.logMonoTime)
 
     wheel = getattr(self, 'wheel_publisher', None)
     if wheel is not None:
@@ -1200,11 +1233,34 @@ class Car:
                     (not ps.safetyRxChecksInvalid or inactive_keepalive and self.volt_startup_keepalive())
                     for ps, cfg in zip(pandas, self.CP.safetyConfigs, strict=True)))
 
+  def _clear_learning_evidence(self):
+    self.learning_stamp_observer = None
+    self.learning_applied_evidence = self.learning_previous_applied_evidence = None
+    self.learning_send_mono_ns = self.learning_send_committed_mono_ns = 0
+    self.learning_car_state_source_ns = 0
+
+  def record_learning_send_stamp(self, observed_ns):
+    # Metadata only; no permission, coordinate conversion, or extra clock sample.
+    self.learning_send_mono_ns = int(observed_ns)
+
+  def _observe_learning_send_stamp(self, observed_ns):
+    try:
+      observer = getattr(self, 'learning_stamp_observer', None)
+      if observer is not None:
+        observer(observed_ns)
+    except Exception:
+      self._clear_learning_evidence()
+
   def publish_sendcan(self, frames, valid=True):
     steering_authority = getattr(getattr(getattr(self, 'CI', None), 'CS', None), 'steering_authority', None)
     monitored_steering = (getattr(getattr(self, 'CP', None), 'brand', None) == 'gm' and
                           steering_authority is not None and steering_authority.enabled)
-    packet = can_list_to_can_capnp(frames, msgtype='sendcan', valid=valid)
+    observer=getattr(self,'learning_stamp_observer',None)
+    self.learning_send_mono_ns=self.learning_send_committed_mono_ns=0
+    if observer is None:
+      packet = can_list_to_can_capnp(frames, msgtype='sendcan', valid=valid)
+    else:
+      packet = can_list_to_can_capnp(frames, msgtype='sendcan', valid=valid,source_observer=self._observe_learning_send_stamp)
     if getattr(self, 'volt_cc_selected', False):
       # CAN producer/parser and pandad send age use BOOTTIME; Python controls/device envelopes use MONOTONIC.
       builder = messaging.log_from_bytes(packet).as_builder()
@@ -1225,6 +1281,7 @@ class Car:
         self.pm.send('sendcan', packet)
     else:
       self.pm.send('sendcan', packet)
+    self.learning_send_committed_mono_ns=self.learning_send_mono_ns
 
   def volt_cc_control_current(self):
     pair = clock_pair_ns()
@@ -1396,8 +1453,21 @@ class Car:
                    self.can_log_mono_time if REPLAY else
                    time.clock_gettime_ns(time.CLOCK_BOOTTIME) if self.volt_startup_keepalive() or monitored_steering else
                    int(time.monotonic() * 1e9))
+      learning_snapshot = None
+      try:
+        from openpilot.starpilot.flm.evidence_hooks import begin_applied_frame, applied_snapshot
+        begin_applied_frame(self)
+        learning_snapshot = applied_snapshot
+      except Exception:
+        self._clear_learning_evidence()
       self.last_actuators_output, can_sends = self.CI.apply(CC, now_nanos)
       self.publish_sendcan(can_sends, valid=CS.canValid)
+      if learning_snapshot is not None and self.learning_send_committed_mono_ns:
+        try:
+          self.learning_applied_evidence = learning_snapshot(self, CC, CS, self.last_actuators_output,
+            apply_ns=self.learning_send_committed_mono_ns, state_ns=self.learning_car_state_source_ns)
+        except Exception:
+          self._clear_learning_evidence()
 
       self.CC_prev = CC
 
