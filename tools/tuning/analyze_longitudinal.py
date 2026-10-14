@@ -8,8 +8,8 @@ Answers the three questions a longitudinal tune actually turns on:
      worth adding and the gains are the whole story.
   2. How fast is the plant? A deadtime and a first-order lag are fitted from the
      command/response pair; those set what feedback gains are safe.
-  3. Where does the tracking error live -- measurement noise, phase lag, or a slow
-     standing offset the integrator is too weak to cancel?
+  3. Where does the tracking error live -- measurement noise, phase lag, slow error an
+     integrator could reach, or error too fast for a PI to touch at all?
   4. Does the delay differ between requests the powertrain meets and ones that need the
      brakes, and with speed? This fits longlagd's two-path model over the whole route and per
      speed band, sweeps the brake threshold to suggest a table for
@@ -59,6 +59,10 @@ QSS_MAX_COMMAND_SPREAD = 0.15
 # Real vehicle acceleration does not live above a couple of Hz; anything faster is
 # noise in aEgo, which is a differentiated wheel speed.
 NOISE_CUTOFF_HZ = 1.5
+# Share of the tracking error's power in a band before it is worth remarking on.
+ERROR_BAND_SHARE = 0.3
+# A mean error this large against the real std is a standing offset, which is what ki is for.
+STANDING_OFFSET_SHARE = 0.5
 
 LongCtrlStatePid = 1
 
@@ -206,9 +210,31 @@ def summarize_plant(runs, d) -> None:
         f"ki~{1.0 / (tau + dead * DT_CTRL):.2f}")
 
 
+def error_band_notes(slow: float, mid: float, bias: float, real_std: float) -> list[str]:
+  """Say what the tracking error's spectrum does and does not show. `slow` (0.05-0.3 Hz) and `mid`
+  (0.3-0.8 Hz) are shares of its power. Slow error is only a standing offset if the mean says so:
+  the car also trails a moving plan by its lag, which looks the same in this band and which no gain
+  removes. And a PI can't act at all above its own bandwidth, which on a plant this slow is a few
+  tenths of a Hz, so error there is a matter of feedforward timing."""
+  notes = []
+  offset_share = 100 * abs(bias) / real_std
+  if slow > ERROR_BAND_SHARE:
+    if abs(bias) > STANDING_OFFSET_SHARE * real_std:
+      notes.append(f"  -> the mean error is {bias:+.3f} m/s^2, {offset_share:.0f}% of the real std: " +
+                   "a standing offset, which is what a stronger ki is for.")
+    else:
+      notes.append(f"  -> {100 * slow:.0f}% of the error is slower than 0.3 Hz, the part a stronger ki can reach. " +
+                   f"That is slow error, not a standing offset (mean {bias:+.3f}, {offset_share:.0f}% of the " +
+                   "real std): the car also trails a moving plan by its lag. Check the loop's margins before raising ki.")
+  if mid > ERROR_BAND_SHARE:
+    notes.append(f"  -> {100 * mid:.0f}% is at 0.3-0.8 Hz, past the bandwidth a PI can reach on a plant this slow: " +
+                 "that part is feedforward timing (the actuator delay), not gain.")
+  return notes
+
+
 def summarize_tracking(runs, d) -> None:
-  """Split the tracking error into noise, phase lag and slow standing offset. A big
-  slow component with a weak ki is the signature of an integrator that is too slow."""
+  """Split the tracking error into noise, phase lag and slow error, and say which of them
+  gains can reach."""
   raw = np.concatenate([(d["a_ego"] - d["a_target"])[a:b] for a, b in runs])
   real = np.concatenate([_lowpass((d["a_ego"] - d["a_target"])[a:b], NOISE_CUTOFF_HZ) for a, b in runs])
   print("\nTracking error (achieved - target):")
@@ -242,9 +268,9 @@ def summarize_tracking(runs, d) -> None:
   for lo, hi in ((0.05, 0.3), (0.3, 0.8), (0.8, 1.5)):
     m = (f >= lo) & (f < hi)
     print(f"    {lo:4.2f}-{hi:<4.1f} Hz {100 * p[m].sum() / p.sum():5.1f}%")
-  slow = (f >= 0.05) & (f < 0.3)
-  if p[slow].sum() / p.sum() > 0.3:
-    print("  -> error is dominated by a slow standing offset: ki is too weak to cancel it.")
+  share = [p[(f >= lo) & (f < hi)].sum() / p.sum() for lo, hi in ((0.05, 0.3), (0.3, 0.8))]
+  for note in error_band_notes(share[0], share[1], float(raw.mean()), float(real.std())):
+    print(note)
 
 
 

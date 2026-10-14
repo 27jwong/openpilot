@@ -219,3 +219,27 @@ def test_verdict_declines_on_thin_or_noisy_data():
   okay = (np.arange(len(t)) * DT) % 30 < 20
   verdict = A.gas_brake_verdict(delay_series(cmd, v, okay), "single", None)
   assert verdict.startswith("Can't tell"), verdict
+
+
+# *** what the tracking error's spectrum does and doesn't show ***
+
+
+def test_slow_error_with_no_mean_is_not_called_a_standing_offset():
+  # the CX-30 run: 40% of the power at 0.05-0.3 Hz and 40% at 0.3-0.8 Hz, mean +0.018 on a real std of 0.13
+  notes = A.error_band_notes(0.397, 0.397, 0.0183, 0.1296)
+  text = "\n".join(notes)
+  assert len(notes) == 2
+  assert "not a standing offset" in text and "14% of the real std" in text
+  assert "feedforward timing" in text and "0.3-0.8 Hz" in text
+
+
+def test_a_real_mean_error_is_a_standing_offset():
+  notes = A.error_band_notes(0.5, 0.1, 0.12, 0.13)
+  assert len(notes) == 1 and "a standing offset, which is what a stronger ki is for" in notes[0]
+
+
+def test_error_bands_below_the_share_say_nothing():
+  assert A.error_band_notes(0.2, 0.25, 0.0, 0.13) == []
+  # only the band that is over the share is remarked on
+  notes = A.error_band_notes(0.1, 0.6, 0.0, 0.13)
+  assert len(notes) == 1 and "0.3-0.8 Hz" in notes[0]
