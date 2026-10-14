@@ -59,8 +59,9 @@ def get_long_delays(CP, starpilot_toggles, live_delay=None) -> tuple[float, floa
   """(gas, brake) lookaheads for the planner.
 
   Both are the base delay until longlagd has estimated both regimes on a platform that opts in;
-  then the learned values are used, and a customized setting moves their midpoint while keeping
-  the learned gap between them."""
+  then the learned values are used. A customized setting sets the gas delay, the one nearly all
+  driving runs on and the one that setting meant when there was only a single delay, and the brake
+  delay keeps its learned gap from it."""
   base = base_long_delay(CP, starpilot_toggles)
   gas = brake = base
 
@@ -70,7 +71,6 @@ def get_long_delays(CP, starpilot_toggles, live_delay=None) -> tuple[float, floa
   if learned:
     gas, brake = float(live_delay.gas.delay), float(live_delay.brake.delay)
     if getattr(starpilot_toggles, "use_custom_longitudinalActuatorDelay", False):
-      half_gap = (brake - gas) / 2
-      gas, brake = base - half_gap, base + half_gap
+      gas, brake = base, base + (brake - gas)
 
   return _clip_delay(gas), _clip_delay(brake)

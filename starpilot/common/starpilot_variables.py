@@ -829,7 +829,7 @@ class StarPilotVariables:
     toggle.trailer_load_kg = self.get_value("TrailerLoad", cast=float, condition=advanced_longitudinal_tuning,
                                             default=0.0, conversion=CV.LB_TO_KG, min=0, max=15000 * CV.LB_TO_KG)
     toggle.longitudinalActuatorDelay = self.get_value("LongitudinalActuatorDelay", cast=float, condition=advanced_longitudinal_tuning, default=longitudinalActuatorDelay, min=0, max=1)
-    # a customized delay re-centres longlagd's learned gas/brake split rather than being overridden by it
+    # a customized delay sets the gas delay of longlagd's learned split (brake keeps its learned gap) rather than being overridden by it
     toggle.use_custom_longitudinalActuatorDelay = bool(advanced_longitudinal_tuning) and not math.isclose(
       toggle.longitudinalActuatorDelay, longitudinalActuatorDelay, abs_tol=1e-3)
     toggle.max_desired_acceleration = self.get_value("MaxDesiredAcceleration", cast=float, condition=advanced_longitudinal_tuning, default=MAX_ACCELERATION, min=0.1, max=MAX_ACCELERATION)

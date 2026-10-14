@@ -363,8 +363,10 @@ def summarize_brake_threshold(s) -> tuple[str, float | None]:
   with speed as drag and engine braking grow. Returns how the all-speeds sweep reads, and its
   best offset when there is an interior one."""
   print("\nBrake threshold sweep (r2 of the two-path fit, offset from the current table):")
+  print("  A softer threshold (offset up) puts more requests in the brake regime, but any the powertrain really")
+  print("  meets pull the brake delay toward the gas delay: watch the delays move, not just r2.")
   columns = [("all", 0.0, math.inf, s["usable"]), *_bands(s)]
-  print(f"  {'offset':>7} " + " ".join(f"{label:>10}" for label, *_ in columns))
+  print(f"  {'offset':>7} " + " ".join(f"{label:>10}" for label, *_ in columns) + f" {'gas dly':>9} {'brake dly':>10} {'brake s':>8}")
   r2s: dict[str, list[float | None]] = {label: [] for label, *_ in columns}
   fits: dict[str, list] = {label: [] for label, *_ in columns}
   for offset in THRESHOLD_OFFSETS:
@@ -374,7 +376,12 @@ def summarize_brake_threshold(s) -> tuple[str, float | None]:
       r2s[label].append(fit.r2 if fit is not None else None)
       fits[label].append(fit)
       row.append(f"{fit.r2:10.3f}" if fit is not None else f"{'-':>10}")
-    print(f"  {offset:+7.2f} " + " ".join(row))
+    everything = fits["all"][-1]  # the all-speeds fit at this offset, for the delays it gave
+    delays = ""
+    if everything is not None:
+      gas, brake = everything.regimes["gas"], everything.regimes["brake"]
+      delays = f" {gas.delay:8.2f}s {brake.delay:9.2f}s {brake.seconds:7.0f}s"
+    print(f"  {offset:+7.2f} " + " ".join(row) + delays)
 
   centers, values = [], []
   for label, lo, hi, _ in columns:
@@ -575,6 +582,8 @@ class LearnerReplay:
     self.history: list[tuple] = []
     self.outcomes = {regime.name: Counter() for regime in longlagd.REGIMES}
     self.r2: list[float] = []
+    # every window's fit, taken or not, as FIT_FIELDS rows, to see what the r2 gate keeps out
+    self.fit_rows = array("d")
 
   def feed(self, msg) -> None:
     which, t = msg.which(), msg.logMonoTime * 1e-9
@@ -591,16 +600,43 @@ class LearnerReplay:
         self.estimator.update_estimate()
         for name, outcome in self.estimator.last_outcome.items():
           self.outcomes[name][outcome] += 1
-        if self.estimator.last_fit is not None:
-          self.r2.append(self.estimator.last_fit.r2)
+        if (fit := self.estimator.last_fit) is not None:
+          self.r2.append(fit.r2)
+          self.fit_rows.extend((fit.r2, fit.regimes["gas"].delay, fit.regimes["gas"].sharpness, fit.regimes["gas"].seconds,
+                                fit.regimes["brake"].delay, fit.regimes["brake"].sharpness, fit.regimes["brake"].seconds))
         ld = self.estimator.get_msg(True).starpilotLongitudinalDelay
         # str(): an enum field keeps its whole message alive, which at four ticks a second is hundreds of MB per hour
         self.history.append((t - self.t0, str(ld.gas.status), ld.gas.delayEstimate, ld.gas.validBlocks,
                              str(ld.brake.status), ld.brake.delayEstimate, ld.brake.validBlocks))
       self.frame += 1
 
-  def final_state(self) -> dict[str, tuple[float, int]]:
-    return longlagd.initial_from_saved(self.estimator.get_msg(True).starpilotLongitudinalDelay)
+  def final_state(self) -> dict[str, longlagd.SavedRegime]:
+    """What the car would save at the end of this drive, and the next one start from."""
+    return longlagd.initial_from_saved(self.estimator.get_msg(True, persist=True).starpilotLongitudinalDelay)
+
+
+FIT_FIELDS = 7  # r2, then delay, sharpness and seconds for gas and for brake
+R2_BANDS = (0.0, 0.3, 0.5, 0.7, 1.01)
+
+
+def delay_by_r2(replays: list[tuple[str, LearnerReplay]]) -> dict[str, list[tuple[float, float, float, float] | None]]:
+  """For each window-r2 band: the minutes of windows whose regime passed everything but the r2
+  gate, and the median and quartiles of the delay they gave. If low-r2 windows agree with the
+  high-r2 ones, the gate only costs data; if they drift, it was protecting the estimate."""
+  if any(len(r.fit_rows) for _, r in replays):
+    rows = np.concatenate([np.frombuffer(r.fit_rows, dtype=np.float64).reshape(-1, FIT_FIELDS) for _, r in replays])
+  else:
+    rows = np.zeros((0, FIT_FIELDS))
+  out: dict[str, list[tuple[float, float, float, float] | None]] = {}
+  for i, regime in enumerate(longlagd.REGIMES):
+    delay, sharp, seconds = rows[:, 1 + 3 * i], rows[:, 2 + 3 * i], rows[:, 3 + 3 * i]
+    passes = (seconds >= regime.min_okay_sec) & (sharp >= longlagd.MIN_SHARPNESS)
+    cells: list[tuple[float, float, float, float] | None] = []
+    for lo, hi in zip(R2_BANDS[:-1], R2_BANDS[1:], strict=True):
+      x = delay[passes & (rows[:, 0] >= lo) & (rows[:, 0] < hi)]
+      cells.append((len(x) * LearnerReplay.TICK_S / 60, *np.percentile(x, [50, 25, 75])) if len(x) >= 20 else None)
+    out[regime.name] = cells
+  return out
 
 
 def report_replay(replays: list[tuple[str, LearnerReplay]]) -> None:
@@ -642,8 +678,16 @@ def report_replay(replays: list[tuple[str, LearnerReplay]]) -> None:
   r2 = np.concatenate([r.r2 for _, r in replays]) if any(r.r2 for _, r in replays) else np.array([])
   if len(r2):
     p10, p50, p90 = np.percentile(r2, [10, 50, 90])
-    print(f"  window r2: 10% {p10:.2f}, median {p50:.2f}, 90% {p90:.2f}; " +
-          f"min r2 {replays[-1][1].estimator.min_r2} passes {100 * np.mean(r2 >= replays[-1][1].estimator.min_r2):.0f}%")
+    min_r2 = replays[-1][1].estimator.min_r2
+    print(f"  window r2: 10% {p10:.2f}, median {p50:.2f}, 90% {p90:.2f}; min r2 {min_r2} passes {100 * np.mean(r2 >= min_r2):.0f}%")
+
+    # does the r2 gate protect the estimate, or only cost data? Agreeing medians across bands say the latter.
+    print("  delay by window r2 (windows that pass the regime's other gates; minutes, median [p25, p75]):")
+    table = delay_by_r2(replays)
+    print(f"    {'r2 band':>10} " + "".join(f"{name:>30}" for name in table))
+    for k, (lo, hi) in enumerate(zip(R2_BANDS[:-1], R2_BANDS[1:], strict=True)):
+      cells = [f"{c[0]:5.1f} min {c[1]:.2f}s [{c[2]:.2f},{c[3]:.2f}]" if (c := table[name][k]) is not None else "-" for name in table]
+      print(f"    {lo:4.1f}-{min(hi, 1.0):<4.1f} " + "".join(f"{cell:>30}" for cell in cells))
 
 
 def resolve_route(identifier: str, log_dirs: list[Path]) -> list[str]:

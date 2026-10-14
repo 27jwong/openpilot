@@ -343,7 +343,9 @@ struct StarPilotLongitudinalDelay @0x9ccdc8676701b412 {
     delayEstimateStd @3 :Float32;
     validBlocks @4 :Int32;
     calPerc @5 :Int8;
-    points @6 :List(Float32);
+    points @6 :List(Float32);  # every block's mean; saved with the learner's state, left out of the live message
+    blockIndex @7 :UInt8;      # which of those blocks is filling
+    blockFill @8 :UInt16;      # estimates it holds so far, so a drive's partial block survives the restart
   }
 
   enum Status {
