@@ -14,10 +14,13 @@ the lateral accelerations are compared across them.
 
   python tools/tuning/analyze_nnff_saturation.py D:/logs/realdata --from-route 000002a0
 
---from-route is the hex route counter to start at (route names count up in time), to skip old drives.
+--from-route is the hex route counter to start at (route names count up in time) and --since a date, both to
+skip old drives. Alerts are counted whether they were logged as "Turn Exceeds Steering Limit" or as the
+fork's goat-scream version, and the worst stretches are listed with the time of day to match against a drive.
 Needs what train_nnff.py needs: numpy, pycapnp, zstandard and this repo's cereal.
 """
 import argparse
+import datetime
 import sys
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
@@ -32,7 +35,8 @@ import train_nnff as T  # noqa: E402
 UNDERSHOOT_RATIO = 1.2
 TURNING_LAT_ACCEL = 1.0
 AT_MAX_TORQUE = 0.99
-ALERT_NAME = "steerSaturated"
+ALERT_NAMES = ("steerSaturated", "goatSteerSaturated")  # the second is the fork's "goat scream" version of the same alert
+EPISODE_GAP = 1.0  # s of calm that ends one stretch of trouble
 
 BINS = [(1.0, 1.5), (1.5, 2.0), (2.0, 2.5), (2.5, np.inf)]
 KEYS = ("t", "desired", "actual", "f", "p", "i", "output", "saturated", "active", "version")
@@ -47,10 +51,13 @@ def extract_segment(path: Path, cereal_dir: Path | None = None) -> dict[str, np.
   log = T.load_log_schema(cereal_dir)
   cols = defaultdict(list)
   alerts = []
+  start = None
   try:
     for evt in log.Event.read_multiple_bytes(T.read_log_bytes(path)):
       which = evt.which()
       t = evt.logMonoTime * 1e-9
+      if which == "initData" and start is None and evt.initData.wallTimeNanos:
+        start = (evt.initData.wallTimeNanos * 1e-9, t)  # wall clock at this monotonic time: the route's start
       if which == "controlsState":
         lcs = evt.controlsState.lateralControlState
         if lcs.which() != "torqueState":
@@ -64,7 +71,10 @@ def extract_segment(path: Path, cereal_dir: Path | None = None) -> dict[str, np.
         for k, v in (("cs_t", t), ("v_ego", cs.vEgo), ("pressed", cs.steeringPressed)):
           cols[k].append(v)
       elif which == "onroadEvents":
-        if any(str(e.name) == ALERT_NAME for e in evt.onroadEvents):
+        if any(str(e.name) in ALERT_NAMES for e in evt.onroadEvents):
+          alerts.append(t)
+      elif which == "starpilotOnroadEvents":
+        if any(str(e.name) in ALERT_NAMES for e in evt.starpilotOnroadEvents.events):
           alerts.append(t)
   except AttributeError:
     raise
@@ -72,6 +82,7 @@ def extract_segment(path: Path, cereal_dir: Path | None = None) -> dict[str, np.
     print(f"warning: {path}: stopped reading at {e!r}", file=sys.stderr)
   out = {k: np.asarray(v, dtype=np.float64) for k, v in cols.items()}
   out["alerts"] = np.asarray(alerts, dtype=np.float64)
+  out["start"] = np.asarray(start if start else (0.0, 0.0), dtype=np.float64)
   return out
 
 
@@ -86,6 +97,8 @@ def assemble(segments: list[dict[str, np.ndarray]]) -> dict[str, np.ndarray] | N
   d["v_ego"] = np.interp(d["t"], cs_t, cat["v_ego"][c_order])
   d["pressed"] = cat["pressed"][c_order][np.clip(np.searchsorted(cs_t, d["t"], side="right") - 1, 0, len(cs_t) - 1)]
   d["alerts"] = np.sort(cat["alerts"])
+  starts = [s["start"] for s in segments if "start" in s and s["start"][0] > 0]
+  d["start"] = starts[0] if starts else np.zeros(2)
   return d
 
 
@@ -116,7 +129,15 @@ def analyze(d: dict[str, np.ndarray], siglin_params: tuple[float, ...]) -> dict:
                        f=float(sign[k] * d["f"][k]), p=float(sign[k] * d["p"][k]), i=float(sign[k] * d["i"][k])))
   versions = d["version"][ok]
   controller = controller_name(float(np.median(versions))) if len(versions) else "?"
-  return dict(controller=controller, engaged=float(ok.sum() * dt), would_alert=float((ok & under & turning & at_max).sum() * dt), alerts=alerts,
+  wall0, mono0 = d["start"] if "start" in d else (0.0, 0.0)
+  episodes = []
+  bad = np.flatnonzero(ok & under & turning & at_max)
+  if len(bad):
+    for run in np.split(bad, np.flatnonzero(np.diff(bad) > EPISODE_GAP / dt) + 1):
+      k = run[int(np.argmax((np.abs(des) - np.abs(act))[run]))]
+      episodes.append(dict(wall=float(wall0 + d["t"][k] - mono0) if wall0 else np.nan, seconds=len(run) * dt, v_ego=float(d["v_ego"][k]),
+                           desired=float(des[k]), actual=float(act[k]), output=float(out[k]), deficit=float(abs(des[k]) - abs(act[k]))))
+  return dict(controller=controller, wall=float(wall0), episodes=episodes, engaged=float(ok.sum() * dt), would_alert=float((ok & under & turning & at_max).sum() * dt), alerts=alerts,
               bins=bins, out_gap=float(np.mean((out - siglin_torque)[hard])) if hard.any() else np.nan)
 
 
@@ -152,10 +173,23 @@ def load(log_dirs, from_route: int | None, cereal_dir, workers) -> dict[str, dic
   return routes
 
 
+def when(wall: float, fmt: str = "%Y-%m-%d %H:%M") -> str:
+  """Local time on this PC, for matching a moment to the drive."""
+  return datetime.datetime.fromtimestamp(wall).strftime(fmt) if wall and np.isfinite(wall) else "?"
+
+
 def report(results: dict[str, dict]) -> None:
-  print(f"\n{'route':24s} {'steered by':>10s} {'min':>6s} {'alerts':>7s} {'would-alert s':>14s} {'torque - siglin at 1.5+':>24s}")
+  print(f"\n{'route':24s} {'started':16s} {'steered by':>10s} {'min':>6s} {'alerts':>7s} {'would-alert s':>14s} {'torque - siglin at 1.5+':>24s}")
   for r, a in results.items():
-    print(f"{r:24s} {a['controller']:>10s} {a['engaged'] / 60:6.1f} {len(a['alerts']):7d} {a['would_alert']:14.1f} {a['out_gap']:24.3f}")
+    print(f"{r:24s} {when(a['wall']):16s} {a['controller']:>10s} {a['engaged'] / 60:6.1f} {len(a['alerts']):7d} {a['would_alert']:14.1f} {a['out_gap']:24.3f}")
+
+  print("\nby controller (alerts = logged 'Turn Exceeds Steering Limit', either kind; condition = seconds selfdrived's test held):")
+  for name in ("torque", "NNFF"):
+    mine = [a for a in results.values() if a["controller"] == name]
+    if mine:
+      minutes = sum(a["engaged"] for a in mine) / 60
+      alerts, cond = sum(len(a["alerts"]) for a in mine), sum(a["would_alert"] for a in mine)
+      print(f"  {name:7s} {len(mine):3d} routes {minutes / 60:5.1f} h   {alerts:3d} alerts = {alerts / minutes * 60:4.1f}/h   condition {cond / minutes:.3f} s per minute")
 
   for name in ("torque", "NNFF"):
     mine = [a for a in results.values() if a["controller"] == name]
@@ -174,6 +208,13 @@ def report(results: dict[str, dict]) -> None:
   print("  (torque = mean torque the controller commanded; car got = lateral acceleration achieved as a share of wanted;")
   print("   siglin = the static default curve, not the live-learned parameters the torque controller really used)")
 
+  moments = sorted(((r, a["controller"], e) for r, a in results.items() for e in a["episodes"] if e["seconds"] >= 0.3), key=lambda x: -x[2]["deficit"])
+  if moments:
+    print(f"\nworst stretches of full torque while the car fell behind (by lateral acceleration short; {len(moments)} stretches over 0.3 s):")
+    print(f"  {'route':24s} {'by':>6s} {'local time':>12s} {'v m/s':>6s} {'wanted':>7s} {'got':>6s} {'torque':>7s} {'seconds':>8s}")
+    for r, c, e in moments[:10]:
+      print(f"  {r:24s} {c:>6s} {when(e['wall'], '%m-%d %H:%M:%S'):>12s} {e['v_ego']:6.1f} {e['desired']:7.2f} {e['actual']:6.2f} {e['output']:7.2f} {e['seconds']:8.1f}")
+
   alerts = [(r, a["controller"], al) for r, a in results.items() for al in a["alerts"]]
   if alerts:
     print(f"\n{len(alerts)} logged alerts; first {min(len(alerts), 12)} (p, i, f are m/s^2 for the torque controller, torque for NNFF):")
@@ -189,6 +230,7 @@ def main(argv=None):
   parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
   parser.add_argument("log_dirs", nargs="+", type=Path)
   parser.add_argument("--from-route", help="hex route counter to start at (e.g. 000002a0)")
+  parser.add_argument("--since", help="only routes that started on or after this date (YYYY-MM-DD, your PC's time), e.g. the day you installed the model")
   parser.add_argument("--siglin", type=float, nargs=4, metavar=("A", "B", "C", "D"), default=(6.69417, 0.71168, 0.21504, 0.02331),
                       help="the torque curve to compare with (default: the CX-30's, from opendbc/car/mazda/interface.py)")
   parser.add_argument("--cereal", type=Path, help="cereal schema folder (default: this repo's)")
@@ -199,8 +241,11 @@ def main(argv=None):
   routes = load(args.log_dirs, int(args.from_route, 16) if args.from_route else None, args.cereal, args.workers)
   results = {r: analyze(d, tuple(args.siglin)) for r, d in sorted(routes.items())}
   results = {r: a for r, a in results.items() if a["engaged"] > 0}
+  if args.since:
+    cutoff = datetime.datetime.combine(datetime.date.fromisoformat(args.since), datetime.time()).timestamp()
+    results = {r: a for r, a in results.items() if a["wall"] >= cutoff}
   if not results:
-    raise SystemExit("none of these routes were steering with the torque controller or NNFF")
+    raise SystemExit("none of these routes were steering with the torque controller or NNFF" + (f" on or after {args.since}" if args.since else ""))
   report(results)
 
 
