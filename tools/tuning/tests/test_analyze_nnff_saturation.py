@@ -67,14 +67,39 @@ def test_the_logged_version_says_which_controller_steered():
   assert A.analyze(steady(5, 1.2, 1.2, 0.5, version=2), SIGLIN)["controller"] == "torque"
 
 
-def test_extract_reads_the_state_and_the_logged_alerts(monkeypatch):
-  fake_log(monkeypatch, [car_state_event(10.0), torque_event(10.0, 2.0, 1.4, -1.0), alert_event(10.5), alert_event(10.6, "pcmEnable"),
-                         car_state_event(11.0), torque_event(11.0, 2.0, 1.5, -1.0)])
+def init_event(t, wall_ns):
+  return SimpleNamespace(which=lambda: "initData", logMonoTime=int(t * 1e9), initData=SimpleNamespace(wallTimeNanos=wall_ns))
+
+
+def goat_event(t):
+  return SimpleNamespace(which=lambda: "starpilotOnroadEvents", logMonoTime=int(t * 1e9),
+                         starpilotOnroadEvents=SimpleNamespace(events=[SimpleNamespace(name="goatSteerSaturated")]))
+
+
+def test_extract_reads_the_state_the_logged_alerts_and_when_the_route_started(monkeypatch):
+  fake_log(monkeypatch, [init_event(5.0, 1_700_000_000_000_000_000), car_state_event(10.0), torque_event(10.0, 2.0, 1.4, -1.0), alert_event(10.5),
+                         alert_event(10.6, "pcmEnable"), goat_event(10.7), car_state_event(11.0), torque_event(11.0, 2.0, 1.5, -1.0)])
   seg = A.extract_segment("rlog.zst")
   assert list(seg["desired"]) == [2.0, 2.0]
-  assert list(seg["alerts"]) == [10.5]  # only steerSaturated
+  assert seg["alerts"] == pytest.approx([10.5, 10.7])  # the stock alert and the goat-scream one, nothing else
+  assert list(seg["start"]) == [1.7e9, 5.0]
   d = A.assemble([seg])
   assert d["v_ego"] == pytest.approx([15.0, 15.0])
+  assert list(d["start"]) == [1.7e9, 5.0]
+
+
+def test_stretches_of_trouble_are_grouped_and_dated():
+  calm = steady(3, desired=0.5, actual=0.5, output=0.3, t0=110.0)
+  first, second = steady(2, 2.0, 1.4, 1.0, t0=100.0), steady(2, 2.5, 1.5, 1.0, t0=120.0)
+  d = {k: np.concatenate([first[k], calm[k], second[k]]) for k in first if k != "alerts"}
+  d["alerts"] = np.array([])
+  d["start"] = np.array([1.7e9, 100.0])
+  episodes = A.analyze(d, SIGLIN)["episodes"]
+  assert len(episodes) == 2
+  assert [e["seconds"] for e in episodes] == pytest.approx([2.0, 2.0], abs=0.02)
+  assert episodes[0]["wall"] == pytest.approx(1.7e9)  # the stretch began at the route's start
+  assert episodes[1]["wall"] == pytest.approx(1.7e9 + 20.0)
+  assert episodes[1]["deficit"] == pytest.approx(1.0)  # 2.5 wanted, 1.5 got
 
 
 def test_logs_from_another_schema_raise_instead_of_looking_truncated(monkeypatch):
