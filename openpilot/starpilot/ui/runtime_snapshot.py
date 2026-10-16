@@ -299,6 +299,7 @@ class RuntimeSnapshotAdapter:
     self.appearance_override: Callable[[OnroadAppearance], OnroadAppearance] | None = None
     self._last_mode: ShellMode | None = None
     self._onroad_ancillary: tuple[int, tuple[bool, int, bool], ShellSnapshot] | None = None
+    self._onroad_view_ancillary: tuple[int, tuple[bool, int, bool], ShellSnapshot] | None = None
     self._conditional = ConditionalDisplayProjector()
     self._conditional_perception = ConditionalPerceptionProjector()
     self._conditional_choice: ModeChoice | None = None
@@ -371,7 +372,8 @@ class RuntimeSnapshotAdapter:
 
   def build(self, mode: ShellMode, selected: Destination = Destination.STAR, *, compact_y: float = 0,
             compact_scroll_x: float = 0, sidebar_expanded: bool = True, now_ns: int | None = None,
-            menu_only: bool = False, stopped_timer_enabled: bool | None = None) -> ShellSnapshot:
+            menu_only: bool = False, stopped_timer_enabled: bool | None = None,
+            onroad_view_only: bool = False) -> ShellSnapshot:
     replay = getattr(self.ui_state, "replay_sample", None)
     if getattr(self.ui_state, "replay_clock", None) is not None:
       if replay is not None and replay.epoch != self._replay_epoch:
@@ -383,6 +385,7 @@ class RuntimeSnapshotAdapter:
       now_ns = time.monotonic_ns() if now_ns is None else now_ns
     if mode != ShellMode.ONROAD or self._last_mode != ShellMode.ONROAD:
       self._onroad_ancillary = None
+      self._onroad_view_ancillary = None
     if mode == ShellMode.ONROAD and self._last_mode == ShellMode.SETTINGS:
       self.invalidate_appearance()
       self._conditional_read_ns = None
@@ -653,8 +656,9 @@ class RuntimeSnapshotAdapter:
                          lead_indicator_source_fresh=display_model is not None and display_radar is not None)
 
     ancillary_key = (bool(ui.started), int(ui.started_frame), confirmed_offroad)
-    if mode == ShellMode.ONROAD and self._onroad_ancillary is not None:
-      stamp, key, previous = self._onroad_ancillary
+    ancillary = self._onroad_view_ancillary if onroad_view_only else self._onroad_ancillary
+    if mode == ShellMode.ONROAD and ancillary is not None:
+      stamp, key, previous = ancillary
       if key == ancillary_key and 0 <= now_ns - stamp < 1_000_000_000:
         return replace(previous, onroad=onroad)
 
@@ -707,6 +711,15 @@ class RuntimeSnapshotAdapter:
     # pairing and parked evidence current without reading unused preferences.
     if mode == ShellMode.HOME or menu_only and mode == ShellMode.SETTINGS:
       return ShellSnapshot(mode, home, settings, onroad, DeviceState(offroad=confirmed_offroad), selected=selected)
+
+    # The shell's onroad view/input consume onroad state, not settings leaf panels.
+    # Keep current home/settings presentation and offroad evidence without querying
+    # Galaxy credentials or constructing unconsumed device/software/toggle panels.
+    if mode == ShellMode.ONROAD and onroad_view_only:
+      snapshot = ShellSnapshot(mode, home, settings, onroad,
+                               DeviceState(offroad=confirmed_offroad, available_actions=frozenset()), selected=selected)
+      self._onroad_view_ancillary = (now_ns, ancillary_key, snapshot)
+      return snapshot
 
     device_actions = {DeviceRequest.PREVIEW_DRIVER_CAMERA, DeviceRequest.RESET_CALIBRATION} if confirmed_offroad else set()
     galaxy_status = self.galaxy_access.status().status if self.galaxy_access is not None else AccessStatus.UNAVAILABLE

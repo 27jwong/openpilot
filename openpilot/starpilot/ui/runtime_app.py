@@ -270,7 +270,7 @@ class StarShellSession:
     self._wheel_personality = None
     self.conditional_actions: ConditionalUiActionOwner | None = None
     self.cruise_actions = CruiseActionPublisher()
-    self.favorites_owner = FavoritesOwner(ui_state.params, self._favorite_actions, self._favorite_authority)
+    self.favorites_owner = FavoritesOwner(ui_state.params, self._favorite_actions, self._favorite_authority, self._favorite_render_actions)
     self.favorites = OnroadFavorites(self.fonts, self._favorite_request)
     self._favorite_snapshot = None
     self._favorite_data = None
@@ -317,13 +317,19 @@ class StarShellSession:
                              longitudinal_active=state.cruise_active, traffic_mode=state.traffic_mode)
 
   def _favorite_actions(self):
+    return self._resolve_favorite_actions()
+
+  def _favorite_render_actions(self, keys):
+    return self._resolve_favorite_actions(keys)
+
+  def _resolve_favorite_actions(self, keys=None):
     actions = mapped_actions(lambda page: self.feature_snapshot(page, favorite=True), self.feature_request,
-                             lambda: self.appearance_owner.snapshot(self.profile), self.appearance_owner.apply)
+                             lambda: self.appearance_owner.snapshot(self.profile), self.appearance_owner.apply, requested_keys=keys)
     actions.update(layout_actions(ui_state.params, str(self.profile),
                                   lambda: self._settings_preference_authority() or self._favorite_authority(),
                                   lambda: self.adapter.invalidate_appearance()))
     actions.update(self._native_favorite_actions())
-    return actions
+    return actions if keys is None else {key: action for key, action in actions.items() if key in keys}
 
   def native_favorite_actions(self, bookmark, personality, experimental):
     state = self.snapshot(ShellMode.ONROAD).onroad
@@ -1216,7 +1222,8 @@ class StarShellSession:
       return self._snapshot_cache[1]
     snapshot = self.adapter.build(mode, self.selected, compact_y=self.compact_y,
                                   compact_scroll_x=self.compact_scroll_x, sidebar_expanded=self.sidebar_expanded,
-                                  menu_only=self.profile == Profile.COMPACT and mode == ShellMode.SETTINGS)
+                                  menu_only=self.profile == Profile.COMPACT and mode == ShellMode.SETTINGS,
+                                  onroad_view_only=mode == ShellMode.ONROAD)
     if mode == ShellMode.ONROAD and self.profile == Profile.LARGE:
       width = getattr(self, '_onroad_page_width', 2160.0) - (SIDEBAR_WIDTH if snapshot.onroad.appearance.show_developer_sidebar else 0)
       if snapshot.onroad.viewport_width != width:
