@@ -10,7 +10,7 @@ from openpilot.starpilot.conditional_mode.stop import (
 )
 from openpilot.starpilot.lead_tracking import LeadDetector
 from openpilot.starpilot.longitudinal.force_stop import ForceStop, StopFrame, StopPlan, vehicle_tune
-from openpilot.starpilot.model_geometry import STANDSTILL_SPEED_NOISE_MPS, road_curvature, standstill_clear_horizon
+from openpilot.starpilot.model_geometry import road_curvature, standstill_clear_horizon, standstill_release_speed
 from openpilot.starpilot.saved_source import read_saved
 from openpilot.starpilot.longitudinal.stop_resume import StopResume
 
@@ -22,7 +22,7 @@ SOURCE_AGE_NS = 150_000_000
 
 def standstill_takeoff_light(model, car) -> bool | None:
   """Fresh takeoff metadata only; Force Stop keeps its strict spatial policy."""
-  if car.standstill is not True or not 0.0 <= car.vEgo <= STANDSTILL_SPEED_NOISE_MPS:
+  if not standstill_release_speed(car.standstill, car.vEgo, car.vEgoRaw):
     return None
   should_stop = model.action.shouldStop
   if type(should_stop) is not bool:

@@ -215,6 +215,17 @@ def test_takeoff_light_carrier_rejects_corrupt_stop_preferences(tmp_path):
   assert path.read_bytes() == b'{'
 
 
+@pytest.mark.parametrize('standstill,speed,raw,expected', [
+  (True, -0.0008, 0., False), (True, .044, .044, False), (True, .06, .06, None),
+  (True, -0.0008, .02, None), (True, -.02, 0., None), (False, 0., 0., None)])
+def test_takeoff_metadata_accepts_recorded_standstill_speed_noise(standstill, speed, raw, expected):
+  from openpilot.starpilot.longitudinal.force_stop_runtime import standstill_takeoff_light
+  xs = [70. * index / 32 for index in range(33)]
+  xs[1:3] = [0.0005, 0.0002]
+  model = NS(position=NS(x=xs), action=NS(shouldStop=False))
+  assert standstill_takeoff_light(model, NS(standstill=standstill, vEgo=speed, vEgoRaw=raw)) is expected
+
+
 @pytest.mark.parametrize('stop,horizon,expected', [(False, 70., False), (True, 70., True), (False, 53.9, True)])
 def test_actual_takeoff_metadata_uses_fresh_prefix_without_force_stop_authority(tmp_path, stop, horizon, expected):
   from openpilot.common.params import Params

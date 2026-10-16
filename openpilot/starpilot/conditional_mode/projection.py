@@ -25,7 +25,7 @@ from openpilot.starpilot.conditional_mode.stop import StopFrame, StopLead, StopL
 from openpilot.starpilot.conditional_mode.turn_scene import committed_turn_scene
 from openpilot.starpilot.model_geometry import (
   STANDSTILL_MODEL_PREFIX_NOISE_M as STANDSTILL_MODEL_PREFIX_NOISE_M, STANDSTILL_SPEED_NOISE_MPS, normalized_origin,
-  standstill_clear_horizon as _standstill_clear_horizon,
+  standstill_clear_horizon as _standstill_clear_horizon, standstill_release_speed,
 )
 
 
@@ -449,9 +449,8 @@ class SceneProjector:
         horizon = _horizon(model)
         stop_horizon = horizon
         model_should_stop = _boolean(_field(_field(model, 'action'), 'shouldStop'))
-        if (horizon is None and self.stop_detector.committed and model_should_stop is False and
-            speed is not None and speed <= STANDSTILL_SPEED_NOISE_MPS and
-            _field(car, 'standstill') is True and _number(_field(car, 'vEgoRaw'), high=80.0) == 0.0):
+        if (horizon is None and self.stop_detector.committed and model_should_stop is False and speed is not None and
+            standstill_release_speed(_field(car, 'standstill'), _field(car, 'vEgo'), _field(car, 'vEgoRaw'))):
           # A stationary model can backstep millimeters near its origin before
           # projecting forward. Use that endpoint only to clear an existing stop;
           # Curve geometry and cold stop acquisition retain strict validation.

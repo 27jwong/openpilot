@@ -4,6 +4,7 @@ import math
 
 ORIGIN_ROUNDOFF_M = 1e-6
 STANDSTILL_SPEED_NOISE_MPS = 0.01
+STANDSTILL_RELEASE_SPEED_MPS = 0.05
 STANDSTILL_MODEL_PREFIX_NOISE_M = 0.01
 
 
@@ -12,6 +13,12 @@ def normalized_origin(distances: tuple) -> tuple:
   if distances and _finite(distances[0], low=-ORIGIN_ROUNDOFF_M, high=0.0) is not None and distances[0] < 0:
     return (0.0, *distances[1:])
   return distances
+
+
+def standstill_release_speed(standstill: object, v_ego: object, v_ego_raw: object) -> bool:
+  speed = _finite(v_ego, low=-STANDSTILL_SPEED_NOISE_MPS, high=STANDSTILL_RELEASE_SPEED_MPS)
+  raw = _finite(v_ego_raw, low=0.0, high=STANDSTILL_RELEASE_SPEED_MPS)
+  return standstill is True and speed is not None and raw is not None and (speed >= 0.0 or raw == 0.0)
 
 
 def _finite(value: object, *, low: float, high: float) -> float | None:

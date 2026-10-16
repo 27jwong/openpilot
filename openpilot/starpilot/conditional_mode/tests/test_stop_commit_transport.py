@@ -231,8 +231,8 @@ class TestStopCommitTransport(unittest.TestCase):
     cases = ((RED_97_X, RED_97_V, False, 0., 0.),
              (CLEAR_97_X, CLEAR_97_V, True, 0., 0.),
              (material_tail, CLEAR_97_V, False, 0., 0.),
-             (CLEAR_97_X, CLEAR_97_V, False, .02, 0.),
-             (CLEAR_97_X, CLEAR_97_V, False, 0., .01))
+             (CLEAR_97_X, CLEAR_97_V, False, .06, 0.),
+             (CLEAR_97_X, CLEAR_97_V, False, 0., .06))
     for position, velocity, should_stop, speed, raw in cases:
       for _ in range(16):
         _, result = self.sample(standstill=True, ego_speed=speed, raw_speed=raw,

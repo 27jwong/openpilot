@@ -193,7 +193,7 @@ class TestLeadDetector(unittest.TestCase):
     self.assertFalse(detector.tracked)
 
   def test_stopped_track_retains_only_fresh_bounded_origin_geometry(self):
-    for variation in ('clear', 'stale', 'moving', 'bad_y', 'tail_backstep', 'flag_speed'):
+    for variation in ('clear', 'quantized', 'stale', 'moving', 'bad_y', 'tail_backstep', 'flag_speed'):
       detector = LeadDetector()
       for tick in range(15):
         step(detector, tick, lead=wire_lead(distance=5, speed=0), speed=2.)
@@ -207,9 +207,9 @@ class TestLeadDetector(unittest.TestCase):
       event.modelV2.position.y = [float('nan') if variation == 'bad_y' else 0.] * 33
       model = messaging.log_from_bytes(event.to_bytes()).modelV2
       observation = step(detector, 15, model=model, lead=wire_lead(distance=5, speed=.8),
-                         speed=.5 if variation in ('moving', 'flag_speed') else 0.,
+                         speed={'moving': .5, 'flag_speed': .5, 'quantized': .044}.get(variation, 0.),
                          standstill=variation != 'moving', model_fresh=variation != 'stale')
-      if variation == 'clear':
+      if variation in ('clear', 'quantized'):
         self.assertTrue(observation.tracked)
       else:
         self.assertIsNone(observation.tracked)
