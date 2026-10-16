@@ -557,7 +557,8 @@ class Car:
         latched=self.aol_card_intent.allowed_latch, cancel_source_ns=cancel_source_ns,
         brake_source_ns=brake_source_ns,
         gm_withdrawal_source_ns=gm_withdrawal_source_ns,
-        intent_producer_session=getattr(self, 'slc_producer_session', ''))
+        intent_producer_session=getattr(self, 'slc_producer_session', ''),
+        main_arm_ns=getattr(self.aol_card_intent, 'main_arm_ns', 0))
       fault_active = True if transport_reset else None
       event_ns = int(self.sm.logMonoTime['onroadEvents'])
       if (getattr(self.aol_card_intent, 'requires_fault_observation', self.aol_card_intent.explicit_latch) and
@@ -819,7 +820,8 @@ class Car:
         latched=getattr(getattr(self, 'aol_card_intent', None), 'allowed_latch', True),
         cancel_source_ns=self.aol_cancel_source(CS, now_ns), brake_source_ns=self.aol_honda_brake_source(CS, now_ns),
         gm_withdrawal_source_ns=self.aol_gm_withdrawal_source(CS, now_ns),
-        intent_producer_session=getattr(self, 'slc_producer_session', '')):
+        intent_producer_session=getattr(self, 'slc_producer_session', ''),
+        main_arm_ns=getattr(self.aol_card_intent, 'main_arm_ns', 0)):
       return True
     events = self.sm['onroadEvents']
     if self.aol_transport_feedback.retention_qualified or self.aol_transport_feedback.retention_pending:
