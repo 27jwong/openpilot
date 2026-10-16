@@ -5,6 +5,7 @@ import time
 import threading
 import uuid
 from collections import deque
+from typing import cast
 
 import openpilot.cereal.messaging as messaging
 
@@ -1427,7 +1428,7 @@ class Car:
         if ev6_startup:
           self.last_actuators_output, can_sends = self.CI.apply(inactive, now_boot_ns)
         else:
-          self.last_actuators_output, can_sends = self.CI.apply(inactive, now_boot_ns, startup_keepalive=True)
+          self.last_actuators_output, can_sends = cast(GMInterface, self.CI).apply(inactive, now_boot_ns, startup_keepalive=True)
         self.publish_sendcan(can_sends, valid=CS.canValid)
       return
 

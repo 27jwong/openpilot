@@ -1,7 +1,7 @@
 """EV6 stock cruise retains separate steering intent and truthful dash status."""
 import os
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 from opendbc.car import Bus, structs
@@ -54,7 +54,7 @@ def test_actual_card_stock_lkas_then_main_respects_saved_binding(main_action):
          patch.object(card_module, 'get_car', side_effect=factory):
       card = card_module.Car()
     card.ci_initialized = True
-    card.publish_sendcan = lambda *args, **kwargs: None
+    card.publish_sendcan = Mock(return_value=None)
     card.CI.update([])  # Register lazy subscriptions before supplying the warmup batch.
     try:
       for tick, (main, lkas) in enumerate([(0, 0)] * 20 + [(0, 1), (0, 0), (1, 0), (0, 0)]):
@@ -123,7 +123,7 @@ def test_actual_card_replaces_disabled_adrv_during_selfdrive_initialization(vari
     holder.owner.ci = ci
     card.CI.update([])
     emitted = []
-    card.publish_sendcan = lambda frames, valid=True: emitted.extend((card.sm.frame, frame, valid) for frame in frames)
+    card.publish_sendcan = Mock(side_effect=lambda frames, valid=True: emitted.extend((card.sm.frame, frame, valid) for frame in frames))
     try:
       for tick in range(620):
         now = 10_000_000_000 + tick * 10_000_000
