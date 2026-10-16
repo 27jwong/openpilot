@@ -13,7 +13,7 @@ from openpilot.starpilot.ui.feature_settings_state import (
   FEATURE_BUTTON_TOP, FEATURE_BUTTON_HEIGHT, FEATURE_ACTION_MARGIN, FEATURE_HEADER_HEIGHT,
   FEATURE_TAP_SLOP, FEATURE_FLICK_DISTANCE, FEATURE_PAGE_COUNTER_WIDTH,
   feature_scroll, feature_action_left, feature_action_rects, feature_row_top, feature_page_counter_left, feature_footer_buttons,
-  value_buttons, value_editor_rect, value_done_rect, value_text,
+  value_buttons, value_editor_rect, value_done_rect, value_text, value_reason,
 )
 from openpilot.starpilot.ui.presentation import BitmapFonts, FontRole, Profile
 from openpilot.starpilot.ui.settings_geometry import (
@@ -155,12 +155,13 @@ class FeatureSettingsView:
             continue
           has_control = bool(row.actions or row.page or _confirmation(row) or row.available or value is not None)
           width = (feature_action_left(row) - 24 if has_control else 2094) - (left + 55)
-          detail = row.value + (" " + row.unit if row.unit and row.value != "Auto" else "")
+          detail = value_text(row) if row.key == "LaneCenteringStrength" else row.value + (" " + row.unit if row.unit and row.value != "Auto" else "")
           if value is not None or (row.available and not row.actions and not row.page and not _confirmation(row) and not row.repair_value):
             detail = ""
           if row.page and detail in ("Saved settings", "Saved preferences", "Saved profiles"):
             detail = ""
-          detail += (" - " if detail and row.reason else "") + row.reason
+          reason = value_reason(row)
+          detail += (" - " if detail and reason else "") + reason
           label = self._elide(row.label, FontRole.NORMAL, LABEL_SIZE, width)
           detail = self._elide(detail, FontRole.NORMAL, DETAIL_SIZE, width)
           label_top, label_bottom = self.fonts.vertical_ink(label, FontRole.NORMAL, LABEL_SIZE)
@@ -239,8 +240,9 @@ class FeatureSettingsView:
                 self._center(self._elide(row.repair_value, FontRole.MEDIUM, DETAIL_SIZE, action.width - 24), DETAIL_SIZE,
                              rl.Rectangle(action.x, action.y + action.height / 2, action.width, action.height / 2))
             else:
-              value_text = row.value + (" " + row.unit if row.unit and row.value != "Auto" else "")
-              self._center(self._elide(value_text, FontRole.NORMAL, LABEL_SIZE, action.width - 24), LABEL_SIZE,
+              display_value = (value_text(row) if row.key == "LaneCenteringStrength" else
+                               row.value + (" " + row.unit if row.unit and row.value != "Auto" else ""))
+              self._center(self._elide(display_value, FontRole.NORMAL, LABEL_SIZE, action.width - 24), LABEL_SIZE,
                            rl.Rectangle(action.x, y + 12, action.width, FEATURE_BUTTON_TOP - 24), role=FontRole.NORMAL)
               for x, text in ((1760, "-"), (1940, "+")):
                 button = rl.Rectangle(x, y + FEATURE_BUTTON_TOP, 155, FEATURE_BUTTON_HEIGHT)
