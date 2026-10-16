@@ -1142,7 +1142,7 @@ class Supervisor:
   def _project(self, result, lease, ident, connect=None) -> None:
     config = self.config
     sock = connect() if connect is not None else self._connect_tcp(result, lease)
-    ca = ident.root if config.get("verify_head_unit", True) else None
+    ca = ident.root if config.get("verify_head_unit", False) else None
     session = ProjectionSession(sock, ident.cert, ident.key, self.log, ca)
     self._stage("authenticating")
     session.authenticate()
