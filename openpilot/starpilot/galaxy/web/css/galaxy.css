@@ -283,8 +283,8 @@ body {
   }
 }
 
-/* Keep decorative animation out of modal backdrops and drawer content. */
-body:has(.gx-dialog[open], .gx-underlay, .gx-drawer.open) #galaxy-bg .galaxy-hero {
+/* Keep decorative animation out of route viewers, modal backdrops and drawer content. */
+body:has(.gx-dialog[open], .gx-underlay, .gx-drawer.open, .gx-route-workspace) #galaxy-bg .galaxy-hero {
   display: none;
 }
 
