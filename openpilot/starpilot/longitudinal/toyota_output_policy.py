@@ -7,6 +7,7 @@ source authority is lost. It does not select a planner profile or grant control.
 
 from collections import OrderedDict
 from dataclasses import dataclass
+from typing import cast
 
 import capnp
 import math
@@ -60,7 +61,7 @@ def leads_from_radar(radar, *, message_ns: int, receipt_ns: int, now_ns: int,
       now_ns - message_ns > RADAR_MAX_AGE_NS or now_ns - receipt_ns > RADAR_MAX_AGE_NS):
     return None
   rows = _radar_lead_rows(radar)
-  return tuple(Lead(*row) for row in rows) if rows is not None else None
+  return cast(tuple[Lead, Lead], tuple(Lead(*row) for row in rows)) if rows is not None else None
 
 
 # Only immutable pure projection values are retained, never transport authority.

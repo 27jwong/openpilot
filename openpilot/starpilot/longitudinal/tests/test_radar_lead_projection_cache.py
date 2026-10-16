@@ -2,6 +2,7 @@
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 import threading
+from typing import TypedDict
 import unittest
 from unittest.mock import patch
 
@@ -9,11 +10,19 @@ from openpilot.cereal import log
 from openpilot.starpilot.longitudinal import toyota_output_policy as policy
 
 
+class ProjectionArguments(TypedDict):
+  message_ns: int
+  receipt_ns: int
+  now_ns: int
+  drive_id: int
+  valid: bool
+
+
 class TestRadarLeadProjectionCache(unittest.TestCase):
   def setUp(self):
     with policy._RADAR_LEAD_LOCK:
       policy._RADAR_LEAD_ROWS.clear()
-    self.kwargs = {'message_ns': 1_000_000_000, 'receipt_ns': 1_001_000_000,
+    self.kwargs: ProjectionArguments = {'message_ns': 1_000_000_000, 'receipt_ns': 1_001_000_000,
                    'now_ns': 1_002_000_000, 'drive_id': 900_000_000, 'valid': True}
 
   def tearDown(self):
@@ -80,6 +89,7 @@ class TestRadarLeadProjectionCache(unittest.TestCase):
         for _ in range(5):
           leads = policy.leads_from_radar(radar, **self.kwargs)
           self.assertIsNotNone(leads)
+          assert leads is not None
           self.assertEqual(leads[0], policy.Lead(True, worker + 1., 0., 0., 0.))
       return True
 
