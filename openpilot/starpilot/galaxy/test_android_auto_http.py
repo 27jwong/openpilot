@@ -131,7 +131,7 @@ def test_galaxy_upload_requires_session_and_exact_binary_body(api):
   assert code == 200
   cookie = headers['Set-Cookie'].split(';', 1)[0]
   code, status, _ = request('GET', '/api/android-auto/setup', cookie=cookie)
-  assert code == 200 and status['wiredAvailable'] is False
+  assert code == 200 and status['wiredAvailable'] is True
   assert status['download'] is None
   assert request('POST', '/api/android-auto/upload', b'fake-apk', cookie=cookie,
                  content_type='application/json')[0] == 415

@@ -256,7 +256,7 @@ export class AndroidAutoFeed {
 
   async control(action, extra = {}) {
     if (!this.active || this.busy || !this.setup?.enabled || this.pairing?.active ||
-      !["start", "stop", "select_receiver", "auto_connect"].includes(action)) return false
+      !["start", "stop", "select_receiver", "auto_connect", "connection"].includes(action)) return false
     const result = await this.request("./api/android-auto/control", {
       method: "POST",
       headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, ...extra })
@@ -514,7 +514,7 @@ export const AndroidAutoPage = {
       return ""
     },
     connectReason() {
-      if (!this.selected) return "Pair your car in step 2 first."
+      if (!this.selected && this.runtime?.connection !== "wired") return "Pair your car in step 2 first."
       if (!this.setup?.enabled) return "Turn on Android Auto Support in step 1."
       if (!this.setup.serviceReady) return "Waiting for the Android Auto service to start."
       if (this.pairing?.active) return "Finish or cancel pairing first."
@@ -655,6 +655,9 @@ export const AndroidAutoPage = {
           <GalaxySettingRow :row="switchRow('Automatic Connection', runtime?.auto_connect, 'Connect to your car whenever you start driving.')"
             :index="0" :busy="busy" :disabled="!setup.enabled || !setup.parked || !!pairing?.active"
             :save-value="(index, value) => control('auto_connect', { enabled: value === 'On' })" />
+          <GalaxySettingRow :row="switchRow('Wired USB Connection', runtime?.connection === 'wired', 'Project over a USB cable from the car to the comma’s USB-C port instead of Bluetooth and Wi-Fi.' + (runtime?.wired_blocked ? ' ' + runtime.wired_blocked + '.' : ''))"
+            :index="0" :busy="busy" :disabled="!setup.enabled || !setup.parked || !!pairing?.active || !!runtime?.running || (!!runtime?.wired_blocked && runtime?.connection !== 'wired')"
+            :save-value="(index, value) => control('connection', { connection: value === 'On' ? 'wired' : 'wireless' })" />
           <div class="gx-actions">
             <a class="gx-btn gx-btn--tonal" href="#/theme_maker/android_auto"><i class="bi bi-layout-text-window" aria-hidden="true"></i> Customize Layout</a>
             <button type="button" class="gx-btn gx-btn--tonal" :aria-expanded="showSteps" aria-controls="gx-aa-steps" @click="showSteps = !showSteps">
@@ -782,6 +785,9 @@ export const AndroidAutoPage = {
             <GalaxySettingRow :row="switchRow('Automatic Connection', runtime?.auto_connect, 'Connect to your car whenever you start driving.')"
               :index="0" :busy="busy" :disabled="!setup.enabled || !setup.parked || !!pairing?.active"
               :save-value="(index, value) => control('auto_connect', { enabled: value === 'On' })" />
+            <GalaxySettingRow :row="switchRow('Wired USB Connection', runtime?.connection === 'wired', 'Project over a USB cable from the car to the comma’s USB-C port instead of Bluetooth and Wi-Fi.' + (runtime?.wired_blocked ? ' ' + runtime.wired_blocked + '.' : ''))"
+              :index="0" :busy="busy" :disabled="!setup.enabled || !setup.parked || !!pairing?.active || !!runtime?.running || (!!runtime?.wired_blocked && runtime?.connection !== 'wired')"
+              :save-value="(index, value) => control('connection', { connection: value === 'On' ? 'wired' : 'wireless' })" />
             <p v-if="runtime?.companion_name" class="gx-note">Car: {{ runtime.companion_name }}</p>
             <details class="gx-aa-wiki"><summary>Stuck connecting? Wi-Fi and screen troubleshooting</summary>
               <ul>
@@ -789,7 +795,7 @@ export const AndroidAutoPage = {
                 <li><strong>First connection:</strong> stay in Park or offroad mode, and keep the car’s screen on.</li>
                 <li><strong>Black or frozen screen:</strong> tap Disconnect, wait a few seconds, then connect again. If it keeps happening, turn the car off and on.</li>
                 <li><strong>Car says the phone isn’t compatible:</strong> make sure wireless Android Auto (sometimes called “smartphone connection”) is turned on in the car’s settings, and that step 1 shows Ready.</li>
-                <li>Wired USB setup is unavailable. Use wireless Android Auto or a wireless adapter.</li>
+                <li><strong>Wired USB:</strong> turn on Wired USB Connection, plug the car’s data USB port into the comma’s USB-C port with a data-capable cable, and drive. Bluetooth pairing is not needed.</li>
               </ul>
             </details>
           </div>
@@ -862,7 +868,7 @@ export const AndroidAutoPage = {
           <p>The comma can’t pass calls through to your phone yet.</p>
         </details>
         <details class="gx-aa-wiki"><summary>Will this work with my car?</summary>
-          <p>It’s made for cars that have <strong>wireless Android Auto</strong> built in, though not every car has been tested. If your car only has wired Android Auto through a USB cable, a <strong>wireless adapter</strong> (AAWireless, Motorola MA1, Carlinkit, and similar) may work. A direct USB cable from the comma isn’t supported yet.</p>
+          <p>It’s made for cars that have <strong>wireless Android Auto</strong> built in, though not every car has been tested. If your car only has wired Android Auto through a USB cable, a <strong>wireless adapter</strong> (AAWireless, Motorola MA1, Carlinkit, and similar) may work. A direct USB cable from the comma to the car is supported as Wired USB Connection, though it still needs testing on more cars.</p>
           <p>Every car brand does things a little differently. If yours gives you trouble, a log from your car helps get it fixed. You can download one from <strong>Connection Logs</strong> at the bottom of this page.</p>
         </details>
 
