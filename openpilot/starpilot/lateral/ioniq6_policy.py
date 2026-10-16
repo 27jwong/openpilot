@@ -825,7 +825,7 @@ class Ioniq6TorquePolicy:
       effective_deadzone_deg += self.surface_math.center_deadband(self.surface, CS.vEgo)
     curvature_deadzone = abs(VM.calc_curvature(math.radians(effective_deadzone_deg), CS.vEgo, 0.0))
     lateral_accel_deadzone = curvature_deadzone * CS.vEgo ** 2
-    # Honour the measured delay instead of rounding across a whole request tick.
+    # Honor the measured delay instead of rounding across a whole request tick.
     delay_frames = clip_scalar(lat_delay / self.dt, 1.0, float(self.request_buffer_len))
     recent = int(delay_frames)
     older = min(recent + 1, self.request_buffer_len)
