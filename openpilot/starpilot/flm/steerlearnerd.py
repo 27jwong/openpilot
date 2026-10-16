@@ -79,18 +79,19 @@ def run(
       elif collector is None:
         unavailable_reason = 'no_current_controller_evidence'
 
-      def control(event, current, stamp, *, source=source, now=now):
+      def control(event, current, stamp, *, source=source):
         nonlocal collector, raw_context, active_key, unavailable_reason
         if event.which() == 'starpilotLateralState' and event.starpilotLateralState.learningEvidence.version == 0:
           if collector is not None:
             collector.split('no_current_learning_evidence')
           return
         evidence = read_control(event)
+        received_now = clock()
         if (
           not source.enabled
           or source.manual
           or evidence.source_epoch != source.source_epoch
-          or not 0 < evidence.source_receipt_ns <= evidence.control_ns <= now <= source.expires_ns
+          or not 0 < evidence.source_receipt_ns <= evidence.control_ns <= received_now <= source.expires_ns
         ):
           clear('learning_disabled' if not source.enabled else 'manual_profile_override' if source.manual else 'controller_source_receipt_mismatch')
           return
@@ -131,17 +132,22 @@ def run(
         if prepared is None:
           collector.split('actual_stage_capture_unqualified')
         else:
-          collector.control(prepared, stamp)
+          collector.control(prepared, received_now)
 
       def output(event, current, stamp, *, source=source):
+        received_now = clock()
+        if not source.observed_ns <= received_now <= source.expires_ns:
+          clear('settings_receipt_expired')
+          return
         if collector is not None:
           if event.which() == 'starpilotCarState' and event.starpilotCarState.appliedEvidence.version == 0:
             collector.split('no_current_applied_evidence')
             return
-          collector.output(read_applied(event), stamp)
+          collector.output(read_applied(event), received_now)
 
       drain(control_socket, control, messaging.recv_one_or_none, sink, now)
       drain(applied_socket, output, messaging.recv_one_or_none, sink, now)
+      now = clock()
       current_native = False
       if collector is not None and collector.ready:
         current_native = current_native_health(sm, CP, collector.ready[-1][0], now)
