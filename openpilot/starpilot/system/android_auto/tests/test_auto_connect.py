@@ -270,9 +270,39 @@ def test_config_v4_resets_head_unit_verification(tmp_path):
   config = identity_store.load_config(path)
   assert config["verify_head_unit"] is False
   identity_store.save_config(config, path)
+  # Saving and loading again keeps it off.
+  saved = json.loads(path.read_text())
+  assert saved["config_version"] == 5 and saved["verify_head_unit"] is False
+  assert identity_store.load_config(path)["verify_head_unit"] is False
   # From v5 on it is a real choice and stays as saved.
   path.write_text(json.dumps({**json.loads(path.read_text()), "verify_head_unit": True}))
   assert identity_store.load_config(path)["verify_head_unit"] is True
+
+
+@pytest.mark.parametrize("stored, verified", [({}, False), ({"verify_head_unit": False}, False), ({"verify_head_unit": True}, True)])
+def test_projection_verifies_head_unit_only_when_chosen(identity, tmp_path, monkeypatch, stored, verified):
+  from openpilot.starpilot.system.android_auto import identity as identity_store, supervisor
+  sup, _ = make_supervisor(identity, tmp_path, monkeypatch, lambda *a, **k: socket.socketpair()[0])
+  identity_store.save_config({**identity_store.load_config(), **stored})
+  sup.config = identity_store.load_config()
+  ident = identity_store.load_identity()
+  assert ident.root is not None  # the root is installed, so only the setting decides
+  seen = []
+
+  class Stop(Exception):
+    pass
+
+  class RecordingSession:
+    def __init__(self, sock, cert, key, log, ca):
+      seen.append(ca)
+
+    def authenticate(self):
+      raise Stop
+
+  monkeypatch.setattr(supervisor, "ProjectionSession", RecordingSession)
+  with pytest.raises(Stop):
+    sup._project(None, None, ident, connect=lambda: socket.socketpair()[0])
+  assert seen == [ident.root if verified else None]
 
 
 def _wireless_backoff_harness(sup, monkeypatch, failure):
