@@ -1,8 +1,7 @@
 """Native lane-strength presentation preserves canonical owner percent transport."""
 from dataclasses import replace
-from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from openpilot.starpilot.ui.feature_settings_state import (
   FeatureRow, lane_strength_level, row_change, row_default, value_reason, value_text,
@@ -53,11 +52,11 @@ class TestNativeLaneStrength(unittest.TestCase):
       def set_click_callback(self, click):
         self.click = click
     sent = []
-    session = SimpleNamespace(feature_request=lambda request: sent.append(request) or True)
+    session = Mock(spec=compact.FeatureSession, feature_request=lambda request: sent.append(request) or True)
     adapter = compact.FeatureSettingsCompact(session)
     refreshed = []
     with patch.object(compact, 'BigButton', Button):
-      cards = adapter._editable(self.row(), lambda: refreshed.append(True), None)
+      cards = adapter._editable(self.row(), lambda: refreshed.append(True), Mock(spec=compact.NavScroller))
       self.assertEqual(len(cards), 2)
       self.assertTrue(all(card.detail.startswith('5 · 1–10; 5 is normal') for card in cards))
       cards[1].click()

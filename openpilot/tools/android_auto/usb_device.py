@@ -19,9 +19,10 @@ import argparse
 import json
 import signal
 import threading
+from typing import cast
 
 from openpilot.starpilot.system.android_auto import identity as identity_store
-from openpilot.starpilot.system.android_auto.supervisor import Cancelled, Supervisor
+from openpilot.starpilot.system.android_auto.supervisor import Cancelled, EventLog, Supervisor
 
 
 class EchoLog:
@@ -54,7 +55,7 @@ def main() -> int:
       supervisor.config[config_key] = getattr(args, key)
   ident = identity_store.load_identity()
   print(f"identity ok, expires {ident.expires} ({ident.days_left} days)", flush=True)
-  supervisor.log = EchoLog(supervisor.log)
+  supervisor.log = cast(EventLog, EchoLog(supervisor.log))
 
   def stop(*_):
     supervisor._stop.set()

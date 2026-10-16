@@ -2,6 +2,7 @@ import os
 import subprocess
 import tty
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -274,6 +275,7 @@ def test_gadget_detach_settles_for_switch_restore_and_crash_recovery(tmp_path, m
   gadget = usb.AccessoryGadget(lambda *a, **k: None, configfs=configfs, run=run, adb_wanted=lambda: None)
   gadget.prepare()
   root = gadget.root
+  assert root is not None
   gadget.switch_to_accessory()
   # Simulate a crashed daemon: a fresh owner must detach before editing configfs.
   recovered = usb.AccessoryGadget(lambda *a, **k: None, configfs=configfs, run=run, adb_wanted=lambda: None)
@@ -361,7 +363,7 @@ def test_recover_after_a_crash_follows_the_adb_setting(tmp_path, monkeypatch):
 def test_recover_never_mounts_configfs(tmp_path, monkeypatch):
   monkeypatch.setattr(usb, "configfs_mount", lambda: None)
   calls = []
-  gadget = usb.AccessoryGadget(lambda *a, **k: None, run=lambda args, **k: calls.append(args), adb_wanted=lambda: True)
+  gadget = usb.AccessoryGadget(lambda *a, **k: None, run=Mock(side_effect=lambda args, **k: calls.append(args)), adb_wanted=lambda: True)
   assert not gadget.recover()
   assert calls == []
 
@@ -389,6 +391,7 @@ def test_prepare_without_adb_mounts_configfs_itself(tmp_path, monkeypatch):
   gadget.prepare()
   assert ("mount", "-t", "configfs", "none", str(fallback), "") in calls
   assert gadget.root == fallback / "usb_gadget" / usb.GADGET_NAME
+  assert gadget.root is not None
   assert (gadget.root / "UDC").read_text().strip() == usb.UDC_NAME
   assert "usb_configfs_mounted" in events
   gadget.restore()
@@ -398,7 +401,7 @@ def test_prepare_without_adb_mounts_configfs_itself(tmp_path, monkeypatch):
 def test_prepare_explains_missing_kernel_support(tmp_path, monkeypatch):
   configfs = tmp_path / "config"
   configfs.mkdir()  # configfs mounted, but no usb_gadget directory: no libcomposite
-  gadget = usb.AccessoryGadget(lambda *a, **k: None, configfs=configfs, run=lambda *a, **k: None, adb_wanted=lambda: None)
+  gadget = usb.AccessoryGadget(lambda *a, **k: None, configfs=configfs, run=Mock(return_value=None), adb_wanted=lambda: None)
   with pytest.raises(RuntimeError, match="no USB gadget support"):
     gadget.prepare()
 
@@ -418,7 +421,7 @@ def test_usb_cleanup_error_never_hides_why_the_session_ended():
   from openpilot.starpilot.system.android_auto import supervisor as supervisor_module
   sup = supervisor_module.Supervisor.__new__(supervisor_module.Supervisor)
   events, steps = [], []
-  sup.log = lambda name, **values: events.append((name, values))
+  sup.log = Mock(side_effect=lambda name, **values: events.append((name, values)))
 
   class Part:
     def __init__(self, name, fails=False):
@@ -448,10 +451,10 @@ def test_usb_attempt_keeps_a_car_requested_stop(monkeypatch):
   from openpilot.starpilot.system.android_auto import identity as identity_store, supervisor as supervisor_module
   from openpilot.starpilot.system.android_auto.session import PeerRequestedStop
   sup = supervisor_module.Supervisor.__new__(supervisor_module.Supervisor)
-  sup.log = lambda *a, **k: None
+  sup.log = Mock(return_value=None)
   sup.config = {"usb_mode": "direct"}
-  sup._stage = lambda *a, **k: None
-  sup._await_usb_configured = lambda *a, **k: True
+  sup._stage = Mock(return_value=None)
+  sup._await_usb_configured = Mock(return_value=True)
   monkeypatch.setattr(identity_store, "load_identity", lambda: None)
 
   class Gadget:
@@ -472,7 +475,7 @@ def test_usb_attempt_keeps_a_car_requested_stop(monkeypatch):
 
   def project(*args, **kwargs):
     raise PeerRequestedStop("Head unit ended projection (reason 1)")
-  sup._project = project
+  sup._project = Mock(side_effect=project)
   with pytest.raises(PeerRequestedStop):
     sup._attempt_usb()
 
@@ -493,3 +496,28 @@ def test_prepare_reuses_a_pre_rename_gadget_that_still_holds_the_accessory(tmp_p
   assert gadget.root == legacy and not (configfs / "usb_gadget" / usb.GADGET_NAME).exists()
   assert [path.name for path in (configfs / "usb_gadget").glob("*/functions/accessory.*")] == [usb.ACCESSORY_FUNCTION]
   assert gadget.recover() is True
+
+
+def test_usb_device_echo_log_preserves_session_log(tmp_path, capsys):
+  import json
+  from typing import cast
+  from openpilot.starpilot.system.android_auto.supervisor import EventLog
+  from openpilot.tools.android_auto.usb_device import EchoLog
+
+  original = EventLog(tmp_path)
+  proxy = EchoLog(original)
+  log = cast(EventLog, proxy)
+  assert log is proxy
+  assert log.recent is original.recent
+  assert log.open == original.open
+  assert log.close == original.close
+  log.open()
+  try:
+    log("session_test", count=3)
+  finally:
+    log.close()
+  assert json.loads(capsys.readouterr().out) == {"event": "session_test", "count": 3}
+  assert original.recent[-1]["event"] == "session_test"
+  assert original.recent[-1]["count"] == 3
+  records = [json.loads(line) for path in tmp_path.glob("session-*.jsonl") for line in path.read_text().splitlines()]
+  assert records == list(original.recent)
