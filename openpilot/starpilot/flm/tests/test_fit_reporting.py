@@ -25,7 +25,7 @@ def test_actual_cached_child_without_profile_reports_reason_without_admission(st
   adapter.prepare_control.side_effect = lambda evidence: evidence
   adapter.install_fit.return_value = False
   collector = FullrateCollector(adapter)
-  collector.physical_context = ('current-physical-context',)
+  collector.physical_context = ('current-physical-context', 'model-generation', 'lag-generation', 100_000_000)
   collector.ready.append((object(), object()))
   source = SourceState(True, False, '0', 'a' * 64, NOW, NOW + 500_000_000, 'b' * 64, (0., 0., 0.))
   evidence = SimpleNamespace(source_epoch='a' * 64, source_receipt_ns=NOW, control_ns=NOW,
@@ -41,7 +41,7 @@ def test_actual_cached_child_without_profile_reports_reason_without_admission(st
     if tick[0] == 3:
       raise StopIteration
     if tick[0] == 2 and blocked == 'physical_context':
-      collector.physical_context = ('replaced-physical-context',)
+      collector.physical_context = ('replaced-physical-context', 'model-generation', 'lag-generation', 100_000_000)
 
   sm.update.side_effect = update
   fitter = mock.Mock()
