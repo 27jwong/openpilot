@@ -454,7 +454,17 @@ export const AndroidAutoPage = {
     },
     supportReady() { return !!(this.setup?.enabled && this.setup.identity.installed) },
     // Returning drivers see a status card; the setup steps fold away below it.
-    setupDone() { return !!(this.supportReady && this.selected && !this.pairing?.active) },
+    wired() { return this.runtime?.connection === "wired" },
+    connectionName() { return this.wired ? "car" : this.selected?.name || "car" },
+    setupDone() { return !!(this.supportReady && (this.selected || this.wired) && !this.pairing?.active) },
+    wiredRow() {
+      const detail = "Project over a USB cable from the car to the comma’s USB-C port instead of Bluetooth and Wi-Fi."
+      return switchRow("Wired USB Connection", this.wired, detail + (this.runtime?.wired_blocked ? ` ${this.runtime.wired_blocked}.` : ""))
+    },
+    wiredDisabled() {
+      return !this.setup?.enabled || !this.setup.parked || !!this.pairing?.active || !!this.runtime?.running ||
+        (!!this.runtime?.wired_blocked && !this.wired)
+    },
     download() { return downloadLink(this.setup?.download, this.setup?.downloadPending === true) },
     uploadPercent() {
       const { loaded, total } = this.uploadProgress || {}
@@ -637,15 +647,15 @@ export const AndroidAutoPage = {
     <section class="gx-driving" aria-label="Android Auto setup" :inert="busy" :aria-busy="busy || undefined">
       <header class="gx-page-header">
         <h2>Android Auto</h2>
-        <p>Show the StarPilot driving view on your car’s screen. Set up support, pair your car, then connect.</p>
+        <p>Show the StarPilot driving view on your car’s screen. Set up support, {{ wired ? 'plug in your car' : 'pair your car' }}, then connect.</p>
       </header>
-      <GxNotice tone="warn">Android Auto uses the comma’s Wi-Fi to project to your car and disconnects it from your current Wi-Fi network. Use the Galaxy hotspot for local access during projection. Remote Galaxy access requires Internet on the comma.</GxNotice>
+      <GxNotice tone="warn" v-if="!wired">Android Auto uses the comma’s Wi-Fi to project to your car and disconnects it from your current Wi-Fi network. Use the Galaxy hotspot for local access during projection. Remote Galaxy access requires Internet on the comma.</GxNotice>
       <GxNotice tone="danger" v-if="error && setup">{{ error }}</GxNotice>
       <GxNotice v-if="!setup" :busy="!error" :tone="error ? 'danger' : 'info'">{{ error || "Checking Android Auto setup… Reconnecting automatically…" }}</GxNotice>
       <section v-if="setup && setupDone" class="gx-card gx-aa-step gx-aa-home" aria-labelledby="gx-aa-home-title">
         <div class="gx-aa-step__head">
           <span class="gx-aa-step__num" :class="{ 'gx-aa-home__icon--live': projecting }" aria-hidden="true"><i class="bi bi-car-front"></i></span>
-          <div><h3 id="gx-aa-home-title">{{ projecting ? 'Connected to ' + selected.name : runtime?.running ? 'Connecting to ' + selected.name : selected.name }}</h3>
+          <div><h3 id="gx-aa-home-title">{{ projecting ? 'Connected to ' + connectionName : runtime?.running ? 'Connecting to ' + connectionName : connectionName }}</h3>
             <p role="status">{{ runtime?.running && runtime.state !== 'streaming' && runtime.label ? runtime.label : runtime?.running ? 'Showing StarPilot on your car’s screen.' : runtime?.auto_connect ? 'Connects automatically when you start driving.' : 'Ready to connect.' }}</p></div>
         </div>
         <div class="gx-aa-step__body">
@@ -655,8 +665,7 @@ export const AndroidAutoPage = {
           <GalaxySettingRow :row="switchRow('Automatic Connection', runtime?.auto_connect, 'Connect to your car whenever you start driving.')"
             :index="0" :busy="busy" :disabled="!setup.enabled || !setup.parked || !!pairing?.active"
             :save-value="(index, value) => control('auto_connect', { enabled: value === 'On' })" />
-          <GalaxySettingRow :row="switchRow('Wired USB Connection', runtime?.connection === 'wired', 'Project over a USB cable from the car to the comma’s USB-C port instead of Bluetooth and Wi-Fi.' + (runtime?.wired_blocked ? ' ' + runtime.wired_blocked + '.' : ''))"
-            :index="0" :busy="busy" :disabled="!setup.enabled || !setup.parked || !!pairing?.active || !!runtime?.running || (!!runtime?.wired_blocked && runtime?.connection !== 'wired')"
+          <GalaxySettingRow :row="wiredRow" :index="0" :busy="busy" :disabled="wiredDisabled"
             :save-value="(index, value) => control('connection', { connection: value === 'On' ? 'wired' : 'wireless' })" />
           <div class="gx-actions">
             <a class="gx-btn gx-btn--tonal" href="#/theme_maker/android_auto"><i class="bi bi-layout-text-window" aria-hidden="true"></i> Customize Layout</a>
@@ -785,13 +794,12 @@ export const AndroidAutoPage = {
             <GalaxySettingRow :row="switchRow('Automatic Connection', runtime?.auto_connect, 'Connect to your car whenever you start driving.')"
               :index="0" :busy="busy" :disabled="!setup.enabled || !setup.parked || !!pairing?.active"
               :save-value="(index, value) => control('auto_connect', { enabled: value === 'On' })" />
-            <GalaxySettingRow :row="switchRow('Wired USB Connection', runtime?.connection === 'wired', 'Project over a USB cable from the car to the comma’s USB-C port instead of Bluetooth and Wi-Fi.' + (runtime?.wired_blocked ? ' ' + runtime.wired_blocked + '.' : ''))"
-              :index="0" :busy="busy" :disabled="!setup.enabled || !setup.parked || !!pairing?.active || !!runtime?.running || (!!runtime?.wired_blocked && runtime?.connection !== 'wired')"
+            <GalaxySettingRow :row="wiredRow" :index="0" :busy="busy" :disabled="wiredDisabled"
               :save-value="(index, value) => control('connection', { connection: value === 'On' ? 'wired' : 'wireless' })" />
             <p v-if="runtime?.companion_name" class="gx-note">Car: {{ runtime.companion_name }}</p>
             <details class="gx-aa-wiki"><summary>Stuck connecting? Wi-Fi and screen troubleshooting</summary>
               <ul>
-                <li><strong>How it connects:</strong> after Bluetooth, the car (or adapter) creates its own hidden 5 GHz Wi-Fi network and tells the comma how to join. The picture streams over that Wi-Fi.</li>
+                <li v-if="!wired"><strong>How it connects:</strong> after Bluetooth, the car (or adapter) creates its own hidden 5 GHz Wi-Fi network and tells the comma how to join. The picture streams over that Wi-Fi.</li>
                 <li><strong>First connection:</strong> stay in Park or offroad mode, and keep the car’s screen on.</li>
                 <li><strong>Black or frozen screen:</strong> tap Disconnect, wait a few seconds, then connect again. If it keeps happening, turn the car off and on.</li>
                 <li><strong>Car says the phone isn’t compatible:</strong> make sure wireless Android Auto (sometimes called “smartphone connection”) is turned on in the car’s settings, and that step 1 shows Ready.</li>
