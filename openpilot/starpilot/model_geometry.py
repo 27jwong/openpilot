@@ -3,6 +3,8 @@
 import math
 
 ORIGIN_ROUNDOFF_M = 1e-6
+STANDSTILL_SPEED_NOISE_MPS = 0.01
+STANDSTILL_MODEL_PREFIX_NOISE_M = 0.01
 
 
 def normalized_origin(distances: tuple) -> tuple:
@@ -49,3 +51,29 @@ def road_curvature(model: object, speed_mps: float) -> tuple[float, float] | Non
     triples.append((r * v, t))
   acceleration, timestamp = max(triples, key=lambda pair: abs(pair[0]))
   return acceleration / max(speed, 1.0) ** 2, max(timestamp, 1.0)
+
+
+def standstill_clear_horizon(model) -> float | None:
+  """Stop-release endpoint only; this never qualifies full spatial geometry."""
+  try:
+    distances = normalized_origin(tuple(model.position.x))
+    if len(distances) != 33 or distances[0] != 0.0:
+      return None
+    parsed = tuple(_finite(value, low=-STANDSTILL_MODEL_PREFIX_NOISE_M, high=500.0) for value in distances)
+    if any(value is None for value in parsed):
+      return None
+    finite = tuple(value for value in parsed if value is not None)
+    forward_tail = False
+    backtrack = 0.0
+    for previous, current in zip(finite, finite[1:], strict=False):
+      if current < previous:
+        if forward_tail or max(abs(previous), abs(current)) > STANDSTILL_MODEL_PREFIX_NOISE_M:
+          return None
+        backtrack += previous - current
+        if backtrack > STANDSTILL_MODEL_PREFIX_NOISE_M:
+          return None
+      if current > STANDSTILL_MODEL_PREFIX_NOISE_M:
+        forward_tail = True
+    return finite[-1] if forward_tail else None
+  except (AttributeError, TypeError, ValueError, OverflowError):
+    return None
