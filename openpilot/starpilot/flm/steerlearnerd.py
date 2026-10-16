@@ -13,6 +13,7 @@ from openpilot.cereal import messaging
 from openpilot.common.params import Params
 from openpilot.starpilot.flm.fullrate_collector import FullrateCollector, drain
 from openpilot.starpilot.flm.learning_wire import read_control, read_applied, result_message, write_source_receipt
+from openpilot.starpilot.flm.runtime_adapter_registry import SOURCE_LEASE_NS
 
 
 MAX_OBJECTIVES = 6
@@ -40,6 +41,9 @@ def run(
   from openpilot.starpilot.flm.native_health import current_native_health
 
   collector = None
+  source = None
+  source_rejected = False
+  source_cp_sha256 = None
   raw_context = active_key = pending_key = pending_token = None
   cached_reports = {}
   prior_attached = {}
@@ -57,6 +61,43 @@ def run(
     raw_context = active_key = pending_key = pending_token = None
     fitter.cancel(reason)
 
+  def source_current(*, read=False):
+    nonlocal source, source_rejected, source_cp_sha256
+    now = clock()
+    if source_rejected and not read:
+      return False, now
+    previous = source
+    if read or source is None or not source.observed_ns <= now <= source.expires_ns:
+      if not read:
+        # A long ingest can outlive the calibration/native snapshot that
+        # backed the receipt. Reconcile queued metadata without blocking.
+        sm.update(0)
+        now = clock()
+      source = source_reader(now)
+      # Params/calibration reads can themselves consume the entire lease.
+      now = clock()
+    valid = (source.enabled and not source.manual and source.source_epoch and source.reset and
+             source.cp_sha256 and (source_cp_sha256 is None or source.cp_sha256 == source_cp_sha256) and
+             0 < source.observed_ns <= now <= source.expires_ns <= source.observed_ns + SOURCE_LEASE_NS)
+    if not valid:
+      source_rejected = True
+      clear('learning_disabled' if not source.enabled else 'manual_profile_override' if source.manual else 'settings_receipt_expired')
+      return False, now
+    if previous is not None and (
+        previous.source_epoch, previous.calibration_generation, previous.cp_sha256, previous.reset,
+        previous.enabled, previous.manual) != (
+        source.source_epoch, source.calibration_generation, source.cp_sha256, source.reset,
+        source.enabled, source.manual):
+      clear('actual_source_identity_changed')
+      # An epoch must bind reset/calibration/CP identity. Refuse malformed
+      # same-epoch mutations and do not feed old evidence on a transition.
+      if previous.source_epoch == source.source_epoch:
+        source = previous
+      source_rejected = True
+      return False, now
+    source_cp_sha256 = source.cp_sha256
+    return True, now
+
   class Sink:
     def split(self, reason, **kwargs):
       if collector is not None:
@@ -72,21 +113,22 @@ def run(
       # Parent handles bounded primitive ingest and live receipts. Physical
       # fitting, stage normalization and full replay run in ONE separate child.
       sm.update()
+      source_rejected = False
       now = clock()
-      source = source_reader(now)
-      if not source.enabled or source.manual or not source.observed_ns <= now <= source.expires_ns:
-        clear('learning_disabled' if not source.enabled else 'manual_profile_override' if source.manual else 'settings_receipt_expired')
-      elif collector is None:
+      source_valid, now = source_current(read=True)
+      if source_valid and collector is None:
         unavailable_reason = 'no_current_controller_evidence'
 
-      def control(event, current, stamp, *, source=source):
+      def control(event, current, stamp):
         nonlocal collector, raw_context, active_key, unavailable_reason
+        valid_source, received_now = source_current()
+        if not valid_source:
+          return
         if event.which() == 'starpilotLateralState' and event.starpilotLateralState.learningEvidence.version == 0:
           if collector is not None:
             collector.split('no_current_learning_evidence')
           return
         evidence = read_control(event)
-        received_now = clock()
         if (
           not source.enabled
           or source.manual
@@ -135,10 +177,9 @@ def run(
         else:
           collector.control(prepared, received_now)
 
-      def output(event, current, stamp, *, source=source):
-        received_now = clock()
-        if not source.observed_ns <= received_now <= source.expires_ns:
-          clear('settings_receipt_expired')
+      def output(event, current, stamp):
+        valid_source, received_now = source_current()
+        if not valid_source:
           return
         if collector is not None:
           if event.which() == 'starpilotCarState' and event.starpilotCarState.appliedEvidence.version == 0:
@@ -148,7 +189,7 @@ def run(
 
       drain(control_socket, control, messaging.recv_one_or_none, sink, now)
       drain(applied_socket, output, messaging.recv_one_or_none, sink, now)
-      now = clock()
+      _, now = source_current()
       current_native = False
       if collector is not None and collector.ready:
         current_native = current_native_health(sm, CP, collector.ready[-1][0], now)
@@ -159,13 +200,16 @@ def run(
         else:
           collector.physical(physical, now)
 
+      _, now = source_current()
+      current_native = bool(collector is not None and collector.ready and
+                            current_native_health(sm, CP, collector.ready[-1][0], now))
       token = (raw_context, pending_key, collector.physical_context) if collector is not None and collector.ready and current_native else None
       report = fitter.poll(token=token, now_ns=now)
       if report is not None:
         decoded = decode_fit_result(report)
         if decoded is not None and collector is not None and token == pending_token:
           if len(cached_reports) < MAX_CACHED_PROFILES or pending_key in cached_reports:
-            cached_reports[pending_key] = (report, decoded)
+            cached_reports[pending_key] = (report, decoded, token)
         pending_key = pending_token = None
       if fitter.child is None:
         pending_key = pending_token = None
@@ -182,10 +226,16 @@ def run(
           snapshot = collector.job_snapshot(now)
           if snapshot is not None:
             token = (raw_context, active_key, collector.physical_context)
-            if fitter.submit(snapshot, token=token, now_ns=now):
+            valid_source, now = source_current()
+            current_native = bool(collector is not None and collector.ready and
+                                  current_native_health(sm, CP, collector.ready[-1][0], now))
+            if valid_source and current_native and collector is not None and fitter.submit(snapshot, token=token, now_ns=now):
               collector.mark_job_submitted(now)
               pending_key, pending_token = active_key, token
 
+      _, now = source_current()
+      current_native = bool(collector is not None and collector.ready and
+                            current_native_health(sm, CP, collector.ready[-1][0], now))
       if now - previous_publish >= 250_000_000:
         previous_publish = now
         publication_sequence += 1
@@ -193,14 +243,20 @@ def run(
           cached = cached_reports.get(active_key)
           collector.fit_result = collector.fit_validation = None
           if cached is not None and current_native:
-            report, decoded = cached
+            report, decoded, _ = cached
             collector.adapter.select_objective(active_key)
             if collector.adapter.install_fit(report, *decoded, physical_context=collector.physical_context):
               collector.install_fit(*decoded)
           collector.live_profile_sequence = max(collector.live_profile_sequence, publication_sequence)
           collector.revalidate_fit(now)
           publication_sequence = max(publication_sequence, collector.live_profile_sequence)
-          message = result_message(collector.result, collector.session, publication_sequence, now, replay_validation=collector.last_validation)
+          publication_result = collector.result
+          if (
+            publication_result is None and cached is not None and current_native and cached[1][0].profile is None
+            and cached[2] == (raw_context, active_key, collector.physical_context)
+          ):
+            publication_result = cached[1][0]
+          message = result_message(publication_result, collector.session, publication_sequence, now, replay_validation=collector.last_validation)
           persistence.save_current(collector, now_ns=now, source_epoch=source.source_epoch, reset=source.reset)
         else:
           message = messaging.new_message('autoSteeringLearning')
