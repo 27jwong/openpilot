@@ -394,6 +394,9 @@ class ProjectionOnroad:
       now_ns = time.monotonic_ns()
       timer_enabled = bool((self.customization or {}).get('widgets', {}).get('stopped_timer', {}).get('enabled', False))
       state = self.adapter.build(self.native.shell_mode.ONROAD, now_ns=now_ns, stopped_timer_enabled=timer_enabled).onroad
+      # Touch hit-tests read viewport_width; the view draws at the car canvas width (1920 for a 1280x720 head unit).
+      if state.viewport_width != self.width:
+        state = replace(state, viewport_width=self.width)
       if self.customization is not None:
         from openpilot.starpilot.system.android_auto.projection_layout import projection_customization
         if state.customization is not self._base_customization:
