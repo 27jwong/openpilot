@@ -29,7 +29,8 @@ from openpilot.starpilot.galaxy.drive_history import DriveHistory, DriveHistoryU
 from openpilot.starpilot.galaxy.drive_stats import DriveStatsOwner
 from openpilot.starpilot.galaxy.recording_media import RecordingMedia, RecordingMediaUnavailable
 from openpilot.starpilot.galaxy.recording_http import camera_video, send_recording
-from openpilot.starpilot.galaxy.replay_http import ReplayHTTP
+from openpilot.starpilot.galaxy.replay_http import ReplayHTTP, ReplayHTTPError
+from openpilot.starpilot.galaxy.route_inventory import CatalogError
 from openpilot.starpilot.galaxy.segment_summary import SegmentSummary, SegmentSummaryChanged, SegmentSummaryUnavailable
 from openpilot.starpilot.galaxy.flm_operations import FlmOperations, FlmOperationError, error_status, validate_action as validate_flm_action
 from openpilot.starpilot.galaxy.sentry_events import SentryEvents, SentryEventsUnavailable
@@ -1013,6 +1014,27 @@ def make_server(*, port=8082, host='127.0.0.1', monitor=None, owner=None, crashe
           self.json(404, {'error': 'Closed recording log unavailable'})
         else:
           self.send_recording(lease, 'application/octet-stream')
+      elif path == '/api/recordings/detail':
+        if not self.require_session():
+          return
+        try:
+          query = parse_qs(urlsplit(self.path).query, keep_blank_values=True, max_num_fields=1)
+          if set(query) != {'routeId'} or len(query['routeId']) != 1:
+            raise ValueError('Choose one route')
+          detail = history.detail(query['routeId'][0])
+          from openpilot.starpilot.galaxy.recording_media import MAX_SOURCE_BYTES
+          detail['footageDownloads'] = {camera: detail['inventoryComplete'] and 0 < size <= MAX_SOURCE_BYTES
+                                        for camera, size in detail['videoBytes'].items()}
+          log_bytes = sum(sum(segment.get('logBytes', {}).values()) for segment in detail['segments'])
+          detail['logArchiveAvailable'] = detail['inventoryComplete'] and 0 < log_bytes <= MAX_SOURCE_BYTES
+          detail['segments'] = [{key: value for key, value in segment.items() if key != 'sourceFiles'}
+                                for segment in detail['segments']]
+        except (CatalogError, ValueError, DriveHistoryUnavailable) as error:
+          if self.require_session():
+            self.json(409, {'error': str(error) or 'Route inventory unavailable'})
+        else:
+          if self.require_session():
+            self.json(200, {'schemaVersion': 1, 'source': 'local', 'route': detail})
       elif path == '/api/recordings/local':
         if not self.require_session():
           return
@@ -1362,6 +1384,7 @@ def make_server(*, port=8082, host='127.0.0.1', monitor=None, owner=None, crashe
                       '/api/settings/recovery/preview', '/api/settings/recovery/confirm',
                       '/api/settings/reset-default', '/api/settings/restore', '/api/recordings/action',
                       '/api/replay/start', '/api/replay/control', '/api/replay/stop',
+                      '/api/replay/export-start',
                       '/api/galaxy/pair', '/api/galaxy/unpair', '/api/galaxy/device-name', '/api/galaxy/hotspot', '/api/cameras/snapshot',
                       '/api/android-auto/layout', '/api/android-auto/enable', '/api/android-auto/control', '/api/android-auto/pairing',
                       '/api/android-auto/pairing/response', '/api/android-auto/pairing/cancel', '/api/android-auto/pairing/select',
@@ -1441,7 +1464,10 @@ def make_server(*, port=8082, host='127.0.0.1', monitor=None, owner=None, crashe
           return
         try:
           with recordings_lock:
-            result = recording_library.action(payload, permitted=lambda: self.settings_session() == identity and parked())
+            result = recording_library.action(payload, permitted=lambda: self.settings_session() == identity and parked(),
+                                              before_delete=lambda route_id: replay_api.clear_route(self, identity, route_id))
+        except ReplayHTTPError as error:
+          self.json(error.status, {'error': error.message})
         except ValueError as error:
           self.json(400, {'error': str(error)})
         except PermissionError as error:
@@ -1763,7 +1789,10 @@ def make_server(*, port=8082, host='127.0.0.1', monitor=None, owner=None, crashe
             if not parked():
               self.json(409, {'error': 'Turn off the vehicle before managing recordings'})
               return
+            replay_api.clear_route(self, identity, payload['segmentName'].rsplit('--', 1)[0].replace('_', '|'))
             result = history.delete_videos(payload['segmentName'])
+        except ReplayHTTPError as error:
+          self.json(error.status, {'error': error.message})
         except ValueError:
           self.json(400, {'error': 'Invalid segment selection'})
         except SegmentMissing:

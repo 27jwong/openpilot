@@ -183,6 +183,7 @@ class TestMachine(unittest.TestCase):
     with Machine([(0, [.1, .2, .3], True), (2, [4.1, 4.2, 4.3], True)]) as engine:
       initial = engine.wait(lambda value: value["state"] == "paused")
       self.assertEqual(initial["seekRanges"], [[.1, .35], [4.1, 4.35]])
+      self.assertEqual(initial["segmentRanges"], [[0, .1, .35], [2, 4.1, 4.35]])
       engine.command_status("pause", "b1", paused=False)
       gap = engine.wait(lambda value: value["state"] == "buffering" and value["error"] == "recording_gap")
       self.assertAlmostEqual(gap["position"], .35)
@@ -200,6 +201,7 @@ class TestMachine(unittest.TestCase):
       initial = engine.wait(lambda value: value["state"] == "paused")
       self.assertEqual(initial["start"], 65.1)
       self.assertEqual(initial["seekRanges"], [[65.1, 65.25]])
+      self.assertEqual(initial["segmentRanges"], [[1, 65.1, 65.25]])
 
   def test_optional_wide_camera_does_not_precede_primary_camera_range(self):
     with Machine([(0, [.1, .2], True)], wide_leads=True) as engine:

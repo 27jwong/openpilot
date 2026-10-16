@@ -388,7 +388,7 @@ def test_worker_preserves_final_engine_error_after_exit(tmp_path, monkeypatch):
   monkeypatch.setattr(render, 'seed_display', lambda path: {})
   catalog = Mock()
   catalog.detail.return_value = {'playable': True, 'segments': []}
-  monkeypatch.setattr('openpilot.starpilot.replay.catalog.ReplayCatalog', lambda path: catalog)
+  monkeypatch.setattr('openpilot.starpilot.galaxy.route_inventory.RouteInventory', lambda path: catalog)
   monkeypatch.setattr(render, 'Compositor', lambda *args, **kwargs: Mock())
   engine = Mock(status={'state': 'preparing'}, error=None)
   engine.process.poll.return_value = 2
@@ -409,7 +409,7 @@ def test_engine_starts_before_idle_renderer_placement_and_closes_if_renderer_fai
   monkeypatch.setattr(render, 'seed_display', lambda path: {})
   catalog = Mock()
   catalog.detail.return_value = {'playable': True, 'segments': []}
-  monkeypatch.setattr('openpilot.starpilot.replay.catalog.ReplayCatalog', lambda path: catalog)
+  monkeypatch.setattr('openpilot.starpilot.galaxy.route_inventory.RouteInventory', lambda path: catalog)
   calls = []
   engine = Mock()
   def start_engine(*args, **kwargs):
@@ -437,7 +437,7 @@ def test_published_readiness_survives_buffering_but_rejects_seeks_and_old_epochs
   monkeypatch.setattr(render, 'seed_display', lambda path: {})
   catalog = Mock()
   catalog.detail.return_value = {'playable': True, 'segments': []}
-  monkeypatch.setattr('openpilot.starpilot.replay.catalog.ReplayCatalog', lambda path: catalog)
+  monkeypatch.setattr('openpilot.starpilot.galaxy.route_inventory.RouteInventory', lambda path: catalog)
   publisher = Mock()
   monkeypatch.setattr(render, 'ReplayFramePublisher', lambda *args: publisher)
   times, step = (1, 1.01, 1.11, 1.31, 1.61, 10, 10.2, 10.4, 10.6, 10.8), [0]
@@ -544,7 +544,7 @@ def test_initial_hud_primer_required_even_when_camera_received_a_frame(tmp_path,
   monkeypatch.setattr(render, 'seed_display', lambda path: {})
   catalog = Mock()
   catalog.detail.return_value = {'playable': True, 'segments': []}
-  monkeypatch.setattr('openpilot.starpilot.replay.catalog.ReplayCatalog', lambda path: catalog)
+  monkeypatch.setattr('openpilot.starpilot.galaxy.route_inventory.RouteInventory', lambda path: catalog)
   core = Mock(cabin=False)
   core.camera = Mock(client=Mock(), frame=object(), _target_client=None, _switching=False)
   core.pip_stream._client = None
@@ -788,7 +788,7 @@ def test_web_delivery_times_packets_and_flushes_pause_end_and_stall(tmp_path, mo
   monkeypatch.setattr(render, 'seed_display', lambda path: {})
   catalog = Mock()
   catalog.detail.return_value = {'playable': True, 'segments': []}
-  monkeypatch.setattr('openpilot.starpilot.replay.catalog.ReplayCatalog', lambda path: catalog)
+  monkeypatch.setattr('openpilot.starpilot.galaxy.route_inventory.RouteInventory', lambda path: catalog)
   times = (1., 1.06, 1.125, 1.15, 10., 10.06, 10.12, 10.125, 10.23, 10.275, 11.3, 11.36, 11.42, 11.54)
   step = [0]
   monkeypatch.setattr(render.time, 'monotonic', lambda: times[step[0]])
