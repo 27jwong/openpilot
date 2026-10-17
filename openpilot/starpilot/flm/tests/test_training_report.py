@@ -33,18 +33,23 @@ def fixture(tmp_path):
   collector = FullrateCollector(adapter)
   control = evidence()
   applied = AppliedEvidence(NOW, NOW - 1, NOW + 1, 'torque', .2, True, True, False, False, False, True)
-  collector.context = (IDENTITY,)
+  collector.context = (
+    control.identity, control.generation, control.domain, control.stage_revision, control.response_revision,
+    control.source_epoch, control.controller_mode, control.policy, control.baseline_revision, control.controller_revision,
+    control.turn_assist,
+  )
   collector.cohort = 'high.left.steady'
-  collector.physical_context = ('physical',)
+  physical_context = ('physical', 'model', 'lag', 0)
+  collector.physical_context = physical_context
   # Actual collector seal constructs a distinct RawBlock and consumes its buffer.
   for tick in range(40):
     stamp = NOW - 400_000_000 + tick * 10_000_000
-    collector.raw_points.append(RawPoint(stamp, stamp + 1, stamp + 2, control, applied, {}, ('physical',)))
+    collector.raw_points.append(RawPoint(stamp, stamp + 1, stamp + 2, control, applied, {}, physical_context))
   collector._seal_raw()
   assert len(collector.blocks) == 1 and not collector.raw_points
   for tick in range(12):
     stamp = NOW - 120_000_000 + tick * 10_000_000
-    collector.raw_points.append(RawPoint(stamp, stamp + 1, stamp + 2, control, applied, {}, ('physical',)))
+    collector.raw_points.append(RawPoint(stamp, stamp + 1, stamp + 2, control, applied, {}, physical_context))
   collector.ready.append((control, applied))
   collector.reason = 'collecting_maneuver'
   collector.split('test_interruption')
@@ -52,7 +57,7 @@ def fixture(tmp_path):
   collector.ready.append((control, applied))
   for tick in range(12):
     stamp = NOW - 120_000_000 + tick * 10_000_000
-    collector.raw_points.append(RawPoint(stamp, stamp + 1, stamp + 2, control, applied, {}, ('physical',)))
+    collector.raw_points.append(RawPoint(stamp, stamp + 1, stamp + 2, control, applied, {}, physical_context))
   path = tmp_path / 'training.json'
   reporter = TrainingReporter('TEST_TORQUE_CAR', path=path)
   source = SimpleNamespace(enabled=True, manual=False, source_epoch='epoch', expires_ns=NOW + 400_000_000,
@@ -225,5 +230,6 @@ def test_actual_parent_publication_also_writes_training_snapshot(tmp_path):
   assert actual['current']['progress'] == {'samples': 0, 'blocks': 0, 'requiredBlocks': 8}
   assert not actual['current']['application']['applied']
   assert actual['current']['details']['Vehicle'] == 'ACTUAL_PARENT'
+  assert reporter.control is not None
   assert reporter.control[1] == control
   fitter.close.assert_called_once_with('learner_parent_exit')
