@@ -16,8 +16,23 @@ from openpilot.starpilot.flm.learning_wire import read_control, read_applied, re
 from openpilot.starpilot.flm.runtime_adapter_registry import SOURCE_LEASE_NS
 
 
-MAX_OBJECTIVES = 6
-MAX_CACHED_PROFILES = 10  # Six FF cells and four independently qualified centre speed bands.
+MAX_OBJECTIVES = 12
+MAX_CACHED_PROFILES = 14  # Six FF cells and four independently qualified centre speed bands.
+
+
+def production_adapter_for_evidence(cp, evidence, key, *, source):
+  """Adopt the qualified event contract only in the optional live producer.
+
+  Legacy/reference callers retain version2. The live event producer explicitly
+  selects the separate fixed-map version5 restore declaration, never FD shadow.
+  """
+  from openpilot.starpilot.flm.clipping_quality import QUALIFIED_EVENT_CLIPPING_QUALITY
+  from openpilot.starpilot.flm.runtime_adapter_registry import SourceState, adapter_for_evidence
+
+  if not isinstance(source, SourceState) or not source.enabled or source.manual:
+    return None
+  return adapter_for_evidence(cp, evidence, key, source=source,
+    event_replay_version=3, event_clipping_quality=QUALIFIED_EVENT_CLIPPING_QUALITY, event_restore_version=5)
 
 
 def run(
@@ -38,6 +53,7 @@ def run(
   *,
   clock=time.monotonic_ns,
   reporter=None,
+  publication_source_reader=None,
 ):
   from openpilot.starpilot.flm.native_health import current_native_health
 
@@ -50,10 +66,12 @@ def run(
   prior_attached = {}
   previous_publish = publication_sequence = 0
   unavailable_reason = 'no_current_controller_evidence'
+  retained_event = None
 
   def clear(reason):
-    nonlocal collector, raw_context, active_key, pending_key, pending_token, unavailable_reason
+    nonlocal collector, raw_context, active_key, pending_key, pending_token, unavailable_reason, retained_event
     unavailable_reason = reason
+    retained_event = None
     if collector is not None:
       if reporter is not None:
         reporter.reset(reason)
@@ -64,7 +82,7 @@ def run(
     raw_context = active_key = pending_key = pending_token = None
     fitter.cancel(reason)
 
-  def source_current(*, read=False):
+  def source_current(*, read=False, publication=False):
     nonlocal source, source_rejected, source_cp_sha256
     now = clock()
     if source_rejected and not read:
@@ -76,7 +94,14 @@ def run(
         # backed the receipt. Reconcile queued metadata without blocking.
         sm.update(0)
         now = clock()
-      source = source_reader(now)
+      if publication:
+        # Reconcile calibration/native metadata immediately before the optional
+        # publisher's fresh settings snapshot. This never renews a control or
+        # profile lease and does not run on a vehicle control thread.
+        sm.update(0)
+        now = clock()
+      reader = publication_source_reader if publication else source_reader
+      source = reader(now)
       # Params/calibration reads can themselves consume the entire lease.
       now = clock()
     valid = (source.enabled and not source.manual and source.source_epoch and source.reset and
@@ -88,9 +113,9 @@ def run(
       return False, now
     if previous is not None and (
         previous.source_epoch, previous.calibration_generation, previous.cp_sha256, previous.reset,
-        previous.enabled, previous.manual) != (
+        previous.enabled, previous.manual, getattr(previous, 'manual_baseline', ())) != (
         source.source_epoch, source.calibration_generation, source.cp_sha256, source.reset,
-        source.enabled, source.manual):
+        source.enabled, source.manual, getattr(source, 'manual_baseline', ())):
       clear('actual_source_identity_changed')
       # An epoch must bind reset/calibration/CP identity. Refuse malformed
       # same-epoch mutations and do not feed old evidence on a transition.
@@ -171,7 +196,13 @@ def run(
           if adapter is None:
             unavailable_reason = 'actual_adapter_unavailable'
             return
-          collector = FullrateCollector(adapter)
+          if getattr(adapter, 'event_collection', False):
+            from openpilot.starpilot.flm.event_collector import EventFullrateCollector
+            collector = EventFullrateCollector(adapter)
+          else:
+            collector = FullrateCollector(adapter)
+        if hasattr(collector.adapter, 'bind_source'):
+          collector.adapter.bind_source(source)
         collector._calibration_generation = source.calibration_generation
         collector.adapter.select_objective(active_key)
         # This records primitive actual frames/checkpoints ONLY. No selected
@@ -208,7 +239,9 @@ def run(
       _, now = source_current()
       current_native = bool(collector is not None and collector.ready and
                             current_native_health(sm, CP, collector.ready[-1][0], now))
-      token = (raw_context, pending_key, collector.physical_context) if collector is not None and collector.ready and current_native else None
+      token = ((raw_context, pending_key, collector.physical_context, collector.adapter.envelope.prior_full_profile_sha256)
+               if getattr(collector.adapter, 'event_collection', False) else (raw_context, pending_key, collector.physical_context)) \
+              if collector is not None and collector.ready and current_native else None
       report = fitter.poll(token=token, now_ns=now)
       if report is not None:
         decoded = decode_fit_result(report)
@@ -232,7 +265,8 @@ def run(
               collector.restore_prior(cached_prior[1])
           snapshot = collector.job_snapshot(now)
           if snapshot is not None:
-            token = (raw_context, active_key, collector.physical_context)
+            token = ((raw_context, active_key, collector.physical_context, collector.adapter.envelope.prior_full_profile_sha256)
+                     if getattr(collector.adapter, 'event_collection', False) else (raw_context, active_key, collector.physical_context))
             valid_source, now = source_current()
             current_native = bool(collector is not None and collector.ready and
                                   current_native_health(sm, CP, collector.ready[-1][0], now))
@@ -258,11 +292,25 @@ def run(
               collector.install_fit(*decoded)
           collector.live_profile_sequence = max(collector.live_profile_sequence, publication_sequence)
           collector.revalidate_fit(now)
+          if getattr(collector.adapter, 'event_collection', False):
+            if collector.result is not None and collector.result.profile is not None and cached is not None:
+              retained_event = (cached, active_key)
+            elif retained_event is not None and current_native:
+              retained, retained_key = retained_event
+              collector.adapter.select_objective(retained_key)
+              if collector.adapter.install_fit(retained[0], *retained[1], physical_context=collector.physical_context):
+                collector.install_fit(*retained[1])
+                collector.revalidate_fit(now)
+            # Restore only the fitting selector, not an owner or permission.
+            collector.adapter.select_objective(active_key)
           publication_sequence = max(publication_sequence, collector.live_profile_sequence)
           publication_result = collector.result
           if (
             publication_result is None and cached is not None and current_native and cached[1][0].profile is None
-            and cached[2] == (raw_context, active_key, collector.physical_context)
+            and cached[2] == ((raw_context, active_key, collector.physical_context,
+                               collector.adapter.envelope.prior_full_profile_sha256)
+                              if getattr(collector.adapter, 'event_collection', False)
+                              else (raw_context, active_key, collector.physical_context))
           ):
             publication_result = cached[1][0]
           message = result_message(publication_result, collector.session, publication_sequence, now, replay_validation=collector.last_validation)
@@ -273,6 +321,15 @@ def run(
           value.version, value.status, value.reason, value.family = 1, 'unavailable', unavailable_reason, 'runtimeProfile'
           value.observedMonoTime, value.validUntilMonoTime = now, now + 500_000_000
           message.valid = True
+        if publication_source_reader is not None:
+          valid_publication_source, publication_now = source_current(read=True, publication=True)
+          if not valid_publication_source:
+            # A reset/manual/vehicle/calibration transition must discard the
+            # already prepared admission, never attach it to a new receipt.
+            message = result_message(None, 'unavailable', publication_sequence, publication_now)
+            message.autoSteeringLearning.learning.status = 'unavailable'
+            message.autoSteeringLearning.learning.reason = 'publication_source_changed_or_unavailable'
+          message.logMonoTime = publication_now
         write_source_receipt(message, source)
         pm.send('autoSteeringLearning', message)
         if reporter is not None:
@@ -288,7 +345,6 @@ def main():
   # Imports belong only to the separate optional process. No workerthread/GIL
   # shared with realtime controller processes, no independent selection read.
   from openpilot.starpilot.flm.runtime_adapter_registry import (
-    adapter_for_evidence,
     physical_observer,
     read_source,
     car_params_digest,
@@ -356,6 +412,14 @@ def main():
       source_cache[0] = current_source(now, frame)
     return source_cache[0]
 
+  def publication_source_reader(now):
+    # The regular 250ms read cache and independent 250ms publication cadence
+    # can publish a receipt already330ms old; a normal next interval then
+    # crosses its original500ms deadline. Read the actual snapshot here after
+    # fitting/persistence work instead of extending that old observation.
+    source_cache[0] = current_source(now, calibration_frame(now))
+    return source_cache[0]
+
   def current_sources(identity, epoch):
     now = time.monotonic_ns()
     current = current_source(now, calibration_frame(now))
@@ -367,6 +431,10 @@ def main():
     reporter = TrainingReporter(CP.carFingerprint)
   except (OSError, ValueError):
     reporter = None
+
+  def current_adapter(cp, evidence, key):
+    return production_adapter_for_evidence(cp, evidence, key, source=source_reader(time.monotonic_ns()))
+
   persistence = PersistenceModule(params, current_sources)
   run(
     CP,
@@ -374,7 +442,7 @@ def main():
     control_socket,
     applied_socket,
     pm,
-    adapter_for_evidence,
+    current_adapter,
     physical_observer,
     source_reader,
     collection_keys,
@@ -384,6 +452,7 @@ def main():
     FitProcess(),
     adapter_for_ford,
     reporter=reporter,
+    publication_source_reader=publication_source_reader,
   )
 
 

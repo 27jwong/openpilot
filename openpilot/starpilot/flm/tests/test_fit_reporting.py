@@ -21,7 +21,7 @@ KEY = ('feedforward', 'low', 'steady')
 ))
 @pytest.mark.parametrize('blocked', (None, 'native', 'physical_context', 'settings'))
 def test_actual_cached_child_without_profile_reports_reason_without_admission(status, reason, blocked):
-  adapter = mock.Mock()
+  adapter = mock.Mock(event_collection=False, raw_storage=False)
   adapter.prepare_control.side_effect = lambda evidence: evidence
   adapter.install_fit.return_value = False
   collector = FullrateCollector(adapter)

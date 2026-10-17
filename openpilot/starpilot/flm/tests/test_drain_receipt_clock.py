@@ -21,7 +21,7 @@ def exercise(*, control_offset=10_000_000, callback_offset=20_000_000,
     controller_mode='starpilot', policy='ioniq6', baseline_revision='baseline',
     controller_revision='controller', turn_assist=False)
   control_socket, output_socket = object(), object()
-  adapter = mock.Mock()
+  adapter = mock.Mock(event_collection=False, raw_storage=False)
   adapter.prepare_control.return_value = evidence
   collector = mock.Mock(adapter=adapter)
   receipt_clock = [NOW]

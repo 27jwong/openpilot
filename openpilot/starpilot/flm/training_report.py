@@ -169,14 +169,28 @@ class TrainingReporter:
     application = {'applied': False, 'reason': 'no_current_controller_application'}
     coordinates = []
     applied_sequence = 0
+    actual_full = None
     if self.control is not None and collector is not None and collector.ready and native_current:
       event, evidence = self.control
       if (event.which() == 'starpilotLateralState' and evidence.identity == collector.ready[-1][0].identity and
           0 < evidence.control_ns <= now_ns <= evidence.control_ns + 100_000_000):
         outcome = read_application(event.starpilotLateralState, now_ns=now_ns)
         if outcome is not None and outcome.identity == evidence.identity:
-          matched = (outcome.profile_sequence == evidence.applied_profile_sequence and
-                     outcome.actual_coordinates == evidence.applied_coordinates)
+          trace = getattr(evidence, 'effect_trace', None)
+          if trace is not None:
+            trace.validate()
+            group_coordinates = tuple(dict(trace.applied)[n] for n in trace.envelope.trial_names)
+            matched = bool(trace.qualified and (outcome.status != 'applied' or any(v for _,v in trace.applied)) and
+              trace.control_ns == evidence.effect_prepare_ns and
+              outcome.profile_sequence == evidence.applied_profile_sequence and
+              outcome.actual_coordinates == group_coordinates and
+              outcome.effect_manifest_sha256 == trace.envelope.manifest_sha256 and
+              outcome.effect_original_anchor == trace.envelope.full_original_anchor and
+              outcome.effect_applied_profile_sha256 == trace.applied_full_profile_sha256)
+          else:
+            matched = (not outcome.effect_applied_profile_sha256 and
+              outcome.profile_sequence == evidence.applied_profile_sequence and
+              outcome.actual_coordinates == evidence.applied_coordinates)
           leases = bool(evidence.enabled and evidence.active and evidence.valid and not evidence.manual and
             not evidence.fault and source is not None and source.enabled and not source.manual and
             evidence.source_epoch == source.source_epoch and source.observed_ns <= now_ns <= source.expires_ns and
@@ -190,6 +204,7 @@ class TrainingReporter:
           application = {'applied': applied, 'reason': outcome.reason if outcome.status != 'applied' or matched else 'application_evidence_mismatch'}
           coordinates = list(outcome.actual_coordinates) if matched else []
           applied_sequence = outcome.profile_sequence if matched else 0
+          actual_full = trace if matched and trace is not None else None
     details = {
       'Vehicle': self.vehicle, 'Collection session': '' if collector is None else collector.session,
       'Current objective': str(objective)[:128],
@@ -209,10 +224,25 @@ class TrainingReporter:
       'Source receipt age seconds': None if source is None else max(0., (now_ns - source.observed_ns) / 1e9),
       'Collection duration seconds': (now_ns - self.started) / 1e9,
     }
+    if actual_full is not None:
+      details.update({'Actual full surface coordinates': [[n,v] for n,v in actual_full.applied],
+        'Actual full profile hash': actual_full.applied_full_profile_sha256,
+        'Actual full surface manifest': actual_full.envelope.manifest_sha256,
+        'Actual full original anchor': actual_full.envelope.full_original_anchor})
     if profile is not None:
       details.update({'Fit baseline loss': profile.baseline_loss, 'Fit candidate loss': profile.candidate_loss,
                       'Candidate correction coordinates': list(profile.coefficients),
                       'Candidate parameters': [p.name for p in profile.parameters]})
+    if profile is not None and getattr(profile, 'effect_envelope', None) is not None:
+      full = profile.effect_envelope
+      full.validate(profile)
+      details.update({'FLM manifest': full.manifest_sha256,
+        'Original full surface anchor': full.full_original_anchor,
+        'Prior full profile hash': full.prior_full_profile_sha256,
+        'Proposed full profile hash': full.full_profile_sha256,
+        'Full surface coordinates': [[name, coordinate] for name, coordinate in full.coordinates],
+        'Active trial parameters': list(full.trial_names),
+        'Persisted history is prior only': True})
     status = str(value.status)
     reason = str(value.reason)
     if collector is not None and status == 'collecting':

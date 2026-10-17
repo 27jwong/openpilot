@@ -208,12 +208,21 @@ def test_actual_factory_normalized_native_projected_healthy_maneuver_completion(
         assert not adapter.raw_maneuver_complete(replace(control, **{field: value}), {})
       assert not adapter.raw_maneuver_complete(replace(control, stage_values=tuple(
         (key, 20.0 if key == 'speed' else value) for key, value in control.stage_values)), {})
-    assert not accepted and not collector.raw_points and not collector.ready
-    assert collector.active_since == 0
+    assert not accepted and not collector.raw_points
     if failure is None:
+      # The healthy low-excitation edge ends estimation, not the actual source
+      # and encoder trace. Preserve original chronology without adding a low-
+      # excitation physical point or manufacturing another two-second warmup.
+      assert collector.ready and collector.ready[-1] == (control, applied)
+      assert 0 < collector.active_since <= before[0].apply_ns <= applied.apply_ns
+      assert collector.last_apply == applied.apply_ns
+      assert collector.cohort is None and not collector.sealed
+      assert collector.reason == 'waiting_for_excited_maneuver'
+      adapter.replay.emissions.verify(control, applied)
       assert len(blocks) == 1
       assert blocks[0].samples == before
       assert all(abs(dict(point.control.stage_values)['setpoint']) >= .25 for point in blocks[0].samples)
       assert control.control_ns > blocks[0].samples[-1].control_ns
     else:
+      assert not collector.ready and collector.active_since == 0
       assert not blocks
