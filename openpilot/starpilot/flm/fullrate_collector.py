@@ -496,6 +496,15 @@ class FullrateCollector:
     }
     cohort = self.adapter.cohort(command, physical)
     if not cohort or not isinstance(cohort, str) or len(cohort) > 96:
+      complete = getattr(self.adapter, 'raw_maneuver_complete', None)
+      if (
+        cohort is None
+        and getattr(self.adapter, 'raw_collection', False)
+        and self.cohort is not None
+        and complete is not None
+        and complete(command, physical)
+      ):
+        self._seal_raw()
       self.split('response_cohort_unqualified')
       return False
     if getattr(self.adapter, 'raw_collection', False):

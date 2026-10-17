@@ -171,6 +171,19 @@ class TorqueCollectionAdapter:
     side = 'left' if stage['setpoint'] > 0 else 'right'
     return f'{key[1]}.{side}.{key[2]}'
 
+  def raw_maneuver_complete(self, control, physical):
+    return bool(
+      control.domain == 'normalized_torque'
+      and control.stage_schema_revision == RAW_TORQUE
+      and control.identity == self.identity
+      and control.generation == self.generation
+      and control.source_epoch == self.source_epoch
+      and control.baseline_revision == self.baseline_revision
+      and self.key[0] == 'feedforward'
+      and objective_key(control) == self.key
+      and abs(dict(control.stage_values)['setpoint']) < 0.25
+    )
+
   def can_seal_raw(self, points):
     return len(points) >= 80
 
