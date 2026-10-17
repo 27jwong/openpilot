@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 from pathlib import Path
+import math
 import tempfile
 from types import SimpleNamespace as NS
 import unittest
@@ -21,7 +22,9 @@ from openpilot.starpilot.ui.presentation import Profile
 from openpilot.starpilot.ui.runtime_snapshot import RuntimeSnapshotAdapter
 from openpilot.starpilot.ui.shell import ShellMode
 from openpilot.starpilot.ui.tests.test_runtime_snapshot import NOW, ui_fake
-from openpilot.starpilot.ui.wheel_feedback import ACCEL_RGB, BRAKE_RGB, WheelFeedback, observe_wheel_feedback, wheel_feedback_rgb
+from openpilot.starpilot.ui.wheel_feedback import (
+  ACCEL_RGB, BRAKE_RGB, WheelFeedback, WheelFeedbackFade, observe_wheel_feedback, wheel_feedback_rgb,
+)
 
 
 def car(**changes):
@@ -108,15 +111,18 @@ class WheelFeedbackTests(unittest.TestCase):
                         appearance=OnroadAppearance(wheel_pedal_feedback=True),
                         wheel_feedback=WheelFeedback(brake_pressed=True))
     state.customization["layouts"]["large"]["steering_wheel"].update(x=900, y=200)
-    large = SteeringWheelWidget.__new__(SteeringWheelWidget)
+    large = SteeringWheelWidget(Path('/unused'))
     large._texture = Mock()
     with patch.object(rl, "draw_circle"), patch.object(rl, "draw_texture_pro") as draw:
-      large.render(rl.Rectangle(30, 30, 1800, 1020), state)
+      large.render(rl.Rectangle(30, 30, 1800, 1020), replace(state, observed_ns=NOW))
+      self.assertEqual(tuple(getattr(draw.call_args.args[-1], key) for key in 'rgba'), (255, 255, 255, 255))
+      for elapsed_ms in (100, 200, 300, 400, 500, 600):
+        large.render(rl.Rectangle(30, 30, 1800, 1020), replace(state, observed_ns=NOW + elapsed_ms * 1_000_000))
       args = draw.call_args.args
       self.assertEqual((args[2].x, args[2].y), (924, 224))
       self.assertEqual((args[-1].r, args[-1].g, args[-1].b, args[-1].a), (*BRAKE_RGB, 255))
       large.render(rl.Rectangle(30, 30, 1800, 1020), replace(state, appearance=OnroadAppearance()))
-      self.assertEqual(draw.call_args.args[-1], rl.WHITE)
+      self.assertEqual(tuple(getattr(draw.call_args.args[-1], key) for key in 'rgba'), (255, 255, 255, 255))
     state.customization["layouts"]["compact"]["steering_wheel"].update(x=80, y=130)
     compact = CompactHudRenderer(Mock(), Path("/unused"))
     compact._wheel = Mock()
@@ -130,6 +136,116 @@ class WheelFeedbackTests(unittest.TestCase):
       draw.reset_mock()
       compact.render(replace(state, lateral_active=False))
       draw.assert_not_called()
+
+
+class WheelFeedbackFadeTests(unittest.TestCase):
+  def test_hysteresis_enters_and_releases_at_separate_strict_thresholds(self):
+    for field, sign, enter, release in (
+      ('acceleration', -1, .25, .15), ('acceleration', 1, .25, .15),
+      ('commanded_acceleration', -1, .05, .02), ('commanded_acceleration', 1, .05, .02),
+      ('commanded_gas', 1, .05, .02),
+    ):
+      with self.subTest(field=field, sign=sign):
+        fade = WheelFeedbackFade()
+        for index, (value, target) in enumerate(((enter, 0), (enter + .001, sign), (enter - .001, sign),
+                                                (release + .001, sign), (release, 0), (enter - .001, 0))):
+          fade.update(replace(WheelFeedback(), **{field: sign * value}), True, NOW + index * 20_000_000, 1)
+          self.assertEqual(fade._target, target)
+
+  def test_braking_priority_with_opposing_sources_and_expired_command(self):
+    fade = WheelFeedbackFade()
+    for index in range(40):
+      command = -.051 if index % 2 == 0 else -.049
+      fade.update(WheelFeedback(acceleration=.3, commanded_acceleration=command), True, NOW + index * 20_000_000, 1)
+      self.assertEqual(fade._target, -1)
+    fade.update(WheelFeedback(acceleration=.3), True, NOW + 800_000_000, 1)
+    self.assertEqual(fade._target, 1)
+    fade.update(WheelFeedback(acceleration=.16, brake_pressed=True), True, NOW + 820_000_000, 1)
+    self.assertEqual(fade._target, -1)
+    fade.update(WheelFeedback(acceleration=0.), True, NOW + 840_000_000, 1)
+    self.assertEqual(fade._target, 0)
+
+  def test_fade_uses_elapsed_time_and_stays_bounded(self):
+    amounts = []
+    for fps in (20, 30, 60, 120):
+      fade = WheelFeedbackFade()
+      value = WheelFeedback(acceleration=1.)
+      self.assertEqual(fade.update(value, True, NOW, 1), (255, 255, 255))
+      for frame in range(1, round(.3 * fps) + 1):
+        before = fade._amount
+        rgb = fade.update(value, True, NOW + round(frame * 1e9 / fps), 1)
+        self.assertTrue(before < fade._amount < 1)
+        self.assertTrue(all(0 <= channel <= 255 for channel in rgb))
+      self.assertAlmostEqual(fade._amount, 1 - math.exp(-.3 / .08))
+      amounts.append(fade._amount)
+    self.assertLess(max(amounts) - min(amounts), 1e-12)
+
+  def test_reversal_is_continuous_and_passes_through_neutral(self):
+    fade = WheelFeedbackFade()
+    gas, brake = WheelFeedback(gas_pressed=True), WheelFeedback(brake_pressed=True)
+    for frame in range(7):
+      green = fade.update(gas, True, NOW + frame * 100_000_000, 1)
+    self.assertEqual(fade.update(brake, True, NOW + 600_000_000, 1), green)
+    self.assertEqual(fade._target, -1)
+    fade.update(brake, True, NOW + 650_000_000, 1)
+    self.assertGreater(fade._amount, 0)
+    rgb = fade.update(brake, True, NOW + 660_000_000, 1)
+    self.assertLess(fade._amount, 0)
+    self.assertEqual(rgb[0], 255)
+    self.assertEqual(rgb[1], rgb[2])
+    before = fade._amount
+    fade.update(gas, True, NOW + 670_000_000, 1)
+    self.assertEqual(fade._target, 1)
+    self.assertGreater(fade._amount, before)
+    before = fade._amount
+    fade.update(WheelFeedback(acceleration=0.), True, NOW + 680_000_000, 1)
+    self.assertEqual(fade._target, 0)
+    self.assertLess(abs(fade._amount), abs(before))
+
+  def test_disabled_invalid_drive_and_clock_reset(self):
+    weak = WheelFeedback(acceleration=.2)
+    for value, enabled, now, drive in (
+      (weak, False, NOW + 300_000_000, 1), (WheelFeedback(), True, NOW + 300_000_000, 1),
+      (weak, True, NOW + 300_000_000, 2), (weak, True, NOW + 100_000_000, 1),
+    ):
+      with self.subTest(value=value, enabled=enabled, now=now, drive=drive):
+        fade = WheelFeedbackFade()
+        for frame in range(3):
+          fade.update(WheelFeedback(acceleration=1.), True, NOW + frame * 100_000_000, 1)
+        self.assertGreater(fade._amount, .9)
+        self.assertEqual(fade.update(value, enabled, now, drive), (255, 255, 255))
+        self.assertEqual(fade._target, 0)
+        self.assertEqual(fade._amount, 0)
+
+  def test_fresh_braking_survives_render_hitches_and_low_frame_rates(self):
+    value = WheelFeedback(brake_pressed=True)
+    for interval_ns in (201_000_000, 250_000_000, 1_000_000_000):
+      with self.subTest(interval_ns=interval_ns):
+        fade = WheelFeedbackFade()
+        self.assertEqual(fade.update(value, True, NOW, 1), (255, 255, 255))
+        for frame in range(1, 7):
+          fade.update(value, True, NOW + frame * 100_000_000, 1)
+        for frame in range(1, 4):
+          self.assertEqual(fade.update(value, True, NOW + 600_000_000 + frame * interval_ns, 1), BRAKE_RGB)
+
+  def test_first_timed_sample_fades_in_without_drive_identity(self):
+    fade = WheelFeedbackFade()
+    value = WheelFeedback(brake_pressed=True)
+    self.assertEqual(fade.update(value, True, NOW, None), (255, 255, 255))
+    self.assertGreater(fade.update(value, True, NOW + 100_000_000, None)[1], 0)
+    self.assertLess(fade._amount, 0)
+
+  def test_untimed_samples_are_settled_and_do_not_change_live_fade(self):
+    fade = WheelFeedbackFade()
+    brake = WheelFeedback(brake_pressed=True)
+    fade.update(brake, True, NOW, 1)
+    partial = fade.update(brake, True, NOW + 100_000_000, 1)
+    for value, enabled, expected in (
+      (brake, True, BRAKE_RGB), (WheelFeedback(gas_pressed=True), True, ACCEL_RGB),
+      (brake, False, (255, 255, 255)), (WheelFeedback(), True, (255, 255, 255)),
+    ):
+      self.assertEqual(fade.update(value, enabled, 0, None), expected)
+    self.assertEqual(fade.update(brake, True, NOW + 100_000_000, 1), partial)
 
 
 class WheelPreferenceTests(unittest.TestCase):
