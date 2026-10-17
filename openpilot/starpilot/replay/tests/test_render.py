@@ -25,13 +25,43 @@ def test_camera_selection_uses_selected_sources_and_current_preferences():
   assert camera_options('compact', {'CameraView': b'1', 'PIPPreviewEnabled': b'1'}, {'qcamera.ts'}) == (False, False)
 
 
-def test_engine_passes_selected_segment_to_machine_replay(tmp_path, monkeypatch):
+@pytest.mark.parametrize('profile', ('large', 'compact'))
+@pytest.mark.parametrize('target', ('native', 'web'))
+@pytest.mark.parametrize('device,pinned', (('tici', True), ('tizi', True), ('mici', True), ('pc', False), ('unknown', False)))
+def test_native_worker_leaves_ui_cpu_before_starting_replay(tmp_path, monkeypatch, profile, target, device, pinned):
+  from openpilot.common import hardware, realtime
+
+  pinned = pinned and target == 'native'
+  for key in ('STARPILOT_PROJECTION_READ_ONLY', 'BIG', 'SCALE'):
+    monkeypatch.setenv(key, '')
+  calls = []
+  monkeypatch.setattr(render, 'validate_context', lambda path: calls.append('validate') or path)
+  monkeypatch.setattr(hardware.HARDWARE, 'get_device_type', lambda: device)
+  affinity = Mock(side_effect=lambda cores: calls.append('affinity'))
+  monkeypatch.setattr(realtime, 'set_core_affinity', affinity)
+
+  def prepare(path):
+    calls.append('prepare')
+    raise RuntimeError('stop before worker preparation')
+  monkeypatch.setattr(render, 'seed_display', prepare)
+  with pytest.raises(RuntimeError, match='stop before worker preparation'):
+    render.run(tmp_path, 'recorded-route', tmp_path, target, profile, Mock())
+  assert calls == (['validate', 'affinity', 'prepare'] if pinned else ['validate', 'prepare'])
+  if pinned:
+    affinity.assert_called_once_with([0, 1, 2, 3, 4, 5])
+  else:
+    affinity.assert_not_called()
+
+
+@pytest.mark.parametrize('preload', (False, True))
+def test_engine_passes_selected_segment_to_machine_replay(tmp_path, monkeypatch, preload):
   process = Mock()
   monkeypatch.setattr(render.subprocess, 'Popen', Mock(return_value=process))
   monkeypatch.setattr(render.threading, 'Thread', Mock())
-  Engine('recorded-route', tmp_path, wide=False, cabin=False, start_segment=2)
+  Engine('recorded-route', tmp_path, wide=False, cabin=False, start_segment=2, preload_seek=preload)
   command = render.subprocess.Popen.call_args.args[0]
   assert command[command.index('--start-segment') + 1] == '2'
+  assert ('--preload-seek' in command) is preload
 
 
 def test_camera_matches_recorded_identity_across_distinct_clock_domains():
@@ -403,7 +433,8 @@ def test_worker_preserves_final_engine_error_after_exit(tmp_path, monkeypatch):
   engine.reader.join.assert_called_once_with(timeout=1)
 
 
-def test_engine_starts_before_idle_renderer_placement_and_closes_if_renderer_fails(tmp_path, monkeypatch):
+@pytest.mark.parametrize('target', ('native', 'web'))
+def test_engine_starts_before_renderer_and_closes_if_renderer_fails(tmp_path, monkeypatch, target):
   for key in ('STARPILOT_PROJECTION_READ_ONLY', 'BIG', 'SCALE'):
     monkeypatch.setenv(key, '')
   monkeypatch.setattr(render.signal, 'signal', Mock())
@@ -415,6 +446,7 @@ def test_engine_starts_before_idle_renderer_placement_and_closes_if_renderer_fai
   calls = []
   engine = Mock()
   def start_engine(*args, **kwargs):
+    assert kwargs['preload_seek'] is (target == 'native')
     calls.append('engine')
     return engine
   def start_renderer(*args, **kwargs):
@@ -423,7 +455,7 @@ def test_engine_starts_before_idle_renderer_placement_and_closes_if_renderer_fai
   monkeypatch.setattr(render, 'Engine', start_engine)
   monkeypatch.setattr(render, 'Compositor', start_renderer)
   with pytest.raises(RuntimeError, match='renderer unavailable'):
-    render.run(tmp_path, 'recorded-route', tmp_path, 'native', 'large', Mock())
+    render.run(tmp_path, 'recorded-route', tmp_path, target, 'large', Mock())
   assert calls == ['engine', 'renderer']
   engine.close.assert_called_once()
 
@@ -539,6 +571,62 @@ def test_epoch_reset_preserves_native_camera_stream_and_eligible_paused_frame(mo
   core.camera._initialize_textures.assert_called_once()
   assert core.camera.frame is (frame if matching_frame else None)
   assert core.epoch == 3 and core.last_route_frame is None
+
+
+@pytest.mark.parametrize('profile', ('large', 'compact'))
+@pytest.mark.parametrize('rate,camera_ready', ((1, True), (.5, True), (2, True), (1, False)))
+def test_native_playback_renders_each_camera_picture_once(tmp_path, monkeypatch, profile, rate, camera_ready):
+  session = tmp_path / ('a' * 32)
+  session.mkdir(mode=0o700)
+  monkeypatch.setenv('SP_REPLAY_CLOCK_PATH', str(tmp_path / 'display-clock'))
+  for key in ('STARPILOT_PROJECTION_READ_ONLY', 'BIG', 'SCALE'):
+    monkeypatch.setenv(key, '')
+  monkeypatch.setattr(render.signal, 'signal', Mock())
+  monkeypatch.setattr(render.threading, 'Thread', Mock())
+  monkeypatch.setattr(render, 'validate_context', lambda path: path)
+  monkeypatch.setattr(render, 'seed_display', lambda path: {})
+  catalog = Mock()
+  catalog.detail.return_value = {'playable': True, 'segments': []}
+  monkeypatch.setattr('openpilot.starpilot.galaxy.route_inventory.RouteInventory', lambda path: catalog)
+  times = (0., .02, .051, .061, .09, .101, .13, .151, .161, .201, .211)
+  identities = tuple(range(5, 16)) if rate > 1 else (5, 5, 5, 6, 6, 7, 7, 7, 8, 9, 9)
+  step = [0]
+  monkeypatch.setattr(render.time, 'monotonic', lambda: 1 + times[step[0]])
+  monkeypatch.setattr(render.time, 'monotonic_ns', lambda: round((1 + times[step[0]]) * 1e9))
+  engine = Mock(error=None, status={'state': 'playing', 'paused': False, 'rate': rate, 'epoch': 1,
+                                   'position': 0, 'routeStartNs': 100, 'start': 0, 'end': 10})
+  engine.process.poll.return_value = None
+  monkeypatch.setattr(render, 'Engine', lambda *args, **kwargs: engine)
+  core = Mock(cabin=False)
+  core.camera = Mock(client=Mock(frame_id=5, timestamp_sof=5), frame=object(), _target_client=None, _switching=False)
+  core.pip_stream._client = None
+  core.readback.pending = core.ui.replay_needs_reprime = False
+  available = dict.fromkeys(('modelV2', 'extrinsicsCalibration', 'longitudinalPlan'), True)
+  core.ui.sm = SimpleNamespace(seen=available, valid=available, alive=available)
+  core._primary_matches.return_value = camera_ready
+  core.finish.return_value = nullcontext(None)
+  core.update.side_effect = lambda: SimpleNamespace(valid=True, epoch=engine.status['epoch'],
+                                                   now_ns=100 + round(times[step[0]] * 1e9), boot_ns=100)
+  drawn = []
+  core.draw.side_effect = lambda epoch, position, now: drawn.append((epoch, identities[step[0]], now)) or True
+  monkeypatch.setattr(render, 'Compositor', lambda *args, **kwargs: core)
+
+  def next_loop(delay):
+    if step[0] == len(times) - 1:
+      engine.error = 'test complete'
+      return
+    step[0] += 1
+    core.camera.client.frame_id = core.camera.client.timestamp_sof = identities[step[0]]
+    if step[0] == len(times) - 1:
+      engine.status['epoch'] = 2
+  monkeypatch.setattr(render.time, 'sleep', next_loop)
+  with pytest.raises(RuntimeError, match='test complete'):
+    render.run(session, 'recorded-route', tmp_path, 'native', profile, Mock())
+  if camera_ready and rate <= 1:
+    assert [(epoch, identity) for epoch, identity, _ in drawn] == [(1, n) for n in range(5, 10)] + [(2, 9)]
+  else:
+    assert len(drawn) >= 3
+    assert all(b[2] - a[2] >= 50_000_000 for a, b in zip(drawn[2:], drawn[3:], strict=False))
 
 
 def test_initial_hud_primer_required_even_when_camera_received_a_frame(tmp_path, monkeypatch):

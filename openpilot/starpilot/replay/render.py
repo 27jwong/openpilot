@@ -161,7 +161,8 @@ def seed_display(session_dir: Path):
 
 
 class Engine:
-  def __init__(self, route_id: str, data_dir: Path, *, wide: bool, cabin: bool, start_segment: int | None = None):
+  def __init__(self, route_id: str, data_dir: Path, *, wide: bool, cabin: bool, start_segment: int | None = None,
+               preload_seek: bool = False):
     from openpilot.common.basedir import BASEDIR
     command = [str(Path(BASEDIR) / 'openpilot/tools/replay/replay'), '--machine', '--data_dir', str(data_dir),
                '--no-loop', '--cache', '3']
@@ -169,6 +170,8 @@ class Engine:
       command.append('--wide-road')
     if cabin:
       command.append('--cabin')
+    if preload_seek:
+      command.append('--preload-seek')
     if start_segment is not None:
       command.extend(['--start-segment', str(start_segment)])
     command.append(route_id)
@@ -578,6 +581,11 @@ class Compositor:
 def run(session_dir: Path, route_id: str, data_dir: Path, target: str, profile: str, emit,
         start_segment: int | None = None, export_budget: int = 0):
   session_dir = validate_context(session_dir)
+  from openpilot.common.hardware import HARDWARE
+  from openpilot.common.realtime import set_core_affinity
+  if target == 'native' and HARDWARE.get_device_type() in ('tici', 'tizi', 'mici'):
+    # Leave the isolated UI/GPU CPUs before the engine and renderer start threads.
+    set_core_affinity([0, 1, 2, 3, 4, 5])
   os.environ['STARPILOT_PROJECTION_READ_ONLY'] = '1'
   os.environ['BIG'] = '1' if profile == 'large' else '0'
   os.environ['SCALE'] = '1'
@@ -594,8 +602,7 @@ def run(session_dir: Path, route_id: str, data_dir: Path, target: str, profile: 
   width, height = SIZES[target][profile]
   began = time.monotonic()
   with ExitStack() as resources:
-    # Route preparation and decoding must not inherit the projection renderer's idle scheduling.
-    engine = Engine(route_id, data_dir, wide=wide, cabin=cabin, start_segment=start_segment)
+    engine = Engine(route_id, data_dir, wide=wide, cabin=cabin, start_segment=start_segment, preload_seek=target == 'native')
     resources.callback(engine.close)
     core = Compositor(profile, width, height, nv12=target == 'web', wide=wide, cabin=cabin)
     resources.callback(core.close)
@@ -641,6 +648,7 @@ def run(session_dir: Path, route_id: str, data_dir: Path, target: str, profile: 
       media = None if export_budget else MediaStore(session_dir, session_dir.name, width, height)
       resources.callback(lambda: mux.close() if mux is not None else None)
     last_emit = last_draw = 0.0
+    last_camera_frame = None
     published_at = 0.0
     published_epoch = 0
     clock_epoch = 0
@@ -728,14 +736,23 @@ def run(session_dir: Path, route_id: str, data_dir: Path, target: str, profile: 
         if engine.command({'op': 'seek', 'position': status['position'], 'requestId': status.get('lastRequestId') or '0' * 32}, reprime=True):
           core.ui.replay_needs_reprime = False
           valid = False
+      camera_frame = None
       interval = FRAME_INTERVAL
+      client = core.camera.client
+      if (target == 'native' and valid and sample is not None and status is not None and
+          client is not None and core._primary_matches()):
+        # Follow camera frames instead of sampling them on a second timer.
+        camera_frame = (sample.epoch, core.camera.stream_type, client.frame_id, client.timestamp_sof)
+        interval = 0 if status.get('rate', 1) <= 1 else FRAME_INTERVAL
       if (valid and status is not None and sample is not None and sample.now_ns is not None and
+          (camera_frame is None or camera_frame != last_camera_frame) and
           not core.readback.pending and now - last_draw >= interval):
         origin = status.get('routeStartNs')
         if type(origin) is not int:
           raise RuntimeError('Replay engine did not expose its route clock origin')
         position = min(status['end'], max(status['start'], (sample.now_ns - origin) / 1e9))
         if core.draw(sample.epoch, position, time.monotonic_ns()):
+          last_camera_frame = camera_frame
           # Keep the frame cadence after delivery jitter, without accumulating a catch-up queue.
           last_draw = max(last_draw + interval, now - interval)
       if status and now - last_emit >= .1:

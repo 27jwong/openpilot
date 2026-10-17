@@ -154,6 +154,65 @@ class Machine:
 
 @unittest.skipUnless(BINARY.is_file() and os.name == "posix", "build the replay test binary first")
 class TestMachine(unittest.TestCase):
+  def test_preloaded_seek_waits_for_next_segment_before_publishing_snapshot(self):
+    engine = Machine([(n, [60 * n + .1, 60 * n + .2], True) for n in range(3)], compressed=True)
+    engine.command.insert(2, '--preload-seek')
+    opened, release, enabled = (engine.root / name for name in ('opened', 'release', 'enabled'))
+    next_log = engine.routes / '00000001--1234567890--2' / 'rlog.bz2'
+    wrapper = engine.root / 'python3'
+    # Hold only the next segment at the real decompression boundary.
+    wrapper.write_text(f"""#!{sys.executable}
+import os
+from pathlib import Path
+import sys
+import time
+if '-m' in sys.argv and 'decompress' in sys.argv and Path({str(enabled)!r}).exists():
+  source = next((p for p in sys.argv if p.startswith('/proc/self/fd/')), None)
+  if source and os.stat(source).st_ino == os.stat({str(next_log)!r}).st_ino:
+    Path({str(opened)!r}).touch()
+    deadline = time.monotonic() + 3
+    while not Path({str(release)!r}).exists() and time.monotonic() < deadline:
+      time.sleep(.01)
+os.execv({sys.executable!r}, [{sys.executable!r}, *sys.argv[1:]])
+""")
+    wrapper.chmod(0o700)
+    engine.env['PATH'] = str(engine.root) + os.pathsep + os.environ['PATH']
+    with engine:
+      initial = engine.wait(lambda value: value['state'] == 'paused')
+      enabled.touch()
+      try:
+        engine.process.stdin.write(json.dumps({'op': 'seek', 'requestId': 'b1', 'position': 60.1}) + '\n')
+        engine.process.stdin.flush()
+        deadline = time.monotonic() + 3
+        while not opened.exists() and time.monotonic() < deadline:
+          time.sleep(.01)
+        self.assertTrue(opened.exists())
+        observed = []
+        deadline = time.monotonic() + .3
+        while time.monotonic() < deadline:
+          with contextlib.suppress(queue.Empty):
+            value = engine.statuses.get(timeout=.05)
+            if value.get('epoch') == initial['epoch'] + 1:
+              observed.append(value['state'])
+        self.assertTrue(observed)
+        self.assertEqual(set(observed), {'seeking'})
+      finally:
+        release.touch()
+      ready = engine.wait(lambda value: value.get('lastRequestId') == 'b1')
+      self.assertEqual(ready['state'], 'paused')
+      loaded_at = opened.stat().st_mtime_ns
+      cached = engine.command_status('seek', 'b2', position=60.15)
+      self.assertEqual(cached['state'], 'paused')
+      self.assertEqual(opened.stat().st_mtime_ns, loaded_at)
+
+  def test_preloaded_seek_with_two_cache_slots_does_not_wait_for_an_uncacheable_neighbor(self):
+    engine = Machine([(n, [60 * n + .1, 60 * n + .2], True) for n in range(3)])
+    engine.command[2:2] = ['--preload-seek', '--cache', '2']
+    with engine:
+      engine.wait(lambda value: value['state'] == 'paused')
+      ready = engine.command_status('seek', 'b1', position=60.1)
+      self.assertEqual(ready['state'], 'paused')
+
   def test_pause_seek_rate_clock_and_eof(self):
     with Machine([(0, [.1, .2, .3], True)]) as engine:
       initial = engine.wait(lambda value: value["state"] == "paused")
@@ -197,9 +256,11 @@ class TestMachine(unittest.TestCase):
       engine.wait(lambda value: value["state"] == "ended")
 
   def test_edge_cache_does_not_load_unneeded_segments(self):
-    for start, broken in ((0, 2), (2, 0)):
-      with self.subTest(start=start):
+    for start, broken, preload in ((0, 2, False), (2, 0, False), (0, 2, True), (2, 0, True)):
+      with self.subTest(start=start, preload=preload):
         engine = Machine([(n, [60 * n + .1, 60 * n + .2], True) for n in range(3)])
+        if preload:
+          engine.command.insert(2, '--preload-seek')
         path = engine.routes / f"00000001--1234567890--{broken}"
         (path / 'rlog').rename(path / 'qlog')
         (path / 'rlog').write_bytes(b'\xff' * 16)

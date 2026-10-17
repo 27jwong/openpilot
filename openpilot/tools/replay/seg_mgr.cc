@@ -75,13 +75,18 @@ void SegmentManager::manageSegmentCache() {
       begin = std::prev(end, std::min<int>(segment_cache_limit_, std::distance(segments_.begin(), end)));
     }
 
-    // Keep cached neighbors, but load only required history before the preview.
+    // Load required history before starting unrelated future work.
     const bool seeking = local && prefer_previous_;
     auto load_begin = seeking ? std::prev(cur, std::min<int>(1, std::distance(segments_.begin(), cur))) : begin;
     auto load_end = seeking ? std::next(cur) : end;
     lock.unlock();
 
     loadSegmentsInRange(load_begin, cur, load_end);
+    if (seeking && (flags_ & REPLAY_FLAG_PRELOAD_SEEK) && segment_cache_limit_ >= 3 &&
+        cur->second && cur->second->getState() == Segment::LoadState::Loaded &&
+        load_begin->second && load_begin->second->getState() == Segment::LoadState::Loaded) {
+      loadSegmentsInRange(begin, cur, end);
+    }
     for (auto it = begin; it != end; ++it) {
       if ((flags_ & REPLAY_FLAG_LOCAL_MACHINE) && it->second && it->second->getState() == Segment::LoadState::Failed && onFailure_) {
         onFailure_(it->first);

@@ -50,6 +50,7 @@ Options:
   -h, --help         Show this help message
       --machine      Isolated local replay controlled by newline JSON on stdin
       --start-segment Start machine replay at a recorded segment boundary
+      --preload-seek Prepare the next cached segment before machine seeks resume
 )";
 
 struct ReplayConfig {
@@ -91,6 +92,7 @@ bool parseArgs(int argc, char *argv[], ReplayConfig &config) {
       {"benchmark", no_argument, nullptr, 0},
       {"machine", no_argument, nullptr, 0},
       {"start-segment", required_argument, nullptr, 0},
+      {"preload-seek", no_argument, nullptr, 0},
       {"help", no_argument, nullptr, 'h'},
       {nullptr, 0, nullptr, 0},  // Terminating entry
   };
@@ -107,6 +109,7 @@ bool parseArgs(int argc, char *argv[], ReplayConfig &config) {
       {"no-vipc", REPLAY_FLAG_NO_VIPC},
       {"all", REPLAY_FLAG_ALL_SERVICES},
       {"benchmark", REPLAY_FLAG_BENCHMARK},
+      {"preload-seek", REPLAY_FLAG_PRELOAD_SEEK},
   };
 
   if (argc == 1) {
@@ -151,6 +154,7 @@ bool parseArgs(int argc, char *argv[], ReplayConfig &config) {
     return false;
   }
   if (config.start_segment >= 0 && !config.machine) return false;
+  if ((config.flags & REPLAY_FLAG_PRELOAD_SEEK) && !config.machine) return false;
 
   return true;
 }
