@@ -688,6 +688,8 @@ class RuntimeSnapshotAdapter:
                            HomeMode.EXPERIMENTAL if experimental else HomeMode.CHILL),
                      experimental_enabled=experimental, experimental_available=bool(ui.has_longitudinal_control),
                      stats=None, paired=bool(ui.prime_state.is_paired()), network=network, network_strength=strength,
+                     temperature_c=device.maxTempC if device is not None else None, metric=bool(ui.is_metric),
+                     temperature_high=device is not None and device.thermalStatus != log.DeviceState.ThermalStatus.ok,
                      vehicle_online=panda_connected, connection=connection,
                      recording_audio=bool(ui.recording_audio), bluetooth=bluetooth,
                      gpu_present=gpu_present, gpu_active=gpu_active, branch=_text(params, "GitBranch"),
