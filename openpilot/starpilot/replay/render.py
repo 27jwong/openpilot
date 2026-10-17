@@ -628,7 +628,8 @@ def run(session_dir: Path, route_id: str, data_dir: Path, target: str, profile: 
       if target != 'web' or not 0 < export_budget <= MAX_EXPORT_BYTES:
         raise ValueError('Invalid replay export budget')
     if target == 'native':
-      publisher = ReplayFramePublisher(session_dir / 'frame', session_dir.name, profile, width, height)
+      # Keep frames in RAM to avoid disk writeback stalls.
+      publisher = ReplayFramePublisher(Path(os.environ['SP_REPLAY_CLOCK_PATH']).with_name('frame'), session_dir.name, profile, width, height)
       resources.callback(publisher.close)
     else:
       from openpilot.starpilot.system.android_auto.hw_encoder import HardwareH264Encoder
@@ -764,7 +765,7 @@ def run(session_dir: Path, route_id: str, data_dir: Path, target: str, profile: 
           warnings.append('Recorded longitudinal plan unavailable; throttle feedback is neutral.')
         value['sourceWarnings'] = list(dict.fromkeys(str(warning)[:160] for warning in warnings))[:32]
         value.update(frameReady=ready, mediaReady=bool(ready and media is not None),
-                     framePath=str(session_dir / 'frame') if publisher is not None else None,
+                     framePath=str(publisher.path) if publisher is not None else None,
                      media=media.summary() if ready and media is not None else None)
         if export_budget:
           value.update(exportState='rendering', exportProgress=exporter.progress if exporter is not None else 0.)

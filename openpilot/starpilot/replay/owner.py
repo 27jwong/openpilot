@@ -500,7 +500,7 @@ class ReplayOwner:
         raise Rejected('worker_failed')
       self.status['sourceWarnings'] = list(dict.fromkeys([*self.base_warnings, *warnings]))[:32]
       if self.status['target'] == 'native':
-        self.status['framePath'] = str(directory / 'frame')
+        self.status['framePath'] = str(Path('/dev/shm') / ('msgq_replay-' + directory.name[:24]) / 'frame')
       media = value.get('media')
       if type(media) is dict:
         if (set(media) != {'epoch', 'codec', 'firstSequence', 'lastSequence', 'width', 'height'} or

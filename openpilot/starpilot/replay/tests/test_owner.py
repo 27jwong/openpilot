@@ -185,6 +185,8 @@ def test_explicit_actions_retries_and_no_takeover(owner):
   assert start(value)['sessionId'] == first['sessionId']
   wait_for(lambda: value.status['state'] == 'paused')
   assert len(children) == 1
+  frame_path = Path('/dev/shm') / ('msgq_replay-' + first['sessionId'][:24]) / 'frame'
+  assert value.dispatch({'op': 'status', 'clientId': CLIENT})['framePath'] == str(frame_path)
   command = control(value, 'pause', 'paused', False)
   accepted = value.dispatch(command)
   wait_for(lambda: value.pending is None)
@@ -201,6 +203,7 @@ def test_explicit_actions_retries_and_no_takeover(owner):
   wait_for(lambda: value.worker is None)
   assert children[0].poll() is not None and catalog.released == 1
   assert not list((value.root / 'sessions').iterdir())
+  assert not frame_path.parent.exists()
 
 
 def test_live_revocation_kills_only_fixture_and_releases_sources(owner):

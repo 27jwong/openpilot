@@ -1,5 +1,6 @@
 from contextlib import nullcontext
 from dataclasses import dataclass, replace
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import Mock
@@ -380,6 +381,7 @@ def test_camera_layers_allow_recorded_preview_and_preserve_live_start_gate(monke
 def test_worker_preserves_final_engine_error_after_exit(tmp_path, monkeypatch):
   session = tmp_path / ('a' * 32)
   session.mkdir(mode=0o700)
+  monkeypatch.setenv('SP_REPLAY_CLOCK_PATH', str(tmp_path / 'display-clock'))
   for key in ('STARPILOT_PROJECTION_READ_ONLY', 'BIG', 'SCALE'):
     monkeypatch.setenv(key, '')
   monkeypatch.setattr(render.signal, 'signal', Mock())
@@ -426,11 +428,14 @@ def test_engine_starts_before_idle_renderer_placement_and_closes_if_renderer_fai
   engine.close.assert_called_once()
 
 
-def test_published_readiness_survives_buffering_but_rejects_seeks_and_old_epochs(tmp_path, monkeypatch):
+@pytest.mark.parametrize('profile', ('large', 'compact'))
+def test_published_readiness_survives_buffering_but_rejects_seeks_and_old_epochs(tmp_path, monkeypatch, profile):
   session = tmp_path / ('a' * 32)
   session.mkdir(mode=0o700)
   for key in ('STARPILOT_PROJECTION_READ_ONLY', 'BIG', 'SCALE'):
     monkeypatch.setenv(key, '')
+  frame_path = Path('/dev/shm') / ('msgq_replay-' + session.name[:24]) / 'frame'
+  monkeypatch.setenv('SP_REPLAY_CLOCK_PATH', str(frame_path.with_name('display-clock')))
   monkeypatch.setattr(render.signal, 'signal', Mock())
   monkeypatch.setattr(render.threading, 'Thread', Mock())
   monkeypatch.setattr(render, 'validate_context', lambda path: path)
@@ -438,8 +443,9 @@ def test_published_readiness_survives_buffering_but_rejects_seeks_and_old_epochs
   catalog = Mock()
   catalog.detail.return_value = {'playable': True, 'segments': []}
   monkeypatch.setattr('openpilot.starpilot.galaxy.route_inventory.RouteInventory', lambda path: catalog)
-  publisher = Mock()
-  monkeypatch.setattr(render, 'ReplayFramePublisher', lambda *args: publisher)
+  publisher = Mock(path=frame_path)
+  publisher_factory = Mock(return_value=publisher)
+  monkeypatch.setattr(render, 'ReplayFramePublisher', publisher_factory)
   times, step = (1, 1.01, 1.11, 1.31, 1.61, 10, 10.2, 10.4, 10.6, 10.8), [0]
   monkeypatch.setattr(render.time, 'monotonic', lambda: times[step[0]])
   monkeypatch.setattr(render.time, 'monotonic_ns', lambda: round(times[step[0]] * 1e9))
@@ -480,7 +486,9 @@ def test_published_readiness_survives_buffering_but_rejects_seeks_and_old_epochs
   monkeypatch.setattr(render.time, 'sleep', next_loop)
   states = []
   with pytest.raises(RuntimeError, match='test complete'):
-    render.run(session, 'recorded-route', tmp_path, 'native', 'large', lambda value: states.append(value))
+    render.run(session, 'recorded-route', tmp_path, 'native', profile, lambda value: states.append(value))
+  publisher_factory.assert_called_once_with(frame_path, session.name, profile, *render.SIZES['native'][profile])
+  assert all(value['framePath'] == str(frame_path) for value in states)
   assert attempts[:2] == [1, 1.01]  # A failed draw retries before the 50 ms frame interval.
   assert [(value['state'], value['frameReady']) for value in states] == [
     ('preparing', False), ('playing', True), ('buffering', True), ('buffering', True), ('paused', True),
@@ -536,6 +544,7 @@ def test_epoch_reset_preserves_native_camera_stream_and_eligible_paused_frame(mo
 def test_initial_hud_primer_required_even_when_camera_received_a_frame(tmp_path, monkeypatch):
   session = tmp_path / ('a' * 32)
   session.mkdir(mode=0o700)
+  monkeypatch.setenv('SP_REPLAY_CLOCK_PATH', str(tmp_path / 'display-clock'))
   for key in ('STARPILOT_PROJECTION_READ_ONLY', 'BIG', 'SCALE'):
     monkeypatch.setenv(key, '')
   monkeypatch.setattr(render.signal, 'signal', Mock())
