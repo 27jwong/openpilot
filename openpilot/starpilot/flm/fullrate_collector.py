@@ -5,7 +5,7 @@ Inputs are decoded custom evidence produced by actual owners; no Params/default
 controller selection is inferred here. Domain adapters qualify response inverse.
 """
 
-from collections import OrderedDict, deque
+from collections import Counter, OrderedDict, deque
 from dataclasses import dataclass, replace
 import math
 import re
@@ -178,12 +178,15 @@ class FullrateCollector:
     self.fit_block_sequence = 0
     self.result = None
     self.reason = 'initializing'
+    self.training_interruptions = Counter()
     self.dropped = 0
     self.sealed = False
     self.model_block_sequence = self.model_points = 0
     self.model_sealed = False
 
   def split(self, reason, *, reset=False):
+    if reason in self.training_interruptions or len(self.training_interruptions) < 24:
+      self.training_interruptions[reason] += 1
     self.controls.clear()
     self.applied.clear()
     self.recent_controls.clear()

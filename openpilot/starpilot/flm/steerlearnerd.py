@@ -37,6 +37,7 @@ def run(
   adapter_for_ford,
   *,
   clock=time.monotonic_ns,
+  reporter=None,
 ):
   from openpilot.starpilot.flm.native_health import current_native_health
 
@@ -54,6 +55,8 @@ def run(
     nonlocal collector, raw_context, active_key, pending_key, pending_token, unavailable_reason
     unavailable_reason = reason
     if collector is not None:
+      if reporter is not None:
+        reporter.reset(reason)
       collector.split(reason, reset=True)
     collector = None
     cached_reports.clear()
@@ -153,6 +156,8 @@ def run(
         if incoming != raw_context:
           clear('actual_controller_identity_changed')
           raw_context = incoming
+        if reporter is not None:
+          reporter.control = (event, evidence)
         keys = tuple(collection_keys(evidence))
         if not 0 < len(keys) <= MAX_OBJECTIVES or len(set(keys)) != len(keys):
           clear('objective_registry_bound')
@@ -208,6 +213,8 @@ def run(
       if report is not None:
         decoded = decode_fit_result(report)
         if decoded is not None and collector is not None and token == pending_token:
+          if reporter is not None:
+            reporter.fitted(decoded[0], pending_key)
           if len(cached_reports) < MAX_CACHED_PROFILES or pending_key in cached_reports:
             cached_reports[pending_key] = (report, decoded, token)
         pending_key = pending_token = None
@@ -230,6 +237,8 @@ def run(
             current_native = bool(collector is not None and collector.ready and
                                   current_native_health(sm, CP, collector.ready[-1][0], now))
             if valid_source and current_native and collector is not None and fitter.submit(snapshot, token=token, now_ns=now):
+              if reporter is not None:
+                reporter.fit_attempts += 1
               collector.mark_job_submitted(now)
               pending_key, pending_token = active_key, token
 
@@ -266,6 +275,11 @@ def run(
           message.valid = True
         write_source_receipt(message, source)
         pm.send('autoSteeringLearning', message)
+        if reporter is not None:
+          cached = cached_reports.get(active_key)
+          reporter.publish(now_ns=now, message=message, collector=collector, source=source, objective=active_key,
+            pending=fitter.child is not None, native_current=current_native,
+            fit_result=None if cached is None else cached[1][0])
   finally:
     fitter.close('learner_parent_exit')
 
@@ -347,6 +361,12 @@ def main():
     current = current_source(now, calibration_frame(now))
     return (identity if persistent_unit and epoch == current.source_epoch else '', current.enabled, current.manual, current.reset)
 
+  from openpilot.starpilot.flm.training_report import TrainingReporter
+
+  try:
+    reporter = TrainingReporter(CP.carFingerprint)
+  except (OSError, ValueError):
+    reporter = None
   persistence = PersistenceModule(params, current_sources)
   run(
     CP,
@@ -363,6 +383,7 @@ def main():
     persistence,
     FitProcess(),
     adapter_for_ford,
+    reporter=reporter,
   )
 
 

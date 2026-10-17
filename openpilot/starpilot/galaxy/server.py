@@ -32,6 +32,7 @@ from openpilot.starpilot.galaxy.recording_http import camera_video, send_recordi
 from openpilot.starpilot.galaxy.replay_http import ReplayHTTP, ReplayHTTPError
 from openpilot.starpilot.galaxy.route_inventory import CatalogError
 from openpilot.starpilot.galaxy.segment_summary import SegmentSummary, SegmentSummaryChanged, SegmentSummaryUnavailable
+from openpilot.starpilot.galaxy.flm_training_results import FlmTrainingResults
 from openpilot.starpilot.galaxy.flm_operations import FlmOperations, FlmOperationError, error_status, validate_action as validate_flm_action
 from openpilot.starpilot.galaxy.sentry_events import SentryEvents, SentryEventsUnavailable
 from openpilot.starpilot.sentry_mode.notifications import NotificationOwner, NotificationUnavailable
@@ -61,12 +62,13 @@ WEB = Path(__file__).resolve().parent / 'web'
 INSTANCE = secrets.token_hex(8)
 def make_server(*, port=8082, host='127.0.0.1', monitor=None, owner=None, crashes=None, software=None, maps=None, models=None, settings=None,
                 plots=None, map_operations=None, recordings=None, recording_media=None, segment_summary=None,
-                sentry_events=None, notifications=None, flm_operations=None, bluetooth=None, vehicle_selection=None,
+                sentry_events=None, notifications=None, flm_operations=None, training_results=None, bluetooth=None, vehicle_selection=None,
                 model_manager=None, layouts=None, favorites=None,
                 sounds=None, software_operations=None, drive_stats=None, layout_preview_socket=None, controllers_socket=None,
                 remote_pairing=None, parked=None, camera_snapshot=None, clock=time.monotonic, android_auto_setup=None,
                 android_auto_client=None, navigation=None, offline_maps=None, drive_state=None, cloud_provider=None, cloud_offroad=None, projection_layout=None,
                 local_access=None, tmux_live=None, android_auto_logs=None, hotspot=None, toyota_tools=None, replay_client=None, replay_root=None):
+  training_results_source = training_results if training_results is not None else FlmTrainingResults()
   cloud = cloud_provider
   hotspot_source = hotspot
   hotspot_source_lock = threading.Lock()
@@ -1080,6 +1082,15 @@ def make_server(*, port=8082, host='127.0.0.1', monitor=None, owner=None, crashe
         else:
           if self.require_session():
             self.json(200, result)
+      elif path == '/api/flm/training-results':
+        if not self.require_session():
+          return
+        if urlsplit(self.path).query:
+          self.json(400, {'error': 'Unexpected training-results query'})
+          return
+        result = training_results_source.snapshot()
+        if self.require_session():
+          self.json(200, result)
       elif path in ('/api/flm/status', '/api/flm/report', '/api/flm/live'):
         if not self.require_session():
           return
