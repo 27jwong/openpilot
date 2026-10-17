@@ -25,7 +25,9 @@ from openpilot.starpilot.ui.settings_geometry import (
 LABEL_SIZE = 50
 DETAIL_SIZE = 35
 PAGE_TRANSITION_TIME = 0.18
-EDGE_ACCENT = rl.color_lerp(PANEL_BG, ACCENT, 0.5)
+EDGE_ACCENT = rl.color_lerp(PANEL_BG, ACCENT, 0.4)
+EDGE_FADE_HEIGHT = 96
+EDGE_FADE_CLEAR = rl.Color(PANEL_BG.r, PANEL_BG.g, PANEL_BG.b, 0)
 VALUE_SELECTED_BORDER = rl.Color(ACCENT.r, ACCENT.g, ACCENT.b, 100)
 VALUE_DONE_BG = rl.Color(ACCENT.r, ACCENT.g, ACCENT.b, 34)
 DRIVE_MODE_BORDER = rl.Color(108, 102, 122, 255)
@@ -120,26 +122,33 @@ class FeatureSettingsView:
       return
     can_page = drag_x != 0 and feature_scroll(state.scroll, 1 if drag_x < 0 else -1, len(state.rows)) != state.scroll
     rows_state, pull_x, cover = self._page_frame(state, feature_pull(drag_x, can_page), drag_x != 0)
-    if pull_x and can_page:
-      edge_x = 2125 - FEATURE_FLICK_DISTANCE if pull_x < 0 else left + 25
-      gap_x = 2125 + pull_x if pull_x < 0 else left - 20
-      gap_right = 2160 if pull_x < 0 else left + 25 + pull_x
-      color_left, color_right = (PANEL_BG, EDGE_ACCENT) if pull_x < 0 else (EDGE_ACCENT, PANEL_BG)
-      rl.draw_rectangle_gradient_ex(rl.Rectangle(gap_x, row_top, gap_right - gap_x, FEATURE_VISIBLE_ROWS * FEATURE_ROW_HEIGHT),
-                                    color_left, color_left, color_right, color_right)
-      cx, cy = edge_x + FEATURE_FLICK_DISTANCE / 2, row_top + FEATURE_VISIBLE_ROWS * FEATURE_ROW_HEIGHT / 2
-      direction = 1 if pull_x < 0 else -1
-      tip = rl.Vector2(cx + direction * 8, cy)
-      rl.draw_line_ex(rl.Vector2(cx - direction * 8, cy - 16), tip, 4, TEXT_PRIMARY)
-      rl.draw_line_ex(tip, rl.Vector2(cx - direction * 8, cy + 16), 4, TEXT_PRIMARY)
-    clip.begin_scissor_mode(left + 25, row_top, 2100 - left, FEATURE_VISIBLE_ROWS * FEATURE_ROW_HEIGHT)
+    body = rl.Rectangle(left + 25, row_top, 2100 - left, FEATURE_VISIBLE_ROWS * FEATURE_ROW_HEIGHT)
+    clip.begin_scissor_mode(body.x, body.y, body.width, body.height)
     try:
+      if pull_x and can_page:
+        gap = abs(pull_x)
+        gap_x = body.x + body.width + pull_x if pull_x < 0 else body.x
+        edge = rl.color_lerp(PANEL_BG, EDGE_ACCENT, gap / FEATURE_FLICK_DISTANCE)
+        color_left, color_right = (PANEL_BG, edge) if pull_x < 0 else (edge, PANEL_BG)
+        rl.draw_rectangle_gradient_ex(rl.Rectangle(gap_x, body.y, gap, body.height),
+                                      color_left, color_left, color_right, color_right)
+        # Feather the exposed background before drawing the moving rows and their text.
+        rl.draw_rectangle_gradient_ex(rl.Rectangle(gap_x, body.y, gap, EDGE_FADE_HEIGHT),
+                                      PANEL_BG, EDGE_FADE_CLEAR, EDGE_FADE_CLEAR, PANEL_BG)
+        rl.draw_rectangle_gradient_ex(rl.Rectangle(gap_x, body.y + body.height - EDGE_FADE_HEIGHT, gap, EDGE_FADE_HEIGHT),
+                                      EDGE_FADE_CLEAR, PANEL_BG, PANEL_BG, EDGE_FADE_CLEAR)
+        edge_x = body.x + body.width - FEATURE_FLICK_DISTANCE if pull_x < 0 else body.x
+        cx, cy = edge_x + FEATURE_FLICK_DISTANCE / 2, body.y + body.height / 2
+        direction = 1 if pull_x < 0 else -1
+        tip = rl.Vector2(cx + direction * 8, cy)
+        rl.draw_line_ex(rl.Vector2(cx - direction * 8, cy - 16), tip, 4, TEXT_PRIMARY)
+        rl.draw_line_ex(tip, rl.Vector2(cx - direction * 8, cy + 16), 4, TEXT_PRIMARY)
       if pull_x:
         rl.rl_push_matrix()
       try:
         if pull_x:
           rl.rl_translatef(pull_x, 0, 0)
-          rl.draw_rectangle_rec(rl.Rectangle(left + 25, row_top, 2100 - left, FEATURE_VISIBLE_ROWS * FEATURE_ROW_HEIGHT), PANEL_BG)
+          rl.draw_rectangle_rec(body, PANEL_BG)
         for visible, row in enumerate(rows_state.rows[rows_state.scroll:rows_state.scroll + FEATURE_VISIBLE_ROWS]):
           y = row_top + visible * FEATURE_ROW_HEIGHT
           value = _boolean_value(row)
@@ -254,8 +263,7 @@ class FeatureSettingsView:
         if pull_x:
           rl.rl_pop_matrix()
       if cover:
-        rl.draw_rectangle_rec(rl.Rectangle(left + 25, row_top, 2100 - left, FEATURE_VISIBLE_ROWS * FEATURE_ROW_HEIGHT),
-                              rl.Color(PANEL_BG.r, PANEL_BG.g, PANEL_BG.b, cover))
+        rl.draw_rectangle_rec(body, rl.Color(PANEL_BG.r, PANEL_BG.g, PANEL_BG.b, cover))
     finally:
       clip.end_scissor_mode()
     if state.editor:
