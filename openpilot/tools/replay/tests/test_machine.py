@@ -87,7 +87,7 @@ class Machine:
     self.env = dict(os.environ, SP_REPLAY_CONTEXT="1", SP_REPLAY_PARENT_PID=str(os.getpid()),
                     OPENPILOT_PREFIX=self.ipc.name.removeprefix("msgq_"), PARAMS_ROOT=str(self.root / "params"),
                     COMMA_CACHE=str(self.root / "cache"), SP_REPLAY_CLOCK_PATH=str(clock))
-    self.command = [str(BINARY), "--machine", "--no-vipc", "--data_dir", str(self.routes), "00000001--1234567890"]
+    self.command = [str(BINARY), "--machine", "--no-vipc", "--cache", "3", "--data_dir", str(self.routes), "00000001--1234567890"]
     if options.get('wide_leads'):
       self.command.insert(2, '--wide-road')
     self.stderr = tempfile.TemporaryFile(mode="w+")
@@ -195,6 +195,22 @@ class TestMachine(unittest.TestCase):
       self.assertEqual(recovered["state"], "paused")
       engine.command_status("pause", "b4", paused=False)
       engine.wait(lambda value: value["state"] == "ended")
+
+  def test_edge_cache_does_not_load_unneeded_segments(self):
+    for start, broken in ((0, 2), (2, 0)):
+      with self.subTest(start=start):
+        engine = Machine([(n, [60 * n + .1, 60 * n + .2], True) for n in range(3)])
+        path = engine.routes / f"00000001--1234567890--{broken}"
+        (path / 'rlog').rename(path / 'qlog')
+        (path / 'rlog').write_bytes(b'\xff' * 16)
+        engine.command[2:2] = ['--start-segment', str(start)]
+        with engine:
+          ready = engine.wait(lambda value: value['state'] in ('paused', 'failed'))
+          self.assertEqual(ready['state'], 'paused', ready)
+          deadline = time.monotonic() + .3
+          stable = engine.wait(lambda value, deadline=deadline: value.get('error') or time.monotonic() >= deadline)
+          self.assertEqual(stable['state'], 'paused', stable)
+          self.assertFalse(stable.get('error'))
 
   def test_first_playable_segment_uses_actual_index_time(self):
     with Machine([(0, [.1], False), (1, [65.1, 65.2], True)]) as engine:

@@ -164,7 +164,7 @@ class Engine:
   def __init__(self, route_id: str, data_dir: Path, *, wide: bool, cabin: bool, start_segment: int | None = None):
     from openpilot.common.basedir import BASEDIR
     command = [str(Path(BASEDIR) / 'openpilot/tools/replay/replay'), '--machine', '--data_dir', str(data_dir),
-               '--no-loop', '--cache', '2']
+               '--no-loop', '--cache', '3']
     if wide:
       command.append('--wide-road')
     if cabin:

@@ -317,6 +317,7 @@ int main(int argc, char *argv[]) {
                     "slcState", "vehicleParameters", "customReserved6", "spotMonitorState", "clocks", "narrowRoadEncodeIdx", "wideRoadEncodeIdx", "cabinEncodeIdx"};
     try {
       Replay replay(config.route, config.allow, {}, nullptr, config.flags, config.data_dir, false);
+      if (config.cache_segments > 0) replay.setSegmentCacheLimit(config.cache_segments);
       return runMachine(replay, machine_output, config.start_segment);
     } catch (const std::exception &error) {
       std::cerr << "Machine replay failed: " << error.what() << '\n';
