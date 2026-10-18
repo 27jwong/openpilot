@@ -228,7 +228,7 @@ class CarInterface(CarInterfaceBase):
     ret.longitudinalActuatorDelay = 0.5
 
     if candidate == CAR.CHEVROLET_VOLT_CC:
-      # Manual identity only: observed inputs are prerequisites, never automatic identification.
+      # Require the complete source layout for either automatic or manual identity.
       required = {0xbe: 6, 0x3d1: 8, 0xc9: 8, 0x1e1: 7, 0x1f5: 8, 0x34a: 5, 0x1c4: 8, 0xbd: 7}
       admitted = not is_release and all(fingerprint[CanBus.POWERTRAIN].get(addr) == size for addr, size in required.items())
       ret.networkLocation = NetworkLocation.gateway
