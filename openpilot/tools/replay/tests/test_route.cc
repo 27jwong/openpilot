@@ -5,9 +5,16 @@
 #include "tools/replay/filereader.h"
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <fcntl.h>
+#include <random>
 #include <sys/file.h>
+#ifdef __linux__
+#include <sys/resource.h>
+#include <sys/wait.h>
+#endif
 #include <unistd.h>
+#include <zstd.h>
 
 void test_route_ranges() {
   struct Range {
@@ -121,6 +128,115 @@ void test_bounded_file_reader() {
   CHECK(FileReader(false, data.size()).read(path).empty());
 }
 
+void test_bounded_zstd_file_reader() {
+  char path[] = "/tmp/replay-zstd-reader-XXXXXX";
+  unique_fd fd(mkstemp(path));
+  REQUIRE(fd >= 0);
+  const std::string data(128 * 1024 + 17, '\x17');
+  auto compress = [](const std::string &value) {
+    std::unique_ptr<ZSTD_CCtx, decltype(&ZSTD_freeCCtx)> context(ZSTD_createCCtx(), ZSTD_freeCCtx);
+    REQUIRE(context);
+    REQUIRE(!ZSTD_isError(ZSTD_CCtx_setParameter(context.get(), ZSTD_c_compressionLevel, 1)));
+    REQUIRE(!ZSTD_isError(ZSTD_CCtx_setParameter(context.get(), ZSTD_c_contentSizeFlag, 0)));
+    REQUIRE(!ZSTD_isError(ZSTD_CCtx_setParameter(context.get(), ZSTD_c_checksumFlag, 1)));
+    std::string result(ZSTD_compressBound(value.size()), '\0');
+    const size_t size = ZSTD_compress2(context.get(), result.data(), result.size(), value.data(), value.size());
+    REQUIRE(!ZSTD_isError(size));
+    result.resize(size);
+    return result;
+  };
+  const std::string compressed = compress(data);
+  REQUIRE(ZSTD_getFrameContentSize(compressed.data(), compressed.size()) == ZSTD_CONTENTSIZE_UNKNOWN);
+  auto store = [&](const std::string &bytes) {
+    std::ofstream output(path, std::ios::binary);
+    output.write(bytes.data(), bytes.size());
+    REQUIRE(output.good());
+  };
+  store(compressed);
+  // Local Zstd reads must not need a Python executable or decoded temporary file.
+  const std::string python_path = getenv("PATH") ? getenv("PATH") : "";
+  REQUIRE(setenv("PATH", "", 1) == 0);
+  CHECK(FileReader(false, data.size()).read(path) == data);
+  REQUIRE(setenv("PATH", python_path.c_str(), 1) == 0);
+  CHECK(FileReader(false, data.size() - 1).read(path).empty());
+  CHECK(FileReader(false).read(path) == data);
+  std::atomic<bool> abort = true;
+  CHECK(FileReader(false, data.size()).read(path, &abort).empty());
+  REQUIRE(unlink(path) == 0);
+#ifdef __linux__
+  store("replacement");
+  CHECK(FileReader(false, data.size()).read("/proc/self/fd/" + std::to_string(int(fd))) == data);
+#endif
+  store(compressed.substr(0, compressed.size() - 1));
+  CHECK(FileReader(false, data.size()).read(path).empty());
+  store(compressed + "junk");
+  CHECK(FileReader(false, data.size()).read(path).empty());
+  store(compressed + compressed);
+  CHECK(FileReader(false, data.size() * 2).read(path) == data + data);
+  CHECK(FileReader(false, data.size() * 2 - 1).read(path).empty());
+  std::string corrupt = compressed;
+  corrupt.back() ^= 1;
+  store(corrupt);
+  CHECK(FileReader(false, data.size()).read(path).empty());
+  store(compressed.substr(0, 4));
+  CHECK(FileReader(false).read(path).empty());
+  // A complete input chunk must still drain the decoder's buffered output.
+  std::minstd_rand random(73);
+  std::string noise(65536, '\0');
+  for (char &byte : noise) byte = random() & 255;
+  bool exact_chunk = false;
+  for (size_t size = 65500; size <= noise.size(); ++size) {
+    const auto value = noise.substr(0, size), frame = compress(value);
+    if (frame.size() == 65536) {
+      store(frame);
+      CHECK(FileReader(false, value.size()).read(path) == value);
+      exact_chunk = true;
+      break;
+    }
+  }
+  REQUIRE(exact_chunk);
+  const std::string skippable("\x50\x2a\x4d\x18\x05\0\0\0hello", 13);
+  store(compressed + skippable);
+  CHECK(FileReader(false, data.size()).read(path) == data);
+  auto dictionary = compressed;
+  dictionary[4] |= 1;  // Frame declares a dictionary which this reader does not have.
+  dictionary.insert(6, 1, '\1');
+  store(dictionary);
+  CHECK(FileReader(false).read(path).empty());
+  auto window = compressed;
+  window[5] = '\x90';  // A 256 MiB window exceeds the decoder's existing default.
+  store(window);
+  CHECK(FileReader(false).read(path).empty());
+#ifdef __linux__
+  auto constrained = [&](auto check) {
+    const pid_t child = fork();
+    REQUIRE(child >= 0);
+    if (child == 0) {
+      _exit(run_native_test([&]() {
+        size_t pages = 0;
+        std::ifstream("/proc/self/statm") >> pages;
+        REQUIRE(pages > 0);
+        // Force the cap reservation to fail without pressuring the host's RAM.
+        const rlim_t bytes = pages * sysconf(_SC_PAGESIZE) + 8 * 1024 * 1024;
+        const rlimit limit{bytes, bytes};
+        REQUIRE(setrlimit(RLIMIT_AS, &limit) == 0);
+        check();
+      }));
+    }
+    int status = 0;
+    REQUIRE(waitpid(child, &status, 0) == child);
+    CHECK(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+  };
+  store(compressed);
+  constrained([&]() { CHECK(FileReader(false, 128 * 1024 * 1024).read(path) == data); });
+  store(corrupt);
+  constrained([&]() { CHECK(FileReader(false, 128 * 1024 * 1024).read(path).empty()); });
+  store(compress(std::string(24 * 1024 * 1024, '\x17')));
+  constrained([&]() { CHECK(FileReader(false, 128 * 1024 * 1024).read(path).empty()); });
+#endif
+  REQUIRE(unlink(path) == 0);
+}
+
 class ThrowingVideoDecoder : public VideoDecoder {
 public:
   bool open(AVCodecParameters *, bool) override { return true; }
@@ -199,6 +315,7 @@ int main(int argc, char **argv) {
     test_local_sources();
     test_machine_camera_time();
     test_bounded_file_reader();
+    test_bounded_zstd_file_reader();
     test_decoder_exception_is_a_failed_frame();
     if (argc == 3 || argc == 4) {
       REQUIRE(argc == 3 || std::string(argv[3]) == "--hardware");
