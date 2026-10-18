@@ -22,7 +22,7 @@ from openpilot.starpilot.ui.onroad_map import MapFeed
 
 def binary_position(axis, *, source=2, week=2400, vdop=2.):
   fmt, names = parse_struct(position_report)
-  values = dict.fromkeys(names, 0)
+  values: dict[str, int | float] = dict.fromkeys(names, 0)
   values.update({'u_PosSource': source, 'w_GpsWeekNumber': week, 'q_GpsFixTimeMs': 10000,
                  't_DblFinalPosLatLon[0]': math.radians(40), 't_DblFinalPosLatLon[1]': math.radians(-90),
                  'q_FltFinalPosAlt': 200., 'q_FltHeadingRad': 1., 'q_FltHeadingUncRad': .1,
