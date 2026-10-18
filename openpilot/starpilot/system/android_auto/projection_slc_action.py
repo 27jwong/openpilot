@@ -2,19 +2,22 @@
 import json
 import os
 import socket
+import time
 
 from openpilot.starpilot.ui.onroad_state import OnroadRequest, SlcActionKind, SlcUiRequest
 
 DEFAULT_SOCKET = '/tmp/starpilot-projection-slc.sock'
 MAX_DATAGRAM = 512
+MAX_AGE_NS = 1_000_000_000
 # The projection cannot see the native experimental binding's token, so a wheel
 # tap carries only the state it asks for; the native UI checks it against live state.
 SET_EXPERIMENTAL = 'set_experimental'
 
 
 class SlcActionSender:
-  def __init__(self, path=DEFAULT_SOCKET):
+  def __init__(self, path=DEFAULT_SOCKET, clock=time.monotonic_ns):
     self.path = str(path)
+    self.clock = clock
     self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
     self.sock.setblocking(False)
 
@@ -22,7 +25,7 @@ class SlcActionSender:
     if isinstance(request, OnroadRequest):
       if request.kind != SET_EXPERIMENTAL or not isinstance(request.value, bool):
         return False
-      payload = json.dumps({'kind': SET_EXPERIMENTAL, 'value': request.value}).encode()
+      payload = json.dumps({'kind': SET_EXPERIMENTAL, 'value': request.value, 'requested': self.clock()}).encode()
       return self._send(payload)
     payload = json.dumps({'kind': request.kind.value, 'session': request.session_id, 'decision': request.decision_id,
                           'presentation': request.presentation_id, 'speed': request.candidate_speed_mps}).encode()
@@ -55,7 +58,7 @@ class SlcActionReceiver:
       self.sock.close()
       raise
 
-  def drain(self) -> list[OnroadRequest | SlcUiRequest]:
+  def drain(self, now_ns: int | None = None) -> list[OnroadRequest | SlcUiRequest]:
     """At most a few typed requests; malformed input is dropped. The caller still validates against live state."""
     requests = []
     for _ in range(4):
@@ -66,7 +69,10 @@ class SlcActionReceiver:
       try:
         data = json.loads(raw)
         if data['kind'] == SET_EXPERIMENTAL:
-          if not isinstance(data['value'], bool):
+          requested = data['requested']
+          now = time.monotonic_ns() if now_ns is None else now_ns
+          if (not isinstance(data['value'], bool) or type(requested) is not int or
+              not 0 < requested <= now or now - requested > MAX_AGE_NS):
             continue
           requests.append(OnroadRequest(SET_EXPERIMENTAL, data['value']))
           continue

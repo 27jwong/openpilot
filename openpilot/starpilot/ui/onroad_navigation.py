@@ -58,7 +58,7 @@ class NavigationCard:
       self._key, self.collapsed = state.navigation.key, False
     rect = self._placed(state)
     # A live SLC decision keeps its touch priority only where its buttons actually sit on the card.
-    if rect is not None and state.longitudinal_active and _overlaps_slc_actions(rect, self.fonts.profile, state):
+    if rect is not None and _overlaps_slc_actions(rect, self.fonts.profile, state):
       return None
     return rect
 

@@ -52,6 +52,9 @@ from openpilot.starpilot.ui.software_state import DownloadLabel, SoftwareRequest
 from openpilot.starpilot.ui.toggles_state import Personality, ToggleKey, TogglesState
 
 
+SLC_SIGN_HOLD_NS = 150_000_000
+
+
 def _boot_time_ns() -> int:
   return time.clock_gettime_ns(getattr(time, "CLOCK_BOOTTIME", time.CLOCK_MONOTONIC))
 
@@ -577,10 +580,10 @@ class RuntimeSnapshotAdapter:
     elif observation.kind != ObservationKind.VALID and slc is not None and self._slc_sign_cache is not None:
       stamp, previous_drive, session, previous = self._slc_sign_cache
       if (previous_drive == drive_key and session and session == str(getattr(slc, 'sessionId', '')) and
-          not bool(getattr(slc, 'hasPending', False)) and not getattr(slc, 'decisionId', 0)):
-        # No source has a limit right now (unknown, absent or stale). Keep showing the
-        # last accepted sign so the card does not flicker, without retaining a control
-        # target, acceptance or action identity during the gap.
+          0 <= now_ns - stamp <= SLC_SIGN_HOLD_NS and not bool(getattr(slc, 'hasPending', False)) and
+          not getattr(slc, 'decisionId', 0)):
+        # Bridge a brief source gap without retaining a control target, acceptance,
+        # action identity, or an obsolete limit for the rest of the drive.
         source = previous.accepted_source if positive(previous.accepted_speed_limit_mps) else previous.source
         observation = SpeedLimitObservation(kind=ObservationKind.VALID, source=source,
                                             speed_limit_mps=displayed_limit_mps(previous),

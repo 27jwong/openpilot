@@ -500,7 +500,7 @@ class StarShellSession:
     if receiver is None:
       return
     # Always drain; a request is only published if the same live-state checks as a comma-screen tap pass.
-    for request in receiver.drain():
+    for request in receiver.drain(now_ns):
       if not ui_state.started or getattr(ui_state, "replay_clock", None) is not None:
         continue
       if isinstance(request, OnroadRequest):

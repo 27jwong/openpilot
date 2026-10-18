@@ -106,6 +106,7 @@ def test_slc_decision_keeps_its_touch_priority_only_where_it_overlaps():
                                   session_id='s', decision_id=1, presentation_id=1, action_enabled=True)
   # Compact buttons (y 180-234, header from 136) cover the card's lower edge.
   assert card.bounds(replace(state(), longitudinal_active=True, speed_limit=pending)) is None
+  assert card.bounds(replace(state(), longitudinal_active=False, speed_limit=pending)) is None
   # SLC being on, with no decision on screen, leaves the directions up.
   assert card.bounds(replace(state(), longitudinal_active=True, speed_limit=SpeedLimitObservation(action_enabled=True))) is not None
   large = NavigationCard(Mock(profile=Profile.LARGE))

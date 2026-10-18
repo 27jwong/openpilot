@@ -25,7 +25,7 @@ def display_ui():
   return ui
 
 
-def test_unknown_slc_keeps_only_display_sign_until_session_changes():
+def test_unknown_slc_keeps_only_display_sign_during_brief_gap():
   ui = display_ui()
   adapter = RuntimeSnapshotAdapter(ui)
   valid = adapter.build(ShellMode.ONROAD, now_ns=NOW).onroad.speed_limit
@@ -38,11 +38,9 @@ def test_unknown_slc_keeps_only_display_sign_until_session_changes():
   assert not held.action_enabled
   assert all(value is None for value in (held.session_id, held.decision_id, held.presentation_id,
                                          held.pending_speed_limit_mps, held.effective_cap_mps))
-  # A long gap with no source information keeps the sign steady instead of flickering.
-  ui.sm.logMonoTime['slcState'] = NOW + 60_000_000_000
-  long_held = adapter.build(ShellMode.ONROAD, now_ns=NOW + 60_000_000_000).onroad.speed_limit
-  assert (long_held.kind, long_held.speed_limit_mps, long_held.status) == (
-    ObservationKind.VALID, valid.speed_limit_mps, 'display_hold')
+  ui.sm.logMonoTime['slcState'] = NOW + 150_000_001
+  expired = adapter.build(ShellMode.ONROAD, now_ns=NOW + 150_000_001).onroad.speed_limit
+  assert (expired.kind, expired.speed_limit_mps) == (ObservationKind.STALE, None)
 
 
 @pytest.mark.parametrize('metric', [False, True])
@@ -78,10 +76,10 @@ def test_unknown_gap_preserves_large_slc_number_offset_and_source(metric, target
     assert all(value is None for value in (obs.effective_cap_mps, obs.effective_cluster_target_mps,
                                            obs.accepted_speed_limit_mps, obs.session_id, obs.decision_id,
                                            obs.presentation_id, obs.pending_speed_limit_mps))
-  # The hold does not expire on its own; only a new session or drive clears it.
+  # Repeated unavailable messages do not extend the hold.
   ui.sm.logMonoTime['slcState'] = NOW + 150_000_001
-  still = resolve_unified_speed(adapter.build(ShellMode.ONROAD, now_ns=NOW + 150_000_001).onroad)
-  assert (still.limit_text, still.posted_text) == (before.limit_text, before.posted_text)
+  expired = resolve_unified_speed(adapter.build(ShellMode.ONROAD, now_ns=NOW + 150_000_001).onroad)
+  assert (expired.limit_text, expired.posted_text) == ('–', '–')
   ui.sm.messages['slcState'] = slc
   ui.sm.logMonoTime['slcState'] = NOW + 160_000_000
   recovered = resolve_unified_speed(adapter.build(ShellMode.ONROAD, now_ns=NOW + 160_000_000).onroad)

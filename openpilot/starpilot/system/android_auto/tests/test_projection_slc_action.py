@@ -1,42 +1,50 @@
+import json
 import tempfile
 from pathlib import Path
 
-from openpilot.starpilot.system.android_auto.projection_slc_action import SlcActionReceiver, SlcActionSender
+from openpilot.starpilot.system.android_auto.projection_slc_action import MAX_AGE_NS, SlcActionReceiver, SlcActionSender
 from openpilot.starpilot.ui.onroad_state import SlcActionKind, SlcUiRequest
 
 
 def test_request_round_trips_and_malformed_input_is_dropped():
   # AF_UNIX paths are short on macOS; pytest's tmp_path is not.
-  path = Path(tempfile.mkdtemp(dir='/tmp')) / 's.sock'
-  receiver, sender = SlcActionReceiver(path), SlcActionSender(path)
-  try:
-    request = SlcUiRequest(SlcActionKind.ADOPT, 'drive-1', 7, 9, 22.0)
-    assert sender.send(request)
-    sender.sock.sendto(b'not json', str(path))
-    sender.sock.sendto(b'{"kind": "explode"}', str(path))
-    assert receiver.drain() == [request]
-    assert receiver.drain() == []
-  finally:
-    sender.close()
-    receiver.close()
+  with tempfile.TemporaryDirectory(dir='/tmp') as directory:
+    path = Path(directory) / 's.sock'
+    receiver, sender = SlcActionReceiver(path), SlcActionSender(path)
+    try:
+      request = SlcUiRequest(SlcActionKind.ADOPT, 'drive-1', 7, 9, 22.0)
+      assert sender.send(request)
+      sender.sock.sendto(b'not json', str(path))
+      sender.sock.sendto(b'{"kind": "explode"}', str(path))
+      assert receiver.drain() == [request]
+      assert receiver.drain() == []
+    finally:
+      sender.close()
+      receiver.close()
 
 
 def test_experimental_request_round_trips_and_rejects_malformed_values():
   from openpilot.starpilot.ui.onroad_state import OnroadRequest
-  path = Path(tempfile.mkdtemp(dir='/tmp')) / 's.sock'
-  receiver, sender = SlcActionReceiver(path), SlcActionSender(path)
-  try:
-    # The native token is not visible to the projection and is not sent.
-    assert sender.send(OnroadRequest('set_experimental', True, 'projection-token'))
-    assert not sender.send(OnroadRequest('set_experimental', None))
-    assert not sender.send(OnroadRequest('open_settings', True))
-    sender.sock.sendto(b'{"kind": "set_experimental", "value": "yes"}', str(path))
-    sender.sock.sendto(b'{"kind": "set_experimental"}', str(path))
-    sender.sock.sendto(b'[1]', str(path))
-    assert receiver.drain() == [OnroadRequest('set_experimental', True)]
-  finally:
-    sender.close()
-    receiver.close()
+  now = 2 * MAX_AGE_NS
+  with tempfile.TemporaryDirectory(dir='/tmp') as directory:
+    path = Path(directory) / 's.sock'
+    receiver, sender = SlcActionReceiver(path), SlcActionSender(path, clock=lambda: now)
+    try:
+      # The native token is not visible to the projection and is not sent.
+      assert sender.send(OnroadRequest('set_experimental', True, 'projection-token'))
+      assert not sender.send(OnroadRequest('set_experimental', None))
+      assert not sender.send(OnroadRequest('open_settings', True))
+      sender.sock.sendto(b'{"kind": "set_experimental", "value": "yes", "requested": 1}', str(path))
+      sender.sock.sendto(b'{"kind": "set_experimental", "value": false}', str(path))
+      sender.sock.sendto(b'{"kind": "set_experimental", "value": false, "requested": true}', str(path))
+      sender.sock.sendto(b'[1]', str(path))
+      assert receiver.drain(now) == [OnroadRequest('set_experimental', True)]
+      sender.sock.sendto(json.dumps({'kind': 'set_experimental', 'value': False,
+                                     'requested': now - MAX_AGE_NS - 1}).encode(), str(path))
+      assert receiver.drain(now) == []
+    finally:
+      sender.close()
+      receiver.close()
 
 
 def _native_session(experimental_enabled, binding):
@@ -85,7 +93,7 @@ def test_native_poll_routes_experimental_and_speed_limit_requests(monkeypatch):
   from openpilot.starpilot.ui.onroad_state import OnroadRequest
   slc = SlcUiRequest(SlcActionKind.ACCEPT, 'drive-1', 7, 9, 22.0)
   session = _native_session(False, _binding())
-  session._projection_slc = NS(drain=lambda: [OnroadRequest('set_experimental', True), slc])
+  session._projection_slc = NS(drain=lambda _now: [OnroadRequest('set_experimental', True), slc])
   session._projection_experimental = Mock()
   monkeypatch.setattr(runtime_app, 'ui_state', NS(started=True, replay_clock=None))
   session._poll_projection_slc(0)
@@ -150,4 +158,3 @@ def test_projection_experimental_tap_is_not_gated_by_the_comma_screen(monkeypatc
   session._projection_experimental(True)
   invoke.assert_called_once_with()
   session._unavailable.assert_called_once()
-
