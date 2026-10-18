@@ -7,6 +7,7 @@ from received source-bound evidence, never another process's startup preference.
 import os
 import uuid
 import time
+from functools import partial
 
 from opendbc.car.structs import car
 from openpilot.cereal import messaging
@@ -231,8 +232,20 @@ def run(
         current_native = current_native_health(sm, CP, collector.ready[-1][0], now)
         collector._learning_current_native_allowed = current_native
         physical = physical_observer(sm, CP, collector, now)
-        if physical is None or not current_native:
+        from openpilot.starpilot.flm.physical_observation import PendingPhysical
+        if not current_native or physical is None:
           collector.split('physical_or_native_witness_unavailable')
+        elif type(physical) is PendingPhysical:
+          if not physical.fresh(now):
+            collector.split('physical_or_native_witness_unavailable')
+          elif physical.context_changed:
+            # Discard prior current admission on a lineage/transform boundary;
+            # waiting for new-context data must not restart its own queue.
+            collector.last_qualified_response = 0
+            collector.adapter.current_physical_valid = False
+            collector.adapter.last_physical_ns = 0
+          # Pending data is not physical evidence: no timestamp, model,
+          # last_qualified_response or current admission is renewed here.
         else:
           collector.physical(physical, now)
 
@@ -443,7 +456,7 @@ def main():
     applied_socket,
     pm,
     current_adapter,
-    physical_observer,
+    partial(physical_observer, distinguish_pending=True),
     source_reader,
     collection_keys,
     objective_key,
