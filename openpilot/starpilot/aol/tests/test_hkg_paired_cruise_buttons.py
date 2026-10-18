@@ -50,6 +50,7 @@ def test_actual_stock_factory_parser_intent_ci_and_native_cancel_pair(identity, 
       packer = CANPacker(parser.dbc.name)
       for address in parser.addresses:
         name = parser.dbc.addr_to_msg[address].name
+        values: dict[str, float]
         if name == ci.CS.cruise_btns_msg_canfd:
           values = {'COUNTER': tick % (16 if name == 'CRUISE_BUTTONS' else 256),
                     'LDA_BTN': lkas, 'ADAPTIVE_CRUISE_MAIN_BTN': main, 'CRUISE_BUTTONS': button}

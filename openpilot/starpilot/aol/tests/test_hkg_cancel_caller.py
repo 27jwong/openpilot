@@ -1,6 +1,7 @@
 """Real SelfdriveD cancellation caller with actual factory CP and typed wire states."""
 from dataclasses import replace
 from types import SimpleNamespace
+from typing import cast
 import pytest
 from opendbc.car import structs
 from opendbc.car.hyundai.values import CAR
@@ -87,7 +88,7 @@ def test_actual_selfdrived_cancel_keeps_only_current_owned_lateral(identity, alt
     cs.gearShifter = 'reverse'
   elif case == 'steer_fault':
     cs.steerFaultPermanent = True
-  result = SelfdriveD._decide_aol_axes(sd, cs, intent, native, now_ns=now)
+  result = SelfdriveD._decide_aol_axes(cast(SelfdriveD, sd), cs, intent, native, now_ns=now)
   assert result.lateral_active == (case == 'retain' and admitted)
   assert not result.longitudinal_active
   assert log.OnroadEvent.EventName.buttonCancel in sd.events.names

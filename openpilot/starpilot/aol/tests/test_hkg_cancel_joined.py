@@ -401,8 +401,10 @@ def _release_long_denial(*, alternate):
       assert actual_request == permission == 0 and not native.get_controls_allowed()
     assert state.canValid
     packer = CANPacker('hyundai_canfd_generated')
-    for name, bus, values in (('LKAS_ALT' if alternate else 'LKAS', 0, {'ActToiSta': 1, 'StrTqReqVal': 1}),
-                              ('SCC_CONTROL', 1, {'ACCMode': 1, 'aReqRaw': .1, 'aReqValue': .1})):
+    commands: tuple[tuple[str, int, dict[str, float]], ...] = (
+      ('LKAS_ALT' if alternate else 'LKAS', 0, {'ActToiSta': 1, 'StrTqReqVal': 1}),
+      ('SCC_CONTROL', 1, {'ACCMode': 1, 'aReqRaw': .1, 'aReqValue': .1}))
+    for name, bus, values in commands:
       address, data, owner_bus = packer.make_can_msg(name, bus, values)
       assert not native.safety_tx_hook(libsafety_py.make_CANPacket(address, owner_bus, data))
   finally:
