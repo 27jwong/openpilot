@@ -1,6 +1,7 @@
 """Controller-only preactivation reuse: actual selected controllers and native CAN."""
 from dataclasses import replace
 from types import ModuleType, SimpleNamespace
+from typing import cast
 from unittest import mock
 import pickle
 import sys
@@ -20,7 +21,7 @@ from openpilot.starpilot.flm.torque_adapter import Objective
 from openpilot.starpilot.flm.torque_emission_replay import Emission
 from openpilot.starpilot.flm.tests.test_full_surface_profile import base
 from openpilot.starpilot.flm.tests.test_event_lazy_native import (
-  TOYOTA, HYUNDAI, HONDA, make_interface, install_observer, settle, control, apply, BASE_NS,
+  TOYOTA, HYUNDAI, HONDA, make_interface, install_observer, settle, control, apply, BASE_NS, ReplayWindowFixture,
 )
 
 
@@ -64,7 +65,7 @@ def fixture(domain='torque', nonzero=False, two_windows=False):
       original.emissions.events[event.apply_ns] = event
       original.emissions.by_control[event.control_ns] = event
   original.records.extend(rows)
-  original.replay_windows = (((rows[0].control_ns, rows[29].control_ns), (rows[30].control_ns, rows[-1].control_ns))
+  cast(ReplayWindowFixture, original).replay_windows = (((rows[0].control_ns, rows[29].control_ns), (rows[30].control_ns, rows[-1].control_ns))
     if two_windows else ((rows[0].control_ns, rows[-1].control_ns),))
   selected = EffectObjective('ff.left', envelope.trial_names, envelope.trial_anchor, envelope.context_key)
   activation = rows[45 if two_windows else 30].control_ns

@@ -36,7 +36,7 @@ def test_exact_actual_v9_integer_witness_and_all_sign_mirrors():
              (2, 0), (2, 1), (4, -85), (5, -85), (5, -87), (3, -85),
              (4, 0), (6, -1), (8, -1), (0, True), (2, float('nan')), (5, float('inf')))
   for index, value in changes:
-    changed = list(values)
+    changed: list[int | float] = list(values)
     changed[index] = value
     assert not zero_reference_relief_is_admitted(*changed), (index, value)
 
@@ -49,7 +49,7 @@ def test_partial_order_boundary_property_has_no_tolerance_or_zero_generalization
           original + 2, original, original, -2, 0, -reduction))
         assert zero_reference_relief_is_admitted(*args)
         for index in range(9):
-          changed = list(args)
+          changed: list[int | float] = list(args)
           if index == 7:
             changed[index] = sign * 1e-12
           else:
