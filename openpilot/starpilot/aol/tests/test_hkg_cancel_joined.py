@@ -364,9 +364,43 @@ def test_mapped_aol_actual_join(identity, alternate, incidental, withdrawal, mon
   _exercise_join(identity, alternate, incidental, withdrawal, monkeypatch)
 
 
+def _native_variant():
+  native = libsafety_py.libsafety
+  try:
+    # allOutput is registered only by ALLOW_DEBUG builds; probe the loaded library.
+    status = native.set_safety_hooks(structs.CarParams.SafetyModel.allOutput, 0)
+    assert status in (0, -1)
+  finally:
+    native.init_tests()
+    native.set_alternative_experience(0)
+    assert native.set_safety_hooks(structs.CarParams.SafetyModel.noOutput, 0) == 0
+  detected = 'debug' if status == 0 else 'release'
+  expected = os.environ.get('HKG_NATIVE_VARIANT')
+  assert expected in (None, 'debug', 'release'), 'Invalid HKG_NATIVE_VARIANT'
+  assert expected is None or expected == detected, 'HKG_NATIVE_VARIANT disagrees with loaded safety library'
+  return detected
+
+
+@pytest.mark.parametrize('declared', [None, 'debug', 'release', 'invalid'])
+def test_native_variant_checks_declaration_and_restores_no_output(declared, monkeypatch):
+  monkeypatch.delenv('HKG_NATIVE_VARIANT', raising=False)
+  actual = _native_variant()
+  if declared is not None:
+    monkeypatch.setenv('HKG_NATIVE_VARIANT', declared)
+  if declared is None or declared == actual:
+    assert _native_variant() == actual
+  else:
+    with pytest.raises(AssertionError, match='HKG_NATIVE_VARIANT'):
+      _native_variant()
+  native = libsafety_py.libsafety
+  assert native.get_current_safety_mode() == structs.CarParams.SafetyModel.noOutput
+  assert not native.get_controls_allowed()
+  assert native.aol_get_request_mask() == native.aol_get_permission_mask() == 0
+
+
 @pytest.mark.parametrize('withdrawal', ['toggle-off', 'native-request-off'])
 def test_shared_long_actual_cancel_then_main_join(withdrawal, monkeypatch):
-  if os.environ['HKG_NATIVE_VARIANT'] == 'release':
+  if _native_variant() == 'release':
     _release_long_denial(alternate=withdrawal == 'native-request-off')
   else:
     _exercise_join(CAR.HYUNDAI_IONIQ_5, False, 'cancel', withdrawal, monkeypatch, shared_long=True)
