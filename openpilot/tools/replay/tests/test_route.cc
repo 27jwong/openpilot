@@ -86,6 +86,43 @@ void test_local_sources() {
   std::filesystem::remove_all(root);
 }
 
+void test_local_sources_reject_partial_locked_route() {
+  char directory[] = "/tmp/replay-partial-route-XXXXXX";
+  const std::filesystem::path root = mkdtemp(directory);
+  const std::string route = "00000001--1234567890";
+  const std::filesystem::path segments[] = {root / (route + "--0"), root / (route + "--1")};
+  for (const auto &segment : segments) {
+    std::filesystem::create_directory(segment);
+    std::ofstream(segment / "rlog") << "recorded";
+  }
+  // Keep the parent directory entries fixed and swap which segment is busy.
+  // Neither enumeration order nor a previously accumulated valid segment may
+  // turn the later loadFromLocal rejection into a successful partial route.
+  for (const auto &busy : segments) {
+    const auto marker = busy / "rlog.lock";
+    {
+      std::ofstream writer(marker);
+      REQUIRE(writer.is_open());
+    }
+    REQUIRE(std::filesystem::is_regular_file(marker));
+    Route rejected(route, root, false, true);
+    CHECK(!rejected.load());
+    CHECK(rejected.segments().empty());
+    for (const auto &segment : segments) {
+      unique_fd writer(open(segment.c_str(), O_RDONLY | O_DIRECTORY));
+      REQUIRE(writer >= 0);
+      CHECK(flock(writer, LOCK_EX | LOCK_NB) == 0);
+    }
+    REQUIRE(std::filesystem::remove(marker));
+    {
+      Route recovered(route, root, false, true);
+      REQUIRE(recovered.load());
+      CHECK(recovered.segments().size() == 2);
+    }
+  }
+  std::filesystem::remove_all(root);
+}
+
 void test_machine_camera_time() {
   capnp::MallocMessageBuilder builder;
   auto event = builder.initRoot<cereal::Event>();
@@ -313,6 +350,7 @@ int main(int argc, char **argv) {
     test_route_ranges();
     test_replay_recorder_only_service();
     test_local_sources();
+    test_local_sources_reject_partial_locked_route();
     test_machine_camera_time();
     test_bounded_file_reader();
     test_bounded_zstd_file_reader();
