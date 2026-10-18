@@ -523,6 +523,7 @@ class ReplayFrame:
   effect_trace: object | None = None
   effect_prepare_ns: int = 0
   controller_domain: str = 'torque'
+  desired_kinematic_accel: float | None = None
 
 
 @dataclass(frozen=True)

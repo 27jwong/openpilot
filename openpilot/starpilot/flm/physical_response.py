@@ -2,6 +2,28 @@
 from dataclasses import dataclass
 import math
 
+from openpilot.common.constants import ACCELERATION_DUE_TO_GRAVITY
+
+
+def desired_force_accel(kinematic_accel, control_roll):
+  """Same-control-frame target in the measured speed*yaw - g*sin(roll) domain.
+
+  Never uses a later physical response/pose or controller FF/friction shaping.
+  Controller roll is its recorded estimate; this does not assert it equals the
+  independent calibrated pose estimate at the later measured-response stamp.
+  """
+  if any(type(value) not in (int, float) or not math.isfinite(value)
+         for value in (kinematic_accel, control_roll)):
+    raise ValueError('finite recorded kinematic goal/control roll required')
+  return float(kinematic_accel) - ACCELERATION_DUE_TO_GRAVITY * math.sin(float(control_roll))
+
+
+def kinematic_accel(frame):
+  # Explicit original stage setpoint preserves maneuver geometry. Legacy
+  # declared ReplayFrame fixtures retain their original goal convention.
+  value = getattr(frame, 'desired_kinematic_accel', None)
+  return frame.desired_physical_accel if value is None else value
+
 
 @dataclass(frozen=True)
 class PhysicalRow:

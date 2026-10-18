@@ -1,6 +1,7 @@
 """Raw parent recordings, one bounded child fit, real selected-controller replay."""
 
 import base64
+from openpilot.starpilot.flm.physical_response import desired_force_accel
 from itertools import islice
 from dataclasses import asdict
 from openpilot.starpilot.flm.runtime_adapter_registry import (
@@ -69,7 +70,8 @@ def _frame(evidence):
     torque_values=tuple((key, stage[key]) for key in ('effective_factor', 'offset', 'friction', 'pid_pos_limit', 'pid_neg_limit')),
     actual_stage_residual=(stage['actual_delta_ff'], stage['actual_delta_threshold']),
     centre_values=(stage.get('centre_threshold_delta', 0.0), stage.get('centre_extra_deadband_deg', 0.0)),
-    desired_physical_accel=stage['setpoint'],
+    desired_physical_accel=desired_force_accel(stage['setpoint'], dict(evidence.replay_inputs)['roll']),
+    desired_kinematic_accel=stage['setpoint'],
     healthy=evidence.valid and not evidence.fault and not evidence.override,
     manual=evidence.manual,
     limited=evidence.limited,

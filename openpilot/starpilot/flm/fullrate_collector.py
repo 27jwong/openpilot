@@ -217,6 +217,10 @@ class FullrateCollector:
     self.dropped += 1
     self.split('fullrate_overrun')
 
+  def _retains_controller_chatter(self, value):
+    # Legacy/custom collection never opts into the event-only trial contract.
+    return False
+
   def control(self, value, now_ns):
     if isinstance(value, ControlEvidence) and value.effect_trace is not None:
       try:
@@ -323,7 +327,7 @@ class FullrateCollector:
       or value.saturated
       or value.limited and not (getattr(self.adapter, 'raw_collection', False) and asynchronous_hint(value))
       or value.model_wobble
-      or value.controller_chatter
+      or value.controller_chatter and not self._retains_controller_chatter(value)
       or now_ns < self.excluded_until
     ):
       self.split('ineligible_control')

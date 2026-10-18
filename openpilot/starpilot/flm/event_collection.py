@@ -156,8 +156,9 @@ class EventCollectionAdapter(TorqueCollectionAdapter):
     return super().prepare_control(evidence)
 
   def physical_observable(self, value):
-    floor = 2 if self.key[1] in ('angle.assist', 'deadband.low') else 15
-    return value.speed_mps >= floor and abs(value.roll_rad) < .3
+    # Raw storage is shared by all scheduled groups, including crawl FF.
+    # Per-coordinate excitation and independent model/admission stay in child.
+    return value.speed_mps >= 2 and abs(value.roll_rad) < .3
 
   def cohort(self, control, physical):
     if self.envelope is None or control.identity != self.identity or control.source_epoch != self.source_epoch:

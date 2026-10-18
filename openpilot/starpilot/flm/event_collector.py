@@ -85,6 +85,18 @@ class EventFullrateCollector(FullrateCollector):
       self.sealed = False
     return accepted
 
+  def _retains_controller_chatter(self, value):
+    # Capture the symptom under its existing child TRIAL contract. Original
+    # evidence flags and every current/application exclusion remain unchanged.
+    from openpilot.starpilot.flm.event_objective import EffectObjective
+    try:
+      objective = self.adapter.event_objective
+      return bool(isinstance(objective, EffectObjective) and
+        objective.context_key == value.source_epoch and
+        objective.retains_controller_chatter and self.adapter.restore_envelope is None)
+    except (AttributeError, TypeError, ValueError):
+      return False
+
   def _accepted_fit_target(self, value):
     """A known accepted result changes collection lineage, not live health."""
     try:
