@@ -1,14 +1,22 @@
 """Storage-only synthetic row identity, not physical/native qualification."""
+from typing import Protocol, cast
+
 import pytest
 from openpilot.starpilot.flm.event_collector import EventFullrateCollector
 from openpilot.starpilot.flm.fullrate_collector import RawPoint
 from openpilot.starpilot.flm.tests.test_fullrate_pipeline import SyntheticAdapter, snapshots, BASE
 
 
+class _StorageTokens(Protocol):
+  """Opaque identity tokens for storage tests, not production context tuples."""
+  context: tuple[str] | None
+  physical_context: tuple[str] | None
+
+
 def setup():
   collector = EventFullrateCollector(SyntheticAdapter())
-  collector.context = ('source',)
-  collector.physical_context = ('physical',)
+  cast(_StorageTokens, collector).context = ('source',)
+  cast(_StorageTokens, collector).physical_context = ('physical',)
   collector.cohort = 'event-storage.source'
   control, output, _ = snapshots(BASE)
   def rows(start, count):
