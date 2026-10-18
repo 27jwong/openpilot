@@ -3,7 +3,9 @@ import gc
 import io
 import json
 import sys
+from collections.abc import Callable
 from types import SimpleNamespace
+from typing import NoReturn, cast
 
 import pytest
 
@@ -85,7 +87,7 @@ def test_oversized_input_never_enters_fit_or_changes_gc(monkeypatch, worker_io):
   incoming.seek(0)
   incoming.write(b'x' * (fit_worker.MAX_INPUT + 1))
   incoming.seek(0)
-  install_fit(monkeypatch, lambda _: pytest.fail('oversized input reached fitter'))
+  install_fit(monkeypatch, lambda _: cast(Callable[[str], NoReturn], pytest.fail)('oversized input reached fitter'))
   assert fit_worker.main() == 1
   assert gc.isenabled() and outgoing.getvalue() == b''
 

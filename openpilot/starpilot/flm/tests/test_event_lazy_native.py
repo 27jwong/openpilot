@@ -1,6 +1,7 @@
 """Exact selected-controller/CAN replay units, never native/profile authority."""
 from dataclasses import replace
 from types import SimpleNamespace
+from typing import Protocol, cast
 from unittest import mock
 
 import pytest
@@ -18,6 +19,11 @@ from openpilot.starpilot.flm.torque_adapter import Objective
 from openpilot.starpilot.flm.torque_emission_replay import Emission
 from openpilot.starpilot.flm.tests.test_full_surface_profile import base
 from openpilot.starpilot.flm.tests.test_steering_projection import make_interface, install_observer, settle, control, apply, BASE_NS
+
+
+class ReplayWindowFixture(Protocol):
+  """Mutable timestamp-pair windows consumed by the production replay engine."""
+  replay_windows: tuple[tuple[int, int], ...]
 
 
 class EagerRequests(_LazyControllerRequests):
@@ -63,7 +69,7 @@ def replay_fixture(domain):
       original.emissions.events[event.apply_ns] = event
       original.emissions.by_control[event.control_ns] = event
   original.records.extend(rows)
-  original.replay_windows = ((rows[0].control_ns, rows[-1].control_ns),)
+  cast(ReplayWindowFixture, original).replay_windows = ((rows[0].control_ns, rows[-1].control_ns),)
   envelope = base()
   selected = EffectObjective('ff.left', envelope.trial_names, envelope.trial_anchor, envelope.context_key)
   return EventControllerReplay(original, selected, envelope.replay_anchor())
