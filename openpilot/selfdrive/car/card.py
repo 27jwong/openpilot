@@ -1342,16 +1342,22 @@ class Car:
             owner.ready and owner.published and owner.ci is self.CI and not owner.closed and
             required(self.CP))
 
+  def mixed_startup_keepalive(self):
+    from opendbc.car.hyundai.blended_longitudinal import BlendedStartup
+    owner = getattr(getattr(self, 'vehicle_startup', None), 'owner', None)
+    return isinstance(owner, BlendedStartup) and owner.owner.published and not owner.closed and (owner.pending_target or owner.owner.active())
+
   def controls_update(self, CS: car.CarState, CC: car.CarControl, *, initialize_only=False):
     """control update loop, driven by carControl"""
 
     if initialize_only:
       ev6_startup = self.ev6_startup_keepalive()
+      mixed_startup = self.mixed_startup_keepalive()
       now_ns = time.monotonic_ns()
       source_ns = int(self.sm.logMonoTime['carControl'])
       receipt_ns = int(self.sm.recv_time['carControl'] * 1e9)
       # Disabled torque/accel are commands; inactive curvature is only telemetry.
-      if (not (ev6_startup or (self.aol_replay and native_bootstrap_supported(self.CP) and self.vehicle_startup.owner is None)) or
+      if (not (mixed_startup or ev6_startup or (self.aol_replay and native_bootstrap_supported(self.CP) and self.vehicle_startup.owner is None)) or
           not CS.canValid or CS.canTimeout or
           not (self.sm.seen['carControl'] and self.sm.valid['carControl'] and self.sm.alive['carControl']) or
           not (0 < source_ns <= now_ns and now_ns - source_ns <= 150_000_000 and
@@ -1377,13 +1383,30 @@ class Car:
     if getattr(self.CI.CC, "bolt_cc_profile", False):
       self.CI.CC.bolt_cc_metric = self.is_metric
 
+    if (initialize_only and self.mixed_startup_keepalive() and self.vehicle_startup.owner.pending_target):
+      # Fresh disabled controls alone are insufficient: finish the host's
+      # selfdriveInitializing phase before suppressing factory ADAS output.
+      return
+
     if not self.ci_initialized:
       # Keep stock ECU output intact until CAN and controls are ready.
       if (not CS.canValid or CS.canTimeout or not self.sm.valid['carControl'] or
           not self.sm.all_alive(['carControl'])):
         self.publish_sendcan([], valid=False)
         return
-      if getattr(self, 'ioniq6_long_pending', False):
+      mixed = self.vehicle_startup.owner if self.mixed_startup_keepalive() else None
+      if mixed is not None and mixed.pending_target:
+        now = time.monotonic_ns()
+        current = (self.sm.seen['carControl'] and self.sm.alive['carControl'] and self.sm.valid['carControl'] and
+                   0 < int(self.sm.logMonoTime['carControl']) <= now and now - int(self.sm.logMonoTime['carControl']) <= 150_000_000 and
+                   0 < int(self.sm.recv_time['carControl'] * 1e9) <= now and now - int(self.sm.recv_time['carControl'] * 1e9) <= 150_000_000)
+        inactive = not (CC.enabled or CC.latActive or CC.longActive or CC.actuators.torque != 0.0 or CC.actuators.accel != 0.0)
+        sources = mixed.sources_current(self.CI, time.clock_gettime_ns(time.CLOCK_BOOTTIME))
+        if not current or not inactive or not sources:
+          self.publish_sendcan([], valid=False)
+          return
+        mixed.commit_pending(self.CI, sources_current=sources, control_current=current)
+      elif getattr(self, 'ioniq6_long_pending', False):
         # Panda is still in its diagnostic safety mode here. Take over only
         # after the control producer is ready, then request Hyundai safety.
         if not self.ioniq6_panda_diagnostic_ready():
@@ -1428,6 +1451,15 @@ class Car:
     if initialize_only:
       if ev6_startup and any(ps.faults for ps in self.sm['pandaStates']):
         return
+      if mixed_startup:
+        owner = self.vehicle_startup.owner
+        now_boot_ns = time.clock_gettime_ns(time.CLOCK_BOOTTIME)
+        if (not owner.pending_target and self.startup_panda_configured() and
+            owner.sources_current(self.CI, now_boot_ns)):
+          inactive = car.CarControl.new_message().as_reader()
+          self.last_actuators_output, can_sends = self.CI.apply(inactive, now_boot_ns)
+          self.publish_sendcan(can_sends, valid=CS.canValid)
+        return
       if (((isinstance(self.CI, GMInterface) and self.volt_startup_keepalive()) or ev6_startup) and
           self.startup_panda_configured(inactive_keepalive=True)):
         inactive = car.CarControl.new_message().as_reader()
@@ -1467,6 +1499,10 @@ class Car:
         return
 
     if self.sm.valid['carControl'] and self.sm.all_alive(['carControl']):
+      if self.mixed_startup_keepalive() and not self.vehicle_startup.owner.handed_off:
+        # The first admitted replacement cycle is always neutral; the actual
+        # send receipt, not reaching apply(), transfers diagnostic continuity.
+        CC = car.CarControl.new_message().as_reader()
       if self.ioniq6_long_prearmed and self.ioniq6_keepalive is not None:
         self.ioniq6_keepalive.stop()
         if self.ioniq6_long_lost:
@@ -1508,9 +1544,10 @@ class Car:
                    self.sm.seen['onroadEvents'])
     if not self.CP.passive and initialized:
       self.controls_update(CS, self.sm['carControl'])
-    elif ((not self.ci_initialized or self.volt_startup_keepalive() or self.ev6_startup_keepalive()) and self.sm.seen['onroadEvents'] and
+    elif ((not self.ci_initialized or self.volt_startup_keepalive() or self.ev6_startup_keepalive() or self.mixed_startup_keepalive()) and
+          self.sm.seen['onroadEvents'] and
           any(e.name == EventName.selfdriveInitializing for e in self.sm['onroadEvents']) and
-          ((self.aol_replay and native_bootstrap_supported(self.CP)) or self.ev6_startup_keepalive())):
+          ((self.aol_replay and native_bootstrap_supported(self.CP)) or self.ev6_startup_keepalive() or self.mixed_startup_keepalive())):
       self.controls_update(CS, self.sm['carControl'], initialize_only=True)
 
     radar_can = self._deferred_radar_can
