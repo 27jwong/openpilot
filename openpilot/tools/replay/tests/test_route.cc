@@ -147,6 +147,100 @@ void test_machine_camera_time() {
   CHECK(raw.getRoot<cereal::Event>().getNarrowRoadEncodeIdx().getTimestampSof() == 10000000000ULL);
 }
 
+void test_large_filtered_log() {
+  capnp::MallocMessageBuilder builder;
+  auto event = builder.initRoot<cereal::Event>();
+  event.setLogMonoTime(123456789ULL);
+  event.setValid(true);
+  auto lateral = event.initStarpilotLateralState();
+  lateral.initLaneCentering().setAppliedCorrection(0.25f);
+  auto evidence = lateral.initLearningEvidence();
+  evidence.setVersion(1);
+  auto baseline = evidence.initBaselineValues(32768);
+  baseline.set(0, 1.25);
+  baseline.set(baseline.size() - 1, -2.5);
+  lateral.initLearningApplication().setStatus("collecting");
+  auto words = capnp::messageToFlatArray(builder);
+  auto bytes = words.asBytes();
+  capnp::MallocMessageBuilder skipped;
+  skipped.initRoot<cereal::Event>().initCarState();
+  auto skipped_words = capnp::messageToFlatArray(skipped);
+  auto skipped_bytes = skipped_words.asBytes();
+  std::string data(reinterpret_cast<const char *>(skipped_bytes.begin()), skipped_bytes.size());
+  constexpr size_t count = 129;
+  for (size_t i = 0; i < count; ++i) data.append(reinterpret_cast<const char *>(bytes.begin()), bytes.size());
+  REQUIRE(count * bytes.size() > 32 * 1024 * 1024);
+  std::vector<bool> filters(cereal::Event::Which::STARPILOT_LATERAL_STATE + 1, false);
+  filters[cereal::Event::Which::STARPILOT_LATERAL_STATE] = true;
+  for (bool from_file : {false, true}) {
+    LogReader reader(filters, 128 * 1024 * 1024);
+    if (from_file) {
+      char path[] = "/tmp/replay-owned-log-XXXXXX";
+      unique_fd fd(mkstemp(path));
+      REQUIRE(fd >= 0);
+      REQUIRE(write(fd, data.data(), data.size()) == data.size());
+      REQUIRE(reader.load(std::string(path)));
+      REQUIRE(unlink(path) == 0);
+    } else {
+      std::string temporary = data;
+      REQUIRE(reader.load(temporary.data(), temporary.size()));
+      std::fill(temporary.begin(), temporary.end(), '\0');
+    }
+    REQUIRE(!reader.corrupt());
+    REQUIRE(reader.events.size() == count);
+    for (const auto &stored : reader.events) {
+      CHECK(stored.which == cereal::Event::Which::STARPILOT_LATERAL_STATE);
+      CHECK(stored.mono_time == 123456789ULL);
+      CHECK(stored.data.asBytes().size() == bytes.size());
+      CHECK(memcmp(stored.data.begin(), bytes.begin(), bytes.size()) == 0);
+    }
+  }
+}
+
+void test_log_input_ownership() {
+  capnp::MallocMessageBuilder builder;
+  auto event = builder.initRoot<cereal::Event>();
+  event.setLogMonoTime(42);
+  event.initControlsState().initDeprecated().setEnabled(true);
+  auto words = capnp::messageToFlatArray(builder);
+  auto bytes = words.asBytes();
+  LogReader reader({}, 128 * 1024 * 1024);
+  {
+    std::string temporary(reinterpret_cast<const char *>(bytes.begin()), bytes.size());
+    REQUIRE(reader.load(temporary.data(), temporary.size()));
+    std::fill(temporary.begin(), temporary.end(), '\0');
+  }
+  REQUIRE(reader.events.size() == 2);
+  for (const auto &stored : reader.events) {
+    capnp::FlatArrayMessageReader parsed(stored.data);
+    auto message = parsed.getRoot<cereal::Event>();
+    if (stored.which == cereal::Event::Which::CONTROLS_STATE) {
+      CHECK(message.getControlsState().getDeprecated().getEnabled());
+    } else {
+      CHECK(stored.which == cereal::Event::Which::SELFDRIVE_STATE);
+      CHECK(message.getSelfdriveState().getEnabled());
+    }
+  }
+  event.setLogMonoTime(7);
+  event.initSelfdriveState().setEnabled(false);
+  auto modern_words = capnp::messageToFlatArray(builder);
+  auto modern_bytes = modern_words.asBytes();
+  REQUIRE(reader.load(reinterpret_cast<const char *>(modern_bytes.begin()), modern_bytes.size()));
+  REQUIRE(reader.events.size() == 1);
+  CHECK(reader.lastMonoTime() == 7);
+  LogReader bounded({}, modern_bytes.size() - 1);
+  CHECK(!bounded.load(reinterpret_cast<const char *>(modern_bytes.begin()), modern_bytes.size()));
+  CHECK(bounded.events.empty());
+  std::atomic<bool> abort = true;
+  CHECK(!reader.load(reinterpret_cast<const char *>(modern_bytes.begin()), modern_bytes.size(), &abort));
+  CHECK(reader.events.empty());
+  CHECK(!reader.load(reinterpret_cast<const char *>(modern_bytes.begin()), sizeof(capnp::word)));
+  CHECK(reader.corrupt());
+  REQUIRE(reader.load(reinterpret_cast<const char *>(modern_bytes.begin()), modern_bytes.size()));
+  CHECK(!reader.corrupt());
+  CHECK(reader.events.size() == 1);
+}
+
 void test_bounded_file_reader() {
   char path[] = "/tmp/replay-reader-XXXXXX";
   unique_fd fd(mkstemp(path));
@@ -352,6 +446,8 @@ int main(int argc, char **argv) {
     test_local_sources();
     test_local_sources_reject_partial_locked_route();
     test_machine_camera_time();
+    test_large_filtered_log();
+    test_log_input_ownership();
     test_bounded_file_reader();
     test_bounded_zstd_file_reader();
     test_decoder_exception_is_a_failed_frame();
