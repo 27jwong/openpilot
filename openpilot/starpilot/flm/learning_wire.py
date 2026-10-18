@@ -1,5 +1,7 @@
 """Typed custom child snapshots; legacy Event fields and linear fit unchanged."""
 
+from functools import lru_cache
+
 from capnp.lib.capnp import _DynamicStructReader
 from openpilot.cereal import custom, messaging
 from openpilot.starpilot.flm.adaptive_profile import Parameter, Profile, ReplayValidation, replay_accepts
@@ -20,12 +22,20 @@ def _named_values(values):
   return [{'name': _string(name, 96), 'boolean' if type(value) is bool else 'text' if type(value) is str else 'number': value} for name, value in values]
 
 
+@lru_cache(maxsize=2048)
+def _evidence_field_name(name):
+  # Receiver-only immutable key sharing. Ten minutes of100Hz actual replay
+  # otherwise retains a separate identical Python string per field/frame.
+  # Never cache numeric values, source identity, clocks, health or permission.
+  return name
+
+
 def _read_named_values(values, bound):
   if len(values) > bound:
     raise ValueError('replay scalar bounds')
   result = []
   for row in values:
-    name = _string(str(row.name), 96)
+    name = _evidence_field_name(_string(str(row.name), 96))
     kind = row.which()
     value = bool(row.boolean) if kind == 'boolean' else _string(str(row.text), 96) if kind == 'text' else float(row.number)
     result.append((name, value))
