@@ -184,7 +184,7 @@ def test_actual_selfdrived_fault_clear_does_not_reengage_without_pcm_edge(identi
         if lib.safety_config_valid() and fresh_panda:
           break
       else:
-        pytest.fail('Native RX and a fresh healthy Panda receipt did not recover within one source period')
+        pytest.fail(reason='Native RX and a fresh healthy Panda receipt did not recover within one source period')
       assert not sd.enabled
       _, command = cycle(True)
       assert sd.enabled and sd.active and command.latActive
