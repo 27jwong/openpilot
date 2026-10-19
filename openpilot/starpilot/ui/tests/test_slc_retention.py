@@ -10,15 +10,16 @@ from openpilot.common.params import Params
 from openpilot.selfdrive.controls.lib import longitudinal_planner as native
 from openpilot.selfdrive.controls.plannerd import SavedSlcLifecycle
 from openpilot.starpilot.speed_limits import offset_document as od
+from openpilot.starpilot.speed_limits import physical_actions
 from openpilot.starpilot.speed_limits.runtime import Action, Runtime
 from openpilot.starpilot.speed_limits.runtime_settings import read_params
 from openpilot.starpilot.speed_limits.tests.test_maps_runtime import BOOT, packet
 from openpilot.starpilot.ui.onroad_compact_widgets import CompactHudRenderer
-from openpilot.starpilot.ui.onroad_state import ObservationKind, slc_controls
+from openpilot.starpilot.ui.onroad_state import AlertSize, ObservationKind, OnroadInput, SlcActionKind, slc_controls
 from openpilot.starpilot.ui.presentation import Profile
 from openpilot.starpilot.ui.shell import ShellMode
 from openpilot.starpilot.ui.tests.test_runtime_snapshot import NOW, RuntimeSnapshotAdapter, ui_fake
-from openpilot.starpilot.ui.tests.test_slc_ui_runtime import replay_inputs
+from openpilot.starpilot.ui.tests.test_slc_ui_runtime import publish_request, replay_inputs
 from openpilot.starpilot.ui.unified_speed_presentation import resolve_unified_speed
 
 MPH = .44704
@@ -169,10 +170,76 @@ class RetentionDrive:
     self.ui.sm['carState'].vCruiseCluster = self.sm['carState'].vCruiseCluster
     for service in ('slcState', 'carState', 'carControl', 'selfdriveState'):
       self.ui.sm.logMonoTime[service] = now
+      self.ui.sm.recv_time[service] = now / 1e9
     view = self.adapter.build(ShellMode.ONROAD, now_ns=now).onroad
     with patch.object(native, 'get_cruise_accel', wraps=native.get_cruise_accel) as cruise:
       self.planner.update(self.sm, cruise_ceiling=output.result.ceiling, now_ns=now)
     return output, view, cruise.call_args.args[1] / MPH
+
+
+@pytest.mark.parametrize('answer', ['reject', 'timeout'])
+@pytest.mark.parametrize('metric', [False, True])
+@pytest.mark.parametrize('limit', [40, 50])
+def test_compact_rejection_or_timeout_dismisses_actions_and_retains_the_native_ceiling(tmp_path, answer, metric, limit):
+  drive = RetentionDrive(tmp_path, confirm=True)
+  params = Params(str(tmp_path))
+  params.put('SLCOffsetSchedule', od.to_value(od.adopt_legacy(False, (5.0,) * 7)), block=True)
+  drive.runtime = Runtime(read_params(params))
+  drive.ui.is_metric = metric
+  first, _, _ = drive.step(0)
+  approved, _, target = drive.step(50, request=Action(drive.runtime.session_id, 1, first.message.slcState.decisionId, 0, 'accept'))
+  accepted = approved.result.state.acceptance.accepted
+  assert target == pytest.approx(50)
+
+  proposed, view, target = drive.step(100, limit=limit)
+  factor = MPH * (3.6 if metric else 2.2369362921)
+  assert [control.label for control in slc_controls(Profile.COMPACT, view)] == [
+    f'Apply {round((limit + 5) * factor)}', f'Keep {round(50 * factor)}']
+  assert target == pytest.approx(50)
+  request = None
+  if answer == 'reject':
+    # Use the visible Keep button, including its normal dispatcher validation.
+    emitted = []
+    touch = OnroadInput(emitted.append, Profile.COMPACT)
+    touch.press(380, 205, view)
+    touch.release(380, 205, view)
+    reject, = emitted
+    assert reject.kind == SlcActionKind.REJECT
+    request = publish_request(proposed.message.slcState, reject, NOW + 100_000_000)
+  elapsed = 150 if answer == 'reject' else 30_150
+  rejected, view, target = drive.step(elapsed, limit=limit, request=request)
+  assert not rejected.result.errors
+  assert rejected.result.acceptance.basis == ('driver_reject' if answer == 'reject' else 'timeout_reject')
+  assert not rejected.message.slcState.hasPending
+  candidate = rejected.result.state.acceptance.observation.candidate
+  assert candidate in rejected.result.state.acceptance.rejected
+  assert view.alert.size == AlertSize.NONE
+  assert view.speed_limit.kind == ObservationKind.VALID and view.speed_limit.action_enabled
+  assert slc_controls(Profile.COMPACT, view) == ()
+  assert target == pytest.approx(50)
+
+  # The former recovery area cannot claim a tap or adopt the rejected limit.
+  emitted = []
+  touch = OnroadInput(emitted.append, Profile.COMPACT)
+  touch.press(315, 205, view)
+  assert not touch.claimed
+  touch.release(315, 205, view)
+  assert not emitted
+  for delay, status in ((50, 'matchedLimit'), (100, 'noCoverage'), (150, 'matchedLimit')):
+    output, view, target = drive.step(elapsed + delay, limit=limit, status=status)
+    assert not output.result.errors
+    assert output.result.state.acceptance.accepted == accepted
+    assert candidate in output.result.state.acceptance.rejected
+    assert not output.message.slcState.hasPending
+    assert slc_controls(Profile.COMPACT, view) == ()
+    assert target == pytest.approx(50)
+    assert physical_actions.pending_confirmation(drive.ui.sm, NOW + (elapsed + delay) * 1_000_000,
+                                               long_active=True, pcm_cruise=False) is None
+  # A different candidate still gets the normal two-choice confirmation.
+  output, view, target = drive.step(elapsed + 200, limit=55)
+  assert output.message.slcState.hasPending
+  assert [control.request.kind for control in slc_controls(Profile.COMPACT, view)] == [SlcActionKind.ACCEPT, SlcActionKind.REJECT]
+  assert target == pytest.approx(50)
 
 
 @pytest.mark.parametrize('keep', [False, True])
