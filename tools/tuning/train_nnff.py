@@ -26,9 +26,14 @@ Routes, not rows, are held out for validation: neighboring 10 ms rows are near c
 random row split mostly measures memorization. The model only earns its place if it beats the
 --siglin baseline on routes it never saw.
 
-Install the result by copying it to starpilot/assets/nnff_models/<fingerprint>.json (in your
-fork, or straight onto the device under /data/openpilot), then turn on NNFF in the lateral
+The result is written to starpilot/assets/nnff_models/<fingerprint>.json in this repo, where git
+shows it as a change to commit (or `git restore` away); --out writes it elsewhere. To use it, get it
+onto the device (commit and update, or copy it under /data/openpilot), turn on NNFF in the lateral
 settings and reboot.
+
+On Windows, git checks the cereal/car.capnp symlink out as a text file, which capnp can't load. The
+script copies the schemas with such stubs resolved into the cache folder and reads those, so there is
+no need to overwrite the tracked file.
 """
 import argparse
 import bz2
@@ -38,6 +43,7 @@ import importlib.util
 import json
 import os
 import re
+import shutil
 import sys
 from collections import Counter, defaultdict
 from concurrent.futures import ProcessPoolExecutor
@@ -47,6 +53,8 @@ from pathlib import Path
 import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+NNFF_MODELS_DIR = REPO_ROOT / "starpilot" / "assets" / "nnff_models"
+DEFAULT_CACHE = Path.home() / ".cache" / "nnff_train"
 
 DT = 0.01
 GRAVITY = 9.81
@@ -105,6 +113,56 @@ SCHEMA_PROBE = (("carState", "vEgo"), ("carState", "steeringPressed"), ("carStat
                 ("carParams", "carFingerprint"), ("carParams", "steerActuatorDelay"))
 
 
+def stub_target(path: Path) -> Path | None:
+  """What a symlink that git left as a text stub points at, if that exists."""
+  if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size < 200:
+    return None
+  text = path.read_text(encoding="utf-8", errors="replace").strip()
+  if "\n" in text or FILE_ID_RE.search(text):
+    return None
+  target = path.parent / text
+  return target if target.exists() else None
+
+
+def resolve_stubs(root: Path, cache_dir: Path) -> Path | None:
+  """If git left symlinks under root as text stubs, copy the schemas with each stub replaced by what it points
+  at, and return that copy. It is keyed by content, so a changed schema gets a fresh copy. None without stubs."""
+  files: dict[Path, Path] = {}
+  stubbed = False
+
+  def collect(src: Path, rel: Path, hops: int = 0) -> None:
+    nonlocal stubbed
+    target = stub_target(src)
+    if target is not None:
+      if hops > 8:
+        raise SystemExit(f"{src} is a chain of symlink stubs that never ends")
+      stubbed = True
+      collect(target, rel, hops + 1)
+    elif src.is_dir():
+      for child in sorted(src.iterdir()):
+        if child.name != "__pycache__":
+          collect(child, rel / child.name)
+    elif src.suffix == ".capnp":
+      files[rel] = src
+
+  collect(root, Path())
+  if not stubbed:
+    return None
+  digest = hashlib.sha256()
+  for rel, src in sorted(files.items()):
+    digest.update(rel.as_posix().encode() + b"\0" + src.read_bytes() + b"\0")
+  dest = cache_dir / "schemas" / digest.hexdigest()[:16]
+  if not (dest / "log.capnp").is_file():
+    tmp = dest.with_name(f"{dest.name}.{os.getpid()}.tmp")
+    shutil.rmtree(tmp, ignore_errors=True)
+    for rel, src in files.items():
+      (tmp / rel).parent.mkdir(parents=True, exist_ok=True)
+      shutil.copyfile(src, tmp / rel)
+    shutil.rmtree(dest, ignore_errors=True)
+    os.replace(tmp, dest)
+  return dest
+
+
 def schema_problem(root: Path) -> str | None:
   """Why the capnp files under root can't be loaded, if so. Looked for up front because capnp doesn't raise on
   a broken schema, it aborts the whole process with nothing useful printed."""
@@ -119,11 +177,9 @@ def schema_problem(root: Path) -> str | None:
     text = path.read_text(encoding="utf-8", errors="replace")
     if not FILE_ID_RE.search(text):
       stub = text.strip()
-      target = (path.parent / stub).resolve() if stub and len(stub) < 200 and "\n" not in stub else None
-      if target is not None:
-        fix = f' Fix: copy "{target}" "{path}"' if target.is_file() else ""
+      if stub and len(stub) < 200 and "\n" not in stub:
         return (f"{path} is a {len(stub)}-character text file ({stub}), not a schema: git left a symlink as a text stub "
-                f"(Windows only makes real symlinks with symlinks enabled).{fix}")
+                f"(Windows only makes real symlinks with symlinks enabled), and nothing is at {(path.parent / stub).resolve()}")
       return f"{path} isn't a capnp schema"
     for name in IMPORT_RE.findall(text):
       found = next((c for c in (path.parent / name, root / name.lstrip("/")) if c.is_file()), None)
@@ -134,12 +190,16 @@ def schema_problem(root: Path) -> str | None:
   return None
 
 
-def check_schema(cereal_dir: Path | None) -> None:
-  """Stop early, and say why, if the cereal schema can't be loaded or lacks fields this script reads."""
+def check_schema(cereal_dir: Path | None, cache_dir: Path = DEFAULT_CACHE) -> Path | None:
+  """Stop early, and say why, if the cereal schema can't be loaded or lacks fields this script reads.
+  Returns the folder to load it from: cereal_dir, or a copy of it with symlink stubs resolved."""
   advice = ("Run this script from inside a checkout of this fork (tools/tuning/train_nnff.py with no --cereal), or "
             "point --cereal at that checkout's cereal folder.")
   where = Path(cereal_dir) if cereal_dir is not None else REPO_ROOT / "cereal"
   if (where / "log.capnp").is_file():
+    resolved = resolve_stubs(where, cache_dir)
+    if resolved is not None:
+      where = cereal_dir = resolved
     problem = schema_problem(where)
     if problem:
       raise SystemExit(f"can't load the cereal schema from {where}: {problem}")
@@ -164,6 +224,7 @@ def check_schema(cereal_dir: Path | None) -> None:
   if missing:
     raise SystemExit(f"the cereal schema in {where} has no {', '.join(missing)}, which this script reads, so it's from "
                      f"an older openpilot than this fork's. Update that checkout (git pull). {advice}")
+  return cereal_dir
 
 
 def read_log_bytes(path: Path) -> bytes:
@@ -644,10 +705,15 @@ def load_routes(log_dirs, cache_dir, cereal_dir, workers) -> list[Route]:
   return routes
 
 
+def default_output(fingerprint: str) -> Path:
+  """Where the car loads the model from, so a run replaces it in place; the current folder outside a full checkout."""
+  return NNFF_MODELS_DIR / f"{fingerprint}.json" if NNFF_MODELS_DIR.is_dir() else Path(f"{fingerprint}.json")
+
+
 def main(argv=None):
   parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
   parser.add_argument("log_dirs", nargs="+", type=Path, help="folders containing <route>--<segment> folders with rlogs")
-  parser.add_argument("--out", type=Path, help="output JSON (default: <fingerprint>.json in the current folder)")
+  parser.add_argument("--out", type=Path, help="output JSON (default: starpilot/assets/nnff_models/<fingerprint>.json in this repo)")
   parser.add_argument("--fingerprint", help="only use routes from this car, e.g. MAZDA_CX_30")
   parser.add_argument("--lag", type=float, help="steering lag in seconds instead of each route's logged liveDelay")
   parser.add_argument("--min-speed", type=float, default=3.0, help="m/s, slower rows are dropped (default 3)")
@@ -660,15 +726,15 @@ def main(argv=None):
                       help="your current siglin params, to compare against (see opendbc/car/mazda/interface.py)")
   parser.add_argument("--seed", type=int, default=0)
   parser.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) - 1))
-  parser.add_argument("--cache", type=Path, default=Path.home() / ".cache" / "nnff_train",
-                      help="where extracted segments are cached between runs")
-  parser.add_argument("--no-cache", action="store_true")
+  parser.add_argument("--cache", type=Path, default=DEFAULT_CACHE,
+                      help="where extracted segments are cached between runs, and resolved copies of the cereal schemas")
+  parser.add_argument("--no-cache", action="store_true", help="don't cache extracted segments")
   parser.add_argument("--cereal", type=Path, help="cereal schema folder (default: this repo's); it must be from the same openpilot version that recorded the logs")
   parser.add_argument("--dump", type=Path, help="also save the validation rows and predictions to this .npz")
   args = parser.parse_args(argv)
 
-  check_schema(args.cereal)
-  routes = load_routes(args.log_dirs, None if args.no_cache else args.cache, args.cereal, args.workers)
+  cereal_dir = check_schema(args.cereal, args.cache)
+  routes = load_routes(args.log_dirs, None if args.no_cache else args.cache, cereal_dir, args.workers)
   # carParams is only logged every ~50 s, so a short partial route may not name its car
   fingerprints = Counter(r.fingerprint for r in routes if r.fingerprint)
   if len(fingerprints) > 1 and not args.fingerprint:
@@ -761,10 +827,15 @@ def main(argv=None):
   else:
     print("\nNNFF friction override will not be used with this model (friction comes from the network)")
 
-  out = args.out or Path(f"{fingerprint}.json")
+  out = args.out or default_output(fingerprint)
+  replaced = out.exists()
   export_model(result, out)
   print(f"\nwrote {out}  (best epoch {result.epochs}, validation loss {result.val_loss:.6f})")
-  print(f"install: copy it to starpilot/assets/nnff_models/{fingerprint}.json, turn on NNFF, reboot")
+  if out.resolve().parent == NNFF_MODELS_DIR.resolve():
+    verb = "replaced" if replaced else "is"
+    print(f"it {verb} the model the car loads (git restore undoes that); commit it, update the device, turn on NNFF, reboot")
+  else:
+    print(f"install: copy it to starpilot/assets/nnff_models/{fingerprint}.json, turn on NNFF, reboot")
   if args.dump:
     np.savez(args.dump, X_val=X_val, y_val=y_val, pred_val=pred_val, input_vars=np.array(INPUT_VARS))
     print(f"wrote {args.dump}")

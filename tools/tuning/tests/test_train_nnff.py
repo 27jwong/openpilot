@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -206,6 +207,27 @@ def test_cli_writes_a_loadable_model(log_dir, tmp_path, capsys):
   assert model.evaluate([20.0, 1.0, 0.0, 0.0] + [1.0] * 7 + [0.0] * 7) > 0.0
 
 
+def test_cli_replaces_the_installed_model_by_default(log_dir, tmp_path, monkeypatch, capsys):
+  models = tmp_path / "nnff_models"
+  models.mkdir()
+  (models / "MAZDA_CX_30.json").write_text("{}")
+  monkeypatch.setattr(T, "NNFF_MODELS_DIR", models)
+  T.main([str(log_dir), "--epochs", "15", "--workers", "1", "--cache", str(tmp_path / "cache"), "--no-cache"])
+  assert "replaced the model the car loads" in capsys.readouterr().out
+  assert FluxModel(models / "MAZDA_CX_30.json").evaluate([20.0, 1.0, 0.0, 0.0] + [1.0] * 7 + [0.0] * 7) > 0.0
+
+
+def test_the_model_goes_where_the_car_loads_it_from(tmp_path, monkeypatch):
+  (tmp_path / "nnff_models").mkdir()
+  monkeypatch.setattr(T, "NNFF_MODELS_DIR", tmp_path / "nnff_models")
+  assert T.default_output("MAZDA_CX_30") == tmp_path / "nnff_models" / "MAZDA_CX_30.json"
+
+
+def test_the_model_goes_in_the_current_folder_outside_a_checkout(tmp_path, monkeypatch):
+  monkeypatch.setattr(T, "NNFF_MODELS_DIR", tmp_path / "not_here")
+  assert T.default_output("MAZDA_CX_30") == Path("MAZDA_CX_30.json")
+
+
 def fake_log(monkeypatch, events):
   """Stand in for the cereal schema, handing extract_segment these events instead of a decoded rlog."""
   monkeypatch.setattr(T, "load_log_schema", lambda cereal_dir=None: SimpleNamespace(
@@ -314,6 +336,71 @@ def test_check_schema_names_a_symlink_pointing_nowhere(tmp_path):
     pytest.skip("can't make symlinks here")
   with pytest.raises(SystemExit, match="pointing nowhere"):
     T.check_schema(tmp_path)
+
+
+def stubbed_cereal(tmp_path):
+  """A cereal folder as Windows git leaves it: car.capnp and include are text files naming what they stand for."""
+  cereal, real = tmp_path / "repo" / "cereal", tmp_path / "repo" / "opendbc_repo"
+  (real / "car").mkdir(parents=True)
+  (real / "include").mkdir()
+  (real / "car" / "car.capnp").write_text("struct Car {}\n" + FILE_ID)
+  (real / "include" / "c++.capnp").write_text("# annotations\n" + FILE_ID)
+  cereal.mkdir()
+  (cereal / "log.capnp").write_text('using Car = import "car.capnp";\nusing Cxx = import "/include/c++.capnp";\n' + FILE_ID)
+  (cereal / "car.capnp").write_text("../opendbc_repo/car/car.capnp")
+  (cereal / "include").write_text("../opendbc_repo/include")
+  return cereal
+
+
+def test_text_stubs_are_resolved_into_a_copy_and_the_checkout_is_left_alone(tmp_path):
+  cereal = stubbed_cereal(tmp_path)
+  copy = T.resolve_stubs(cereal, tmp_path / "cache")
+  assert (copy / "car.capnp").read_text() == (tmp_path / "repo" / "opendbc_repo" / "car" / "car.capnp").read_text()
+  assert (copy / "include" / "c++.capnp").is_file()  # a stub standing for a folder brings its schemas
+  assert (copy / "log.capnp").read_text() == (cereal / "log.capnp").read_text()
+  assert T.schema_problem(copy) is None
+  assert (cereal / "car.capnp").read_text() == "../opendbc_repo/car/car.capnp"
+  assert T.resolve_stubs(cereal, tmp_path / "cache") == copy
+
+
+def test_a_changed_schema_gets_a_new_copy(tmp_path):
+  cereal = stubbed_cereal(tmp_path)
+  before = T.resolve_stubs(cereal, tmp_path / "cache")
+  (tmp_path / "repo" / "opendbc_repo" / "car" / "car.capnp").write_text("struct Car { x @0 :Int8; }\n" + FILE_ID)
+  after = T.resolve_stubs(cereal, tmp_path / "cache")
+  assert after != before
+  assert "x @0" in (after / "car.capnp").read_text()
+  assert "x @0" not in (before / "car.capnp").read_text()
+
+
+def test_a_cereal_folder_without_stubs_is_used_as_it_is(tmp_path):
+  (tmp_path / "log.capnp").write_text(FILE_ID)
+  assert T.resolve_stubs(tmp_path, tmp_path / "cache") is None
+  assert not (tmp_path / "cache").exists()
+
+
+def test_a_stub_pointing_at_itself_is_reported(tmp_path):
+  (tmp_path / "log.capnp").write_text(FILE_ID)
+  (tmp_path / "loop.capnp").write_text("loop.capnp")
+  with pytest.raises(SystemExit, match="never ends"):
+    T.resolve_stubs(tmp_path, tmp_path / "cache")
+
+
+def test_check_schema_loads_from_the_resolved_copy(tmp_path, monkeypatch):
+  class Anything:  # every field the script reads exists
+    def init(self, which):
+      return Anything()
+
+    def __getattr__(self, name):
+      return Anything()
+
+  loaded = []
+  monkeypatch.setattr(T, "load_log_schema", lambda cereal_dir=None: loaded.append(cereal_dir) or SimpleNamespace(
+    Event=SimpleNamespace(new_message=Anything)))
+  cereal = stubbed_cereal(tmp_path)
+  resolved = T.check_schema(cereal, tmp_path / "cache")
+  assert resolved == T.resolve_stubs(cereal, tmp_path / "cache") != cereal
+  assert loaded == [resolved]
 
 
 def test_check_schema_says_when_the_schema_predates_a_field_the_script_reads(tmp_path, monkeypatch):
