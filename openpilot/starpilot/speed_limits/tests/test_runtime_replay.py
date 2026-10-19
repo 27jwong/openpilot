@@ -1183,6 +1183,27 @@ class RuntimeReplayTests(unittest.TestCase):
       self.assertEqual(adjusted.result.override.contribution_mps, selected / 3.6)
       self.assertEqual(adjusted.result.acceptance.state.accepted, first.result.acceptance.state.accepted)
 
+  def test_decrease_keeps_lower_slc_ceiling_in_native_planner(self):
+    mph_to_mps = 0.44704
+    self.sm['slcDashboardObservation'].speedMps = 45 * mph_to_mps
+    self.sm['carState'].vCruise = self.sm['carState'].vCruiseCluster = 70 * mph_to_mps * 3.6
+    runtime = Runtime(parse({'SpeedLimitController': True, 'SLCPriority1': 'Dashboard'}), session_id='decrease-drive')
+    runtime.step(self.sm, self.cp, now_ns=2_000_000_000)
+    previous_mps = self.sm['carState'].vCruise / 3.6
+    self.sm['carState'].vCruise = self.sm['carState'].vCruiseCluster = 69 * mph_to_mps * 3.6
+    self.sm.advance(2_050_000_000)
+    result = runtime.step(self.sm, self.cp, now_ns=2_050_000_000,
+      cruise_event=CruiseEvent(1, 2_010_000_000, previous_mps, self.sm['carState'].vCruise / 3.6, 'decel',
+                               'replay-card', 2_020_000_000))
+    self.assertFalse(result.result.errors)
+    self.assertTrue(result.result.override.event_receipt.consumed)
+    self.assertIsNone(result.result.override.state.persistent_selected_mps)
+    self.assertFalse(result.message.slcState.driverOverrideActive)
+    self.assertEqual(result.result.ceiling.speed_mps, self.sm['slcDashboardObservation'].speedMps)
+    planner = LongitudinalPlanner(self.cp, init_v=45 * mph_to_mps)
+    planner.update(self.sm, cruise_ceiling=result.result.ceiling)
+    self.assertEqual(planner.last_cruise_ceiling_status, 'applied')
+
   def _runtime_with_set_speed_override(self, lateral):
     self.setUp()
     self.sm['carControl'].latActive = lateral
