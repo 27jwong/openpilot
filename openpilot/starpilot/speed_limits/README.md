@@ -35,9 +35,15 @@ it is the only numeric offset authority: old `Offset*` bytes and `IsMetric` are
 ignored for control, even if malformed. A malformed document or the explicit
 `needs_review` state disables SLC without falling back to legacy values or
 rewriting the saved control bit. The document helper exposes strict decoding,
-serialization and pure adoption of a currently valid legacy schedule. Native
-settings UI adoption and display-unit writes are a separate pending integration;
-this backend does not write Params.
+serialization and pure adoption of a currently valid legacy schedule. The shared
+native editor is available under Driving Controls on both screens. It shows the
+saved half-open boundaries, rounded to two decimals, without changing them.
+Offset-only edits preserve the drive session's accepted and rejected limits,
+renew pending action IDs, and apply the new adjustment on the next frame after
+the saved-settings refresh. Other configuration changes still replace the session.
+The editor disallows reductions that cannot produce a positive target anywhere
+in the band. At runtime, an offset that would remove the ceiling is ignored for
+that limit, retaining its unadjusted target instead.
 
 All transport additions use cereal's reserved custom messages. The official
 vehicle schema is unchanged. Slot 9 retains its six historical model-status fields

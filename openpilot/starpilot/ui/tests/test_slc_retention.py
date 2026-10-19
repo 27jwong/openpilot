@@ -8,6 +8,8 @@ import pytest
 
 from openpilot.common.params import Params
 from openpilot.selfdrive.controls.lib import longitudinal_planner as native
+from openpilot.selfdrive.controls.plannerd import SavedSlcLifecycle
+from openpilot.starpilot.speed_limits import offset_document as od
 from openpilot.starpilot.speed_limits.runtime import Action, Runtime
 from openpilot.starpilot.speed_limits.runtime_settings import read_params
 from openpilot.starpilot.speed_limits.tests.test_maps_runtime import BOOT, packet
@@ -20,6 +22,100 @@ from openpilot.starpilot.ui.tests.test_slc_ui_runtime import replay_inputs
 from openpilot.starpilot.ui.unified_speed_presentation import resolve_unified_speed
 
 MPH = .44704
+
+
+@pytest.mark.parametrize('document', [False, True])
+@pytest.mark.parametrize('offset,delta', [(-25, 0), (-30, 0), (-24, 2), (-5, 0)])
+def test_negative_offsets_cannot_remove_the_native_slc_ceiling(tmp_path, document, offset, delta):
+  drive = RetentionDrive(tmp_path)
+  params = Params(str(tmp_path))
+  if document:
+    params.put('SLCOffsetSchedule', od.to_value(od.adopt_legacy(False, (offset, 0, 0, 0, 0, 0, 0))), block=True)
+  else:
+    params.put('Offset1', float(offset), block=True)
+  drive.runtime = Runtime(read_params(params))
+  drive.sm['carState'].vEgoCluster += delta
+  output, _, target = drive.step(0, limit=25)
+  adjusted = 20 * MPH if offset == -5 else 25 * MPH
+  assert not output.result.errors
+  assert output.message.slcState.hasCeiling
+  assert output.message.slcState.acceptedAdjustedLimit == pytest.approx(adjusted)
+  assert output.message.slcState.effectiveClusterTarget == pytest.approx(adjusted)
+  assert target == pytest.approx((adjusted - delta) / MPH)
+
+
+@pytest.mark.parametrize('confirm', [False, True])
+@pytest.mark.parametrize('source_gap', [False, True])
+def test_live_offset_edits_keep_the_accepted_limit_and_native_ceiling(tmp_path, confirm, source_gap):
+  drive = RetentionDrive(tmp_path, confirm=confirm)
+  params = Params(str(tmp_path))
+  lifecycle = SavedSlcLifecycle(params, drive.cp, {'SLC_REPLAY_RUNTIME': '1'})
+  runtime, _ = lifecycle.refresh(NOW)
+  assert runtime is not None
+  drive.runtime = runtime
+  first, _, _ = drive.step(0)
+  output, _, _ = drive.step(50, request=Action(runtime.session_id, 1, first.message.slcState.decisionId, 0, 'accept') if confirm else None)
+  accepted = output.result.state.acceptance.accepted
+  session = runtime.session_id
+  for milliseconds, offset in ((1000, 5), (2000, -5)):
+    params.put('SLCOffsetSchedule', od.to_value(od.adopt_legacy(False, (0, 0, 0, offset, 0, 0, 0))), block=True)
+    actions, cruise = [object()], [object()]
+    refreshed, changed = lifecycle.refresh(NOW + milliseconds * 1_000_000, pending_actions=actions, pending_cruise=cruise)
+    assert changed and refreshed is runtime
+    assert not actions and not cruise
+    output, _, target = drive.step(milliseconds, received=not source_gap)
+    assert not output.result.errors
+    assert runtime.session_id == session
+    assert output.result.state.acceptance.accepted == accepted
+    assert not output.message.slcState.hasPending
+    assert output.message.slcState.hasCeiling
+    assert target == pytest.approx(45 + offset)
+
+
+@pytest.mark.parametrize('accepted_first', [False, True])
+def test_offset_edits_invalidate_old_prompts_without_accepting_a_new_limit(tmp_path, accepted_first):
+  drive = RetentionDrive(tmp_path, confirm=True)
+  params = Params(str(tmp_path))
+  lifecycle = SavedSlcLifecycle(params, drive.cp, {'SLC_REPLAY_RUNTIME': '1'})
+  runtime, _ = lifecycle.refresh(NOW)
+  assert runtime is not None
+  drive.runtime = runtime
+  first, _, _ = drive.step(0)
+  if accepted_first:
+    drive.step(50, request=Action(runtime.session_id, 1, first.message.slcState.decisionId, 0, 'accept'))
+  old, _, _ = drive.step(100, limit=50)
+  old_id = old.message.slcState.decisionId
+  params.put('SLCOffsetSchedule', od.to_value(od.adopt_legacy(False, (0, 0, 0, 5, 0, 0, 0))), block=True)
+  assert lifecycle.refresh(NOW + 1_000_000_000)[0] is runtime
+  stale = Action(runtime.session_id, 2, old_id, old.message.slcState.presentationId, 'accept')
+  output, _, target = drive.step(1000, limit=50, request=stale)
+  assert not output.result.errors
+  assert output.message.slcState.hasPending
+  assert output.message.slcState.decisionId != old_id
+  assert output.message.slcState.presentationId != old.message.slcState.presentationId
+  assert output.message.slcState.hasAccepted == accepted_first
+  assert target == pytest.approx(50 if accepted_first else 70)
+
+
+def test_offset_edits_preserve_rejected_limits(tmp_path):
+  drive = RetentionDrive(tmp_path, confirm=True)
+  params = Params(str(tmp_path))
+  lifecycle = SavedSlcLifecycle(params, drive.cp, {'SLC_REPLAY_RUNTIME': '1'})
+  runtime, _ = lifecycle.refresh(NOW)
+  assert runtime is not None
+  drive.runtime = runtime
+  first, _, _ = drive.step(0)
+  drive.step(50, request=Action(runtime.session_id, 1, first.message.slcState.decisionId, 0, 'accept'))
+  proposed, _, _ = drive.step(100, limit=50)
+  drive.step(150, limit=50, request=Action(runtime.session_id, 2, proposed.message.slcState.decisionId, 0, 'reject'))
+  rejected = runtime.state.acceptance.rejected
+  params.put('SLCOffsetSchedule', od.to_value(od.adopt_legacy(False, (0, 0, 0, 5, 0, 0, 0))), block=True)
+  assert lifecycle.refresh(NOW + 1_000_000_000)[0] is runtime
+  output, _, target = drive.step(1000, limit=50)
+  assert not output.message.slcState.hasPending
+  assert output.result.state.acceptance.rejected == rejected
+  assert output.message.slcState.acceptedSpeedLimit == pytest.approx(45 * MPH)
+  assert target == pytest.approx(50)
 
 
 class RetentionDrive:
