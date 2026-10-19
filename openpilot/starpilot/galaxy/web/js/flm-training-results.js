@@ -34,6 +34,17 @@ const labels = { collecting: "Gathering driving examples", unavailable: "Waiting
   capturing_steering_evidence: "Recording eligible steering measurements",
   awaiting_different_maneuver: "Current maneuver captured; waiting for a different driving example",
   evaluating_collected_maneuvers: "Checking the collected driving examples",
+  whole_physical_event_support: "Too few complete independent event bundles for fitting",
+  whole_event_export_support: "Too few complete bundles fit the replay export budget",
+  event_storage_packet_support: "Waiting for enough retained storage packets",
+  snapshot_context_changed: "Collection context or objective changed; waiting for its next snapshot selection",
+  snapshot_preparing: "Complete bundles selected; export is not complete",
+  snapshot_not_attempted: "No snapshot selection has run for this collection context",
+  snapshot_ready: "Snapshot selected; child qualification is still required",
+  no_current_collection_context: "Waiting for a current collection context",
+  no_current_physical_context: "Waiting for a current physical context",
+  unchanged_storage_since_submission: "Waiting for new storage after the submitted fit",
+  event_snapshot_unavailable: "The snapshot could not be prepared",
   report_stale: "Current results are unavailable; this is an earlier report" }
 export const readable = value => labels[value] || String(value ?? "Not reported").replaceAll("_", " ")
 export const detailText = value => value === null ? "Not reported" : Array.isArray(value) ? value.map(detailText).join(", ") :
@@ -53,6 +64,7 @@ export const FLMTrainingResults = {
   computed: {
     summary() { return trainingSummary(this.report, this.error) },
     current() { return this.report?.current },
+    readiness() { return this.current?.details?.["Snapshot readiness"] },
     details() { return Object.entries(this.current?.details || {}) },
     currentApplied() { return !this.error && this.current?.fresh && this.current.application?.applied === true },
   },
@@ -93,10 +105,16 @@ export const FLMTrainingResults = {
         <p>{{ readable(current.reason) }}</p>
         <p>Auto Learn: {{ current.enabled === null ? 'Not reported' : current.enabled ? 'Enabled' : 'Off' }}.</p>
         <dl><dt>Collected samples</dt><dd>{{ amount(current.progress.samples) }}</dd>
-          <dt>Completed driving blocks</dt><dd>{{ amount(current.progress.blocks) }}<template v-if="current.progress.requiredBlocks !== null"> / {{ amount(current.progress.requiredBlocks) }} minimum for evaluation</template></dd>
+          <dt>Retained driving blocks</dt><dd>{{ amount(current.progress.blocks) }}<template v-if="current.progress.requiredBlocks !== null"> / {{ amount(current.progress.requiredBlocks) }} reference minimum</template></dd>
           <dt>Last controller report</dt><dd>{{ currentApplied ? 'Correction reported applied' : current.fresh && !error && current.application ? 'No correction reported applied' : current.fresh && !error ? 'Not reported' : 'Application unknown — report is out of date' }}</dd>
         </dl>
-        <p>Only eligible driving data counts. Reaching the minimum starts evaluation; a correction still has to pass validation.</p>
+        <p>Storage blocks and controller feature coverage do not establish independent fitting support. A learned correction requires a qualified physical model, a validated fit and current application evidence.</p>
+        <section v-if="readiness"><h3>Fitting readiness</h3><p>{{ readable(readiness.reason) }}</p>
+          <p v-if="readiness.selectedBundles !== undefined">Selected complete bundles: {{ amount(readiness.selectedBundles) }} / {{ amount(readiness.requiredBundles) }} required ({{ amount(readiness.requiredCalibrationBundles) }} calibration + {{ amount(readiness.requiredLaterBundles) }} later). Whole bundles before export: {{ amount(readiness.wholeBundles) }}.</p>
+          <p v-if="readiness.objective">Selection objective: {{ readiness.objective }}</p>
+          <p>These are parent selection counts. The fitting process checks physical calibration and independent later support.</p>
+          <p v-if="readiness.ageSeconds !== null && readiness.ageSeconds !== undefined">Selection checked {{ readiness.ageSeconds.toFixed(1) }} seconds before this report.</p>
+        </section>
         <p v-if="current.application">{{ readable(current.application.reason) }}</p>
         <section v-if="current.fit"><h3>Latest evaluation</h3><p>{{ readable(current.fit.status) }}: {{ readable(current.fit.reason) }}</p>
           <p>Training windows: {{ amount(current.fit.trainWindows) }} · Validation windows: {{ amount(current.fit.heldoutWindows) }}</p></section>

@@ -73,3 +73,20 @@ try {
   assert.equal(calls.length, count)
 } finally { globalThis.fetch = originalFetch }
 console.log("FLM results: bounded report, stale/no-data, read-only polling, auth, close cancellation and escaped rendering passed")
+
+const readinessReport = report()
+readinessReport.current.details["Snapshot readiness"] = {
+  reason: "whole_physical_event_support", wholeBundles: 12, selectedBundles: 12,
+  requiredBundles: 16, requiredCalibrationBundles: 8, requiredLaterBundles: 8,
+  missingCheckpoint: 0, frameBudget: 0, windowBudget: 0,
+  childQualification: "not_yet_evaluated", objective: "('event', 'center')", ageSeconds: 1,
+}
+readinessReport.current.details["Submitted fit jobs (reporter lifetime)"] = 0
+readinessReport.current.details["Collector admission result retained"] = false
+assert(validTrainingResults(readinessReport))
+const readinessVm = instance(); readinessVm.report = readinessReport
+assert.equal(readinessVm.readiness.selectedBundles, 12)
+assert.equal(readinessVm.currentApplied, false)
+assert.match(FLMTrainingResults.template, /Storage blocks and controller feature coverage do not establish independent fitting support/)
+assert.match(FLMTrainingResults.template, /requiredCalibrationBundles/)
+assert.match(FLMTrainingResults.template, /requiredLaterBundles/)
