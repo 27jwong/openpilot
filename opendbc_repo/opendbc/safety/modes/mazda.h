@@ -241,21 +241,21 @@ static safety_config mazda_init(uint16_t param) {
 
   static const CanMsg MAZDA_2019_TX_MSGS[] = {{MAZDA_TI_LKAS, 1, 8, .check_relay = false}, {MAZDA_2019_ACC, 2, 8, .check_relay = true}};
 
-  static RxCheck mazda_rx_checks[] = {
+  static const RxCheck mazda_gen1_rx_checks[] = {
     {.msg = {{MAZDA_CRZ_CTRL,     0, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
     {.msg = {{MAZDA_CRZ_BTNS,     0, 8, 10U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
     {.msg = {{MAZDA_STEER_TORQUE, 0, 8, 83U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
     {.msg = {{MAZDA_ENGINE_DATA,  0, 8, 100U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
     {.msg = {{MAZDA_PEDALS,       0, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
   };
-  static RxCheck mazda_ti_rx_checks[] = {
+  static const RxCheck mazda_ti_rx_checks[] = {
     {.msg = {{MAZDA_CRZ_BTNS,     0, 8, 10U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
     {.msg = {{MAZDA_STEER_TORQUE, 0, 8, 83U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
     {.msg = {{MAZDA_ENGINE_DATA,  0, 8, 100U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
     {.msg = {{MAZDA_PEDALS,       0, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
     {.msg = {{TI_STEER_TORQUE,    1, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
   };
-  static RxCheck mazda_2019_rx_checks[] = {
+  static const RxCheck mazda_2019_rx_checks[] = {
     {.msg = {{MAZDA_2019_BRAKE,         0, 8, 20U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
     {.msg = {{MAZDA_2019_GAS,           2, 8, 100U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
     {.msg = {{MAZDA_2019_CRUISE,        0, 8, 10U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
@@ -263,13 +263,22 @@ static safety_config mazda_init(uint16_t param) {
     {.msg = {{MAZDA_2019_STEER_TORQUE,  1, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
   };
 
-  static RxCheck mazda_2023_rx_checks[] = {
+  static const RxCheck mazda_2023_rx_checks[] = {
     {.msg = {{MAZDA_2023_BRAKE,         0, 8, 5U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
     {.msg = {{MAZDA_2019_GAS,           2, 8, 100U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
     {.msg = {{MAZDA_2019_CRUISE,        1, 8, 10U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
     {.msg = {{MAZDA_2023_SPEED,         2, 8, 30U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
     {.msg = {{MAZDA_2019_STEER_TORQUE,  1, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
-};
+  };
+
+  // An RxCheck is 88 bytes, 28 of them mutable status, and every firmware links this file. Four writable
+  // tables cost 1.7 KB of RAM and overflow DTCMRAM on body_h7, so the variants stay in flash and the one
+  // the param selects is copied into this workspace. set_safety_hooks() clears every status after init.
+  static RxCheck mazda_rx_checks[5];
+  _Static_assert(sizeof(mazda_gen1_rx_checks) == sizeof(mazda_rx_checks), "Mazda GEN1 RX count");
+  _Static_assert(sizeof(mazda_ti_rx_checks) == sizeof(mazda_rx_checks), "Mazda TI RX count");
+  _Static_assert(sizeof(mazda_2019_rx_checks) == sizeof(mazda_rx_checks), "Mazda 2019 RX count");
+  _Static_assert(sizeof(mazda_2023_rx_checks) == sizeof(mazda_rx_checks), "Mazda 2023 RX count");
 
   // Check flags
   gen1 = GET_FLAG(param, FLAG_GEN1);
@@ -279,6 +288,20 @@ static safety_config mazda_init(uint16_t param) {
   torque_interceptor = GET_FLAG(param, FLAG_TORQUE_INTERCEPTOR);
   no_fsc = GET_FLAG(param, FLAG_NO_FSC);
   no_mrcc = GET_FLAG(param, FLAG_NO_MRCC);
+
+  const RxCheck *selected_rx = mazda_gen1_rx_checks;
+  if (gen1 && torque_interceptor) {
+    selected_rx = mazda_ti_rx_checks;
+  }
+  if (gen2) {
+    selected_rx = mazda_2019_rx_checks;
+  }
+  if (gen3) {
+    selected_rx = mazda_2023_rx_checks;
+  }
+  for (unsigned int i = 0U; i < (sizeof(mazda_rx_checks) / sizeof(mazda_rx_checks[0])); i++) {
+    mazda_rx_checks[i] = selected_rx[i];
+  }
 
   mazda_aol_reset();
   mazda_aol_enabled = (param == 0U) && ((unsigned int)alternative_experience == 32U);
@@ -297,14 +320,11 @@ static safety_config mazda_init(uint16_t param) {
   safety_config ret = BUILD_SAFETY_CFG(mazda_rx_checks, MAZDA_TX_MSGS);
 
   if (gen1) {
-    SET_RX_CHECKS(mazda_rx_checks, ret);
     if (radar_interceptor && torque_interceptor) {
-      SET_RX_CHECKS(mazda_ti_rx_checks, ret);
       SET_TX_MSGS(MAZDA_TI_RI_TX_MSGS, ret);
     } else if (radar_interceptor) {
       SET_TX_MSGS(MAZDA_RI_TX_MSGS, ret);
     } else if (torque_interceptor) {
-      SET_RX_CHECKS(mazda_ti_rx_checks, ret);
       SET_TX_MSGS(MAZDA_TI_TX_MSGS, ret);
     } else {
       SET_TX_MSGS(MAZDA_TX_MSGS, ret);
@@ -312,10 +332,10 @@ static safety_config mazda_init(uint16_t param) {
   }
 
   if (gen2) {
-    ret = BUILD_SAFETY_CFG(mazda_2019_rx_checks, MAZDA_2019_TX_MSGS);
+    ret = BUILD_SAFETY_CFG(mazda_rx_checks, MAZDA_2019_TX_MSGS);
   }
   if (gen3) {
-    ret = BUILD_SAFETY_CFG(mazda_2023_rx_checks, MAZDA_2019_TX_MSGS);
+    ret = BUILD_SAFETY_CFG(mazda_rx_checks, MAZDA_2019_TX_MSGS);
   }
 
   if (((unsigned int)alternative_experience == 32U) && (param != 0U)) {
