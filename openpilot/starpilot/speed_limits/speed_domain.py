@@ -138,12 +138,14 @@ def offset_for_limit(speed_mps: float, schedule: OffsetSchedule) -> float | None
   return None
 
 
-def adjusted_limit(speed_mps: float, schedule: OffsetSchedule) -> float | None:
-  """Informational cluster limit using the same validated bands as control."""
+def adjusted_limit(speed_mps: float, schedule: OffsetSchedule, *, minimum_target_mps: float = 0.0) -> float | None:
+  """Cluster target; ignore a reduction that would remove the planner ceiling."""
   offset = offset_for_limit(speed_mps, schedule)
-  if offset is None:
+  if offset is None or not _number(minimum_target_mps):
     return None
   value = speed_mps + offset
+  if offset < 0 and value <= minimum_target_mps:
+    return speed_mps
   return value if _number(value, positive=True) else None
 
 
@@ -187,13 +189,16 @@ def resolve(decision: acc.Decision, schedule: OffsetSchedule, selected: SpeedPai
   offset = offset_for_limit(target, schedule)
   if offset is None:
     return DomainResolution(DomainStatus.UNAVAILABLE, reason="no configured offset band")
-  effective = target + offset
-  if not _number(effective, positive=True):
+  ego_delta = max(0.0, ego.cluster_mps - ego.raw_mps)
+  effective = adjusted_limit(target, schedule, minimum_target_mps=ego_delta)
+  if effective is None:
     return DomainResolution(DomainStatus.INVALID, reason="nonpositive effective target")
+  if effective == target:
+    offset = 0.0
   return DomainResolution(DomainStatus.VALID, DomainContext(
     decision.state.session_id, decision.state.last_timestamp_ns, target, offset, effective,
     selected.raw_mps, max(0.0, selected.cluster_mps - selected.raw_mps),
-    ego.raw_mps, max(0.0, ego.cluster_mps - ego.raw_mps)))
+    ego.raw_mps, ego_delta))
 
 
 def to_planner_coordinate(context: DomainContext, contribution_raw_mps: float | None, basis: str) -> PlannerCoordinate:

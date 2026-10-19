@@ -2115,6 +2115,10 @@ class StarMiciMainLayout(MiciMainLayout):
       from openpilot.starpilot.ui.models_compact import ModelsCompact
       ModelsCompact(self.star).open()
       return
+    if destination == Destination.DRIVING_CONTROLS:
+      from openpilot.starpilot.ui.feature_settings_compact import FeatureSettingsCompact
+      FeatureSettingsCompact(self.star).open(FeaturePage.HUB)
+      return
     if destination == Destination.APPEARANCE:
       from openpilot.starpilot.ui.appearance_compact import AppearanceCompact
       AppearanceCompact(self.star).open()

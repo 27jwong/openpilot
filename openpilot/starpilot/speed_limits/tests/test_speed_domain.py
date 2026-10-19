@@ -60,6 +60,14 @@ class SpeedDomainTests(unittest.TestCase):
     self.assertEqual(pedal.cap_mps, 25.0)
     self.assertEqual(pedal.cluster_target_mps, 26.0)
 
+  def test_unsafe_negative_offsets_keep_the_unadjusted_ceiling(self):
+    for offset, delta in ((-20.0, 0.0), (-30.0, 0.0), (-19.0, 2.0)):
+      with self.subTest(offset=offset, delta=delta):
+        schedule = sd.OffsetSchedule((sd.OffsetBand(0.0, None, offset),))
+        _, coordinate = self.frame(0, schedule=schedule, ego_cluster=20.0 + delta)
+        self.assertEqual(coordinate.cluster_target_mps, 20.0)
+        self.assertEqual(coordinate.cap_mps, 20.0 - delta)
+
   def test_effective_threshold_blocks_early_intent_and_cluster_only_pedal_can_cross(self):
     offset_three = sd.OffsetSchedule((sd.OffsetBand(0.0, None, 3.0),))
     first, _ = self.frame(0, selected_raw=20.0, ego_raw=20.0, schedule=offset_three)

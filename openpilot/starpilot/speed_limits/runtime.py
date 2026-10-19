@@ -2,7 +2,7 @@
 
 import math
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import openpilot.cereal.messaging as messaging
 from openpilot.cereal.services import SERVICE_LIST
@@ -180,6 +180,15 @@ class Runtime:
     self.command_expected_mps = 0.0
     self.command_target_mps = 0.0
     self.command_card_producer = ''
+
+  def update_offsets(self, offsets: sd.OffsetSchedule) -> None:
+    self.settings = replace(self.settings, offsets=offsets)
+    # Renew action IDs when the adjusted target changes, keeping accepted/rejected limits.
+    acceptance = replace(self.state.acceptance, observation=acc.Observation(acc.ObservationKind.UNKNOWN),
+                         pending=None, presentation=None, timer_running=False)
+    self.state = replace(self.state, acceptance=acceptance)
+    self._ui_receipt = None
+    self.command_status = ''
 
   def _event_current(self, event: CruiseEvent, sm, now_ns: int) -> bool:
     return (bool(event.producer_session) and 0 < event.observed_ns <= now_ns and
@@ -395,7 +404,7 @@ class Runtime:
       completed = arb.step(self.ledger, arb.CompleteAction(self.session_id, action_id), now_ns=now_ns)
       self.ledger = completed.state
     command = self._command(result, sm, CP, now_ns, old_accepted, old_pending, action, adopt)
-    message = self._message(now_ns, result, sm, frame.observations)
+    message = self._message(now_ns, result, sm, frame)
     if command is not None:
       self._command_ui_sequence = request.sequence_id if request is not None else 0
     message.slcState.commandActionSequenceId = getattr(self, '_command_ui_sequence', 0)
@@ -456,7 +465,7 @@ class Runtime:
     record.targetMps = target
     return command
 
-  def _message(self, now_ns: int, result: comp.Result, sm, observations=None):
+  def _message(self, now_ns: int, result: comp.Result, sm, frame: comp.Frame):
     message = messaging.new_message("slcState")
     message.logMonoTime = now_ns
     message.valid = not result.errors
@@ -469,7 +478,7 @@ class Runtime:
       enabled_sources.add(sel.Source.ONLINE)
     rows = state.init('sourceReadings', len(sel.Source))
     for row, source in zip(rows, sel.Source, strict=True):
-      observation = (observations or {}).get(source)
+      observation = frame.observations.get(source)
       row.source = source.value
       row.enabled = bool(self.settings.display and source in enabled_sources)
       row.observationKind = observation.kind.value if observation is not None else 'unknown'
@@ -510,12 +519,16 @@ class Runtime:
     state.overrideBasis = (result.override.basis if state.driverOverrideActive else 'none')
     state.retainedOverride = bool(result.state.override.persistent_selected_mps is not None)
     shown = result.state.acceptance.presentation
+    ego = frame.ego_pair
+    ego_delta = (max(0.0, ego.cluster_mps - ego.raw_mps)
+                 if ego.status is sd.DomainStatus.VALID and ego.cluster_mps is not None and ego.raw_mps is not None else 0.0)
     for candidate, value_field, flag_field in (
       (accepted.candidate if accepted is not None else None, 'acceptedAdjustedLimit', 'hasAcceptedAdjustedLimit'),
       (pending.candidate if pending is not None else None, 'pendingAdjustedLimit', 'hasPendingAdjustedLimit'),
       (shown.candidate if shown is not None else None, 'presentationAdjustedLimit', 'hasPresentationAdjustedLimit'),
     ):
-      value = sd.adjusted_limit(candidate.speed_mps, self.settings.offsets) if candidate is not None else None
+      value = (sd.adjusted_limit(candidate.speed_mps, self.settings.offsets, minimum_target_mps=ego_delta)
+               if candidate is not None else None)
       if value is not None:
         setattr(state, value_field, value)
         setattr(state, flag_field, True)
