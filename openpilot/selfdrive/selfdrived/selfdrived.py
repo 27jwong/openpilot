@@ -1612,7 +1612,15 @@ class SelfdriveD:
       return False
     owners = [index for index, config in enumerate(self.CP.safetyConfigs)
               if str(config.safetyModel) not in ('silent', 'noOutput')]
-    return bool(len(owners) == 1 and
+    if len(owners) != 1:
+      return False
+    from openpilot.starpilot.car.gm.aol import native_accepts_cp as gm_native_accepts_cp
+    # Pandad reads health before its final native permission read. A GM driver
+    # withdrawal between those reads legitimately leaves the earlier health
+    # controlsAllowed true. For an admitted OP-long GM profile, the current
+    # LAT-only native mask itself proves controls_allowed has gone false.
+    # Keep LONG withdrawn and leave disagreement to the ordinary mismatch owner.
+    return bool(gm_native_accepts_cp(self.CP, native.safetyModel, native.safetyParam) or
                 not native.pandaInventory[owners[0]].controlsAllowed and
                 not self.sm['pandaStates'][owners[0]].controlsAllowed)
 
