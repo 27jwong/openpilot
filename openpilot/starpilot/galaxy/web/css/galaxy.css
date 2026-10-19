@@ -1739,3 +1739,12 @@ progress { max-width: 100%; accent-color: var(--primary); }
   .gx-replay__controls { gap: 4px; }
   .gx-replay__player:fullscreen .gx-replay__video { min-height: 0; flex: 1; }
 }
+
+/* Auto Learn results use existing cards and plot colors. */
+.gx-flm__facts { display: flex; flex-wrap: wrap; gap: 1rem 2rem; }
+.gx-flm__facts dd { margin: .3rem 0 0; }
+.gx-flm__table-wrap { overflow-x: auto; max-width: 100%; }
+.gx-flm__table { width: 100%; border-collapse: collapse; text-align: left; }
+.gx-flm__table th, .gx-flm__table td { padding: .65rem; border-bottom: 1px solid var(--outline-variant); vertical-align: top; }
+.gx-flm__table td:nth-child(2), .gx-flm__table td:nth-child(3), .gx-flm__table td:nth-child(4) { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.gx-flm__table tbody th { font-weight: 500; min-width: 12rem; }
