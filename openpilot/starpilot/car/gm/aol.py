@@ -40,6 +40,11 @@ class GmAolCardIntent(AolCardIntent):
     self.startup_calibration_pending = True
     self._startup_incomplete = False
 
+  @property
+  def main_action(self):
+    # GM MAIN reports a persistent physical level, not an independent AOL toggle.
+    return 0 if self.settings.main_action == AOL_TOGGLE else self.settings.main_action
+
   def update(self, CS, *, consumed_buttons=frozenset(), fault_active=None,
              now_ns=0, native_rejection_ns=0, standard_enabled=False):
     main_rise = False
@@ -64,7 +69,7 @@ class GmAolCardIntent(AolCardIntent):
 
   @property
   def main_arm_ns(self):
-    return (self._main_arm_ns if self.settings.enabled and self.settings.main_action != AOL_TOGGLE and
+    return (self._main_arm_ns if self.settings.enabled and self.main_action != AOL_TOGGLE and
             not self.pause_lateral and not self.pause_longitudinal else 0)
 
   def _arm_from_full_engagement(self, CS, *, source_ns):
@@ -87,7 +92,7 @@ class GmAolCardIntent(AolCardIntent):
         any(event.name == log.OnroadEvent.EventName.calibrationIncomplete for event in events))
     cold_readiness = bool(self.startup_calibration_pending and cold_safe and
       (prior_incomplete or self._startup_incomplete) and
-      self.settings.enabled and self.settings.main_action != AOL_TOGGLE and
+      self.settings.enabled and self.main_action != AOL_TOGGLE and
       not CS.steerFaultPermanent and not self._main_cycle_required)
     if cold_readiness:
       self._calibration_rearm_required = False

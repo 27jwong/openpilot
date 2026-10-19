@@ -841,7 +841,7 @@ class Car:
                 event.softDisable and not event.immediateDisable)]
     return intent_disarming_fault(self.CP, events, CS,
       startup_calibration_pending=bool(getattr(self.aol_card_intent, 'startup_calibration_pending', False) and
-        self.aol_card_intent.settings.enabled and self.aol_card_intent.settings.main_action != 9),
+        self.aol_card_intent.settings.enabled and self.aol_card_intent.main_action != 9),
       temporary_ui_process_failure=self.aol_process_fault_context.temporary_ui_failure(event_ns, now_ns),
       temporary_selfdrive_lagging=(qualified_gm(self.CP) or aol_policy_for(self.CP).intent_supported),
       temporary_source_pause=(self.aol_transport_feedback.qualified or self.aol_transport_feedback.awaiting))
