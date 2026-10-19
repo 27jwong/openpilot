@@ -662,8 +662,8 @@ class StarShellSession:
       if group == "lane_change":
         return not cp.notCar and not cp.passive and not cp.dashcamOnly
       if group == "switchback_wheel":
-        from openpilot.starpilot.conditional_mode.manual import ioniq6_media_eligible
-        return bool(ioniq6_media_eligible(cp) and not cp.notCar and not cp.passive and not cp.dashcamOnly)
+        from openpilot.starpilot.feature_capabilities import lateral_supported
+        return lateral_supported(cp)
       if group in ("conditional", "conditional_wheel", "long_output", "slc"):
         return bool(cp.openpilotLongitudinalControl and not cp.notCar and not cp.passive and not cp.dashcamOnly)
       if group in ("aol_wheel", "lane", "torque", "aol"):

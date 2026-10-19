@@ -49,7 +49,7 @@ from openpilot.starpilot.aol.vehicle import policy_for as axis_policy_for, ordin
 from openpilot.starpilot.conditional_mode.consumer import ConsumerResult, ModeConsumer
 from openpilot.starpilot.conditional_mode.effective_status import publish_ack
 from openpilot.starpilot.conditional_mode.policy import ModeChoice
-from openpilot.starpilot.conditional_mode.manual import ioniq6_media_eligible
+from openpilot.starpilot.feature_capabilities import lateral_supported
 from openpilot.starpilot.controllers.mode_actions import SwitchbackStatusOwner, SwitchbackCooldown, ModeActionOwner
 from openpilot.starpilot.conditional_mode.projection import paired_clocks_ns
 from openpilot.starpilot.conditional_mode.runtime_settings import (ConditionalSettingsOwner, experimental_requested, read_mode_sources)
@@ -126,7 +126,7 @@ class SelfdriveD:
     self.conditional_status = 'disabled'
     self.controller_action_sock = messaging.sub_sock('slcAction', conflate=False)
     self.controller_action_owner = ModeActionOwner()
-    self.switchback_capable = ioniq6_media_eligible(self.CP) and not self.CP.passive and not self.CP.dashcamOnly and not self.CP.notCar
+    self.switchback_capable = lateral_supported(self.CP)
     self.switchback_status = SwitchbackStatusOwner()
     self.switchback_cooldown = SwitchbackCooldown()
     self.low_speed_advisory = LowSpeedAdvisory()

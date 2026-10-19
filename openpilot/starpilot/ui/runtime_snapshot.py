@@ -19,7 +19,8 @@ from openpilot.starpilot.ui.appearance_preferences import CameraViewChoice, Onro
 from openpilot.starpilot.ui.brand import DISPLAY_VERSION, home_description
 from openpilot.starpilot.curve_speed.status import observation as curve_observation
 from openpilot.starpilot.conditional_mode.policy import ModeChoice
-from openpilot.starpilot.conditional_mode.manual import TRAFFIC_MODE_ACTION, ioniq6_media_eligible, read_button_map
+from openpilot.starpilot.conditional_mode.manual import TRAFFIC_MODE_ACTION, read_button_map
+from openpilot.starpilot.feature_capabilities import lateral_supported, longitudinal_supported
 from openpilot.starpilot.conditional_mode.projection import paired_clocks_ns
 from openpilot.starpilot.conditional_mode.runtime_settings import ConditionalSettingsOwner
 from openpilot.starpilot.conditional_mode.status import settings_fingerprint
@@ -500,16 +501,17 @@ class RuntimeSnapshotAdapter:
     traffic_eligible = False
     if getattr(traffic_wire, 'version', 0) == 1 and cp is not None:
       try:
-        traffic_eligible = bool(ioniq6_media_eligible(cp) and cp.openpilotLongitudinalControl and not cp.passive)
+        traffic_eligible = longitudinal_supported(cp)
       except (AttributeError, TypeError, ValueError):
         pass  # A partial or unreadable CP never qualifies a display receipt.
     if traffic_eligible:
       if (self._traffic_context_ns is None or now_ns < self._traffic_context_ns or
           now_ns - self._traffic_context_ns >= 1_000_000_000):
-        buttons = read_button_map(params, include_ioniq_media=True)
+        buttons = read_button_map(params, include_ioniq_media=True, cp=cp)
         self._traffic_map_fingerprint = buttons.fingerprint() if buttons is not None else None
         self._traffic_map_assigned = bool(buttons is not None and TRAFFIC_MODE_ACTION in
-                                          (buttons.mode, buttons.mode_long, buttons.mode_very_long,
+                                          (buttons.lkas, buttons.distance, buttons.distance_long, buttons.distance_very_long,
+                                           buttons.mode, buttons.mode_long, buttons.mode_very_long,
                                            buttons.custom, buttons.custom_long, buttons.custom_very_long))
         try:
           self._traffic_profile_valid = read_traffic_settings(params).valid
@@ -641,7 +643,7 @@ class RuntimeSnapshotAdapter:
                          experimental_available=bool(ui.has_longitudinal_control),
                          experimental_enabled=observed_experimental,
                          personality=list(Personality).index(persona),
-                         switchback_mode=bool(cp is not None and ioniq6_media_eligible(cp) and display_control is not None and display_control.latActive and
+                         switchback_mode=bool(lateral_supported(cp) and display_control is not None and display_control.latActive and
                            self._switchback.sample(slc, drive_id=drive_id, now_ns=now_ns,
                              event_ns=int(sm.logMonoTime['slcState']))),
                          traffic_mode=bool(traffic is not None and traffic.state == 'active'),
