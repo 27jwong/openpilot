@@ -18,6 +18,23 @@ def desired_force_accel(kinematic_accel, control_roll):
   return float(kinematic_accel) - ACCELERATION_DUE_TO_GRAVITY * math.sin(float(control_roll))
 
 
+def request_force_accel(replay_inputs):
+  """Current original request paired with response AFTER the measured lag.
+
+  Stage setpoints may already be delayed/filter-shaped for present PID error.
+  Reusing them here would apply that delay twice. Maneuver geometry retains
+  its separate exact recorded stage setpoint; no future pose is consulted.
+  """
+  values = dict(replay_inputs)
+  if len(values) != len(replay_inputs):
+    raise ValueError('duplicate recorded request inputs')
+  curvature, speed, roll = (values[name] for name in ('desired_curvature', 'vEgo', 'roll'))
+  if any(type(value) not in (int, float) or not math.isfinite(value)
+         for value in (curvature, speed, roll)):
+    raise ValueError('finite original curvature/speed/control roll required')
+  return desired_force_accel(float(curvature) * float(speed)**2, roll)
+
+
 def kinematic_accel(frame):
   # Explicit original stage setpoint preserves maneuver geometry. Legacy
   # declared ReplayFrame fixtures retain their original goal convention.

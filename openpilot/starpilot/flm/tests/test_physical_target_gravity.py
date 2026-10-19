@@ -16,7 +16,7 @@ from openpilot.starpilot.flm.controller_replay import (
 from openpilot.starpilot.flm.event_episodes import tracking_episodes
 from openpilot.starpilot.flm.event_windows import whole_event_windows
 from openpilot.starpilot.flm.learner_factory import _frame
-from openpilot.starpilot.flm.physical_response import desired_force_accel
+from openpilot.starpilot.flm.physical_response import desired_force_accel, request_force_accel
 from openpilot.starpilot.flm.pid_controller_replay import PidControllerFactory
 from openpilot.starpilot.flm.pid_stages import PidObservation
 from openpilot.starpilot.flm.torque_adapter import Objective
@@ -26,7 +26,7 @@ from openpilot.starpilot.flm.tests.test_event_lazy_native import TOYOTA, HYUNDAI
 from openpilot.starpilot.flm.tests.test_fullrate_pipeline import snapshots
 
 
-def actual_rows(domain, roll, *, ticks=220):
+def actual_rows(domain, roll, *, ticks=220, waveform='sine'):
   platform={'torque':TOYOTA.TOYOTA_COROLLA_TSS2,'starpilot':HYUNDAI.HYUNDAI_IONIQ_6,'pid':HONDA.HONDA_CIVIC}[domain]
   ci=make_interface(platform)
   factory=PidControllerFactory(ci.CP,'native') if domain=='pid' else SelectedControllerFactory(
@@ -42,7 +42,7 @@ def actual_rows(domain, roll, *, ticks=220):
   rows,evidences=[],[]
   for tick in range(ticks):
     stamp=400_000_000_000+tick*10_000_000
-    curvature=.0006*math.sin(2*math.pi*tick/60)
+    curvature=(0. if tick<30 else .002 if tick<75 else -.002) if waveform=='step' else .0006*math.sin(2*math.pi*tick/60)
     before=capture_snapshot(actual,vm)
     values=frame_input(cs,vm,params,active=True,safety_limited=False,
       desired_curvature=curvature,curvature_limited=False,lat_delay=.2)
@@ -60,9 +60,10 @@ def actual_rows(domain, roll, *, ticks=220):
     recorded=dict(evidence.stage_values)['setpoint']
     assert frame.inputs is evidence.replay_inputs
     assert frame.desired_kinematic_accel == recorded
-    assert frame.desired_physical_accel == recorded-9.81*math.sin(roll)
+    current_request=dict(values)['desired_curvature']*dict(values)['vEgo']**2
+    assert frame.desired_physical_accel == current_request-9.81*math.sin(roll)
     if roll==0.:
-      assert pickle.dumps(frame.desired_physical_accel)==pickle.dumps(recorded)
+      assert pickle.dumps(frame.desired_physical_accel)==pickle.dumps(current_request)
     clone,clone_vm=factory.create()
     restore_snapshot(clone,clone_vm,before)
     replay,_=_run(clone,clone_vm,frame.inputs,objective,frame.applied_coordinates,frame.torque_values,
@@ -120,3 +121,45 @@ def test_physical_tracking_error_uses_force_goal_while_geometry_keeps_original_s
   objective=SimpleNamespace(group='ff.left',names=('ff_gain_left',),anchor_digest='c'*64,context_key='d'*64)
   assert tracking_episodes(engine,({'block_id':'unit','samples':points},),SimpleNamespace(heldout_rmse=.001),objective)==()
   assert abs(.3-desired_force_accel(.3,roll))>.10  # Old coordinate falsely looked like tracking error.
+
+
+@pytest.mark.parametrize('domain',('torque','starpilot','pid'))
+def test_transient_target_uses_current_request_before_plant_lag_not_delayed_stage(domain):
+  rows,evidence=actual_rows(domain,.02,ticks=110,waveform='step')
+  assert dict(rows[30].inputs)['desired_curvature']*dict(rows[30].inputs)['vEgo']**2 == .8
+  assert dict(rows[75].inputs)['desired_curvature']*dict(rows[75].inputs)['vEgo']**2 == -.8
+  for index in (30,75):
+    current=dict(rows[index].inputs)['desired_curvature']*dict(rows[index].inputs)['vEgo']**2
+    assert rows[index].desired_physical_accel == desired_force_accel(current,.02)
+    assert rows[index].desired_kinematic_accel == dict(evidence[index].stage_values)['setpoint']
+  if domain=='torque':
+    # Standard controller's request buffer still contains the OLD request.
+    assert rows[30].desired_kinematic_accel == 0.
+    assert rows[75].desired_kinematic_accel == .8
+  elif domain=='starpilot':
+    from openpilot.starpilot.lateral.torque_shaping import MAX_LAT_JERK_UP
+    # I6 uses clipped/filtered jerk to approximate lead, not exact current goal.
+    assert rows[30].desired_kinematic_accel <= MAX_LAT_JERK_UP*.2 < .8
+    assert rows[75].desired_kinematic_accel >= .8-MAX_LAT_JERK_UP*.2 > 0.
+  else:
+    # Native PID has no delayed stage setpoint; its force goal is unchanged.
+    for row in rows:
+      current=dict(row.inputs)['desired_curvature']*dict(row.inputs)['vEgo']**2
+      assert row.desired_kinematic_accel == current
+
+
+@pytest.mark.parametrize('field',('desired_curvature','vEgo','roll'))
+@pytest.mark.parametrize('value',(None,True,float('nan'),float('inf'),float('-inf')))
+def test_every_original_request_field_must_exist_be_numeric_and_finite(field,value):
+  inputs=(('desired_curvature',.002),('vEgo',20.),('roll',.02))
+  changed=tuple((name,number) for name,number in inputs if name!=field)
+  if value is not None:
+    changed+=((field,value),)
+  with pytest.raises((KeyError,ValueError)):
+    request_force_accel(changed)
+
+
+def test_duplicate_request_keys_never_choose_a_convenient_target():
+  inputs=(('desired_curvature',.002),('vEgo',20.),('roll',.02),('desired_curvature',0.))
+  with pytest.raises(ValueError,match='duplicate'):
+    request_force_accel(inputs)
