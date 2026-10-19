@@ -34,32 +34,35 @@ def saved(candidate: Candidate = HIGH) -> State:
 
 
 class TestAcceptance(unittest.TestCase):
-  def test_vision_requires_current_driver_confirmation_across_disengage_and_source_loss(self):
-    policy = Policy(confirm_lower=False, confirm_higher=False, fallback_previous=False,
-                    vision_driver_confirm=True)
-    first_sign = Candidate('vision', ObservationIdentity(IdentityKind.PRODUCER_EPISODE,
-                                                         value='drive:ioniq:camera:1'), 22.0)
-    next_sign = replace(first_sign, observation_identity=ObservationIdentity(
-      IdentityKind.PRODUCER_EPISODE, value='drive:ioniq:camera:2'), speed_mps=17.0)
-    stopped = step(new_session('drive'), valid(first_sign), DISENGAGED, policy, now_ns=0)
-    self.assertIsNone(stopped.history_write)
-    self.assertIsNone(stopped.state.accepted)
-    engaged = step(stopped.state, valid(first_sign), ACTIVE, policy, now_ns=NS)
-    self.assertEqual(engaged.basis, 'pending')
-    self.assertIsNone(engaged.control_target_mps)
-    action = DriverAction('drive', 1, engaged.state.pending.decision_id, ActionKind.ACCEPT)
-    confirmed = step(engaged.state, valid(first_sign), ACTIVE, policy, now_ns=2 * NS, action=action)
-    self.assertEqual(confirmed.basis, 'driver_accept')
-    self.assertEqual(confirmed.control_target_mps, 22.0)
-    continued = step(confirmed.state, valid(first_sign), ACTIVE, policy, now_ns=3 * NS)
-    self.assertEqual(continued.control_target_mps, 22.0)
-    changed = step(continued.state, valid(next_sign), ACTIVE, policy, now_ns=4 * NS)
-    self.assertIsNone(changed.control_target_mps)
-    self.assertIsNone(changed.state.accepted)
-    lost = step(changed.state, Observation(ObservationKind.STALE), ACTIVE, policy, now_ns=5 * NS)
-    returned = step(lost.state, valid(first_sign), ACTIVE, policy, now_ns=6 * NS)
-    self.assertEqual(returned.basis, 'pending')
-    self.assertIsNone(returned.control_target_mps)
+  def test_sources_share_confirmation_across_disengage_and_source_loss(self):
+    for source, confirmation, fallback in itertools.product(('dashboard', 'map', 'vision', 'online', 'future-source'),
+                                                            (False, True), (False, True)):
+      with self.subTest(source=source, confirmation=confirmation, fallback=fallback):
+        policy = Policy(confirm_lower=confirmation, confirm_higher=confirmation, fallback_previous=fallback)
+        first = Candidate(source, ObservationIdentity(IdentityKind.PRODUCER_EPISODE, value='episode-1'), 22.0)
+        next_limit = replace(first, observation_identity=ObservationIdentity(
+          IdentityKind.PRODUCER_EPISODE, value='episode-2'), speed_mps=17.0)
+        stopped = step(new_session('drive'), valid(first), DISENGAGED, policy, now_ns=0)
+        self.assertEqual(stopped.state.accepted is None, confirmation)
+        self.assertEqual(stopped.history_write is None, confirmation)
+        self.assertIsNone(stopped.control_target_mps)
+        engaged = step(stopped.state, valid(first), ACTIVE, policy, now_ns=NS)
+        self.assertEqual(engaged.state.pending is not None, confirmation)
+        approved = (self.act(engaged.state, ActionKind.ACCEPT, now_ns=2 * NS, policy=policy)
+                    if confirmation else engaged)
+        self.assertEqual(approved.control_target_mps, first.speed_mps)
+        changed = step(approved.state, valid(next_limit), ACTIVE, policy, now_ns=3 * NS)
+        self.assertEqual(changed.state.pending is not None, confirmation)
+        accepted = first if confirmation else next_limit
+        self.assertEqual(changed.state.accepted.candidate, accepted)
+        self.assertEqual(changed.control_target_mps, accepted.speed_mps)
+        lost = step(changed.state, Observation(ObservationKind.STALE), ACTIVE, policy, now_ns=4 * NS)
+        self.assertEqual(lost.state.accepted, changed.state.accepted)
+        self.assertEqual(lost.control_target_mps, accepted.speed_mps if fallback else None)
+        returned = step(lost.state, valid(accepted), ACTIVE, policy, now_ns=5 * NS)
+        self.assertIsNone(returned.state.pending)
+        self.assertIsNone(returned.history_write)
+        self.assertEqual(returned.control_target_mps, accepted.speed_mps)
 
   def pending(self, candidate=LOW, authority=ACTIVE, policy=DEFAULT_POLICY, state=None, now_ns=0):
     decision = step(saved() if state is None else state, valid(candidate), authority, policy, now_ns=now_ns)
@@ -110,8 +113,8 @@ class TestAcceptance(unittest.TestCase):
         empty = step(new_session("drive"), Observation(kind), ACTIVE, policy, now_ns=300 * NS)
         self.assertIsNone(empty.control_target_mps)
 
-  def test_confirmed_vision_is_retained_until_new_episode_is_accepted(self):
-    policy = Policy(fallback_previous=True, vision_driver_confirm=True)
+  def test_confirmed_vision_is_retained_until_changed_limit_is_accepted(self):
+    policy = Policy(fallback_previous=True)
     first = replace(HIGH, source='vision')
     previous = saved(first)
     for kind in (ObservationKind.ABSENT, ObservationKind.UNKNOWN, ObservationKind.STALE):

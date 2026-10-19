@@ -938,8 +938,6 @@ class FeatureSettingsOwner:
         source = "Maps" if source == "Map Data" else source
         readable = self._readable(key)
         reason = "Saved source unreadable or too large" if not readable else help_text
-        if readable and vision_dev and system_long:
-          reason += "; camera signs require your confirmation before changing cruise speed"
         if source == "Maps" and not maps_available:
           reason = "Maps needs a verified provider and an installed offline map package"
         elif source == "Vision" and not vision_dev:

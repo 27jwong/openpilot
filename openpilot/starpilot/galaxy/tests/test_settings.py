@@ -446,8 +446,11 @@ class SettingsGatewayTest(unittest.TestCase):
         secondary = next(row for row in rows if row["label"] == "Secondary source")
         self.assertEqual("Vision" in primary["choices"], available)
         self.assertEqual("Vision" in secondary["choices"], available)
-        if available:
-          self.assertIn("require your confirmation", primary["reason"])
+        self.assertNotIn("require your confirmation", primary["reason"])
+        confirmation = next(row for row in rows if row["label"] == "Require confirmation")
+        self.assertEqual(confirmation["value"], "Off")
+        self.assertIn("first speed limit", confirmation["reason"])
+        self.assertIn("any source", confirmation["reason"])
 
     with mock.patch.dict(os.environ, {"SLC_REPLAY_RUNTIME": "1", "SLC_VISION_DEVELOPMENT": "1"}):
       page = self.page("slc")

@@ -75,7 +75,6 @@ class Policy:
   confirm_higher: bool = True
   fallback_previous: bool = False
   display_only: bool = False
-  vision_driver_confirm: bool = False
 
 
 class ActionKind(Enum):
@@ -336,8 +335,7 @@ def step(state: State, observation: Observation, authority: Authority, policy: P
   if not observation_is_valid(observation, session_id=state.session_id):
     errors.append("invalid observation")
   if not isinstance(policy, Policy) or any(type(v) is not bool for v in (
-      policy.confirm_lower, policy.confirm_higher, policy.fallback_previous, policy.display_only,
-      policy.vision_driver_confirm)):
+      policy.confirm_lower, policy.confirm_higher, policy.fallback_previous, policy.display_only)):
     errors.append("invalid policy")
   if not _integer(now_ns) or (state.last_timestamp_ns is not None and now_ns < state.last_timestamp_ns):
     errors.append("invalid or reversed monotonic clock")
@@ -385,17 +383,11 @@ def step(state: State, observation: Observation, authority: Authority, policy: P
     state = replace(state, pending=None, timer_running=False)
     return finish("display_only")
   if observation.kind is not ObservationKind.VALID:
-    state = replace(state, pending=None, timer_running=False,
-                    accepted=None if policy.vision_driver_confirm and not policy.fallback_previous and state.accepted is not None and
-                    state.accepted.candidate.source == 'vision' else state.accepted)
+    state = replace(state, pending=None, timer_running=False)
     target = previous_target() if policy.fallback_previous else None
     return finish("previous_accepted" if target is not None else observation.kind.value, target=target)
 
   assert candidate is not None
-  vision_confirm = policy.vision_driver_confirm and candidate.source == 'vision'
-  if (policy.vision_driver_confirm and not policy.fallback_previous and state.accepted is not None and
-      state.accepted.candidate.source == 'vision' and state.accepted.candidate != candidate):
-    state = replace(state, accepted=None)
   if adopt_receipt is not None and adopt_receipt.status == "seen":
     assert adopt is not None
     if (old.presentation is None or old.presentation.presentation_id != adopt.presentation_id or
@@ -415,15 +407,11 @@ def step(state: State, observation: Observation, authority: Authority, policy: P
     state = replace(state, pending=None, timer_running=False)
     return finish("rejected", target=previous_target())
 
-  if vision_confirm and state.accepted is not None and state.accepted.candidate == candidate:
-    state = replace(state, pending=None, timer_running=False)
-    return finish("driver_confirmed_vision", target=candidate.speed_mps if authority.can_control else None)
-
   previous_speed = state.accepted.candidate.speed_mps if state.accepted is not None else None
-  if not vision_confirm and (policy.confirm_lower or policy.confirm_higher) and candidate.speed_mps == previous_speed:
+  if (policy.confirm_lower or policy.confirm_higher) and candidate.speed_mps == previous_speed:
     state = replace(state, pending=None, timer_running=False)
     return finish("accepted", target=previous_target())
-  confirmation = True if vision_confirm else policy.confirm_higher if previous_speed is None or candidate.speed_mps > previous_speed else (
+  confirmation = policy.confirm_higher if previous_speed is None or candidate.speed_mps > previous_speed else (
     policy.confirm_lower if candidate.speed_mps < previous_speed else False)
   if not confirmation:
     if authority.fully_disengaged:

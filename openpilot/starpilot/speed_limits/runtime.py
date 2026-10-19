@@ -2,7 +2,7 @@
 
 import math
 import uuid
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 import openpilot.cereal.messaging as messaging
 from openpilot.cereal.services import SERVICE_LIST
@@ -339,10 +339,8 @@ class Runtime:
            if ego_valid else sd.SpeedPair(sd.DomainStatus.STALE if sm.logMonoTime.get("carState", 0) else sd.DomainStatus.UNKNOWN))
     host = comp.HostState(bool(CP.openpilotLongitudinalControl), host_long, bool(selfdrive.enabled and selfdrive_fresh),
                           bool(controls.forceDecel) if controls_fresh else True, False, selected, selected_cluster)
-    acceptance_policy = (replace(self.settings.acceptance, vision_driver_confirm=True)
-                         if self.vision_control_qualified else self.settings.acceptance)
     return comp.Frame(now_ns, self._observations(sm, CP, now_ns, now_boot_ns), self.settings.selection, authority,
-                      acceptance_policy, self.settings.offsets,
+                      self.settings.acceptance, self.settings.offsets,
                       sd.DomainStatus.VALID if car_fresh and selected_cluster is not None else sd.DomainStatus.STALE,
                       ego, bool(car_state.gasPressed) if car_fresh and self.settings.manual_override else False,
                       _lead(sm, now_ns), self.settings.lead_policy, host, action=action, adopt=adopt,

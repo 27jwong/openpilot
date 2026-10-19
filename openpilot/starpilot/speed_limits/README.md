@@ -13,12 +13,11 @@ navigation and online providers are not yet connected as control sources.
 Vision uses the pinned camera-sign models when Vision is selected and either
 Speed Limit Controller or Show Speed Limits is on. Registered Ioniq 6 and GM
 sessions can display camera signs. Speed control additionally requires a
-registered system-longitudinal owner, an enabled SLC preference and fresh driver
-confirmation for each new sign episode or changed limit. Factory-cruise and
+registered system-longitudinal owner and an enabled SLC preference. Vision follows
+the same saved confirmation policy as Dashboard and Maps. Factory-cruise and
 display-only sessions never gain speed authority. With previous-limit fallback
-enabled, an accepted limit survives source loss and pending replacements; each
-new Vision episode still needs confirmation. Old dashboard episodes are never
-adopted as new-drive observations.
+enabled, an accepted limit survives source loss and pending replacements. Old
+dashboard episodes are never adopted as new-drive observations.
 
 Saved preferences are decoded strictly before use. A malformed Boolean, source,
 number or unreadable setting disables SLC without rewriting the saved bytes.
@@ -64,9 +63,9 @@ publishes a typed observation. Source selection does not change stock engagement
 The runtime distinguishes source availability, display permission and speed
 control permission. A display-only source can populate the sign widget but
 cannot create a planner ceiling or cruise command. Controlling a detected limit
-requires current longitudinal authority and matching driver confirmation, even
-if general SLC confirmation is off. Unqualified replay observations remain
-isolated from normal speed control.
+requires current longitudinal authority and acceptance under the shared SLC
+confirmation policy. Unqualified replay observations remain isolated from normal
+speed control.
 
 Camera EOF uses CLOCK_BOOTTIME; Python receipt and inference completion use
 CLOCK_MONOTONIC. The adapter checks paired clocks, including after suspend,
@@ -168,9 +167,9 @@ higher or lower limit, including while disengaged. Legacy lower/higher settings
 are ignored and are no longer offered in the UI. Both reducer direction flags
 are set from that one switch. An unchanged accepted speed continues under its
 existing approval without accepting a different source/identity automatically;
-new Vision episodes still require confirmation. With confirmations off, qualified
-limits may be accepted automatically. Adjacent representable unequal floating-point
-values are changes and follow confirmation policy.
+this includes new Vision episodes at that same speed. With confirmations off,
+qualified limits may be accepted automatically. Adjacent representable unequal
+floating-point values are changes and follow confirmation policy.
 
 Confirmation expires after 30 seconds of accumulated authoritative active-long
 time. An interval counts only when the same pending decision exists and both
