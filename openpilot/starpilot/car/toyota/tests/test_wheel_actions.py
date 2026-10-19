@@ -223,7 +223,7 @@ class FactoryToyotaInterface:
     self.complete = complete
 
   def sample(self, now_ns, lda=0):
-    values = {'PCM_CRUISE': {'GAS_RELEASED': 1}, 'PCM_CRUISE_2': {'MAIN_ON': 1},
+    values: dict[str, dict[str, float]] = {'PCM_CRUISE': {'GAS_RELEASED': 1}, 'PCM_CRUISE_2': {'MAIN_ON': 1},
               'GEAR_PACKET': {'GEAR': 0}, 'EPS_STATUS': {'LKA_STATE': 1},
               'BODY_CONTROL_STATE': {}, 'LKAS_HUD': {'LDA_ON_MESSAGE': lda}}
     frames = [self.packer.make_can_msg(name, 0 if bus == Bus.pt else 2, values.get(name, {}))

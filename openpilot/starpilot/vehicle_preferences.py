@@ -24,7 +24,6 @@ class VehicleStartupPreferences:
   tesla_preap_stock: bool = True
   volt_sng: bool = False
   gm_auto_hold: bool = False
-  gm_cancel_remap: bool = False
   volt_one_pedal: bool = False
   tesla_screen: bool = False
   tesla_screen_brake: bool = False
@@ -35,6 +34,7 @@ class VehicleStartupPreferences:
   toyota_lock_doors: bool = False
   toyota_unlock_doors: bool = False
   toyota_radar_mode: int = 0
+  gm_cancel_remap: bool = False
 
   @classmethod
   def read(cls, params, *, enabled: bool):

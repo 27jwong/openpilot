@@ -21,7 +21,7 @@ class GmCancelRemapFeature:
     if capability is None:
       return []
     row = self.owner._bool_row(KEY, "Use Cancel as Secondary Button", parked and self.owner.authority("parked_preferences"),
-      "Use the Cancel button assignments in Wheel Controls instead of cancelling cruise. Applies next drive.")
+      "Use the Cancel button assignments in Wheel Controls instead of canceling cruise. Applies next drive.")
     return [replace(row, capability=capability, available=row.available and self.owner._readable(KEY))]
 
   def apply(self, request):
