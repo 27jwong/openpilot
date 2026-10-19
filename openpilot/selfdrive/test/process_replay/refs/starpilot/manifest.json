@@ -528,7 +528,7 @@
       "official_baseline_sha256": "8fcdeb24f6dff05fb485faf8eb973032b68990b758629bad61bc1ee8cbeff157",
       "config_sha256": "560c1060f4d2e43810e7bbd55d5f361a828bdb027d60f308b2e1d614222a2078",
       "car_fingerprint": "RIVIAN_R1",
-      "contract": "BASE GEN1 requires two consecutive actual EPAS ToiActive acknowledgements before nonzero torque on the following update. Existing driver torque bounds and +3/-5 slew apply from withheld-zero history. Actual stock cancel sets VDM_UserAdasRequest=1, preserving the five-frame available/unavailable interface sequence. Exact route:107 steering payload changes,212 actuator scalar changes,2 cancel payload changes; only dependent CRC8-J1850 checksums also change. Every other compared field and CAN payload bit remains unchanged.",
+      "contract": "BASE GEN1 requires two consecutive actual EPAS ToiActive acknowledgments before nonzero torque on the following update. Existing driver torque bounds and +3/-5 slew apply from withheld-zero history. Actual stock cancel sets VDM_UserAdasRequest=1, preserving the five-frame available/unavailable interface sequence. Exact route:107 steering payload changes,212 actuator scalar changes,2 cancel payload changes; only dependent CRC8-J1850 checksums also change. Every other compared field and CAN payload bit remains unchanged.",
       "producing_source_snapshot": "b0bcc06d3eae5f9b5abcc88ac37db43eaee6edea",
       "intentional_contract_source_commit": "69b71dcad82b67eb4cdc8349746b1c5cd1d78510",
       "reviewed_recorded_scope": "RIVIAN_R1 BASE GEN1 flags0, Drive, stock longitudinal; separate15 parsed-CAN calls exercise fault/high-angle/Gen2/gear contracts."
