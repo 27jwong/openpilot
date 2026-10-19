@@ -204,8 +204,10 @@ static void gm_emit_paddle_after_stock(uint32_t now_us, uint32_t addr, uint8_t d
   if (gm_paddle_sched && feed->valid) {
     const bool expired = safety_get_ts_elapsed(now_us, feed->last_feed_us) > 100000U;
     if (expired) { feed->valid = false; }  // Retain the command through its bounded host-feed lifetime.
-    const bool applied = (addr == 0xBDU) ? (feed->bytes[0] == 0x20U) :
-      ((feed->bytes[3] & 0xFU) == (gm_bolt_gen2 ? 5U : 7U)) && (feed->bytes[5] == 2U);
+    bool applied = feed->bytes[0] == 0x20U;
+    if (addr != 0xBDU) {
+      applied = ((feed->bytes[3] & 0xFU) == (gm_bolt_gen2 ? 5U : 7U)) && (feed->bytes[5] == 2U);
+    }
     const bool main_ready = (!(gm_pedal_acc || gm_cancel_remap_enabled) || gm_pedal_main_ready());
     const bool inactive_release = gm_cancel_remap_enabled && !applied;
     if (!expired && gm_pedal_regen_gear_ready() && !regen_braking &&

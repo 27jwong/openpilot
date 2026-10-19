@@ -1,5 +1,6 @@
 """Known Dom bit64 is admitted only for exact supported pedal-long Bolt words."""
 import pytest
+import unittest
 from opendbc.safety.tests.libsafety import libsafety_py
 from opendbc.car.gm.tests.test_bolt_cc import native
 
@@ -163,3 +164,31 @@ def test_previously_accepted_applied_paddle_feed_cannot_outlive_main(word, exper
   native('rx', packer.make_can_msg('EBCMRegenPaddle', 0, {'RegenPaddle': 0}), withdrawn + 3)
   native('rx', packer.make_can_msg('ECMPRDNL2', 0, {'PRNDL2': 6}), withdrawn + 3)
   assert safety.get_recorded_can_count() == 2
+
+
+class TestGmCancelRemapCoverage(unittest.TestCase):
+  """Unittest coverage uses the same real Main/output contract as pytest."""
+
+  def test_physical_main_gates_active_outputs_and_allows_neutral_release(self):
+    safety = libsafety_py.libsafety
+    try:
+      for word in (0x9D, 0x1CD, 0xE701, 0xE703):
+        for experience in (64, 96):
+          for condition in ('on', 'absent', 'off', 'stale'):
+            with self.subTest(word=word, experience=experience, condition=condition):
+              test_remap_requires_fresh_physical_main_for_all_active_outputs(word, experience, condition)
+    finally:
+      safety.set_alternative_experience(0)
+      self.assertEqual(safety.set_safety_hooks(19, 0), 0)
+
+  def test_previously_accepted_paddle_feed_withdraws_but_neutral_release_remains(self):
+    safety = libsafety_py.libsafety
+    try:
+      for word in (0x9D, 0x1CD, 0xE701, 0xE703):
+        for experience in (64, 96):
+          for condition in ('off', 'stale'):
+            with self.subTest(word=word, experience=experience, condition=condition):
+              test_previously_accepted_applied_paddle_feed_cannot_outlive_main(word, experience, condition)
+    finally:
+      safety.set_alternative_experience(0)
+      self.assertEqual(safety.set_safety_hooks(19, 0), 0)

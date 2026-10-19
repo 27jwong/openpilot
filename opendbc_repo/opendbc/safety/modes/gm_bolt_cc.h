@@ -216,29 +216,30 @@ static safety_config gm_bolt_cc_init(uint16_t word) {
   const unsigned int experience = (unsigned int)alternative_experience;
   gm_cancel_remap_enabled = ((experience == GM_ALT_EXP_REMAP_CANCEL_TO_DISTANCE) ||
     (experience == (GM_ALT_EXP_ALWAYS_ON_LATERAL | GM_ALT_EXP_REMAP_CANCEL_TO_DISTANCE))) && gm_cancel_remap_word(word);
+  safety_config ret;
   if (((experience & GM_ALT_EXP_REMAP_CANCEL_TO_DISTANCE) != 0U) && !gm_cancel_remap_enabled) {
     gm_bolt_cc_selected = false;
     gm_hybrid_selected = false;
-    return nooutput_init(0U);
-  }
-  gm_hybrid_rejected = ((word & 0xFF00U) == 0xE800U) && ((word > 0xE805U) ||
-    ((alternative_experience != 0) && (alternative_experience != 32)));
-  gm_hybrid_selected = (word >= 0xE800U) && (word <= 0xE805U);
-  safety_config ret;
-  if (gm_hybrid_selected) {
-    gm_bolt_cc_selected = false;
-    ret = gm_hybrid_init(word);
+    ret = nooutput_init(0U);
   } else {
-    gm_bolt_cc_stock_main = false;
-    gm_bolt_cc_stock_only = (word == 0xE710U) || (word == 0xE711U) || (word == 0xE712U) || (word == 0xE713U);
-    const unsigned int tag = gm_bolt_cc_tag(word);
-    gm_bolt_cc_selected = tag != 0U;
-    ret = (tag != 0U) ? gm_bolt_cc_profile_init((uint16_t)tag) : gm_init(word);
-    gm_aol_initialize(gm_aol_profile_word(word) && gm_aol_mode_valid());
-    gm_aol_stock_only = gm_bolt_cc_stock_only || (word == 16U) || (word == 0xC162U);
-    gm_aol_stock_gateway = word == 16U;
+    gm_hybrid_rejected = ((word & 0xFF00U) == 0xE800U) && ((word > 0xE805U) ||
+      ((alternative_experience != 0) && (alternative_experience != 32)));
+    gm_hybrid_selected = (word >= 0xE800U) && (word <= 0xE805U);
+    if (gm_hybrid_selected) {
+      gm_bolt_cc_selected = false;
+      ret = gm_hybrid_init(word);
+    } else {
+      gm_bolt_cc_stock_main = false;
+      gm_bolt_cc_stock_only = (word == 0xE710U) || (word == 0xE711U) || (word == 0xE712U) || (word == 0xE713U);
+      const unsigned int tag = gm_bolt_cc_tag(word);
+      gm_bolt_cc_selected = tag != 0U;
+      ret = (tag != 0U) ? gm_bolt_cc_profile_init((uint16_t)tag) : gm_init(word);
+      gm_aol_initialize(gm_aol_profile_word(word) && gm_aol_mode_valid());
+      gm_aol_stock_only = gm_bolt_cc_stock_only || (word == 16U) || (word == 0xC162U);
+      gm_aol_stock_gateway = word == 16U;
+    }
+    gm_cruise_status_reset(word);
   }
-  gm_cruise_status_reset(word);
   return ret;
 }
 
