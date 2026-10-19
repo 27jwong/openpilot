@@ -532,10 +532,9 @@ class Car:
     host_long_active = host_control_enabled and self.sm['carControl'].longActive
     slc_long_active = getattr(self, 'slc_control_enabled', self.slc_replay) and host_long_active
     pending = None
-    if observation is not None and self.slc_replay:
+    if self.slc_replay:
       pending = slc_physical.pending_confirmation(
-        self.sm, observation, self.slc_producer_session, now_ns,
-        long_active=slc_long_active, pcm_cruise=bool(self.CP.pcmCruise))
+        self.sm, now_ns, long_active=slc_long_active, pcm_cruise=bool(self.CP.pcmCruise), after_ns=floor_ns)
     self.update_cruise_speed(CS, pending)
     if self.controller_cruise_sock is not None:
       for _ in range(8):
