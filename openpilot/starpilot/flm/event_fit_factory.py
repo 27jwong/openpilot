@@ -1,4 +1,8 @@
 """Actual child dispatch for canonical full30 event trials, never a helper-only path."""
+
+from typing import TypedDict, cast
+
+
 from openpilot.starpilot.flm.clipping_quality import event_clipping_quality
 from dataclasses import asdict
 import itertools
@@ -12,6 +16,13 @@ from openpilot.starpilot.flm.full_surface_profile import envelope_from_dict
 from openpilot.starpilot.flm.torque_adapter import Objective
 from openpilot.starpilot.flm.torque_emission_replay import delivered
 from openpilot.starpilot.flm.torque_raw_fit import output_from_dict
+
+
+class _EffectObjectiveFields(TypedDict):
+  group: str
+  names: tuple[str, ...]
+  anchor_digest: str
+  context_key: str
 
 
 def _identified(engine, raw):
@@ -76,7 +87,7 @@ def fit_event_snapshot(payload, factory, replay_payload):
     raise ValueError('whole-map activation is restore-only')
   if payload['event_version'] == 3 and (payload.get('event_operation') != 'trial' or envelope.operation != 'trial'):
     raise ValueError('declared activation requires original trial operation')
-  objective = EffectObjective(**{**payload['event_objective'], 'names': tuple(payload['event_objective']['names'])})
+  objective = EffectObjective(**cast(_EffectObjectiveFields, {**payload['event_objective'], 'names': tuple(payload['event_objective']['names'])}))
   if (envelope.trial_names != objective.names or envelope.trial_anchor != objective.anchor_digest or
       envelope.context_key != objective.context_key or envelope.source_epoch != objective.context_key or
       envelope.selected_baseline_revision != replay_payload['baseline_revision']):

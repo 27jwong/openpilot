@@ -1,5 +1,8 @@
 """Raw parent recordings, one bounded child fit, real selected-controller replay."""
 
+from typing import TypedDict, cast
+
+
 import base64
 from openpilot.starpilot.flm.physical_response import request_force_accel
 from itertools import islice
@@ -22,6 +25,14 @@ from openpilot.starpilot.flm.controller_replay import (
   unpack_primitive_snapshot,
   factory_from_snapshot,
 )
+
+
+class _EffectObjectiveFields(TypedDict):
+  group: str
+  names: tuple[str, ...]
+  anchor_digest: str
+  context_key: str
+
 
 RAW_TORQUE = 'torque-selected-stage-snapshot-v1'
 FF_KEYS = tuple(('feedforward', speed, phase) for speed in ('low', 'high') for phase in ('steady', 'turn_in', 'unwind'))
@@ -464,7 +475,7 @@ def fit_snapshot(snapshot):
   if event_job:
     from openpilot.starpilot.flm.event_objective import EffectObjective
     objective_row = payload['event_objective']
-    event_objective = EffectObjective(**{**objective_row, 'names': tuple(objective_row['names'])})
+    event_objective = EffectObjective(**cast(_EffectObjectiveFields, {**objective_row, 'names': tuple(objective_row['names'])}))
     # A fixed historical full-map restore is not a friction-only trial. It
     # must retain independent qualification for every active group, including
     # FF; choosing a friction protocol marker cannot bypass its noise gate.

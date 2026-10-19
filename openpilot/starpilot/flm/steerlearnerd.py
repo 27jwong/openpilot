@@ -4,6 +4,10 @@ Actual controller baseline and independent physical model adapters are selected
 from received source-bound evidence, never another process's startup preference.
 """
 
+from collections.abc import Callable
+from typing import cast
+from openpilot.starpilot.flm.runtime_adapter_registry import SourceState
+
 import os
 import uuid
 import time
@@ -100,7 +104,7 @@ def run(
   *,
   clock=time.monotonic_ns,
   reporter=None,
-  publication_source_reader=None,
+  publication_source_reader: Callable[[int], SourceState | None] | None = None,
 ):
   from openpilot.starpilot.flm.native_health import current_native_health
 
@@ -152,7 +156,7 @@ def run(
         sm.update(0)
         now = clock()
       reader = publication_source_reader if publication else source_reader
-      source = reader(now)
+      source = cast(Callable[[int], SourceState | None], reader)(now)
       now = clock()
     known = _source_config_known(source, now)
     if known and (not source.enabled or source.manual):

@@ -1,4 +1,6 @@
 """Bounded read-only RAM telemetry; never restores a learned profile."""
+
+from typing import cast
 import json
 import math
 import os
@@ -229,8 +231,8 @@ class TrainingReporter:
     }
     if collector is not None and getattr(collector.adapter, 'event_collection', False):
       readiness_reader = getattr(collector, 'snapshot_readiness_report', None)
-      readiness = readiness_reader() if callable(readiness_reader) else {'reason': 'snapshot_not_attempted'}
-      stamp = readiness.pop('observedMonoTime', None)
+      readiness: dict[str, object] = readiness_reader() if callable(readiness_reader) else {'reason': 'snapshot_not_attempted'}
+      stamp = cast(int | None, readiness.pop('observedMonoTime', None))
       readiness['ageSeconds'] = None if stamp is None else max(0., (now_ns - stamp) / 1e9)
       details.update({'Snapshot readiness': readiness,
         'Snapshot selection attempts (collector lifetime)': getattr(collector, 'snapshot_attempts', 0),

@@ -1,5 +1,7 @@
 """Shared actual-selected controller identities; physical fitting stays in learner."""
 
+from typing import cast
+
 from dataclasses import dataclass, field, replace
 import hashlib
 import json
@@ -24,11 +26,12 @@ def implementation_revision(controller_type, interface_type):
   values. Formatting changes conservatively discard stored priors too.
   """
   here = Path(__file__).resolve().parent
-  controller_root = Path(importlib.import_module(controller_type.__module__).__file__).resolve().parent
-  brand_root = Path(importlib.import_module(interface_type.__module__).__file__).resolve().parent
+  controller_root = Path(cast(str, importlib.import_module(controller_type.__module__).__file__)).resolve().parent
+  brand_root = Path(cast(str, importlib.import_module(interface_type.__module__).__file__)).resolve().parent
   common_root = here.parents[1] / 'common'
   inherited_roots = tuple(
-    Path(importlib.import_module(base.__module__).__file__).resolve().parent for base in controller_type.__mro__ if base.__module__.startswith('openpilot.')
+    Path(cast(str, importlib.import_module(base.__module__).__file__)).resolve().parent
+    for base in controller_type.__mro__ if base.__module__.startswith('openpilot.')
   )
   roots = (here, here.parent / 'lateral', controller_root, brand_root, brand_root.parent, common_root, *inherited_roots)
   files = tuple(sorted({path for root in roots for path in root.glob('*.py')}))

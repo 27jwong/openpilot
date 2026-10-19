@@ -5,6 +5,8 @@ Inputs are decoded custom evidence produced by actual owners; no Params/default
 controller selection is inferred here. Domain adapters qualify response inverse.
 """
 
+from typing import TypeGuard, cast
+
 from collections import Counter, OrderedDict, deque
 from openpilot.starpilot.flm.torque_eligibility import asynchronous_hint, bounded_context_output, exact_unclipped_pair, consumed_sources_current
 
@@ -30,8 +32,8 @@ MAX_WIRE_BYTES = 32768
 MAX_SNAPSHOT_WIRE_BYTES = 131072
 
 
-def finite(value):
-  return type(value) in (int, float) and math.isfinite(value)
+def finite(value: object) -> TypeGuard[int | float]:
+  return (type(value) is int or type(value) is float) and math.isfinite(value)
 
 
 def replay_values(value, bound):
@@ -596,7 +598,8 @@ class FullrateCollector:
       control = self.raw_points[0].control
       self.blocks.append(
         RawBlock(
-          control.identity, f'{self.session}:{self.block_sequence}', self.cohort, control.stage_revision, control.response_revision, tuple(self.raw_points)
+          control.identity, f'{self.session}:{self.block_sequence}', cast(str, self.cohort),
+          control.stage_revision, control.response_revision, tuple(self.raw_points)
         )
       )
       self.block_sequence += 1

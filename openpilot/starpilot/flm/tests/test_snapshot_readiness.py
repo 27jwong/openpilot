@@ -1,6 +1,7 @@
 """Actual parent selection/collector/reporter; synthetic goals confer no fit proof."""
 from collections import deque
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import patch
 
 import pytest
@@ -21,16 +22,16 @@ def actual_selection_collector(count, *, checkpoint=True):
     desired_physical_accel=goal) for tick, goal in enumerate(goals))
   adapter = EventCollectionAdapter.__new__(EventCollectionAdapter)
   adapter.envelope = object()
-  adapter.event_objective = SimpleNamespace(context_key='context', required_cohorts=('whole',))
-  adapter.objective = SimpleNamespace(required_cohorts=())
+  cast(SimpleNamespace, adapter).event_objective = SimpleNamespace(context_key='context', required_cohorts=('whole',))
+  cast(SimpleNamespace, adapter).objective = SimpleNamespace(required_cohorts=())
   adapter.key = ('event', 'center')
   adapter.snapshot_readiness = None
   adapter.model = None
-  adapter.replay = SimpleNamespace(records=frames, replay_windows=(), _frame_context=lambda _frame: True,
+  cast(SimpleNamespace, adapter).replay = SimpleNamespace(records=frames, replay_windows=(), _frame_context=lambda _frame: True,
     checkpoints=((NOW, None),) if checkpoint else (), identity=control.identity, baseline_revision='baseline')
   collector = EventFullrateCollector(adapter)
-  collector.context = ('source',)
-  collector.physical_context = ('physical',)
+  cast(SimpleNamespace, collector).context = ('source',)
+  cast(SimpleNamespace, collector).physical_context = ('physical',)
   collector.ready.append((control, output))
   points = tuple(RawPoint(frame.control_ns, frame.control_ns + 1, frame.control_ns + 2,
     control, output, {}, ('physical',)) for frame in frames[:-60])
