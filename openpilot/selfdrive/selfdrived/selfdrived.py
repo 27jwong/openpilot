@@ -303,7 +303,7 @@ class SelfdriveD:
         self.events.add(EventName.belowSteerSpeed)
       paddle_pressed = paddle_cancel(self.CP, CS, enabled=self.enabled, saved=self.nostalgia_enabled)
       self.nostalgia_paddle_cancel |= bool(paddle_pressed and EventName.buttonCancel not in self.events.names and
-                                         not physical_cancel(CS))
+                                         not physical_cancel(CS, self.CP))
       if paddle_pressed:
         self.events.add(EventName.buttonCancel)
 
@@ -549,7 +549,7 @@ class SelfdriveD:
     self.event_car_state = CS
     if reconcile_input:
       self._update_steering_authority(CS)
-    if any(physical_cancel(sample) for sample, _ in samples):
+    if any(physical_cancel(sample, self.CP) for sample, _ in samples):
       self.nostalgia_paddle_cancel = False
     if CS.canValid:
       if self.tesla_stock_consumer.binding is not None:
@@ -884,7 +884,7 @@ class SelfdriveD:
     if any(not valid or not sample.canValid or sample.canTimeout or sample.steerFaultTemporary or
            sample.steerFaultPermanent or (sample.brakePressed or sample.regenBraking) and not held_brake or
            active_longitudinal and sample.gasPressed and not held_gas or
-           sample.seatbeltUnlatched or sample.accFaulted or sample.doorOpen or physical_cancel(sample) or
+           sample.seatbeltUnlatched or sample.accFaulted or sample.doorOpen or physical_cancel(sample, self.CP) or
            sample.gearShifter not in (car.CarState.GearShifter.drive, car.CarState.GearShifter.sport,
                                      car.CarState.GearShifter.low, car.CarState.GearShifter.brake)
            for sample, valid in samples):

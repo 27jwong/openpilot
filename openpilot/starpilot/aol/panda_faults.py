@@ -4,13 +4,14 @@ Register divergence remains a protected-register diagnostic, not a benign-fault
 claim. Raw fault reports are retained. Every unlisted configuration/bit blocks.
 """
 from openpilot.cereal import log
+from opendbc.car.gm.cancel_remap import aol_enabled
 
 
 def _diagnostic_mask(cp):
   try:
     from opendbc.car.gm.aol import qualified_gm
     from opendbc.car.gm.values import CAR, is_volt_sdgm_profile, is_bolt_present_no_acc_pedal_profile
-    if cp.brand != 'gm' or not qualified_gm(cp) or int(cp.alternativeExperience) != 32 or len(cp.safetyConfigs) != 1:
+    if cp.brand != 'gm' or not qualified_gm(cp) or not aol_enabled(cp) or len(cp.safetyConfigs) != 1:
       return 0
     word = int(cp.safetyConfigs[0].safetyParam)
     if (cp.carFingerprint == CAR.CHEVROLET_VOLT_2019 and word == 0x1005 and

@@ -308,7 +308,7 @@ class Car:
     self.switchback_button_tracker = ButtonTracker() if self.switchback_capable else None
     self.switchback_settings_owner = ConditionalSettingsOwner(self.params) if self.switchback_capable else None
     self.gm_distance = GMDistanceButtons() if self.conditional_replay and gm_profiles_supported(self.CP) else None
-    self.gm_distance_map = WheelMapCache(include_ioniq_media=False) if self.gm_distance is not None else None
+    self.gm_distance_map = WheelMapCache(include_ioniq_media=False, cp=self.CP) if self.gm_distance is not None else None
     self.gm_distance_claim_tracker = ButtonTracker() if self.gm_distance is not None else None
     controller_available = self.CI.CC is not None and openpilot_enabled_toggle and not self.CP.dashcamOnly
     self.CP.passive = not controller_available or self.CP.dashcamOnly
@@ -318,6 +318,8 @@ class Car:
       self.CP.safetyConfigs = [safety_config]
 
     startup_preferences.finalize(self.CP)
+    from opendbc.car.gm.cancel_remap import migrate_assignments as migrate_gm_cancel_assignments
+    migrate_gm_cancel_assignments(self.params, self.CP)
     startup_preferences.configure_controller(self.CI)
     configure_controller(self.CI, self.params)
     self.vehicle_startup.configure(self.CI)
@@ -481,7 +483,7 @@ class Car:
                       if (getattr(self.CI.CS, 'ev6_aol_source_healthy', False) or
                           qualified_honda_stock_aol(self.CP, marked_only=True) or
                           qualified_gm(self.CP) and is_bolt_present_no_acc_pedal_profile(self.CP) and
-                          int(self.CP.alternativeExperience) == 32) else 0)
+                          int(self.CP.alternativeExperience) in (32, 96)) else 0)
     self.observe_ioniq6_long_authority(can_list, CS)
     media_owner = getattr(self, 'ioniq6_media', None)
     media_observation = media_owner.update(can_list) if media_owner is not None else None

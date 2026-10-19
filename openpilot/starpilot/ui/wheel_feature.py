@@ -42,6 +42,10 @@ class WheelFeature:
       return ()
     if key in KEYS[:2] and policy.fixed_cruise_buttons:
       return ()
+    if key in KEYS[5:8] and cp.brand == 'gm':
+      from opendbc.car.gm.cancel_remap import supported
+      if supported(cp) and read_saved(self.owner.params, 'RemapCancelToDistance', 8) != (b'1', True):
+        return ()
     if key in KEYS[8:] and not media:
       return ()
     if key in KEYS[:5] and not policy.settings_supported:

@@ -75,7 +75,7 @@ from openpilot.starpilot.controllers.toyota_cruise import capability as toyota_c
 BOOL_DEFAULTS = {
   "GMPedalLongitudinal": False, "ForceStops": False, "AlwaysAllowUploads": False, "TurnAssist": True,
   "ReverseCruise": False, "ToyotaAutoHold": False, "VoltSNG": False, "GMAutoHold": False, "VoltOnePedalMode": False,
-  "LongPitch": True, "DisableOpenpilotLongitudinal": False,
+  "RemapCancelToDistance": False, "LongPitch": True, "DisableOpenpilotLongitudinal": False,
   "SpeedLimitController": False, "ShowSpeedLimits": True,
   "SLCConfirmation": False,
   "PauseLateralOnSignal": False,
@@ -151,6 +151,8 @@ class FeatureSettingsOwner:
                                       configuration_longitudinal=self.configuration_longitudinal)
     self.long_profiles = LongProfileFeature(self)
     self.tesla_screen = TeslaScreenFeature(self)
+    from openpilot.starpilot.ui.gm_cancel_remap_feature import GmCancelRemapFeature
+    self.gm_cancel_remap = GmCancelRemapFeature(self)
     self.gm_tune = GmTuneFeature(self)
     self.gm_truck = GmTruckFeature(self)
     self.gm_ev_preset = GmEvPresetFeature(self)
@@ -737,6 +739,7 @@ class FeatureSettingsOwner:
                   "native safety and ECU configuration are unchanged."),
           capability=radar_capability, default_value="Off"))
       rows.extend(self.tesla_screen.rows(parked))
+      rows.extend(self.gm_cancel_remap.rows(parked))
       rows.extend(self.gm_tune.rows(parked))
       rows.extend(self.gm_truck.rows(parked))
       rows.extend(self.gm_ev_preset.rows(parked))
@@ -1169,6 +1172,8 @@ class FeatureSettingsOwner:
       return self.controller.apply_setup(request)
     if key == 'ForceAutoTuneOff':
       return self.controller.apply_learning(request)
+    if key == "RemapCancelToDistance":
+      return self.gm_cancel_remap.apply(request)
     if key == "GMPedalLongitudinal":
       return self._apply_pedal_setup(request)
     if key in TESLA_SCREEN_KEYS:

@@ -138,6 +138,11 @@ class WheelPublisher:
       state, media if ioniq6_media_eligible(cp) else None)]
     for tracker, source, keys in ((self.cancel_tracker, structs.CarState.ButtonEvent.Type.cancel, KEYS[5:8]),
                                    (self.main_tracker, structs.CarState.ButtonEvent.Type.mainCruise, KEYS[1:2])):
+      if source == structs.CarState.ButtonEvent.Type.cancel and cp.brand == 'gm':
+        from opendbc.car.gm.cancel_remap import enabled as gm_cancel_remap_enabled, supported as gm_cancel_remap_supported
+        if gm_cancel_remap_supported(cp) and not gm_cancel_remap_enabled(cp):
+          self.cancel_tracker = ButtonTracker()
+          continue
       if not any(mapping[key] in DELIVERED_ACTIONS for key in keys):
         continue
       copy = structs.CarState(canValid=state.canValid, canTimeout=state.canTimeout)

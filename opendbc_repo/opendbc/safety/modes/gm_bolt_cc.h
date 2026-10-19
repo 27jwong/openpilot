@@ -213,6 +213,14 @@ static unsigned int gm_bolt_cc_tag(uint16_t word) {
 static bool gm_bolt_cc_selected;
 
 static safety_config gm_bolt_cc_init(uint16_t word) {
+  const unsigned int experience = (unsigned int)alternative_experience;
+  gm_cancel_remap_enabled = ((experience == GM_ALT_EXP_REMAP_CANCEL_TO_DISTANCE) ||
+    (experience == (GM_ALT_EXP_ALWAYS_ON_LATERAL | GM_ALT_EXP_REMAP_CANCEL_TO_DISTANCE))) && gm_cancel_remap_word(word);
+  if (((experience & GM_ALT_EXP_REMAP_CANCEL_TO_DISTANCE) != 0U) && !gm_cancel_remap_enabled) {
+    gm_bolt_cc_selected = false;
+    gm_hybrid_selected = false;
+    return nooutput_init(0U);
+  }
   gm_hybrid_rejected = ((word & 0xFF00U) == 0xE800U) && ((word > 0xE805U) ||
     ((alternative_experience != 0) && (alternative_experience != 32)));
   gm_hybrid_selected = (word >= 0xE800U) && (word <= 0xE805U);
