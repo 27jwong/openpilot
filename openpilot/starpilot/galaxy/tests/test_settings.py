@@ -210,7 +210,7 @@ class SettingsGatewayTest(unittest.TestCase):
     self.params.put("SLCOffsetSchedule", od.to_value(od.adopt_legacy(False, (0.0,) * 7)), block=True)
     page = self.page("slc")
     index = next(i for i, row in enumerate(page["rows"]) if row["label"].endswith("offset"))
-    self.assertEqual((page["rows"][index]["minimum"], page["rows"][index]["maximum"]), (-99, 99))
+    self.assertEqual((page["rows"][index]["minimum"], page["rows"][index]["maximum"]), (-25, 99))
     intent = self.gateway.preview(page["view"], index, 0, self.session, self.generation, value=5)
     self.assertTrue(self.gateway.confirm(intent["intent"], self.session, self.generation))
     self.assertAlmostEqual(self.params.get("SLCOffsetSchedule")["offsets_mps"][0], 5 * od.MPH_TO_MPS)
