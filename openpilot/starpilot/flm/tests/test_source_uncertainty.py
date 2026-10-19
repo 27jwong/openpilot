@@ -1,6 +1,7 @@
 """Actual source reader/parent loop; synthetic transport, no fitted admission."""
 from dataclasses import replace
 from types import SimpleNamespace
+from typing import cast
 from unittest import mock
 
 import pytest
@@ -84,7 +85,7 @@ def exercise(recovery=None, *, publication_uncertain=False, publication_only_rec
         from openpilot.starpilot.flm.event_collection import EventCollectionAdapter
         # Execute the actual event selector guard if the owner calls it without
         # a newly selected control objective; this must never be reached.
-        EventCollectionAdapter.select_objective(SimpleNamespace(_event_initialized=True), value)
+        EventCollectionAdapter.select_objective(cast(EventCollectionAdapter, SimpleNamespace(_event_initialized=True)), value)
         raise AssertionError("publication selected an objective before new control")
     def prepare_control(self, value):
       return value

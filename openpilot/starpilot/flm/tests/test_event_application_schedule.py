@@ -47,7 +47,7 @@ def exercise(*, failure=None):
       super().__init__(adapter)
       self.offered = False
       collectors.append(self)
-    def job_snapshot(self, stamp):
+    def job_snapshot(self, now_ns):
       # Unit fitter transport only; not a forged eligible scientific snapshot.
       if not self.offered and self.ready and self.physical_context is not None:
         self.offered = True

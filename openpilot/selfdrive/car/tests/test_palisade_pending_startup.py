@@ -1,5 +1,6 @@
 """Actual Card caller and mixed owner ordering; no vehicle/protocol recovery claim."""
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import Mock, patch
 
 import pytest
@@ -8,6 +9,8 @@ from opendbc.car import structs
 from opendbc.car.hyundai.blended_longitudinal import BlendedStartup, candidate_from_stock, Outcome
 from opendbc.car.hyundai.interface import CarInterface
 from opendbc.car.hyundai.tests.test_palisade_2023 import params, feed
+from openpilot.cereal import messaging
+from openpilot.common.params import Params
 from openpilot.selfdrive.car.card import Car
 from openpilot.starpilot.vehicle_startup import VehicleStartupOwner
 
@@ -62,13 +65,13 @@ def pending():
     card = Car.__new__(Car)
     card.CP, card.CI = cp, ci
     card.vehicle_startup = VehicleStartupOwner(startup)
-    card.sm = SM(clock)
+    card.sm = cast(messaging.SubMaster, SM(clock))
     card.ci_initialized = False
     card.aol_replay = False
     card.ioniq6_long_pending = False
     card.ioniq6_long_selected = False
     card.ioniq6_long_prearmed = False
-    card.params = SimpleNamespace(put_bool=Mock())
+    card.params = cast(Params, SimpleNamespace(put_bool=Mock()))
     card.startup_panda_configured = Mock(return_value=False)
     card.publish_sendcan = Mock()
     card.learning_send_committed_mono_ns = 0

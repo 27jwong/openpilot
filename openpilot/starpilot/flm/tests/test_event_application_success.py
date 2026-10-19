@@ -63,8 +63,8 @@ def exercise(*, no_new_pose=False):
       self.installed = True
       self.fit_profile = profile
       return True
-    def current_admission(self, proposed, control, output, context):
-      result = super().current_admission(proposed, control, output, context)
+    def current_admission(self, profile, control, output, context):
+      result = super().current_admission(profile, control, output, context)
       admitted.append((phase[0], result.healthy, self.last_physical_ns))
       return result
 
@@ -73,7 +73,7 @@ def exercise(*, no_new_pose=False):
       super().__init__(adapter)
       self.offered = False
       collectors.append(self)
-    def job_snapshot(self, stamp):
+    def job_snapshot(self, now_ns):
       if phase[0] == 50 and not self.offered and self.ready and self.physical_context is not None:
         self.offered = True
         return {'unit_transport_only': True}
