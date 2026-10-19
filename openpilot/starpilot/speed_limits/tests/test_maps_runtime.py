@@ -83,7 +83,7 @@ def test_expired_map_falls_through_to_current_dashboard_without_renewal():
   assert values[sel.Source.MAP].candidate is None
 
 
-def test_map_loss_no_metadata_and_lookahead_never_become_previous_limit_permission():
+def test_map_loss_no_metadata_and_lookahead_retain_only_previously_accepted_limit():
   authority = acc.Authority(acc.Mode.COMBINED, acc.LongitudinalOwner.SYSTEM, True, True, False, False)
   prior = acc.AcceptedLimit(acc.Candidate('map', acc.ObservationIdentity(acc.IdentityKind.GEOGRAPHIC, value='previous-way'), 20.), 'drive', 0)
   frame = ms.decode_event(packet().to_bytes())
@@ -96,9 +96,12 @@ def test_map_loss_no_metadata_and_lookahead_never_become_previous_limit_permissi
       transport_alive=True, drive_session='drive', car_fingerprint='vehicle')
     assert observation.candidate is None
     assert observation.kind is not acc.ObservationKind.ABSENT
-    decision = acc.step(acc.new_session('drive', prior), observation, authority,
-      acc.Policy(fallback_previous=True), now_ns=MONO)
-    assert decision.control_target_mps is None
+    for fallback in (False, True):
+      decision = acc.step(acc.new_session('drive', prior), observation, authority,
+        acc.Policy(fallback_previous=fallback), now_ns=MONO)
+      assert decision.control_target_mps == (20. if fallback else None)
+      assert decision.state.accepted == prior
+      assert decision.history_write is None
 
 
 def test_map_identity_order_restart_and_transport_loss_are_fail_closed():

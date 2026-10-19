@@ -77,7 +77,7 @@ BOOL_DEFAULTS = {
   "ReverseCruise": False, "ToyotaAutoHold": False, "VoltSNG": False, "GMAutoHold": False, "VoltOnePedalMode": False,
   "LongPitch": True, "DisableOpenpilotLongitudinal": False,
   "SpeedLimitController": False, "ShowSpeedLimits": True,
-  "SLCConfirmation": False, "SLCConfirmationHigher": False, "SLCConfirmationLower": False,
+  "SLCConfirmation": False,
   "PauseLateralOnSignal": False,
   "LaneCentering": False, "LaneCenteringPauseOnSignal": True,
   "CustomPersonalities": False, PLANNER_SELECTION_KEY: True,
@@ -927,11 +927,6 @@ class FeatureSettingsOwner:
       rows.append(self._bool_row("ShowSpeedLimits", "Show speed limit signs", self.authority("preferences"),
                                  reason="Display signs independently of Speed Limit Controller; does not change cruise speed"))
       rows.append(self._bool_row("SLCConfirmation", "Require confirmation", allowed))
-      confirmation, _, _ = self._value("SLCConfirmation")
-      rows.extend(replace(self._bool_row(key, label, allowed and confirmation == "1"),
-                          default_reset_available=allowed and parked and self._value(key)[2] and
-                          self._value(key)[0] in ("0", "1")) for key, label in (
-        ("SLCConfirmationLower", "Confirm lower limits"), ("SLCConfirmationHigher", "Confirm higher limits")))
       source_capability = self._source_capability()
       vision_dev, maps_available = source_capability
       source_allowed = configurable and self.authority("preferences")
@@ -1287,9 +1282,6 @@ class FeatureSettingsOwner:
           return False
         if (key != CURVE_MASTER_KEY or request.value != "Off") and not read_learning(self.params).valid:
           return False
-      if (key in ("SLCConfirmationLower", "SLCConfirmationHigher") and self._value("SLCConfirmation")[0] != "1" and
-          not (reset_default and request.value == "Off")):
-        return False
       if key in (SLC_PRIORITY, SLC_SECONDARY) and request.capability != self._source_capability():
         return False
       if key == "LaneCenteringStrength":

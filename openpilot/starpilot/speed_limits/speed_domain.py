@@ -180,9 +180,7 @@ def resolve(decision: acc.Decision, schedule: OffsetSchedule, selected: SpeedPai
   if (not _number(target, positive=True) or accepted is None or
       accepted.candidate.speed_mps != target or not decision.authority.can_control or
       decision.policy.display_only or
-      decision.state.observation.kind in (acc.ObservationKind.UNKNOWN, acc.ObservationKind.STALE) or
-      (decision.state.observation.kind is acc.ObservationKind.ABSENT and
-       (not decision.policy.fallback_previous or decision.basis != "previous_accepted"))):
+      (decision.state.observation.kind is not acc.ObservationKind.VALID and not acc.previous_limit_is_qualified(decision))):
     return DomainResolution(DomainStatus.INVALID, reason="accepted target mismatch")
   assert selected.raw_mps is not None and selected.cluster_mps is not None
   assert ego.raw_mps is not None and ego.cluster_mps is not None

@@ -5,9 +5,9 @@ returns a proposed contribution in m/s, not a vehicle command or final planner
 target. It requires the actual `acceptance.Decision` from the same session and
 monotonic timestamp. The decision carries the authority and policy snapshot used
 by acceptance; a mismatch, invalid decision, or inconsistent accepted target is
-an error and yields no contribution. `UNKNOWN` and `STALE` observations have no
-target. Explicit `ABSENT` may use only the actual acceptance decision's qualified
-previous-limit fallback. The selected-speed and pedal observations carry explicit
+an error and yields no contribution. `ABSENT`, `UNKNOWN` and `STALE` observations
+may use only the actual acceptance decision's qualified previous-limit fallback.
+Source gaps do not interrupt an otherwise qualified driver override. The selected-speed and pedal observations carry explicit
 validity; missing or stale evidence suppresses output. Valid ego speed may be
 zero at standstill; selected and accepted limit speeds remain positive.
 

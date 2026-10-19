@@ -399,8 +399,8 @@ class Runtime:
     if command is not None:
       self._command_ui_sequence = request.sequence_id if request is not None else 0
     message.slcState.commandActionSequenceId = getattr(self, '_command_ui_sequence', 0)
-    if action_result is not None and action_result.status == 'resolved' and request is not None:
-      self._ui_receipt = (request.sequence_id, str(message.slcState.actionStatus))
+    if action_result is not None and action_result.status == 'resolved':
+      self._ui_receipt = (request.sequence_id, str(message.slcState.actionStatus)) if request is not None else None
     receipt = getattr(self, '_ui_receipt', None)
     if receipt is not None:
       message.slcState.actionSequenceId, message.slcState.actionStatus = receipt
@@ -510,16 +510,15 @@ class Runtime:
     state.overrideBasis = (result.override.basis if state.driverOverrideActive else 'none')
     state.retainedOverride = bool(result.state.override.persistent_selected_mps is not None)
     shown = result.state.acceptance.presentation
-    if state.observationKind == 'valid':
-      for candidate, value_field, flag_field in (
-        (accepted.candidate if accepted is not None else None, 'acceptedAdjustedLimit', 'hasAcceptedAdjustedLimit'),
-        (pending.candidate if pending is not None else None, 'pendingAdjustedLimit', 'hasPendingAdjustedLimit'),
-        (shown.candidate if shown is not None else None, 'presentationAdjustedLimit', 'hasPresentationAdjustedLimit'),
-      ):
-        value = sd.adjusted_limit(candidate.speed_mps, self.settings.offsets) if candidate is not None else None
-        if value is not None:
-          setattr(state, value_field, value)
-          setattr(state, flag_field, True)
+    for candidate, value_field, flag_field in (
+      (accepted.candidate if accepted is not None else None, 'acceptedAdjustedLimit', 'hasAcceptedAdjustedLimit'),
+      (pending.candidate if pending is not None else None, 'pendingAdjustedLimit', 'hasPendingAdjustedLimit'),
+      (shown.candidate if shown is not None else None, 'presentationAdjustedLimit', 'hasPresentationAdjustedLimit'),
+    ):
+      value = sd.adjusted_limit(candidate.speed_mps, self.settings.offsets) if candidate is not None else None
+      if value is not None:
+        setattr(state, value_field, value)
+        setattr(state, flag_field, True)
     if shown is not None:
       state.presentationId = shown.presentation_id
     state.status = result.status

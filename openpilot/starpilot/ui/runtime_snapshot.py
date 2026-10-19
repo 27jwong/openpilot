@@ -41,7 +41,7 @@ from openpilot.starpilot.ui.home_state import HomeMode, HomeState
 from openpilot.starpilot.ui.onroad_state import conditional_lead_from_message
 from openpilot.starpilot.ui.onroad_state import (AlertSize, BorderSignals, ObservationKind, OnroadAlert,
                                                 OnroadState, SpeedLimitObservation, is_personality_notice, speed_limit_from_message)
-from openpilot.starpilot.ui.unified_speed_presentation import displayed_adjusted_limit_mps, displayed_limit_mps, positive
+from openpilot.starpilot.ui.unified_speed_presentation import displayed_adjusted_limit_mps, displayed_limit_mps, positive, retaining_limit
 from openpilot.starpilot.ui.onroad_stopped_timer import StoppedTimer
 from openpilot.starpilot.ui.onroad_lane_alerts import lateral_lane_alert
 from openpilot.starpilot.ui.onroad_camera import ReverseDriverCamera
@@ -568,6 +568,8 @@ class RuntimeSnapshotAdapter:
       observation = SpeedLimitObservation(kind=ObservationKind.STALE)
     if mode != ShellMode.ONROAD or drive_key is None:
       self._slc_sign_cache = None
+    elif retaining_limit(observation):
+      self._slc_sign_cache = None
     elif observation.kind == ObservationKind.VALID and slc is not None:
       shown_mps = displayed_limit_mps(observation)
       if positive(shown_mps):
@@ -594,7 +596,8 @@ class RuntimeSnapshotAdapter:
         self._slc_sign_cache = None
     else:
       self._slc_sign_cache = None
-    if (slc is not None and (slc.enabled or slc.displayOnly) and observation.kind != ObservationKind.VALID):
+    if (slc is not None and (slc.enabled or slc.displayOnly) and observation.kind != ObservationKind.VALID and
+        not retaining_limit(observation)):
       # SLC is on but has no limit right now: keep the limit half of the card (as "–")
       # instead of letting it come and go with the source.
       observation = SpeedLimitObservation(kind=ObservationKind.STALE, source=observation.source, status=observation.status,

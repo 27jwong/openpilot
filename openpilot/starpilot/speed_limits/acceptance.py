@@ -168,6 +168,16 @@ class Decision:
   policy: Policy | None = None
 
 
+def previous_limit_is_qualified(decision: Decision) -> bool:
+  """Recognize retained control after the caller validates the decision structure."""
+  accepted = decision.state.accepted
+  return (not decision.errors and decision.basis == "previous_accepted" and
+          decision.policy is not None and decision.policy.fallback_previous is True and not decision.policy.display_only and
+          decision.authority is not None and decision.authority.can_control and
+          decision.state.observation.kind is not ObservationKind.VALID and accepted is not None and
+          decision.control_target_mps is not None and decision.control_target_mps == accepted.candidate.speed_mps)
+
+
 def _token(value: object) -> bool:
   return type(value) is str and 0 < len(value) <= 256 and bool(value.strip()) and not any(ord(c) < 32 for c in value)
 
@@ -376,14 +386,14 @@ def step(state: State, observation: Observation, authority: Authority, policy: P
     return finish("display_only")
   if observation.kind is not ObservationKind.VALID:
     state = replace(state, pending=None, timer_running=False,
-                    accepted=None if policy.vision_driver_confirm and state.accepted is not None and
+                    accepted=None if policy.vision_driver_confirm and not policy.fallback_previous and state.accepted is not None and
                     state.accepted.candidate.source == 'vision' else state.accepted)
-    target = previous_target() if observation.kind is ObservationKind.ABSENT and policy.fallback_previous else None
+    target = previous_target() if policy.fallback_previous else None
     return finish("previous_accepted" if target is not None else observation.kind.value, target=target)
 
   assert candidate is not None
   vision_confirm = policy.vision_driver_confirm and candidate.source == 'vision'
-  if (policy.vision_driver_confirm and state.accepted is not None and
+  if (policy.vision_driver_confirm and not policy.fallback_previous and state.accepted is not None and
       state.accepted.candidate.source == 'vision' and state.accepted.candidate != candidate):
     state = replace(state, accepted=None)
   if adopt_receipt is not None and adopt_receipt.status == "seen":
@@ -405,17 +415,20 @@ def step(state: State, observation: Observation, authority: Authority, policy: P
     state = replace(state, pending=None, timer_running=False)
     return finish("rejected", target=previous_target())
 
-  if authority.fully_disengaged and not vision_confirm:
-    state, history = _accept(state, candidate, now_ns)
-    return finish("disengaged_accept", history=history)
-
   if vision_confirm and state.accepted is not None and state.accepted.candidate == candidate:
+    state = replace(state, pending=None, timer_running=False)
     return finish("driver_confirmed_vision", target=candidate.speed_mps if authority.can_control else None)
 
   previous_speed = state.accepted.candidate.speed_mps if state.accepted is not None else None
+  if not vision_confirm and (policy.confirm_lower or policy.confirm_higher) and candidate.speed_mps == previous_speed:
+    state = replace(state, pending=None, timer_running=False)
+    return finish("accepted", target=previous_target())
   confirmation = True if vision_confirm else policy.confirm_higher if previous_speed is None or candidate.speed_mps > previous_speed else (
     policy.confirm_lower if candidate.speed_mps < previous_speed else False)
   if not confirmation:
+    if authority.fully_disengaged:
+      state, history = _accept(state, candidate, now_ns)
+      return finish("disengaged_accept", history=history)
     if authority.can_control:
       state, history = _accept(state, candidate, now_ns)
       return finish("accepted", target=candidate.speed_mps, history=history)

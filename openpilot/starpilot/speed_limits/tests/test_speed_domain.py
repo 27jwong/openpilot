@@ -162,6 +162,22 @@ class SpeedDomainTests(unittest.TestCase):
         self.assertEqual(result.status, sd.DomainStatus.INVALID)
         self.assertIsNone(result.context)
 
+  def test_retained_target_requires_enabled_policy_and_matching_accepted_history(self):
+    self.decision(1, source=acc.ObservationKind.UNKNOWN)
+    pair = sd.SpeedPair(sd.DomainStatus.VALID, 20.0, 20.0, SESSION, 1)
+    self.assertEqual(sd.resolve(self.accepted, SCHEDULE, pair, pair).status, sd.DomainStatus.VALID)
+    for forged in (replace(self.accepted, basis='accepted'),
+                   replace(self.accepted, policy=replace(POLICY, fallback_previous=False)),
+                   replace(self.accepted, control_target_mps=21.0),
+                   replace(self.accepted, state=replace(self.accepted.state, accepted=None))):
+      with self.subTest(forged=forged):
+        self.assertEqual(sd.resolve(forged, SCHEDULE, pair, pair).status, sd.DomainStatus.INVALID)
+        assert forged.policy is not None
+        override = ov.step(ov.new_session(SESSION), forged, ACTIVE, forged.policy,
+                           ov.SelectedEvidence(ov.EvidenceKind.VALID, 20.0), PEDAL_OFF, now_ns=1)
+        self.assertTrue(override.errors)
+        self.assertIsNone(override.contribution_mps)
+
   def test_cluster_measurements_below_raw_clamp_both_deltas_to_zero(self):
     _, coordinate = self.frame(0, selected_raw=20.0, selected_cluster=19.0,
                                ego_raw=20.0, ego_cluster=19.0)

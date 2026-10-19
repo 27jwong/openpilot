@@ -501,6 +501,10 @@ class RuntimeReplayTests(unittest.TestCase):
     settings = parse({'SpeedLimitController': True, 'SLCPriority1': 'Dashboard', 'SLCConfirmation': True, 'SLCConfirmationLower': True})
     runtime = Runtime(settings, session_id='physical-reject')
     first = runtime.step(self.sm, self.cp, now_ns=2_000_000_000)
+    self.assertTrue(first.message.slcState.hasPending)
+    self.sm.advance(2_010_000_000)
+    first = runtime.step(self.sm, self.cp, now_ns=2_010_000_000,
+                         request=Action(runtime.session_id, 1, first.message.slcState.decisionId, 0, 'accept'))
     self.assertTrue(first.message.slcState.hasAccepted)
     source = self.sm['slcDashboardObservation']
     source.speedMps = 15.0
@@ -515,6 +519,8 @@ class RuntimeReplayTests(unittest.TestCase):
                                                      2_100_000_000, 'confirmationReject', runtime.session_id,
                                                      pending.decisionId, pending.presentationId))
     self.assertEqual(rejected.message.slcState.actionStatus, 'reject')
+    self.assertEqual(rejected.result.acceptance.basis, 'driver_reject')
+    self.assertEqual(rejected.result.acceptance.state.accepted, first.result.acceptance.state.accepted)
     self.assertFalse(rejected.message.slcState.hasPending)
     self.assertIsNone(rejected.command)
     self.assertEqual(runtime.ledger.transactions, ())
@@ -1158,9 +1164,24 @@ class RuntimeReplayTests(unittest.TestCase):
     stale = runtime.step(self.sm, self.cp, now_ns=9_100_000_000)
     self.assertEqual(runtime._observations(self.sm, self.cp, 9_100_000_000)[Source.DASHBOARD].kind, ObservationKind.STALE)
     self.assertEqual(stale.message.slcState.observationKind, 'stale')  # both configured slots use the expired dashboard
-    self.assertFalse(stale.message.slcState.hasCeiling)
+    self.assertTrue(stale.message.slcState.hasCeiling)
+    self.assertEqual(stale.result.acceptance.basis, 'previous_accepted')
+    self.assertEqual(stale.result.override.contribution_mps, 105 / 3.6)
     planner.update(self.sm, cruise_ceiling=stale.result.ceiling)
-    self.assertEqual(planner.last_cruise_ceiling_status, 'absent')
+    self.assertEqual(planner.last_cruise_ceiling_status, 'applied')
+    self.assertAlmostEqual(stale.result.ceiling.speed_mps, 105 / 3.6)
+    for sequence, kind, previous, selected in ((2, 'accel', 105, 110), (3, 'decel', 110, 100)):
+      now = 9_100_000_000 + sequence * 50_000_000
+      self.sm['carState'].vCruise = self.sm['carState'].vCruiseCluster = float(selected)
+      self.sm.advance(now)
+      adjusted = runtime.step(self.sm, self.cp, now_ns=now,
+        cruise_event=CruiseEvent(sequence, now - 40_000_000, previous / 3.6, selected / 3.6, kind,
+                                 'replay-card', now - 30_000_000))
+      self.assertFalse(adjusted.result.errors)
+      self.assertFalse(adjusted.message.slcState.hasPending)
+      self.assertEqual(adjusted.result.override.event_receipt.status, 'driver_intent')
+      self.assertEqual(adjusted.result.override.contribution_mps, selected / 3.6)
+      self.assertEqual(adjusted.result.acceptance.state.accepted, first.result.acceptance.state.accepted)
 
   def test_pending_action_receipt_and_stock_gate(self):
     settings = parse({'SpeedLimitController': True, 'SLCPriority1': 'Dashboard', 'SLCConfirmation': True, 'SLCConfirmationLower': True})

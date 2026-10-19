@@ -177,8 +177,6 @@ def _acceptance_valid(decision: object, authority: object, policy: object, sessi
       decision.authority != authority or decision.policy != policy or
       not acc.observation_is_valid(decision.state.observation, session_id=session_id)):
     return False
-  if decision.state.observation.kind in (acc.ObservationKind.UNKNOWN, acc.ObservationKind.STALE):
-    return decision.control_target_mps is None
   if policy.display_only or not authority.can_control:
     return decision.control_target_mps is None
   if decision.control_target_mps is None:
@@ -187,9 +185,7 @@ def _acceptance_valid(decision: object, authority: object, policy: object, sessi
   if (accepted is None or not _token(accepted.session_id) or not _speed(accepted.candidate.speed_mps) or
       decision.control_target_mps != accepted.candidate.speed_mps):
     return False
-  if decision.state.observation.kind is acc.ObservationKind.ABSENT:
-    return policy.fallback_previous and decision.basis == "previous_accepted"
-  return decision.state.observation.kind is acc.ObservationKind.VALID
+  return decision.state.observation.kind is acc.ObservationKind.VALID or acc.previous_limit_is_qualified(decision)
 
 
 def step(state: State, acceptance: acc.Decision, authority: acc.Authority, policy: acc.Policy,
@@ -277,7 +273,6 @@ def step(state: State, acceptance: acc.Decision, authority: acc.Authority, polic
       adopted_now = True
 
   eligible = (authority.can_control and not policy.display_only and acceptance.control_target_mps is not None and
-              acceptance.state.observation.kind in (acc.ObservationKind.VALID, acc.ObservationKind.ABSENT) and
               selected.kind is EvidenceKind.VALID and pedal.kind is EvidenceKind.VALID and not domain_unavailable)
   if not eligible:
     # Only temporary inactivity under the same selected mode and owner gets a grace period.

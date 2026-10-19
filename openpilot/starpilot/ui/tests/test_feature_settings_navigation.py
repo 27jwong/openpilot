@@ -642,10 +642,10 @@ class FeatureNavigationTests(unittest.TestCase):
            patch.object(compact.gui_app, "push_widget", pushed.append), patch.object(compact.gui_app, "texture", lambda *args: None):
         adapter.open("slc")
         slc = pushed[-1]
-        self.assertIsInstance(card(slc, "confirm lower limits"), ReadButton)
+        self.assertFalse(any(item.text in ('confirm lower limits', 'confirm higher limits') for item in slc.items))
         card(slc, "require confirmation").click()
-        self.assertIsInstance(card(slc, "confirm lower limits"), Button)
-        self.assertNotIsInstance(card(slc, "confirm lower limits"), ReadButton)
+        self.assertTrue(params.get_bool('SLCConfirmation'))
+        self.assertFalse(any(item.text in ('confirm lower limits', 'confirm higher limits') for item in slc.items))
 
         adapter.open("aggressive/acceleration")
         curve = pushed[-1]

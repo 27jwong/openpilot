@@ -434,24 +434,27 @@ def speed_limit_from_message(message: SlcStateMessage | None) -> SpeedLimitObser
     kind = ObservationKind(message.observationKind)
   except (ValueError, AttributeError):
     return SpeedLimitObservation(kind=ObservationKind.UNKNOWN, status="Invalid SLC observation kind")
-  if kind != ObservationKind.VALID:
+  if kind != ObservationKind.VALID and not (getattr(message, 'hasAccepted', False) and
+                                           getattr(message, 'hasCeiling', False) and
+                                           getattr(message, 'hasEffectiveClusterTarget', False)):
     return SpeedLimitObservation(kind=kind, source=message.source, status=message.status,
                                  source_readings=source_readings_from_message(message))
   try:
-    return SpeedLimitObservation(kind=kind, source=message.source, speed_limit_mps=message.speedLimit,
+    live = kind == ObservationKind.VALID
+    return SpeedLimitObservation(kind=kind, source=message.source, speed_limit_mps=message.speedLimit if live else None,
                                  source_readings=source_readings_from_message(message),
                                  offset_mps=message.offset,
-                                 pending_speed_limit_mps=message.pendingSpeedLimit if message.hasPending else None,
+                                 pending_speed_limit_mps=message.pendingSpeedLimit if live and message.hasPending else None,
                                  effective_cap_mps=message.effectiveCap if message.hasCeiling else None,
                                  accepted_speed_limit_mps=message.acceptedSpeedLimit if message.hasAccepted else None,
                                  accepted_source=str(getattr(message, "acceptedSource", "none")) or "none",
-                                 pending_source=str(getattr(message, "pendingSource", "none")) or "none",
+                                 pending_source=(str(getattr(message, "pendingSource", "none")) or "none") if live else "none",
                                  effective_cluster_target_mps=(getattr(message, "effectiveClusterTarget", None)
                                    if getattr(message, "hasEffectiveClusterTarget", False) else None),
                                  limiting_max_set=bool(getattr(message, "isLimitingMaxSet", False)),
                                  driver_override_active=bool(getattr(message, "driverOverrideActive", False)),
-                                 session_id=message.sessionId, decision_id=message.decisionId,
-                                 presentation_id=message.presentationId, status=message.status,
+                                 session_id=message.sessionId, decision_id=message.decisionId if live else None,
+                                 presentation_id=message.presentationId if live else None, status=message.status,
                                  action_enabled=bool(getattr(message, "enabled", False)),
                                  action_sequence_id=int(getattr(message, "actionSequenceId", 0)),
                                  action_status=str(getattr(message, "actionStatus", "")),
