@@ -1,5 +1,6 @@
 """Reconcile interrupted updater requests without bypassing update admission."""
 from datetime import datetime
+from typing import cast
 import unittest
 from unittest import mock
 from openpilot.starpilot.galaxy.tests import test_software_operations as fixture
@@ -9,7 +10,7 @@ RESTART_DETAIL = "Update process restarted before completion; check the installe
 
 class UpdateInterruptionTest(unittest.TestCase):
   def setUp(self):
-    fixture.SoftwareOperationsTest.setUp(self)
+    fixture.SoftwareOperationsTest.setUp(cast(fixture.SoftwareOperationsTest, self))
     self.identity = (100, 1000)
     self.process.current_identity = lambda: self.identity if self.process.running else None
     original_send = self.process.send
