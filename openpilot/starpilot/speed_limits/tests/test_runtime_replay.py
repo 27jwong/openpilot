@@ -1183,6 +1183,84 @@ class RuntimeReplayTests(unittest.TestCase):
       self.assertEqual(adjusted.result.override.contribution_mps, selected / 3.6)
       self.assertEqual(adjusted.result.acceptance.state.accepted, first.result.acceptance.state.accepted)
 
+  def _runtime_with_set_speed_override(self, lateral):
+    self.setUp()
+    self.sm['carControl'].latActive = lateral
+    runtime = Runtime(parse({'SpeedLimitController': True, 'SLCPriority1': 'Dashboard'}), session_id='pedal-drive')
+    runtime.step(self.sm, self.cp, now_ns=2_000_000_000)
+    self.sm['carState'].vCruise = self.sm['carState'].vCruiseCluster = 105.0
+    self.sm.advance(2_050_000_000)
+    armed = runtime.step(self.sm, self.cp, now_ns=2_050_000_000,
+      cruise_event=CruiseEvent(1, 2_010_000_000, 100 / 3.6, 105 / 3.6, 'accel', 'replay-card', 2_020_000_000))
+    self.assertEqual(armed.result.override.contribution_mps, 105 / 3.6)
+    return runtime
+
+  def test_accelerator_release_restores_saved_override_after_long_hold(self):
+    for lateral, delayed_resume in product((False, True), (False, True)):
+      with self.subTest(lateral=lateral, delayed_resume=delayed_resume):
+        runtime = self._runtime_with_set_speed_override(lateral)
+        self.sm['carState'].gasPressed = True
+        self.sm['carState'].vEgo = self.sm['carState'].vEgoCluster = 32.0
+        self.sm['carControl'].longActive = False
+        self.sm['controlsState'].longControlState = 'off'
+        for now in (2_100_000_000, 3_100_000_000, 5_100_000_000):
+          self.sm.advance(now)
+          held = runtime.step(self.sm, self.cp, now_ns=now)
+          self.assertFalse(held.result.errors)
+          self.assertIsNone(held.result.ceiling)
+          self.assertIsNone(held.result.override.contribution_mps)
+          self.assertIsNone(held.result.override.context)
+          self.assertEqual(held.result.state.override.persistent_selected_mps, 105 / 3.6)
+          self.assertTrue(held.message.slcState.retainedOverride)
+          self.assertFalse(held.result.acceptance.authority.can_control)
+        self.sm['carState'].gasPressed = False
+        if delayed_resume:
+          self.sm.advance(5_200_000_000)
+          waiting = runtime.step(self.sm, self.cp, now_ns=5_200_000_000)
+          self.assertIsNone(waiting.result.ceiling)
+          self.assertEqual(waiting.result.state.override.persistent_selected_mps, 105 / 3.6)
+        self.sm['carControl'].longActive = True
+        self.sm['controlsState'].longControlState = 'pid'
+        self.sm.advance(5_300_000_000)
+        resumed = runtime.step(self.sm, self.cp, now_ns=5_300_000_000)
+        self.assertFalse(resumed.result.errors)
+        self.assertEqual(resumed.result.override.basis, 'persistent')
+        self.assertEqual(resumed.result.ceiling.speed_mps, 105 / 3.6)
+
+  def test_disengagement_clears_saved_override_even_with_accelerator_held(self):
+    for lateral, pressed, disabled_service in product((False, True), (False, True), ('selfdriveState', 'carControl')):
+      with self.subTest(lateral=lateral, pressed=pressed, disabled_service=disabled_service):
+        runtime = self._runtime_with_set_speed_override(lateral)
+        self.sm['carState'].gasPressed = pressed
+        self.sm['carControl'].longActive = False
+        self.sm['controlsState'].longControlState = 'off'
+        self.sm[disabled_service].enabled = False
+        self.sm.advance(2_100_000_000)
+        disengaged = runtime.step(self.sm, self.cp, now_ns=2_100_000_000)
+        self.assertIsNone(disengaged.result.ceiling)
+        self.assertIsNone(disengaged.result.state.override.persistent_selected_mps)
+        self.sm[disabled_service].enabled = True
+        self.sm['carState'].gasPressed = False
+        self.sm['carControl'].longActive = True
+        self.sm['controlsState'].longControlState = 'pid'
+        self.sm.advance(2_200_000_000)
+        resumed = runtime.step(self.sm, self.cp, now_ns=2_200_000_000)
+        self.assertIsNone(resumed.result.override.contribution_mps)
+        self.assertEqual(resumed.result.ceiling.speed_mps, 25.0)
+
+  def test_stale_engagement_evidence_cannot_preserve_accelerator_override(self):
+    for lateral, service in product((False, True), ('carState', 'carControl', 'controlsState', 'selfdriveState')):
+      with self.subTest(lateral=lateral, service=service):
+        runtime = self._runtime_with_set_speed_override(lateral)
+        self.sm['carState'].gasPressed = True
+        self.sm['carControl'].longActive = False
+        self.sm['controlsState'].longControlState = 'off'
+        self.sm.advance(2_100_000_000)
+        self.sm.valid[service] = False
+        stale = runtime.step(self.sm, self.cp, now_ns=2_100_000_000)
+        self.assertIsNone(stale.result.ceiling)
+        self.assertIsNone(stale.result.state.override.persistent_selected_mps)
+
   def test_pending_action_receipt_and_stock_gate(self):
     settings = parse({'SpeedLimitController': True, 'SLCPriority1': 'Dashboard', 'SLCConfirmation': True, 'SLCConfirmationLower': True})
     runtime = Runtime(settings, session_id='receipt-drive')

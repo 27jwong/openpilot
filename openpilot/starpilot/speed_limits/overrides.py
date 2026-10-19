@@ -280,7 +280,8 @@ def step(state: State, acceptance: acc.Decision, authority: acc.Authority, polic
                             authority.mode in (acc.Mode.LONGITUDINAL_ONLY, acc.Mode.COMBINED) and
                             authority.owner is acc.LongitudinalOwner.SYSTEM)
     if temporary_inactivity:
-      started = old.suspension_started_ns if old.suspension_started_ns is not None else now_ns
+      # A held accelerator pauses output; start recovery grace from its latest sample.
+      started = now_ns if pedal.pressed or old.suspension_started_ns is None else old.suspension_started_ns
       state = replace(state, suspension_started_ns=started)
       if now_ns - started >= SUSPENSION_NS:
         state = replace(state, persistent_selected_mps=None)

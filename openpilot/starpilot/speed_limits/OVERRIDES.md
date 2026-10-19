@@ -39,10 +39,14 @@ The current valid pedal press contributes the current ego speed when above the
 accepted target, temporarily preceding persistent intent. Releasing the pedal
 reveals retained persistence. Pedal speed is never latched. Temporary inactive
 system-longitudinal authority suppresses output immediately and invalidates the
-origin context. Persistent intent remains latent for less than 750 ms in the same
-mode and owner; at or after 750 ms it clears before a resumed output. Mode or
-owner changes clear immediately. Display-only never contributes or consumes an
-effect. Stock setpoint buttons are a separate capability and output domain.
+origin context. Fresh enabled engagement retains system ownership while the
+accelerator pauses longitudinal output. A valid held pedal renews the suspension
+timestamp without producing a contribution or ceiling during that pause. After
+the last held-pedal sample, persistent intent remains latent for less than 750 ms
+in the same mode and owner; at or after 750 ms it clears before a resumed output.
+Normal disengagement, stale engagement evidence, and mode or owner changes clear
+immediately. Display-only never contributes or consumes an effect. Stock setpoint
+buttons are a separate capability and output domain.
 
 Malformed evidence, a reversed clock, or an invalid acceptance snapshot clears
 intent and origin context, then latches `reset_required`. Further calls in that

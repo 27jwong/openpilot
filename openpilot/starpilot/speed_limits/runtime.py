@@ -76,12 +76,12 @@ def _lead(sm, now_ns: int) -> lr.LeadEvidence:
   return lr.LeadEvidence(lr.LeadKind.VALID, True, True, float(lead.dRel), float(lead.vLeadK), float(lead.aLeadK))
 
 
-def _authority(CP, sm, host_long: bool, lateral: bool) -> acc.Authority:
+def _authority(CP, sm, host_long: bool, lateral: bool, *, long_enabled: bool) -> acc.Authority:
   car_state = sm["carState"]
   stock = not bool(CP.openpilotLongitudinalControl) and bool(car_state.cruiseState.enabled)
-  if bool(CP.openpilotLongitudinalControl) and host_long:
+  if bool(CP.openpilotLongitudinalControl) and (host_long or long_enabled):
     return acc.Authority(acc.Mode.COMBINED if lateral else acc.Mode.LONGITUDINAL_ONLY,
-                         acc.LongitudinalOwner.SYSTEM, lateral, True, False, False)
+                         acc.LongitudinalOwner.SYSTEM, lateral, host_long, False, False)
   if stock:
     return acc.Authority(acc.Mode.LATERAL_ONLY if lateral else acc.Mode.OFF,
                          acc.LongitudinalOwner.STOCK, lateral, False, True, False)
@@ -330,8 +330,10 @@ class Runtime:
     long_active = str(controls.longControlState) != "off" if controls_fresh else False
     host_long = bool(CP.openpilotLongitudinalControl and long_active and car_control_fresh and sm['carControl'].longActive and
                      selfdrive.enabled and car_fresh and selfdrive_fresh)
+    long_enabled = bool(car_fresh and controls_fresh and selfdrive_fresh and car_control_fresh and
+                        selfdrive.enabled and sm['carControl'].enabled)
     lateral = bool(car_control_fresh and sm['carControl'].latActive and selfdrive_fresh)
-    authority = _authority(CP, sm, host_long, lateral)
+    authority = _authority(CP, sm, host_long, lateral, long_enabled=long_enabled)
     selected = float(car_state.vCruise) if car_fresh and _number(car_state.vCruise) else 0.0
     selected_cluster = float(car_state.vCruiseCluster) if car_fresh and _number(car_state.vCruiseCluster) else None
     ego_valid = car_fresh and _number(car_state.vEgo) and _number(car_state.vEgoCluster)
