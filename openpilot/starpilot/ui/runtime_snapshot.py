@@ -562,7 +562,7 @@ class RuntimeSnapshotAdapter:
       cruise = None
     stock_cruise = bool(display_car_valid and
                         bool(getattr(getattr(display_car, "cruiseState", None), "enabled", False)) and
-                        cp is not None and (not cp.openpilotLongitudinalControl or cp.pcmCruise))
+                        cp is not None and not cp.openpilotLongitudinalControl)
     observation = speed_limit_from_message(slc) if slc is not None and (slc.enabled or slc.displayOnly) else SpeedLimitObservation()
     if slc is None and started:
       observation = SpeedLimitObservation(kind=ObservationKind.STALE)

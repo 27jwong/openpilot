@@ -35,6 +35,19 @@ def eligible(cp):
     return False
 
 
+def button_reported(cp, key):
+  """Match known parser omissions without changing other ports' button contracts."""
+  if cp.brand == 'toyota':
+    # Toyota CarState emits LKAS and distance events, never Cancel.
+    if key in KEYS[5:8]:
+      return False
+    if key == 'LKASButtonControl':
+      from opendbc.car.toyota.values import CAR, ToyotaFlags
+      return bool(cp.flags & (ToyotaFlags.TSS2 | ToyotaFlags.LONG_FILTER) or
+                  cp.carFingerprint == CAR.TOYOTA_PRIUS_RETROFIT)
+  return True
+
+
 def cp_fingerprint(cp):
   reader = cp.as_reader() if hasattr(cp, "as_reader") else cp
   return hashlib.sha256(reader.as_builder().to_bytes()).hexdigest()
@@ -154,7 +167,7 @@ class WheelPublisher:
         if index < len(keys):
           gestures.append((keys[index], gesture))
     commands = [(key, mapping[key]) for key, _ in gestures if key is not None and key not in blocked_keys and
-                key not in self.axis_keys and mapping[key] in DELIVERED_ACTIONS and
+                key not in self.axis_keys and button_reported(cp, key) and mapping[key] in DELIVERED_ACTIONS and
                 (key != "MainCruiseButtonControl" or mapping[key] == 10)]
     if commands and not audit:
       current = capture(params)
@@ -231,7 +244,7 @@ class WheelConsumer:
       if action == 0:
         if key:
           return None
-      elif key not in KEYS or action not in DELIVERED_ACTIONS:
+      elif key not in KEYS or action not in DELIVERED_ACTIONS or not button_reported(cp, key):
         return None
       else:
         mapping = capture(params)

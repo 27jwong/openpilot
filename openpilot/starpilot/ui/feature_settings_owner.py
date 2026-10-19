@@ -37,8 +37,7 @@ from openpilot.starpilot.ui.feature_settings_state import (
 )
 from openpilot.starpilot.speed_limits.runtime_settings import MPH_TO_MPS
 from openpilot.starpilot.aol.vehicle import policy_for as aol_policy_for
-from openpilot.starpilot.longitudinal.ioniq6_start import eligible as ioniq6_long_eligible
-from opendbc.car.gm.feature_capabilities import longitudinal_supported as gm_longitudinal_supported
+from openpilot.starpilot.feature_capabilities import longitudinal_supported as feature_longitudinal_supported
 from openpilot.starpilot.lateral.torque_settings import DOCUMENT_KEY, LEGACY_KEYS
 from openpilot.starpilot.ui.torque_feature import TorqueFeature
 from openpilot.starpilot.ui.controller_feature import ControllerFeature, SETUP_ACTION
@@ -812,7 +811,7 @@ class FeatureSettingsOwner:
       title = "Curve Speed Controller"
       allowed = configurable and system_long and self.authority("long")
       vehicle_cp = self.vehicle_params()
-      curve_supported = vehicle_cp is not None and (ioniq6_long_eligible(vehicle_cp) or gm_longitudinal_supported(vehicle_cp))
+      curve_supported = feature_longitudinal_supported(vehicle_cp)
       learning = learning_snapshot(self.params)
       document_raw = self._raw(CURVE_DOCUMENT_KEY)
       dependencies = ((CURVE_DOCUMENT_KEY, document_raw),)

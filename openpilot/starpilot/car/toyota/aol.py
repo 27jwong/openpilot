@@ -52,10 +52,14 @@ def qualified(cp, *, marked_only=False):
 
 
 def policy_for(cp):
+  from openpilot.starpilot.controllers.wheel_actions import button_reported, eligible
+
   admitted = qualified(cp)
+  auxiliary_lkas = bool(eligible(cp) and cp.brand == 'toyota' and button_reported(cp, 'LKASButtonControl'))
   return AolVehiclePolicy(intent_supported=admitted, settings_supported=admitted, runtime_supported=admitted,
                           normal_runtime_supported=admitted, ordinary_axis_ack_required=qualified(cp, marked_only=True),
                           full_axis_runtime_required=admitted, fixed_cruise_buttons=admitted, distance_pause_only=admitted,
+                          auxiliary_lkas_supported=auxiliary_lkas,
                           alternative_experience_addition=32 if admitted else 0)
 
 

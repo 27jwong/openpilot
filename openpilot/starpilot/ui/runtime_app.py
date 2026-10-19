@@ -668,7 +668,7 @@ class StarShellSession:
         return bool(cp.openpilotLongitudinalControl and not cp.notCar and not cp.passive and not cp.dashcamOnly)
       if group in ("aol_wheel", "lane", "torque", "aol"):
         return not cp.notCar and not cp.passive and not cp.dashcamOnly
-      return bool(cp.openpilotLongitudinalControl and not cp.pcmCruise and not cp.notCar and
+      return bool(cp.openpilotLongitudinalControl and not cp.notCar and
                   not cp.passive and not cp.dashcamOnly)
     return False
 

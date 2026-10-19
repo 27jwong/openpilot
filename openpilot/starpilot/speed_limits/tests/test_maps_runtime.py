@@ -227,7 +227,12 @@ def test_cached_provider_verification_invalidates_on_replacement_and_source_addi
     os.utime(binary, ns=(prior.st_atime_ns, prior.st_mtime_ns + 1_000_000_000))
     assert binary.stat().st_mtime_ns != prior.st_mtime_ns
     assert ready() and len(calls) == 3
+    prior_source = source.stat()
     (source / 'new.go').write_bytes(b'package main')
+    # Directory additions can share a metadata timestamp tick too. The cache
+    # watches directory identity before enumerating newly added source files.
+    os.utime(source, ns=(prior_source.st_atime_ns, prior_source.st_mtime_ns + 1_000_000_000))
+    assert source.stat().st_mtime_ns != prior_source.st_mtime_ns
     assert not ready() and len(calls) == 4
 
 

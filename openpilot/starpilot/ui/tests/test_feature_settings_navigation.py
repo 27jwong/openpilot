@@ -123,7 +123,7 @@ class FeatureNavigationTests(unittest.TestCase):
           session.feature_owner = FeatureSettingsOwner(params, session._feature_authority,
             vehicle_fingerprint=lambda: vehicle.carFingerprint, vehicle_params=lambda: vehicle)
           with patch.object(runtime_app, 'ui_state', NS(CP=vehicle)):
-            self.assertFalse(session._feature_authority('long'))
+            self.assertTrue(session._feature_authority('long'))
             self.assertTrue(session._feature_authority('toyota_cruise'))
             for expected in (True, False):
               state = session.feature_owner.snapshot('profiles', parked=True, system_long=False,
@@ -144,7 +144,7 @@ class FeatureNavigationTests(unittest.TestCase):
           other = HondaCarInterface.get_non_essential_params(HONDA_CAR.HONDA_CIVIC)
           with patch.object(runtime_app, 'ui_state', NS(CP=other)):
             self.assertFalse(session._feature_authority('toyota_cruise'))
-            self.assertFalse(session._feature_authority('long'))
+            self.assertTrue(session._feature_authority('long'))
 
   def test_native_saved_preferences_need_settings_or_favorite_context_not_cp(self):
     from openpilot.starpilot.ui import runtime_app
@@ -154,9 +154,14 @@ class FeatureNavigationTests(unittest.TestCase):
     session = runtime_app.StarShellSession.__new__(runtime_app.StarShellSession)
     session._mode = runtime_app.ShellMode.SETTINGS
     with patch.object(session, "confirmed_offroad", return_value=True), patch.object(runtime_app, "ui_state", NS(CP=cp)):
+      self.assertTrue(session._feature_authority("long"))
+      self.assertTrue(session._feature_authority("preferences"))
+      cp.openpilotLongitudinalControl = False
       self.assertFalse(session._feature_authority("long"))
       self.assertTrue(session._feature_authority("preferences"))
+      cp.openpilotLongitudinalControl = True
       cp.passive = True
+      self.assertFalse(session._feature_authority("long"))
       self.assertTrue(session._feature_authority("preferences"))
     with patch.object(session, "confirmed_offroad", return_value=True), patch.object(runtime_app, "ui_state", NS(CP=None)):
       self.assertTrue(session._feature_authority("preferences"))
