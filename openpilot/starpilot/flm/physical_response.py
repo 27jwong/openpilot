@@ -96,6 +96,7 @@ def fit_physical(identity, domain, context, rows, *, lag_ns, min_excitation, max
   for row in rows:
     if (not row.healthy or row.overridden or row.saturated or row.context != context or
         row.direction not in ('left', 'right') or
+        row.command > 0 and row.direction != 'left' or row.command < 0 and row.direction != 'right' or
         type(row.command_ns) is not int or type(row.response_ns) is not int or
         not 0 < row.command_ns <= row.response_ns <= now_ns or row.command_ns < now_ns - history_ns or not math.isfinite(row.command) or
         not math.isfinite(row.physical_response) or row.command_ns <= previous or
@@ -105,7 +106,8 @@ def fit_physical(identity, domain, context, rows, *, lag_ns, min_excitation, max
   train = [row for row in rows if row.block_id in train_ids]
   heldout = [row for row in rows if row.block_id in heldout_ids]
   for group in (train, heldout):
-    if any(len({row.block_id for row in group if row.direction == direction}) < 2 for direction in ('left', 'right')):
+    if any(len({row.block_id for row in group if (row.command > 0 if direction == 'left' else row.command < 0)}) < 2
+           for direction in ('left', 'right')):
       return None
   mean_x = sum(row.command for row in train) / len(train)
   mean_y = sum(row.physical_response for row in train) / len(train)
