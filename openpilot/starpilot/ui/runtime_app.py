@@ -267,7 +267,7 @@ class StarShellSession:
         self._visual_preview_flags = parse_flags(raw_preview)
     self._visual_preview_start_ns = time.monotonic_ns()
     self._native_favorite_actions: Callable[[], dict] = dict
-    # The native layout's bookmark publisher, for car-screen taps that are not taps on this screen.
+    # Native publisher for taps on the projected car screen.
     self._publish_bookmark: Callable[[], None] | None = None
     self._wheel_sock = messaging.sub_sock("slcCruiseEvent", conflate=False)
     self._aol_save = None
@@ -300,8 +300,7 @@ class StarShellSession:
     if getattr(ui_state, "replay_clock", None) is not None:
       return False
     if getattr(self, "_projection_tap", False):
-      # A car-screen tap acts whenever onroad with live car state, like a bookmark tap:
-      # the comma screen's page, alerts and camera (or the screen being off) do not gate it.
+      # Projected taps need live onroad state, regardless of this screen's page or visibility.
       return bool(ui_state.started and display_message(ui_state.sm, 'carState', time.monotonic_ns(),
                                                        after_frame=ui_state.started_frame) is not None)
     if self._mode != ShellMode.ONROAD:
@@ -489,9 +488,8 @@ class StarShellSession:
     receiver = getattr(self, '_projection_bookmarks', None)
     if receiver is None:
       return
-    # A car-screen tap bookmarks whenever onroad with live car state, like the wheel button: this
-    # screen's alerts and page do not gate it. A render frame gap past carState's 20 ms control
-    # limit must not drop it either (drained requests are not retried).
+    # Bookmark taps use live onroad state, independent of this screen's page or alerts.
+    # A render gap beyond the 20 ms control limit must not lose drained requests.
     publish = getattr(self, '_publish_bookmark', None)
     authorized = bool(publish is not None and ui_state.started and getattr(ui_state, "replay_clock", None) is None and
                       display_message(ui_state.sm, 'carState', now_ns, after_frame=ui_state.started_frame) is not None)
@@ -503,7 +501,7 @@ class StarShellSession:
     receiver = getattr(self, '_projection_slc', None)
     if receiver is None:
       return
-    # Always drain; a request is only published if the same live-state checks as a comma-screen tap pass.
+    # Always drain; publish only when the live-state tap checks pass.
     for request in receiver.drain(now_ns):
       if not ui_state.started or getattr(ui_state, "replay_clock", None) is not None:
         continue
@@ -1789,8 +1787,7 @@ class StarCompactSettings(NavWidget):
   def _update_state(self) -> None:
     NavWidget._update_state(self)
     target = -422 * round(-self._panel.get_offset() / 422)
-    # Menu length depends only on the current pairing owner. Project the full
-    # snapshot once during rendering, after the panel has updated its offset.
+    # Project the pairing snapshot after rendering updates the panel offset.
     paired = bool(self.session.adapter.ui_state.prime_state.is_paired())
     self.session.compact_scroll_x = self._panel.update(self.rect, 20 + len(compact_menu(SettingsState(paired=paired))) * 422,
                                                         snap_target=target)
@@ -1871,8 +1868,7 @@ class StarMainLayout(MainLayout):
       self._native_onroad._hud_renderer._exp_button.request_toggle)
 
   def _confirmed_offroad(self) -> bool:
-    # The display snapshot may be cached across a touch. Recheck transport and
-    # the native layout's own gate immediately before invoking an effect owner.
+    # Cached touch snapshots need fresh transport and native gates before effects.
     return bool(ui_state.is_offroad() and self.star.adapter.confirmed_offroad())
 
   def _arabesque_allowed(self) -> bool:
@@ -2040,8 +2036,7 @@ class StarMainLayout(MainLayout):
 
   def open_settings(self, panel_type: Any) -> None:
     from openpilot.selfdrive.ui.layouts.settings.settings import PanelType
-    # The Star shell alone presents NetworkUI. Keep native SettingsLayout on a
-    # different panel so its show/hide propagation cannot start a second scan.
+    # Separate SettingsLayout from the shell's NetworkUI to avoid duplicate scans.
     native_panel = PanelType.DEVICE if panel_type == PanelType.NETWORK else panel_type
     super().open_settings(native_panel)
     if hasattr(self, "star"):
