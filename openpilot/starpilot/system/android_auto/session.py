@@ -412,8 +412,19 @@ class Session:
       self.head_unit_subject = ", ".join(f"{name}={value}" for rdn in peer_cert.get("subject", ()) for name, value in rdn)
       self.event("head_unit_verified", subject=self.head_unit_subject, expires=peer_cert.get("notAfter", ""))
     channel, kind, data = self.receive()
+    # Some head units send a trailing TLS record before the status; feed it to the engine.
+    for _ in range(4):
+      if channel != 0 or kind != MSG_SSL_HANDSHAKE:
+        break
+      self.event("late_tls_record", bytes=len(data), head=data[:24].hex())
+      self.incoming.write(data)
+      try:
+        self.tls.read(1)
+      except ssl.SSLWantReadError:
+        pass
+      channel, kind, data = self.receive()
     if channel != 0 or kind != MSG_AUTH_COMPLETE:
-      raise ValueError(f"Expected authentication status; got {channel}/{kind:#x}")
+      raise ValueError(f"Expected authentication status; got {channel}/{kind:#x} ({len(data)} bytes {data[:24].hex()})")
     status = signed(one(parse_fields(data), 1))
     if status is None or not isinstance(status, int):
       raise ValueError("Missing or invalid authentication status")
