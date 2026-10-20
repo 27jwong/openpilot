@@ -549,6 +549,8 @@ static bool gm_ascm_adas_valid(const CANPacket_t *msg) {
 }
 
 static bool gm_tx_hook(const CANPacket_t *msg) {
+  // This topology has no camera-side receiver after harness interception.
+  if (gm_volt_camera_removed && (msg->bus == 2U)) { return false; }
   const TorqueSteeringLimits GM_STEERING_LIMITS = {
     .max_torque = 300,
     .max_rate_up = 10,
@@ -1093,14 +1095,12 @@ static safety_config gm_init(uint16_t safety_param) {
 
   static const CanMsg GM_VOLT_REMOVED_STOCK_TX_MSGS[] = {
     {0x180, 0, 4, .check_relay = false}, {0x1E1, 0, 7, .check_relay = false},
-    {0x184, 2, 8, .check_relay = false},
   };
 #ifdef ALLOW_DEBUG
   static const CanMsg GM_VOLT_REMOVED_LONG_TX_MSGS[] = {
     {0x180, 0, 4, .check_relay = false}, {0x315, 0, 5, .check_relay = false},
     {0x2CB, 0, 8, .check_relay = false}, {0x370, 0, 6, .check_relay = false},
     {0x409, 0, 7, .check_relay = false}, {0x40A, 0, 7, .check_relay = false},
-    {0x184, 2, 8, .check_relay = false},
   };
 #endif
   static RxCheck gm_volt_removed_rx_checks[] = {
@@ -1850,6 +1850,10 @@ static safety_config gm_init(uint16_t safety_param) {
     SET_TX_MSGS(GM_SDGM_PEDAL_STOCK_TX, ret);
     gm_pcm_cruise = false;
   }
+
+  // A removed Volt camera leaves bus 2 unacknowledged after relay interception.
+  // Forwarding vehicle traffic there fills TX queues and stalls host CAN reads.
+  if (gm_volt_camera_removed) { ret.disable_forwarding = true; }
 
   // ASCM does not forward any messages
   if ((gm_hw == GM_ASCM) && !gm_camera_gateway) {
