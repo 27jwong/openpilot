@@ -1208,6 +1208,10 @@ class SelfdriveD:
     previous = self.aol_axis_decision
     was_enabled = self.enabled
     self.aol_axis_decision = AxisDecision()
+    if healthy_expiry and not was_enabled and self.cold_gm_main_readiness(CS, intent, now_ns):
+      self.aol_fault_reason = 'availabilityPause'
+      self.aol_publication_retained_intent = intent
+      return
     pause = getattr(self, 'aol_availability_pause', None)
     if (healthy_expiry and pause is not None and intent is not None and
         getattr(self, 'aol_fault_reason', 'none') in ('none', 'availabilityPause') and
@@ -1359,6 +1363,8 @@ class SelfdriveD:
     if source_clock_scoped:
       self._expire_axis_source(CS, now_ns)
       self._expire_axis_continuity(CS, now_ns)
+    if self.aol_axis_decision.lateral_active or self.aol_axis_decision.longitudinal_active:
+      self.aol_ever_active = True
     reason = getattr(self, 'aol_fault_reason', 'none')
     event_now_ns = now_ns
     ce_send = None
@@ -1599,6 +1605,18 @@ class SelfdriveD:
         sample.steerFaultTemporary or sample.brakePressed and not sample.standstill and
         sample.vEgo < (self.aol_settings.pause_brake_mps if self.aol_settings is not None else 0.0)
         for sample, _ in getattr(self, 'car_state_samples', ())))
+
+  def cold_gm_main_readiness(self, CS, intent, now_ns):
+    from openpilot.starpilot.car.gm.aol import cold_main_readiness
+    from openpilot.starpilot.aol.transport_pause import _healthy_transport_native
+    if (self.CP.brand != 'gm' or self.enabled or self.active or getattr(self, 'aol_ever_active', False) or self.aol_authority_lost or
+        not self.events.contains(ET.SOFT_DISABLE) or self.events.contains(ET.IMMEDIATE_DISABLE) or
+        intent is None or not intent.settingsQualified or not intent.allowedLatch or not intent.lateralArmed or
+        not 0 < intent.carStateLogMonoTime <= intent.observedMonoTime <= now_ns <= intent.validUntilMonoTime or
+        now_ns - intent.carStateLogMonoTime > SAFETY_MAX_AGE_NS):
+      return False
+    native = _healthy_transport_native(self.sm, self.CP, CS, self.aol_session_id, now_ns)
+    return cold_main_readiness(self.CP, CS, native, self.events.to_msg())
 
   def ordinary_native_long_withdrawal(self, CS, native, previous, requested, intent, *, source_current, now_ns):
     """Keep the existing ordinary Panda mismatch owner for a LONG-only drop.
@@ -1870,7 +1888,8 @@ class SelfdriveD:
           source_ns=self.aol_car_state_log_ns, now_ns=now_ns, axis_session_id=self.aol_session_id,
           pending_lateral_request=not previous.lateral_active and not self.aol_authority_lost))
         for event in self.events.to_msg())
-      self.aol_fault_reason = ('availabilityPause' if ordinary_availability else
+      cold_main_wait = self.cold_gm_main_readiness(CS, intent, now_ns)
+      self.aol_fault_reason = ('availabilityPause' if ordinary_availability or cold_main_wait else
                                'critical' if self.aol_authority_lost or self.events.contains(ET.IMMEDIATE_DISABLE) or
                                aol_hard_soft_fault and not availability else
                                'availabilityPause' if availability else 'transportPause' if pause else 'none')
@@ -1909,6 +1928,8 @@ class SelfdriveD:
         # Preserve the exact current SOFT event and normal countdown. A live
         # standard-axis proof describes healthy current authority, not critical.
         self.aol_fault_reason = 'none'
+      if cold_main_wait:
+        self.aol_axis_decision = AxisDecision()
       if self.aol_ordinary_source_pause:
         self.aol_axis_decision = self.ordinary_source_withdrawal()
       elif availability:
