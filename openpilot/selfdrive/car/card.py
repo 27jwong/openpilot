@@ -1349,7 +1349,25 @@ class Car:
   def mixed_startup_keepalive(self):
     from opendbc.car.hyundai.blended_longitudinal import BlendedStartup
     owner = getattr(getattr(self, 'vehicle_startup', None), 'owner', None)
-    return isinstance(owner, BlendedStartup) and owner.owner.published and not owner.closed and (owner.pending_target or owner.owner.active())
+    from opendbc.car.hyundai.ioniq5pe_startup import PEPendingStartup
+    return (isinstance(owner, (BlendedStartup, PEPendingStartup)) and owner.owner.published and not owner.closed and
+            (owner.pending_target or owner.owner.active()))
+
+  def prepare_pe_restoration(self):
+    from opendbc.car.hyundai.ioniq5pe_startup import PEPendingStartup
+    owner = getattr(getattr(self, 'vehicle_startup', None), 'owner', None)
+    if not isinstance(owner, PEPendingStartup) or not (owner.session_attempted or owner.takeover_attempted) or owner.restored:
+      return True
+    owner.quiesce()
+
+
+    self.params.put_bool('ControlsReady', False)
+    deadline = time.monotonic() + 1.
+    while time.monotonic() < deadline:
+      if self.startup_diagnostic_admission():
+        return True
+      time.sleep(.01)
+    return False
 
   def controls_update(self, CS: car.CarState, CC: car.CarControl, *, initialize_only=False):
     """control update loop, driven by carControl"""
@@ -1620,7 +1638,10 @@ def main():
     car.card_thread()
   finally:
     if getattr(car, 'vehicle_startup', None) is not None:
-      car.vehicle_startup.close()
+      try:
+        car.prepare_pe_restoration()
+      finally:
+        car.vehicle_startup.close()
     if getattr(car, 'ioniq6_keepalive', None) is not None:
       car.ioniq6_long_lost = True
       car.ioniq6_keepalive.stop()

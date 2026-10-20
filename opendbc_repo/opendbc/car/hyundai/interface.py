@@ -1,3 +1,4 @@
+from opendbc.car.hyundai.ioniq5pe_long_profile import required as pe_long_required, candidate as pe_long_candidate
 from opendbc.car.pedal import supported_pedal_detected
 from opendbc.car.hyundai.classic_scc_aol import CLASSIC_SCC_IDS
 from opendbc.car import Bus, get_safety_config, structs, uds
@@ -41,10 +42,15 @@ class CarInterface(CarInterfaceBase):
     from opendbc.car.hyundai.torque_ev_startup import required as torque_ev_required
     from opendbc.car.hyundai.blended_longitudinal import startup_required as blended_required
     from opendbc.car.hyundai.legacy_long_startup import required as legacy_required
-    return legacy_required(cp) or blended_required(cp) or required(cp) or ev6_required(cp) or gv70_required(cp) or ev9_required(cp) or torque_ev_required(cp)
+    return (pe_long_required(cp) or legacy_required(cp) or blended_required(cp) or required(cp) or
+            ev6_required(cp) or gv70_required(cp) or ev9_required(cp) or torque_ev_required(cp))
 
   @staticmethod
   def startup_owner(cp, callbacks, *, requested):
+    from opendbc.car.hyundai.ioniq5pe_startup import PEPendingStartup
+    pe_cp = pe_long_candidate(cp, enabled=requested, is_release=False)
+    if pe_cp is not None:
+      return PEPendingStartup(pe_cp, callbacks, stock_cp=cp)
     from opendbc.car.hyundai.legacy_long_aol import candidate as legacy_candidate
     from opendbc.car.hyundai.legacy_long_startup import LegacyLongStartup
     legacy_cp = legacy_candidate(cp, requested=requested)
@@ -333,7 +339,7 @@ class CarInterface(CarInterfaceBase):
 
     # Advertise only the exact developer stock profile. Startup still owns the
     # saved-choice promotion, so availability never selects LONG during fingerprinting.
-    if candidate == CAR.KIA_EV9:
+    if candidate in (CAR.KIA_EV9, CAR.HYUNDAI_IONIQ_5_PE):
       from opendbc.car.hyundai.ccnc_ev_stock import qualified as ev9_stock_qualified
       ret.alphaLongitudinalAvailable = not is_release and ev9_stock_qualified(ret)
 
@@ -346,12 +352,14 @@ class CarInterface(CarInterfaceBase):
     return ret
 
   def update(self, can_packets):
-    if (self.CS.gv70_camera_lead is not None or self.CS.ev9_camera_lead is not None or
+    if (self.CS.pe_ready is not None or self.CS.gv70_camera_lead is not None or self.CS.ev9_camera_lead is not None or
         self.CS.ioniq6_camera_lead is not None or self.CS.torque_ev_camera_lead is not None or self.CS.forte_lkas_sources is not None):
       # This isolated optional parser must never join required controls health.
       can_packets = list(can_packets)
       if self.CS.gv70_camera_lead is not None:
         self.CS.gv70_camera_lead.update(can_packets)
+      if self.CS.pe_ready is not None:
+        self.CS.pe_ready.observe(can_packets)
       if self.CS.ev9_camera_lead is not None:
         self.CS.ev9_camera_lead.update(can_packets)
       if self.CS.ioniq6_camera_lead is not None:

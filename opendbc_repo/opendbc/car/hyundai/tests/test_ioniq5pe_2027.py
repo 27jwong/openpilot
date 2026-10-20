@@ -50,6 +50,7 @@ class TestIoniq5PE2027(unittest.TestCase):
           self.assertEqual(cp.steerControlType, structs.CarParams.SteerControlType.angle)
           self.assertTrue(cp.flags & HyundaiFlags.CANFD_LKA_STEER_MSG_ALT)
           self.assertFalse(cp.openpilotLongitudinalControl)
+          self.assertEqual(cp.alphaLongitudinalAvailable, not release)
           self.assertTrue(cp.pcmCruise)
           self.assertFalse(cp.radarUnavailable)
           self.assertAlmostEqual(cp.wheelbase, 2.97)
