@@ -427,6 +427,7 @@ class Car:
     self.v_cruise_helper.intervals = read_cruise_intervals(self.params, pcm_cruise=self.CP.pcmCruise)
 
     self.experimental_mode = self.params.get_bool("ExperimentalMode")
+    self.initial_cruise_speed = self.params.get("InitialCruiseSpeedKph", return_default=True)
 
     # card is driven by can recv, expected at 100Hz
     self.rk = Ratekeeper(100, print_delay_threshold=None)
@@ -766,7 +767,7 @@ class Car:
     if self.sm['carControl'].enabled and not self.CC_prev.enabled:
       # Initialization owns this edge; evaluate commands against its final speed.
       self.v_cruise_helper.initialize_v_cruise(self.CS_prev, self.experimental_mode,
-                                            resume=self.vehicle_startup.consume_cruise_resume())
+                                            resume=self.vehicle_startup.consume_cruise_resume(), initial_speed=self.initial_cruise_speed)
 
   def aol_cancel_source(self, CS, now_ns: int) -> int:
     """Bind Cancel to this parsed CAN batch and its local monotonic receipt."""
@@ -1578,6 +1579,7 @@ class Car:
         settings_worker.refresh(time.monotonic_ns())
       self.is_metric = self.params.get_bool("IsMetric")
       self.experimental_mode = self.params.get_bool("ExperimentalMode") and self.CP.openpilotLongitudinalControl
+      self.initial_cruise_speed = self.params.get("InitialCruiseSpeedKph", return_default=True)
       if self.aol_card_intent is not None:
         self.aol_card_intent.settings = read_settings(self.params)
       now = time.monotonic()

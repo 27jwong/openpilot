@@ -43,6 +43,12 @@ class SlcConsumedButton:
   button: str
 
 
+def validated_initial_cruise_speed(value: object) -> int:
+  if type(value) is int and V_CRUISE_INITIAL <= value <= V_CRUISE_MAX:
+    return value
+  return V_CRUISE_INITIAL
+
+
 class VCruiseHelper:
   def __init__(self, CP):
     self.CP = CP
@@ -212,7 +218,7 @@ class VCruiseHelper:
     self.v_cruise_kph = float(np.clip(target_kph, V_CRUISE_MIN, V_CRUISE_MAX))
     self.v_cruise_cluster_kph = self.v_cruise_kph
 
-  def initialize_v_cruise(self, CS, experimental_mode: bool, *, resume: bool | None = None) -> None:
+  def initialize_v_cruise(self, CS, experimental_mode: bool, *, resume: bool | None = None, initial_speed: object = V_CRUISE_INITIAL) -> None:
     # initializing is handled by the PCM
     if self.CP.pcmCruise:
       return
@@ -227,6 +233,6 @@ class VCruiseHelper:
     if resume and self.v_cruise_initialized:
       self.v_cruise_kph = self.v_cruise_kph_last
     else:
-      self.v_cruise_kph = int(round(np.clip(CS.vEgo * CV.MS_TO_KPH, V_CRUISE_INITIAL, V_CRUISE_MAX)))
+      self.v_cruise_kph = int(round(np.clip(max(CS.vEgo * CV.MS_TO_KPH, validated_initial_cruise_speed(initial_speed)), V_CRUISE_INITIAL, V_CRUISE_MAX)))
 
     self.v_cruise_cluster_kph = self.v_cruise_kph

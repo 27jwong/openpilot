@@ -1,15 +1,34 @@
 from openpilot.cereal import log
 
 from openpilot.system.ui.widgets.scroller import NavScroller
-from openpilot.selfdrive.ui.mici.widgets.button import BigParamControl, BigMultiParamToggle, BigToggle
+from openpilot.selfdrive.ui.mici.widgets.button import BigButton, BigParamControl, BigMultiParamToggle, BigToggle
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.selfdrive.ui.layouts.settings.common import restart_needed_callback
 from openpilot.selfdrive.ui.ui_state import ui_state
+from openpilot.selfdrive.ui.layouts.settings.initial_cruise_speed import InitialCruiseSpeedControl
 from openpilot.starpilot.ui.slc_offset_feature import SlcOffsetOwner, native_parked
 
 PERSONALITY_TO_INT = log.LongitudinalPersonality.schema.enumerants
 
 
+
+
+class InitialCruiseSpeedButton(BigButton):
+  def __init__(self):
+    super().__init__("initial max speed", " ")
+    self._long_press_callback = None
+    self._control = self._child(InitialCruiseSpeedControl(compact=True))
+    self._control.set_enabled(lambda: self.enabled)
+    self._control.set_touch_valid_callback(self._touch_valid)
+
+  def _get_label_font_size(self):
+    return 36
+
+  def _draw_subtitle(self, rect):
+    self._control.render(rect)
+
+  def refresh(self, is_metric: bool | None = None):
+    self._control.refresh(is_metric)
 
 
 class TogglesLayoutMici(NavScroller):
@@ -31,6 +50,8 @@ class TogglesLayoutMici(NavScroller):
                                                    "Set speed is a maximum, not a target.\n" +
                                                    "These are alpha features. Expect mistakes.\n" +
                                                    "The path colors show acceleration and braking.")
+    self._initial_cruise_speed = InitialCruiseSpeedButton()
+    self._initial_cruise_speed.set_visible(lambda: ui_state.CP is not None and ui_state.has_longitudinal_control and not ui_state.CP.pcmCruise)
     is_metric_toggle = BigToggle("use metric units", initial_state=ui_state.params.get_bool("IsMetric"),
                                  toggle_callback=self._on_metric)
     self._metric_toggle = is_metric_toggle
@@ -53,6 +74,7 @@ class TogglesLayoutMici(NavScroller):
       self._personality_toggle,
       self._safe_mode_btn,
       self._experimental_btn,
+      self._initial_cruise_speed,
       is_metric_toggle,
       ldw_toggle,
       always_on_dm_toggle,
@@ -98,6 +120,7 @@ class TogglesLayoutMici(NavScroller):
 
   def _update_toggles(self):
     ui_state.update_params()
+    self._initial_cruise_speed.refresh()
 
     safe_mode = ui_state.params.get_bool("SafeMode")
     self._experimental_btn.set_enabled(not safe_mode)
@@ -131,6 +154,7 @@ class TogglesLayoutMici(NavScroller):
     self._slc_offsets.change_units(desired, self._metric_source)
     self._metric_source = self._slc_offsets._raw("IsMetric")
     self._metric_toggle.set_checked(ui_state.params.get_bool("IsMetric"))
+    self._initial_cruise_speed.refresh()
 
   def _on_record_audio(self, desired: bool) -> None:
     # Keep filesystem waits off the UI thread, and persist the preference before
