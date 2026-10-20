@@ -6,7 +6,7 @@ from opendbc.car.hyundai.hyundaicanfd import CanBus
 from opendbc.car.hyundai.non_scc_aol import NON_SCC_IDS
 from opendbc.car.hyundai.values import (is_blended, is_blended_alpha, HyundaiFlags, CAR, DBC, HyundaiSafetyFlags, CANFD_ANGLE_MODEL_BITS,
                                         CANFD_ANGLE_OBSERVED_ADAS_BIT, HYUNDAI_MRR35_RADAR_DBC, HYUNDAI_MRR30_RADAR_DBC,
-                                        HYUNDAI_GV70_RADAR_DBC, HYUNDAI_G90_RADAR_DBC)
+                                        HYUNDAI_GV70_RADAR_DBC, HYUNDAI_G90_RADAR_DBC, HYUNDAI_MRREVO14F_RADAR_DBC)
 from opendbc.car.hyundai.radar_interface import RADAR_START_ADDR, MRR35_RADAR_START_ADDR, MRR30_RADAR_START_ADDR, radar_bus
 from opendbc.car.interfaces import CarInterfaceBase
 from opendbc.car.disable_ecu import disable_ecu
@@ -258,6 +258,8 @@ class CarInterface(CarInterfaceBase):
       ret.radarUnavailable = not all(fingerprint[1].get(addr) == 8 for addr in range(0x500, 0x520))
     elif blended_track_radar(ret) or DBC[ret.carFingerprint].get(Bus.radar) == HYUNDAI_GV70_RADAR_DBC:
       ret.radarUnavailable = not all(fingerprint[0].get(addr) == 32 for addr in range(0x210, 0x220))
+    elif DBC[ret.carFingerprint].get(Bus.radar) == HYUNDAI_MRREVO14F_RADAR_DBC:
+      ret.radarUnavailable = fingerprint[1].get(KONA_NON_SCC_FCA_RADAR_ADDR) != 8
     elif DBC[ret.carFingerprint].get(Bus.radar) == HYUNDAI_MRR30_RADAR_DBC:
       ret.radarUnavailable = fingerprint[radar_bus(ret)].get(MRR30_RADAR_START_ADDR) != 32
     elif DBC[ret.carFingerprint].get(Bus.radar) == HYUNDAI_MRR35_RADAR_DBC:
