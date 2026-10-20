@@ -185,7 +185,16 @@ class TestEV9Startup(unittest.TestCase):
     self.assertFalse(candidate(stock, enabled=False, is_release=False).openpilotLongitudinalControl)
     self.assertFalse(candidate(stock, enabled=True, is_release=True).openpilotLongitudinalControl)
     sibling = params(candidate=CAR.HYUNDAI_IONIQ_5_PE)
-    self.assertIsNone(CarInterface.startup_owner(sibling, actual.callbacks, requested=True))
+    from opendbc.car.hyundai.ioniq5pe_startup import PEPendingStartup, Phase
+    from opendbc.car.hyundai.ioniq5pe_long_profile import qualified as pe_qualified
+    pe = CarInterface.startup_owner(sibling, actual.callbacks, requested=True)
+    self.assertIsInstance(pe, PEPendingStartup)
+    self.assertNotIsInstance(pe, EV9Startup)
+    self.assertEqual(pe.stock_cp.to_dict(), sibling.to_dict())
+    self.assertIs(pe.owner.phase, Phase.NEW)
+    self.assertTrue(pe_qualified(pe.owner.cp))
+    self.assertFalse(qualified(pe.owner.cp))
+    self.assertFalse(qualified(sibling))
 
   def test_ready_poll_is_nonblocking_and_exact_source_bound(self):
     stock, owner, sent, requests, query = self.owner()
