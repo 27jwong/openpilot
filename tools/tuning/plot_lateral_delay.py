@@ -13,7 +13,8 @@ The values are the full lateral delay, so they include the 0.2 s of control soft
   python tools/tuning/plot_lateral_delay.py D:/logs/realdata --out delay.png
 
 Folders are searched for <route>--<segment>/rlog* and a lone rlog or param file is read as it is. Needs what
-train_nnff.py needs (numpy, pycapnp, zstandard, this repo's cereal) plus matplotlib.
+train_nnff.py needs (numpy, pycapnp, zstandard, this repo's cereal) plus matplotlib. On Windows, where git
+checks the cereal symlinks out as text stubs, it reads a resolved copy of the schemas from train_nnff's cache folder.
 """
 import argparse
 import sys
@@ -119,10 +120,10 @@ def main(argv=None):
   parser.add_argument("--workers", type=int, default=4)
   args = parser.parse_args(argv)
 
-  T.check_schema(args.cereal)
+  cereal_dir = T.check_schema(args.cereal)  # a copy with symlink stubs resolved, if git left any
   jobs = collect(args.inputs, args.last)
   with ProcessPoolExecutor(max_workers=max(1, min(args.workers, len(jobs)))) as pool:
-    results = list(pool.map(last_live_delay, [paths for _, paths in jobs], [args.cereal] * len(jobs)))
+    results = list(pool.map(last_live_delay, [paths for _, paths in jobs], [cereal_dir] * len(jobs)))
 
   records = []
   for (label, _), rec in zip(jobs, results, strict=True):
