@@ -8,7 +8,11 @@ See the [project overview](README.md) for the current development entry points a
 
 The entries below are retained upstream release notes. They describe openpilot releases, not completed StarPilot 7.0 milestones.
 
-Version 0.11.2 (2026-08-12)
+Version 0.11.3 (2026-XX-XX)
+========================
+
+
+Version 0.11.2 (2026-10-14)
 =======================
 * New driving model
   * Big model with 880M parameters
