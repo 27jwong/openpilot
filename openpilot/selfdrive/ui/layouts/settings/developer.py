@@ -31,7 +31,7 @@ DESCRIPTIONS = {
   ),
   'cellular_disabled': tr_noop(
     "Hang up cellular data and don't redial. The modem stays registered and the SIM is untouched. " +
-    "Remote access over cellular stops until this is turned off."
+    "Remote access over cellular data is unavailable while this is enabled."
   ),
 }
 

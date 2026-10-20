@@ -109,7 +109,7 @@ class DeveloperLayoutMici(NavScroller):
                                               description="Show touch locations and the UI frame rate.")
     self._cellular_off_toggle = BigParamControl("disable cellular", "CellularDisabled",
                                                 description="Hang up cellular data and don't redial. The modem stays registered and the " +
-                                                            "SIM is untouched. Remote access over cellular stops until this is turned off.")
+                                                            "SIM is untouched. Remote access over cellular data is unavailable while this is enabled.")
 
     self._scroller.add_widgets([
       self._adb_toggle,
