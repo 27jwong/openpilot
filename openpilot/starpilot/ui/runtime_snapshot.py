@@ -661,9 +661,9 @@ class RuntimeSnapshotAdapter:
                          wheel_acceleration=observe_wheel_acceleration(display_car),
                          lateral_active=display_lat_active, longitudinal_active=display_long_active,
                          longitudinal_overridden=longitudinal_overridden,
-                         driver_override_active=bool(display_car_valid and
-                           (display_lat_active or display_long_active or longitudinal_overridden) and
-                           (getattr(display_car, 'gasPressed', False) or getattr(display_car, 'steeringPressed', False))),
+                         driver_override_active=bool(display_car_valid and (
+                           display_lat_active and getattr(display_car, 'steeringPressed', False) or
+                           (display_long_active or longitudinal_overridden) and getattr(display_car, 'gasPressed', False))),
                          stock_cruise_active=stock_cruise,
                          slc_system_long_available=system_long,
                          curve=curve, show_curve_status=_flag(params, "ShowCSCStatus"),

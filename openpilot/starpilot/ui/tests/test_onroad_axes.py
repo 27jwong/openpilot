@@ -88,19 +88,21 @@ class TestOnroadAxes(unittest.TestCase):
     self.ui.sm.logMonoTime['selfdriveState'] = NOW - 300_000_000
     self.assertFalse(self.state(True, False).longitudinal_overridden)
 
-  def test_driver_inputs_gray_active_axes_and_clear_on_release(self):
+  def test_driver_inputs_only_gray_their_active_axis_and_clear_on_release(self):
     car = self.ui.sm['carState']
-    for lateral, longitudinal in ((False, False), (True, False), (False, True), (True, True)):
+    gray, blue, cyan, pink = (145, 155, 149, 255), (18, 40, 57, 255), (10, 186, 181, 255), (255, 105, 180, 255)
+    for lateral, longitudinal, colors in ((False, False, (blue, blue, blue)), (True, False, (cyan, gray, gray)),
+                                           (False, True, (gray, pink, gray)), (True, True, (gray, gray, gray))):
       self.ui.sm['selfdriveState'].enabled = longitudinal
-      for gas, steering in ((True, False), (False, True), (True, True)):
+      for (gas, steering), color in zip(((True, False), (False, True), (True, True)), colors, strict=True):
         with self.subTest(lateral=lateral, longitudinal=longitudinal, gas=gas, steering=steering):
           car.gasPressed, car.steeringPressed = gas, steering
           state = self.state(lateral, longitudinal)
-          self.assertEqual(state.driver_override_active, lateral or longitudinal)
+          self.assertEqual(state.driver_override_active, color == gray)
           self.assertEqual((state.lateral_active, state.longitudinal_active), (lateral, longitudinal))
           self.assertFalse(state.longitudinal_overridden)
           self.assertEqual(state.cruise_active, longitudinal)
-          self.assertEqual(rgba(axis_status_color(state)), (145, 155, 149, 255) if state.engaged else (18, 40, 57, 255))
+          self.assertEqual(rgba(axis_status_color(state)), color)
           car.gasPressed = car.steeringPressed = False
           released = self.state(lateral, longitudinal)
           self.assertFalse(released.driver_override_active)
@@ -111,15 +113,16 @@ class TestOnroadAxes(unittest.TestCase):
     self.ui.sm['selfdriveState'].enabled = False
     for field in ('gasPressed', 'steeringPressed'):
       with self.subTest(field=field):
+        longitudinal = field == 'gasPressed'
         setattr(car, field, True)
-        self.assertTrue(self.state(True, False).driver_override_active)
+        self.assertTrue(self.state(True, longitudinal).driver_override_active)
         for service in ('carState', 'carControl'):
           self.ui.sm.logMonoTime[service] = NOW - 300_000_000
-          self.assertFalse(self.state(True, False).driver_override_active)
+          self.assertFalse(self.state(True, longitudinal).driver_override_active)
           self.ui.sm.logMonoTime[service] = NOW
         for valid, timeout in ((False, False), (True, True)):
           car.canValid, car.canTimeout = valid, timeout
-          self.assertFalse(self.state(True, False).driver_override_active)
+          self.assertFalse(self.state(True, longitudinal).driver_override_active)
         car.canValid, car.canTimeout = True, False
         setattr(car, field, False)
 
