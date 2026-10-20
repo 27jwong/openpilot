@@ -37,6 +37,82 @@ def button_action():
 
 
 class NativeSettingsPageTests(unittest.TestCase):
+  def test_initial_cruise_editor_uses_real_control_and_params_in_both_units(self):
+    import tempfile
+    from openpilot.common.params import Params
+    from openpilot.selfdrive.ui.layouts.settings import initial_cruise_speed as initial_speed
+
+    with tempfile.TemporaryDirectory() as directory:
+      params = Params(directory)
+      ui = NS(params=params, is_metric=True, initial_cruise_speed=80, CP=NS(pcmCruise=False), has_longitudinal_control=True)
+
+      def refresh():
+        ui.is_metric = params.get_bool("IsMetric")
+        ui.initial_cruise_speed = params.get("InitialCruiseSpeedKph", return_default=True)
+        row.is_visible = ui.CP is not None and ui.has_longitudinal_control and not ui.CP.pcmCruise
+
+      ui.update_params = refresh
+      with patch.object(initial_speed, "ui_state", ui):
+        for metric in (True, False):
+          with self.subTest(metric=metric):
+            params.put_bool("IsMetric", metric, block=True)
+            params.put("InitialCruiseSpeedKph", 80, block=True)
+            ui.is_metric, ui.initial_cruise_speed = metric, 80
+            control = initial_speed.InitialCruiseSpeedControl()
+            row = item("Initial Max Speed", control)
+            pane = self.panel([row])
+            pane.title = "Toggles"
+            pane.panel._update_toggles = refresh
+            refresh()
+            before = params.get("InitialCruiseSpeedKph")
+            displayed = pane.snapshot().rows[0]
+            self.assertTrue(displayed.available)
+            self.assertTrue(displayed.value.endswith("km/h" if metric else "mph"))
+            self.assertTrue(displayed.presets)
+            self.click(pane)
+            self.assertTrue(pane.snapshot().editor)
+            self.choose(pane, "+")
+            self.assertGreater(params.get("InitialCruiseSpeedKph"), before)
+            editor = pane.snapshot()
+            minimum, maximum = editor.rows[0].choices[0], editor.rows[0].choices[-1]
+            self.choose(pane, minimum)
+            self.assertEqual(params.get("InitialCruiseSpeedKph"), 40)
+            self.choose(pane, "-")
+            self.assertEqual(params.get("InitialCruiseSpeedKph"), 40)
+            self.choose(pane, maximum)
+            self.assertEqual(params.get("InitialCruiseSpeedKph"), 145)
+            self.choose(pane, "+")
+            self.assertEqual(params.get("InitialCruiseSpeedKph"), 145)
+
+            # Native callback rejects an input tied to an earlier displayed value.
+            stale = pane.snapshot().rows[0]
+            params.put("InitialCruiseSpeedKph", 100, block=True)
+            pane._emit(FeatureUiAction("change", stale, -1))
+            self.assertEqual(params.get("InitialCruiseSpeedKph"), 100)
+            current = pane.snapshot().rows[0]
+            control.set_enabled(False)
+            pane._emit(FeatureUiAction("change", current, -1))
+            self.assertEqual(params.get("InitialCruiseSpeedKph"), 100)
+            control.set_enabled(True)
+            current = pane.snapshot().rows[0]
+            ui.CP.pcmCruise = True
+            pane._emit(FeatureUiAction("change", current, -1))
+            self.assertEqual(params.get("InitialCruiseSpeedKph"), 100)
+            self.assertEqual(pane.snapshot().rows, ())
+            ui.CP.pcmCruise = False
+            refresh()
+
+            # Done uses the existing touch router and keeps the parent panel alive.
+            self.choose(pane, "-")
+            state = pane.snapshot()
+            x, y, width, height = value_done_rect(state)
+            pos = MousePos(x + width / 2, y + height / 2)
+            pane._handle_mouse_press(pos)
+            pane._handle_mouse_release(pos)
+            self.assertFalse(pane.snapshot().editor)
+            self.assertTrue(pane.active)
+            pane.hide_event()
+
   def panel(self, items):
     owner = NS(_scroller=NS(_items=items), show_event=Mock(), hide_event=Mock(), _update_state=Mock())
     pane = StarPilotSettingsAdapterLarge(owner, fake_fonts(), "Device", Mock())

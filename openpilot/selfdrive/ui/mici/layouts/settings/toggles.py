@@ -1,42 +1,16 @@
 from openpilot.cereal import log
 
 from openpilot.system.ui.widgets.scroller import NavScroller
-from openpilot.selfdrive.ui.mici.widgets.button import BigButton, BigParamControl, BigMultiParamToggle, BigToggle
+from openpilot.selfdrive.ui.mici.widgets.button import BigParamControl, BigMultiParamToggle, BigToggle
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.selfdrive.ui.layouts.settings.common import restart_needed_callback
 from openpilot.selfdrive.ui.ui_state import ui_state
-from openpilot.selfdrive.ui.layouts.settings.initial_cruise_speed import InitialCruiseSpeedControl
+from openpilot.selfdrive.ui.mici.layouts.settings.initial_cruise_speed import InitialCruiseSpeedButton
 from openpilot.starpilot.ui.slc_offset_feature import SlcOffsetOwner, native_parked
 
 PERSONALITY_TO_INT = log.LongitudinalPersonality.schema.enumerants
 
 
-
-
-class InitialCruiseSpeedButton(BigButton):
-  def __init__(self):
-    super().__init__("initial max speed", " ", description="Max speed when engaging openpilot.\n" +
-                                                           "If you are already driving faster, your current speed is used.\n" +
-                                                           "Resume restores the previous max speed.")
-    self._control = self._child(InitialCruiseSpeedControl(compact=True))
-    self._control.set_enabled(lambda: self.enabled)
-    self._control.set_touch_valid_callback(self._touch_valid)
-    self._show_description = self._long_press_callback
-    self.set_long_press_callback(self._on_long_press)
-
-  def _on_long_press(self):
-    # a hold on the speed control repeats a step
-    if not self._control.is_pressed and self._show_description is not None:
-      self._show_description()
-
-  def _get_label_font_size(self):
-    return 36
-
-  def _draw_subtitle(self, rect):
-    self._control.render(rect)
-
-  def refresh(self, is_metric: bool | None = None):
-    self._control.refresh(is_metric)
 
 
 class TogglesLayoutMici(NavScroller):
@@ -162,7 +136,7 @@ class TogglesLayoutMici(NavScroller):
     self._slc_offsets.change_units(desired, self._metric_source)
     self._metric_source = self._slc_offsets._raw("IsMetric")
     self._metric_toggle.set_checked(ui_state.params.get_bool("IsMetric"))
-    self._initial_cruise_speed.refresh()
+    self._update_toggles()
 
   def _on_record_audio(self, desired: bool) -> None:
     # Keep filesystem waits off the UI thread, and persist the preference before

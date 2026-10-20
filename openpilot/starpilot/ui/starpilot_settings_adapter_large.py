@@ -4,6 +4,7 @@ from collections.abc import Callable
 
 import pyray as rl
 
+from openpilot.selfdrive.ui.layouts.settings.initial_cruise_speed import InitialCruiseSpeedControl
 from openpilot.starpilot.ui.clip import placed_at
 from openpilot.starpilot.ui.feature_settings import FeatureSettingsView
 from openpilot.starpilot.ui.feature_settings_state import FeatureInput, FeatureRow, FeatureSettingsState, feature_scroll, value_editor_state, value_request
@@ -128,6 +129,9 @@ class StarPilotSettingsAdapterLarge(Widget):
       elif isinstance(action, MultipleButtonAction):
         choices = tuple(_resolve_value(text) for text in action.buttons)
         value = choices[action.selected_button]
+      elif isinstance(action, InitialCruiseSpeedControl):
+        choices, index = action.display_options()
+        value = choices[index]
       elif self.title == "Developer" and isinstance(action, SshKeyAction):
         value = action._username or ""
         buttons = ((tr(action._state.value), action._state != SshKeyActionState.LOADING),)
@@ -212,6 +216,17 @@ class StarPilotSettingsAdapterLarge(Widget):
     if item is None:
       return
     action = item.action_item
+    if isinstance(action, InitialCruiseSpeedControl) and request.kind in ("change", "action"):
+      change = value_request(state, request) if state.editor else None
+      self.panel._update_toggles()
+      if item.is_visible and item.enabled:
+        if change is not None:
+          choices, index = action.display_options()
+          if row.value == choices[index] and change.value in choices:
+            action.select_speed(choices.index(change.value))
+        elif not row.presets and request.kind == "change":
+          action.adjust_speed(request.direction)
+      return
     if isinstance(action, MultipleButtonAction) and row.presets and request.kind in ("change", "action"):
       change = value_request(state, request) if state.editor else None
       if change is not None:

@@ -224,7 +224,7 @@ class TogglesLayout(Widget):
       ok = self._slc_offsets.change_units(state, self._metric_source)
       self._toggles[param].action_item.set_state(self._params.get_bool(param))
       self._metric_source = self._slc_offsets._raw("IsMetric")
-      self._initial_cruise_speed.action_item.refresh()
+      self._update_toggles()
       return ok
     self._params.put_bool(param, state, block=True)
     self._toggles[param].action_item.set_state(state)
