@@ -158,11 +158,12 @@ int main() {
   }
   for (uint32_t word = 0U; word <= 65535U; word++) {
     assert(mazda_aol_param(static_cast<uint16_t>(word)) == (word == 0U));
-    assert(tesla_preap_aol_param(static_cast<uint16_t>(word)) == (word == 0U));
+    const bool preap_expected = (word == 0U) || (word == 1U) || (word == 2U) || (word == 3U) || (word == 6U) || (word == 7U);
+    assert(tesla_preap_aol_param(static_cast<uint16_t>(word)) == preap_expected);
     auto preap = status();
     preap.safety_mode = 39U;
     preap.safety_param = static_cast<uint16_t>(word);
-    assert(aol_capable(preap, 39U, VEHICLE_REGISTRY) == (word == 0U));
+    assert(aol_capable(preap, 39U, VEHICLE_REGISTRY) == preap_expected);
     assert(!aol_capable(preap, 35U, VEHICLE_REGISTRY));
   }
   constexpr uint16_t ford_words[] = {8U, 9U, 10U, 11U, 12U, 13U, 18U, 19U, 32U, 33U, 66U, 67U};

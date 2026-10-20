@@ -565,10 +565,12 @@ class SelfdriveD:
         intent_companion = getattr(self, 'aol_intent_companion', None)
         drained = intent_companion is None or self.drain_axis_intent(intent_companion)
         now_ns = self.aol_car_state_log_ns if REPLAY and self.aol_car_state_log_ns else time.monotonic_ns()
-        companion = current_intent(self.sm, car_state_ns=int(self.sm.logMonoTime['carState']), now_ns=now_ns,
+        companion = current_intent(self.sm, car_state_ns=self.aol_car_state_log_ns, now_ns=now_ns,
                                    previous=self.aol_last_intent, companion=intent_companion, drain=False) if drained else None
         session = companion.producerSessionId if companion is not None else None
-        self.tesla_stock_alerts = self.tesla_stock_consumer.poll(self.sm, now_ns=now_ns, session=session)
+        self.tesla_stock_alerts = self.tesla_stock_consumer.poll(
+          self.sm, now_ns=now_ns, session=session, car_state=CS,
+          source_ns=self.aol_car_state_log_ns, source_valid=self.conditional_car_state_valid)
 
     if self.calibrated_pose is not None and not self.CP.notCar:
       excessive_actuation = self.excessive_actuation_check.update(self.sm, CS, self.calibrated_pose)

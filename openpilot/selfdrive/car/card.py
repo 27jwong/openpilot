@@ -418,6 +418,11 @@ class Car:
     # Write CarParams for controls and radard
     self.vehicle_startup.seal_publication()
     cp_bytes = self.CP.to_bytes()
+    from openpilot.starpilot.car.tesla.pedal_startup import install as install_preap_pedal
+    install_preap_pedal(self.CI, self.CP, cp_bytes, startup_preferences.tesla_preap_pedal, self.params)
+    from openpilot.starpilot.car.tesla.radar_context import install_startup_context
+    self.tesla_preap_radar_context = install_startup_context(
+      self.RI, self.CP, cp_bytes, startup_preferences.tesla_preap_radar)
     self.params.put("CarParams", cp_bytes, block=True)
     put_cache(self.params, "CarParamsCache", self.CP)
     put_cache(self.params, "CarParamsPersistent", self.CP)
@@ -981,6 +986,12 @@ class Car:
                              sequence=self.slc_cruise_event_id, car_state_stamp=int(cs_send.logMonoTime),
                              valid=bool(cs_send.valid and not CS.canTimeout))
     companion = None
+    if self.CP.brand == 'tesla' and self.CP.openpilotLongitudinalControl and qualified_tesla_preap(self.CP):
+      internal = self.CI.CS.preap
+      companion = messaging.new_message('starpilotCarState', valid=bool(cs_send.valid), logMonoTime=int(cs_send.logMonoTime))
+      companion.starpilotCarState.sourceCarStateMonoTime = int(cs_send.logMonoTime)
+      companion.starpilotCarState.pedalLongActive = bool(internal.enableLongControl)
+      companion.starpilotCarState.pedalMaxRegen = internal.pccEvent == 'pedalMaxRegen'
     steering_authority = getattr(self.CI.CS, 'steering_authority', None)
     if self.CP.brand == 'gm' and steering_authority is not None and steering_authority.enabled:
       companion = messaging.new_message('starpilotCarState', valid=bool(cs_send.valid), logMonoTime=int(cs_send.logMonoTime))
