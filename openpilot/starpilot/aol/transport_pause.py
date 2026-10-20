@@ -111,9 +111,12 @@ def stock_lateral_off(cp, cs, native, *, allow_independent_cancel=False, allow_i
 
   from opendbc.car.hyundai.canfd_stock_aol import qualified as stock_canfd_qualified
 
+  from openpilot.starpilot.car.toyota.aol import qualified as toyota_qualified
+
   independent_angle = angle_qualified(cp, marked_only=True)
-  independent_brake = independent_angle or (allow_independent_brake and cp.brand == 'hyundai' and
-                                             len(cp.safetyConfigs) == 1 and stock_canfd_qualified(cp, marked_only=True))
+  independent_brake = independent_angle or (allow_independent_brake and (
+    toyota_qualified(cp, marked_only=True) and cs.standstill and not cs.cruiseState.enabled or
+    cp.brand == 'hyundai' and len(cp.safetyConfigs) == 1 and stock_canfd_qualified(cp, marked_only=True)))
   return bool(cp.pcmCruise and cs.cruiseState.available and
     (not cs.cruiseState.enabled or independent_brake and allow_independent_brake and cs.brakePressed) and
     cs.canValid and not cs.canTimeout and not cs.steerFaultPermanent and not cs.steerFaultTemporary and

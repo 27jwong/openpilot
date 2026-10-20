@@ -1269,8 +1269,10 @@ class SelfdriveD:
     if user_disable:
       from opendbc.car.hyundai.canfd_angle_aol import qualified as angle_qualified
       from opendbc.car.hyundai.canfd_stock_aol import qualified as stock_canfd_qualified
+      from openpilot.starpilot.car.toyota.aol import qualified as toyota_qualified
 
-      if (angle_qualified(self.CP, marked_only=True) or
+      if (toyota_qualified(self.CP, marked_only=True) and CS.standstill or
+          angle_qualified(self.CP, marked_only=True) or
           self.CP.brand == 'hyundai' and CS.brakePressed and len(self.CP.safetyConfigs) == 1 and
           stock_canfd_qualified(self.CP, marked_only=True)):
         native = current_native(self.sm, self.CP, now_ns=now_ns, axis_session_id=self.aol_session_id)
