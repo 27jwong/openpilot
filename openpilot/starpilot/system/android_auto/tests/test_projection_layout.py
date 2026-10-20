@@ -34,7 +34,7 @@ class TestProjectionLayout(unittest.TestCase):
     base = default_document()
     converted = projection_customization(decoded, base)
     self.assertEqual(converted['layouts']['large']['jetlink_status'], migrated['widgets']['jetlink_status'])
-    self.assertNotIn('jetlink_status', base['layouts']['large'])
+    self.assertFalse(base['layouts']['large']['jetlink_status']['enabled'])
     self.assertNotIn('jetlink_status', converted['layouts']['compact'])
 
   def test_exit_defaults_and_monitor_scaling_preserve_saved_appearance(self):
@@ -256,9 +256,11 @@ class TestProjectionLayout(unittest.TestCase):
     before = copy.deepcopy(base)
     document = default_layout(SCREEN)
     converted = projection_customization(document, base)
-    native = {key: value for key, value in converted['layouts']['large'].items() if key not in PROJECTION_WIDGETS}
-    self.assertEqual(native, base['layouts']['large'])
-    self.assertEqual(converted['layouts']['large'][NAV_MAP], document['widgets'][NAV_MAP])
+    own = (*PROJECTION_WIDGETS, 'jetlink_status')
+    native = {key: value for key, value in converted['layouts']['large'].items() if key not in own}
+    self.assertEqual(native, {key: value for key, value in base['layouts']['large'].items() if key not in own})
+    shift = document['canvas']['width'] - 1860
+    self.assertEqual(converted['layouts']['large'][NAV_MAP], {**document['widgets'][NAV_MAP], 'x': document['widgets'][NAV_MAP]['x'] - shift})
     document['widgets']['current_speed']['x'] += 100
     converted = projection_customization(document, base)
     self.assertEqual(converted['layouts']['large']['current_speed']['x'], 740)

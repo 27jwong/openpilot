@@ -35,6 +35,19 @@ def state():
   return OnroadState(False, False, 10., 50., SpeedLimitObservation(), navigation=navigation_display(message(), now_ns=NOW, drive_id=DRIVE))
 
 
+def test_large_navigation_optional_widget_controls_draw_and_touch_bounds():
+  card, observed = NavigationCard(Mock(profile=Profile.LARGE)), replace(state(), viewport_width=1860)
+  placed = observed.customization['layouts']['large']['nav_card']
+  placed.update(x=900, y=650)
+  bounds = card.bounds(observed)
+  assert (bounds.x, bounds.y, bounds.width, bounds.height) == (900, 650, 560, 195)
+  assert card.bounds(replace(observed, viewport_width=2160)).x == 1200
+  assert card.press(920, 670, observed)
+  placed['enabled'] = False
+  assert card.bounds(observed) is None
+  assert not card.press(920, 670, observed)
+
+
 def test_actual_instruction_does_not_require_control_authority():
   nav = message()
   nav.controlValid = False

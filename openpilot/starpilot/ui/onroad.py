@@ -144,6 +144,8 @@ class OnroadView:
       self.current_speed = CurrentSpeedHud(fonts)
       self.cem_gauge = AetherGauge(fonts)
       self.steering_wheel = SteeringWheelWidget(asset_directory)
+      from openpilot.starpilot.ui.onroad_jetlink import JetlinkStatusWidget
+      self.jetlink_status = JetlinkStatusWidget(fonts)
     else:
       self.compact_hud = CompactHudRenderer(fonts, asset_directory)
       self.compact_sidebar = MiciSidebarWidgets(fonts)

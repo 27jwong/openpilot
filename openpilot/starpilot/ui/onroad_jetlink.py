@@ -2,7 +2,7 @@
 import pyray as rl
 
 from openpilot.starpilot.models.jetlink_status import JetlinkStatus
-from openpilot.starpilot.system.android_auto.projection_layout import JETLINK_SIZE, JETLINK_WIDGET
+from openpilot.starpilot.ui.onroad_customization import JETLINK_SIZE, JETLINK_WIDGET
 from openpilot.starpilot.ui.presentation import FontRole
 
 LABELS = {'active': 'Link up', 'connected': 'Host connected', 'ready': 'Ready to switch',

@@ -15,7 +15,8 @@ import pyray as rl
 
 from openpilot.starpilot.ui.layout_preview_transport import SCENES, validate_preview_document
 from openpilot.starpilot.ui.developer_preview import OnroadVisualPreview
-from openpilot.starpilot.ui.onroad_customization import CAMERA_WIDGETS, PROFILES, RUNTIME_PREVIEW_WIDGETS, placement, validate_document, widget_size
+from openpilot.starpilot.ui.onroad_customization import (CAMERA_WIDGETS, PROFILES, ROAD_BASE_WIDTH, RUNTIME_PREVIEW_WIDGETS, fit_to_road, placement,
+                                                         validate_document, widget_size)
 from openpilot.starpilot.ui.onroad_widget_style import draw_widget_frame
 from openpilot.starpilot.curve_speed.status import CurveObservation
 from openpilot.starpilot.ui.onroad_state import ConditionalLead
@@ -219,11 +220,12 @@ class _Canvas:
         self.view.projection_exit_layer = ProjectionExit(rl).render
         self.view.now_playing.track = {'source': 'spotify', 'status': 'playing', 'title': 'Midnight City', 'artist': 'M83', 'album': '',
                                        'durationMs': 243000, 'position': {'ms': 92000, 'at': 0, 'speed': 0.0}}
-        from openpilot.starpilot.models.jetlink_status import JetlinkStatus
-        self.view.jetlink_status.status = JetlinkStatus('iPhone', 'active', 24.6, 'connected')
+      if profile == Profile.LARGE:
         from openpilot.starpilot.ui.onroad_map import MapOverlay, SampleTileReader
         self.map = MapOverlay(reader=SampleTileReader(), fonts=self.fonts)
         self.view.map_layer = self._render_map
+        from openpilot.starpilot.models.jetlink_status import JetlinkStatus
+        self.view.jetlink_status.status = JetlinkStatus('iPhone', 'active', 24.6, 'connected')
       self.monitor = _DriverMonitorArt(profile)
       self.view.driver_monitor_layer = self._render_driver_monitor
       self.view.preview_pip_layer = self._render_preview_pip
@@ -247,7 +249,8 @@ class _Canvas:
   def _render_map(self, _rect: rl.Rectangle, state: OnroadState) -> None:
     placed = self._map_placement(state)
     if placed is not None and self.map is not None:
-      self.map.draw(rl.Rectangle(placed["x"], placed["y"], placed["width"], placed["height"]), placed["opacity"] / 100.0)
+      shift = (self.viewport[0] if self.viewport else state.viewport_width) - 1860
+      self.map.draw(rl.Rectangle(placed["x"] + shift, placed["y"], placed["width"], placed["height"]), placed["opacity"] / 100.0)
 
   def _render_preview_pip(self, rect, state, *, submit=None):
     if submit is not None:
@@ -457,11 +460,14 @@ class LayoutPreviewRenderer:
     profile = Profile.LARGE if viewport else Profile(payload["profile"])
     scene = payload["scene"]
     sidebar = document.pop('developerSidebar', False)
-    state = sample_state(scene, document)
     if profile == Profile.LARGE and viewport is None:
       width = profile.size[0] - (SIDEBAR_WIDTH if sidebar else 0)
+      # Widget art is cropped from the saved 1860px road, as the editor places each sprite itself.
+      document = fit_to_road(document, ROAD_BASE_WIDTH if payload.get('art') is True else width)
+    state = sample_state(scene, document)
+    if profile == Profile.LARGE and viewport is None:
       state = replace(state, viewport_width=width, appearance=replace(state.appearance, show_developer_sidebar=sidebar))
-    if viewport:
+    if profile == Profile.LARGE:
       from openpilot.starpilot.ui.navigation_state import NavigationDisplay
       state = replace(state, navigation=NavigationDisplay(("preview", 1), "Turn left onto Desert Inn Road", "turn", "left",
                                                           152.0, 6800.0, 540.0))
