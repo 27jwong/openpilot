@@ -39,7 +39,7 @@ const OnroadLayoutPage = page(() => import("./onroad-layout.js").then((module) =
 const GalaxyPage = page(() => import("./galaxy.js").then((module) => module.GalaxyPage))
 import { DevicePicker } from "./device-picker.js"
 import { DeviceState } from "./device-state.js"
-import { spawnAmbientStars } from "./ambient-stars.js"
+import { spawnAmbientStars, pauseStarsOnSlowFirefoxScroll } from "./ambient-stars.js"
 
 function page(loader) {
   return defineAsyncComponent({
@@ -263,7 +263,9 @@ createApp({
   `,
 }).component("GxState", GxState).component("GxNotice", GxNotice).mount("#galaxy-app")
 
-spawnAmbientStars(document.getElementById("galaxy-bg"))
+const galaxyBackground = document.getElementById("galaxy-bg")
+spawnAmbientStars(galaxyBackground)
+pauseStarsOnSlowFirefoxScroll(galaxyBackground)
 
 startRouter()
 
