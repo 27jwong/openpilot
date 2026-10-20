@@ -851,6 +851,7 @@ class TestIoniq6PrepublicationHandoff(unittest.TestCase):
     card_owner.rk = SimpleNamespace(remaining=0.0)
     card_owner.is_metric = True
     card_owner.experimental_mode = False
+    card_owner.initial_cruise_speed = 40
     card_owner.v_cruise_helper = SimpleNamespace(update_v_cruise=lambda *_: None, initialize_v_cruise=lambda *_, **kwargs: None,
                                                  slc_consumed_button=None,
                                                  slc_cruise_change=None, v_cruise_kph=60.0, v_cruise_cluster_kph=60.0)

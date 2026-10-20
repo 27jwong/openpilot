@@ -58,7 +58,8 @@ class NativeSettingsPageTests(unittest.TestCase):
             params.put_bool("IsMetric", metric, block=True)
             params.put("InitialCruiseSpeedKph", 80, block=True)
             ui.is_metric, ui.initial_cruise_speed = metric, 80
-            control = initial_speed.InitialCruiseSpeedControl()
+            with patch.object(gui_app, 'font', return_value=rl.Font()):
+              control = initial_speed.InitialCruiseSpeedControl()
             row = item("Initial Max Speed", control)
             pane = self.panel([row])
             pane.title = "Toggles"
@@ -525,6 +526,7 @@ class NativeSettingsPageTests(unittest.TestCase):
     owner._slc_offsets = NS(_raw=lambda key: b'0')
     owner._update_experimental_mode_icon = Mock()
     owner._long_personality_setting = personality
+    owner._initial_cruise_speed = NS(action_item=NS(refresh=Mock()))
     owner._scroller = NS(_items=[toggle, personality, experimental])
     pane = self.panel(owner._scroller._items)
     pane.panel, pane.title = owner, 'Toggles'

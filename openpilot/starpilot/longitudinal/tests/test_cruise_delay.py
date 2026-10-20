@@ -48,7 +48,7 @@ class NativeCruiseDelayTests(unittest.TestCase):
         kwargs: dict[str, Any] = {'now_ns': NOW, 'drive_id': DRIVE}
         if case == 'profile':
           kwargs['profile_tuning'] = ProfileTuning('standard', 1.8, 1., 1., 1., 1., 1.,
-                                                   acceleration_max=.7, cruise_brake_magnitude=.4)
+                                                   acceleration_max=.7, cruise_brake_magnitude=.6)
         if case in ('cem', 'experimental'):
           kwargs['conditional_handoff'] = KEY
         before = message_bytes(envelopes)
@@ -99,7 +99,9 @@ class NativeCruiseDelayTests(unittest.TestCase):
         np.testing.assert_allclose(current.mpc.x0[1:], expected_state)
         if case == 'profile':
           self.assertIsNotNone(current.last_profile)
-          self.assertAlmostEqual(float(current.mpc.params[0, 4]), 1.8)
+          # A valid ordinary profile fades from native 1.45 by dt=.05.
+          self.assertAlmostEqual(current.last_profile.follow_seconds, 1.5)
+          self.assertAlmostEqual(float(current.mpc.params[0, 4]), current.last_profile.follow_seconds)
         if case in ('cem', 'experimental'):
           # This single-cycle fixture proves handoff admission, not a transition hold.
           self.assertEqual(current.experimental_release.key, KEY)
