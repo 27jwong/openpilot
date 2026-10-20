@@ -69,7 +69,7 @@ from openpilot.starpilot.ui.bluetooth_status import BluetoothStatusSource
 from openpilot.starpilot.ui.runtime_snapshot import RuntimeSnapshotAdapter, current_message, display_message
 from openpilot.starpilot.ui.network_panel import NetworkPanelBridge
 from openpilot.starpilot.ui.slc_action_dispatch import SlcActionDispatcher
-from openpilot.starpilot.ui.onroad_state import AlertSize, OnroadRequest, OnroadState, SlcUiRequest, is_personality_notice, is_lane_change_notice
+from openpilot.starpilot.ui.onroad_state import AlertSize, BorderSignals, OnroadRequest, OnroadState, SlcUiRequest, is_personality_notice, is_lane_change_notice
 from openpilot.starpilot.ui.onroad_favorites import OnroadFavorites
 from openpilot.starpilot.ui.onroad_dm import DriverMonitorLayer
 from openpilot.starpilot.favorites.owner import FavoritesOwner
@@ -139,6 +139,15 @@ class _AolSave:
   saved: bool = False
 
 
+def visual_border_state(state: OnroadState, signals: Signals) -> OnroadState:
+  border = state.border_signals
+  if border is None or not (signals.vasm_left or signals.vasm_right):
+    return state
+  return replace(state, border_signals=BorderSignals(
+    border.left_blinker, border.right_blinker,
+    border.left_blindspot or signals.vasm_left, border.right_blindspot or signals.vasm_right))
+
+
 class StarShellSession:
   """Own native shell resources and one request/router boundary per app."""
 
@@ -153,6 +162,7 @@ class StarShellSession:
     self._pip_saved = None
     self._vasm_saved = None
     self._pip_read_ns: int | None = None
+    self._pip_signals_cache = None
     try:
       self.camera_owner = camera_owner
       self.camera_paint = True
@@ -784,35 +794,36 @@ class StarShellSession:
                         "saved display choice changed or settings closed")
     return ok
 
-  def _render_pip(self, rect: rl.Rectangle, state, *, submit=None) -> None:
+  def _pip_signals(self):
     now_ns = time.monotonic_ns()
     if (self._pip_read_ns is None or now_ns < self._pip_read_ns or
         now_ns - self._pip_read_ns >= 1_000_000_000):
       self._pip_saved = read_pip(ui_state.params)
       self._vasm_saved = read_vasm_preferences(ui_state.params)
       self._pip_read_ns = now_ns
-    saved = self._pip_saved
-    if (saved is None or saved.enabled is not True or saved.mask is None or
-        saved.invert is None or saved.on_blinker is None or saved.on_bsm is None):
-      self.pip_warning.close()
-      self.pip_renderer.deactivate()
-      return
-    # Display freshness: carState is 100 Hz, so the 20 ms control window often lapses within one drawn frame.
     car = display_message(ui_state.sm, "carState", now_ns, after_frame=ui_state.started_frame)
     vasm = self._vasm_saved
     pair = clock_pair_ns() if car is not None else None
     vasm_enabled = (car is not None and car.canValid and car.gearShifter == car_schema.CarState.GearShifter.drive and
                     pair is not None and vasm is not None and vasm.readable and
-                    vasm.valid and vasm.preferences.enabled and os.getenv("STARPILOT_VASM_DEVELOPMENT") == "1")
+                    vasm.valid and vasm.preferences.enabled)
     left_warning, right_warning = self.pip_warning.sample(
       enabled=vasm_enabled, settings_fingerprint=vasm.fingerprint if vasm_enabled else "",
       now_mono_ns=pair[0] if pair is not None else 0,
       now_boot_ns=pair[1] if pair is not None else 0)
-    signals = Signals(car is not None, bool(car.leftBlinker) if car is not None else False,
-                      bool(car.rightBlinker) if car is not None else False,
-                      bool(car.leftBlindspot) if car is not None else False,
-                      bool(car.rightBlindspot) if car is not None else False,
-                      left_warning, right_warning)
+    return Signals(car is not None, bool(car.leftBlinker) if car is not None else False,
+                   bool(car.rightBlinker) if car is not None else False,
+                   bool(car.leftBlindspot) if car is not None else False,
+                   bool(car.rightBlindspot) if car is not None else False,
+                   left_warning, right_warning)
+
+  def _render_pip(self, rect: rl.Rectangle, state, *, submit=None) -> None:
+    signals = getattr(self, "_pip_signals_cache", None) or self._pip_signals()
+    saved = self._pip_saved
+    if (saved is None or saved.enabled is not True or saved.mask is None or
+        saved.invert is None or saved.on_blinker is None or saved.on_bsm is None):
+      self.pip_renderer.deactivate()
+      return
     camera_positions = {}
     for side, key in zip(("left", "right"), CAMERA_WIDGETS, strict=True):
       position = placement(state.customization, self.profile, key)
@@ -1372,11 +1383,15 @@ class StarShellSession:
       self.favorites.cancel()
     if mode != ShellMode.ONROAD or not snapshot.onroad.camera_available:
       self.pip_warning.close()
+      self._pip_signals_cache = None
       self._pip_saved = None
       self._vasm_saved = None
       self._pip_read_ns = None
       if renderer := getattr(self, "pip_renderer", None):
         renderer.deactivate()
+    else:
+      self._pip_signals_cache = self._pip_signals()
+      snapshot = replace(snapshot, onroad=visual_border_state(snapshot.onroad, self._pip_signals_cache))
     # Scroller and NavWidget place compact pages at changing screen positions.
     with placed_at(rect, parent_clip):
       external = (self.profile == Profile.LARGE and mode == ShellMode.SETTINGS and
@@ -1386,6 +1401,7 @@ class StarShellSession:
         getattr(self.view, pane[0]).pressed_action = getattr(self.input, pane[2]).pressed_action
       drag_x = getattr(self.input, pane[2]).drag_x if pane else 0.0
       self.view.render(replace(snapshot, selected=Destination.NETWORK) if external else snapshot, drag_x=drag_x)
+      self._pip_signals_cache = None
       if mode == ShellMode.ONROAD:
         self.favorites.render(time.monotonic())
     network = (mode == ShellMode.SETTINGS and self.profile == Profile.LARGE and snapshot.selected == Destination.NETWORK and

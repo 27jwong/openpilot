@@ -19,7 +19,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"EngageVolume", {PERSISTENT, INT}},
     {"DisengageVolume", {PERSISTENT, INT}},
     {"PromptVolume", {PERSISTENT, INT}},
-    {"AlwaysOnLateral", {PERSISTENT, BOOL, "0"}},
+    {"AlwaysOnLateral", {PERSISTENT, BOOL, "1"}},
     {"NostalgiaMode", {PERSISTENT, BOOL, "0"}},
     {"ToyotaAutoHold", {PERSISTENT, BOOL, "0"}},
     {"ToyotaRadarMode", {PERSISTENT, INT, "0"}},

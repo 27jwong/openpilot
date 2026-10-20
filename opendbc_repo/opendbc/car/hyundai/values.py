@@ -979,6 +979,11 @@ class Buttons:
   CANCEL = 4  # on newer models, this is a pause/resume button
 
 
+# Recorded PI110 firmware is qualified for exact recognition only. It must not
+# add a new part or extend the existing PE camera date range in fuzzy matching.
+IONIQ5_PE_EXACT_CAMERA_FW = b'\xf1\x00NE  MFC  AT USA LHD 1.00 1.10 99211-PI110 260204'
+
+
 def get_platform_codes(fw_versions: list[bytes]) -> set[tuple[bytes, bytes | None]]:
   # Returns unique, platform-specific identification codes for a set of versions
   codes = set()  # (code-Optional[part], date)
@@ -1016,6 +1021,9 @@ def match_fw_to_car_fuzzy(live_fw_versions, vin, offline_fw_versions) -> set[str
       # Only check ECUs expected to have platform codes
       if ecu[0] not in PLATFORM_CODE_ECUS:
         continue
+
+      if candidate == CAR.HYUNDAI_IONIQ_5_PE and ecu[0] == Ecu.fwdCamera:
+        expected_versions = [fw for fw in expected_versions if fw != IONIQ5_PE_EXACT_CAMERA_FW]
 
       # Expected platform codes & dates
       codes = get_platform_codes(expected_versions)
