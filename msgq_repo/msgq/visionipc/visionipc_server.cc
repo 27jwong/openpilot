@@ -27,8 +27,6 @@ std::string get_ipc_path(const std::string& name) {
 }
 
 VisionIpcServer::VisionIpcServer(std::string name_) : name(name_) {
-  msg_ctx = Context::create();
-
   std::random_device rd("/dev/urandom");
   std::uniform_int_distribution<uint64_t> distribution(0, std::numeric_limits<uint64_t>::max());
   server_id = distribution(rd);
@@ -61,7 +59,7 @@ void VisionIpcServer::create_buffers_with_sizes(VisionStreamType type, size_t nu
   cur_idx[type] = 0;
 
   // Create msgq publisher for each of the `name` + type combos
-  sockets[type] = PubSocket::create(msg_ctx, get_endpoint_name(name, type), false);
+  sockets[type] = PubSocket::create(get_endpoint_name(name, type));
 }
 
 
@@ -154,7 +152,7 @@ void VisionIpcServer::listener(){
 VisionBuf * VisionIpcServer::get_buffer(VisionStreamType type, int idx){
   // Do we want to keep track if the buffer has been sent out yet and warn user?
   assert(buffers.count(type));
-  auto b = buffers[type];
+  const auto &b = buffers[type];
   if (idx < 0) {
     idx = cur_idx[type]++ % b.size();
   } else {
@@ -206,5 +204,4 @@ VisionIpcServer::~VisionIpcServer(){
   for (auto const& [type, sock] : sockets) {
     delete sock;
   }
-  delete msg_ctx;
 }

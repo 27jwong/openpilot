@@ -8,8 +8,8 @@
     {
       "path": "msgq_repo",
       "url": "https://github.com/commaai/msgq.git",
-      "commit": "0e266c1dbcf7328beee3e57b4a8688555387c877",
-      "tree": "380b9182bd1ac533eabe527b4f6fb6f6614dfe57",
+      "commit": "4fc91c70cd36a6e32a6a43a6dee152d25022361a",
+      "tree": "7bbdb66f24afa267ac583b07454fc5eff597ee24",
       "exclude": []
     },
     {
