@@ -10,6 +10,7 @@ from opendbc.car.fw_versions import (ObdCallback, get_fw_versions, get_fw_versio
                                      get_present_ecus, match_fw_to_car)
 from opendbc.car.mock.values import CAR as MOCK
 from opendbc.car.gm.pedal_capability import automatic_bolt_candidate
+from opendbc.car.gm.discovery import automatic_volt_candidate
 from opendbc.car.values import BRANDS
 from opendbc.car.vin import get_vin, is_valid_vin, VIN_UNKNOWN
 
@@ -83,6 +84,7 @@ def can_fingerprint(can_recv: CanRecvCallable) -> tuple[str | None, dict[int, di
 
       frame += 1
 
+  car_fingerprint = automatic_volt_candidate(car_fingerprint, finger, candidate_cars)
   return automatic_bolt_candidate(car_fingerprint, finger, camera_cruise_states), finger
 
 
