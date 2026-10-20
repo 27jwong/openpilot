@@ -186,6 +186,7 @@ if arch != "comma_arm64":
 if arch == "comma_arm64":
   env["CC"] = "clang"
   env["CXX"] = "clang++"
+  env.Append(CPPPATH=["#third_party/linux/include"])
   env.Append(LIBPATH=[
     "/usr/lib/aarch64-linux-gnu",
   ])
