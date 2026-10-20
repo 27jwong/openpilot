@@ -43,6 +43,7 @@ from openpilot.starpilot.lateral.lane_change_status_wire import (
 from openpilot.starpilot.models.receipt import ModelReceiptOwner
 from openpilot.starpilot.models.status import ModelVariant
 from openpilot.starpilot.models.startup import report_load_timeout, wait_for_chestnut_power
+from openpilot.starpilot.models.recovery import STARTUP_FALLBACK_EXIT
 from openpilot.starpilot.navigation.intent import TurnIntent, matching_turn_signal
 from openpilot.starpilot.models.catalog import BUNDLED_CURRENT, BY_ID, DEFAULT_SMALL, DEFAULT_SMALL_SHA256
 from openpilot.starpilot.models.runner import CatalogModelState, load_verified_model
@@ -379,7 +380,10 @@ def main(demo=False):
     model = big_model
     params.put_bool("ChestnutActive", model is not None)
     if model is None:
-      drop_chestnut()
+      # A timed-out loader can still mutate tinygrad's shared device state.
+      # The manager must confirm this process has exited before starting Small.
+      cloudlog.error("Chestnut startup failed; requesting isolated Small restart")
+      raise SystemExit(STARTUP_FALLBACK_EXIT)
 
   if small_model is None:
     small_model, small_prepared, selected_small_failed = load_small()
