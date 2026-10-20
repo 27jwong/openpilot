@@ -51,7 +51,7 @@ export function snapshot() {
   // As the server sends them: anchors for the sidebar-hidden road, and positions that may use its extra width.
   const shifts = { steering_wheel: 1, current_speed: .5, torque_bar: .5 }
   for (const [id, shift] of Object.entries(shifts)) metadata.profiles.large.widgets[id].anchorShift = shift
-  for (const id of ["current_speed", "cruise_limits", "speed_limit_actions", "steering_wheel", "driver_monitor"])
+  for (const id of Object.keys(metadata.profiles.large.widgets))
     Object.assign(metadata.profiles.large.widgets[id], { expandable: true, bounds: { x: 30 - 300 * (shifts[id] || 0), y: 30, width: 2100, height: 1020 } })
   metadata.profiles.compact.widgets.steering_wheel.resizable = { min: 40, default: 50, max: 70 }
   metadata.roadColorFields = [{ id: 'path', label: 'Path', default: '#30FF9CFF' },
@@ -127,7 +127,7 @@ assert.equal(clampPlacement(data.metadata.profiles.compact, "steering_wheel", 15
 assert.deepEqual(clampPlacement(data.metadata.profiles.compact, "steering_wheel", 21, 176, resizedWheel.layouts.compact), { x: 21, y: 170 })
 assert.deepEqual(clampPlacement(data.metadata.profiles.large, "current_speed", -999, -99), { x: -120, y: 30 }, "the sidebar-hidden screen is reachable")
 assert.deepEqual(clampPlacement(data.metadata.profiles.large, "cruise_limits", 9999, 30), { x: 2130 - 480, y: 30 })
-assert.deepEqual(clampPlacement(data.metadata.profiles.large, "torque_bar", -99, 759), { x: 30, y: 759 }, "the torque bar keeps its road")
+assert.deepEqual(clampPlacement(data.metadata.profiles.large, "torque_bar", -999, 759), { x: -120, y: 759 }, "the torque bar reaches the sidebar-hidden screen")
 assert.equal(clampPlacement(data.metadata.profiles.large, "fake", 30, 30), null)
 assert.equal(clampPlacement(data.metadata.profiles.large, "current_speed", NaN, 30), null)
 assert.deepEqual(previewPoint({ clientX: 316, clientY: 200 }, { left: 100, top: 92, width: 432, height: 216 }, data.metadata.profiles.large), { x: 1080, y: 540 })
@@ -1081,6 +1081,26 @@ assert.equal(display.vm.displayValue("DeveloperSidebar"), "On")
 assert.equal(display.vm.roadBounds.width, 1800)
 assert.equal(display.vm.previewX("steering_wheel"), 1588)
 assert.equal(previewDocument(display.vm.state.draft).developerSidebar, true)
+for (const sidebar of ["Off", "On"]) {
+  const allWidgets = editor().vm
+  allWidgets.state.data = copy(merged); allWidgets.state.draft = copy(merged.document)
+  for (const id of ["pip_left", "pip_right"]) {
+    allWidgets.profile.widgets[id] = { ...widget(id, "pip_camera", 600, 600, 54, 426), layer: "underlay", colors: {},
+      expandable: true, bounds: { x: 30, y: 30, width: 2100, height: 1020 } }
+    allWidgets.layout[id] = { x: 54, y: 426, enabled: true }
+  }
+  allWidgets.setDisplay("DeveloperSidebar", sidebar)
+  for (const [id, widget] of Object.entries(allWidgets.profile.widgets)) {
+    const [width, height] = documentHelpers.widgetSize(widget, allWidgets.layout[id])
+    for (const [x, y] of [[-9999, -9999], [-9999, 9999], [9999, -9999], [9999, 9999]]) {
+      allWidgets.changePosition(id, x, y)
+      assert.equal(allWidgets.previewX(id), x < 0 ? 30 : (sidebar === "Off" ? 2130 : 1830) - width, id)
+      assert.equal(allWidgets.layout[id].y, y < 0 ? 30 : 1050 - height, id)
+      assert.equal(validDocument(allWidgets.state.draft, allWidgets.state.data.metadata), true, id)
+    }
+  }
+}
+
 const shiftedTray = editor(), shifted = shiftedTray.vm
 shifted.state.data = { ...merged, supportedProfiles: ["large", "compact"] }; shifted.state.draft = copy(merged.document)
 shifted.setDisplay("DeveloperSidebar", "Off")

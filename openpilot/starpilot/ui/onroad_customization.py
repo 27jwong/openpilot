@@ -205,15 +205,12 @@ ROAD_BASE_WIDTH = 1860
 SIDEBAR_EXTRA = 300
 ANCHOR_SHIFT = {"steering_wheel": 1.0, NAV_CARD_WIDGET: 1.0, NAV_MAP_WIDGET: 1.0,
                 "current_speed": .5, "torque_bar": .5, MODE_WIDGET: .5, CLOCK_WIDGET: .5}
-EXPANDABLE_WIDGETS = ("current_speed", "cruise_limits", "speed_limit_actions", "steering_wheel", "driver_monitor", MODE_WIDGET,
-                      CLOCK_WIDGET, CEM_GAUGE_WIDGET, STOPPED_TIMER_WIDGET, NAV_CARD_WIDGET, NAV_MAP_WIDGET, JETLINK_WIDGET)
 for _key, _widget_data in PROFILES["large"]["widgets"].items():
   if _key in ANCHOR_SHIFT:
     _widget_data["anchorShift"] = ANCHOR_SHIFT[_key]
-  if _key in EXPANDABLE_WIDGETS:
-    _base = PROFILES["large"]["bounds"]
-    _widget_data["bounds"] = {**_base, "x": _base["x"] - ANCHOR_SHIFT.get(_key, 0) * SIDEBAR_EXTRA, "width": _base["width"] + SIDEBAR_EXTRA}
-    _widget_data["expandable"] = True
+  _base = PROFILES["large"]["bounds"]
+  _widget_data["bounds"] = {**_base, "x": _base["x"] - ANCHOR_SHIFT.get(_key, 0) * SIDEBAR_EXTRA, "width": _base["width"] + SIDEBAR_EXTRA}
+  _widget_data["expandable"] = True
 # Older documents retain every saved placement and gain this independent widget.
 OPTIONAL_WIDGETS = frozenset({MODE_WIDGET, CLOCK_WIDGET, STOPPED_TIMER_WIDGET, CEM_GAUGE_WIDGET, NAV_CARD_WIDGET, NAV_MAP_WIDGET, JETLINK_WIDGET})
 

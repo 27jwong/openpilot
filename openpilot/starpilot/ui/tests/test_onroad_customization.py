@@ -884,19 +884,19 @@ def test_native_map_rejects_invalid_size_opacity_and_offscreen_placements(change
 
 
 def test_big_widgets_can_use_the_space_a_hidden_sidebar_adds():
-  from openpilot.starpilot.ui.onroad_customization import ANCHOR_SHIFT, PROFILES, fit_to_road
+  from openpilot.starpilot.ui.onroad_customization import ANCHOR_SHIFT, PROFILES
   widgets = PROFILES["large"]["widgets"]
   document = default_document()
   speed = document["layouts"]["large"]["current_speed"]
   assert widgets["current_speed"]["bounds"]["x"] == 30 - 150 and widgets["steering_wheel"]["bounds"]["x"] == 30 - 300
-  assert "bounds" not in widgets["torque_bar"] and "bounds" not in widgets["pip_left"]
+  assert all(widget["expandable"] for widget in widgets.values())
   speed["x"] = 30 - 150
   assert validate_document(document)["layouts"]["large"]["current_speed"]["x"] == -120
   speed["x"] = 30 - 151
   with pytest.raises(ValueError):
     validate_document(document)
   # Every widget reaches the right edge of the full screen, and not past it.
-  for key in ("cruise_limits", "stopped_timer", "nav_card", "nav_map"):
+  for key in widgets:
     document = default_document()
     placed, width = document["layouts"]["large"][key], widget_size(document, "large", key)[0]
     placed["x"] = 2130 - width - ANCHOR_SHIFT.get(key, 0) * 300
@@ -904,6 +904,23 @@ def test_big_widgets_can_use_the_space_a_hidden_sidebar_adds():
     placed["x"] += 1
     with pytest.raises(ValueError):
       validate_document(document)
+
+
+@pytest.mark.parametrize("right,bottom", [(False, False), (False, True), (True, False), (True, True)])
+def test_every_large_widget_reaches_each_corner_and_fits_when_sidebar_returns(right, bottom):
+  from openpilot.starpilot.ui.onroad_customization import ANCHOR_SHIFT, PROFILES, fit_to_road
+  for key in PROFILES["large"]["widgets"]:
+    document = default_document()
+    width, height = widget_size(document, "large", key)
+    shift = ANCHOR_SHIFT.get(key, 0) * 300
+    x, y = (2130 - width if right else 30) - shift, 1050 - height if bottom else 30
+    document["layouts"]["large"][key].update(x=x, y=y)
+    assert validate_document(document)["layouts"]["large"][key]["x"] == x
+    assert fit_to_road(document, 2160) is document
+    fitted = fit_to_road(document, 1860)["layouts"]["large"][key]
+    assert 30 <= fitted["x"] <= 1830 - width
+    assert fitted["y"] == y
+    assert document["layouts"]["large"][key]["x"] == x
 
 
 def test_fit_to_road_pulls_widgets_in_only_where_the_road_is_narrower():
