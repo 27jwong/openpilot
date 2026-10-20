@@ -51,7 +51,8 @@ from openpilot.starpilot.speed_limits.vision.observation import clock_pair_ns
 from openpilot.starpilot.ui.sounds_owner import AUTO_PREFIX as SOUND_AUTO_PREFIX, SoundsOwner
 from openpilot.starpilot.ui.feature_settings_state import (
   FeatureInput, FeaturePage, FeatureRow, FeatureSettingsRequest, FeatureUiAction, row_change,
-  feature_scroll, feature_parent_page, feature_parent_title, value_request,
+  feature_scroll, feature_parent_page, feature_parent_title, value_request, value_editor_state,
+  SOUND_PRESETS as SOUND_PRESETS, SYSTEM_PRESETS, sound_editor_state,
 )
 from openpilot.starpilot.ui.lane_change_feature import KEYS as LANE_CHANGE_KEYS, RESET as LANE_CHANGE_RESET
 from openpilot.starpilot.models.runtime import ModelStatusSource
@@ -103,15 +104,6 @@ _FEATURE_SETTINGS_PANES = {
   Destination.SYSTEM: ("display", "display", "display"),
   Destination.DRIVING_MODEL: ("models", "model", "models"),
 }
-SOUND_PRESETS = ("0", "10", "25", "50", "75", "100", "Auto")
-SYSTEM_PRESETS = {
-  "ScreenBrightness": tuple((str(value), f"{value}%") for value in (10, 25, 50, 75, 100)) + (("Auto", "Auto"),),
-  "ScreenTimeout": tuple((str(value), f"{value} s") for value in (5, 10, 15, 30, 60)),
-  "power:hours": tuple((f"{value} h", f"{value} h") for value in (1, 3, 6, 12, 24, 30)),
-  "power:volts": tuple((f"{value} V", f"{value} V") for value in ("11.8", "12.0", "12.2", "12.5")),
-}
-SYSTEM_PRESETS["ScreenBrightnessOnroad"] = SYSTEM_PRESETS["ScreenBrightness"]
-SYSTEM_PRESETS["ScreenTimeoutOnroad"] = SYSTEM_PRESETS["ScreenTimeout"]
 
 
 def validate_runtime_fonts(profile: Profile) -> None:
@@ -220,9 +212,11 @@ class StarShellSession:
     self.feature_page: str = FeaturePage.HUB
     self.feature_root_page: str = FeaturePage.HUB
     self.feature_scroll = 0
+    self.feature_edit_key: str | None = None
     self.sounds_scroll = 0
     self.sounds_edit_key: str | None = None
     self.appearance_scroll = 0
+    self.appearance_edit_key: str | None = None
     self.display_scroll = 0
     self.display_page = "system"
     self.display_edit_key: str | None = None
@@ -685,6 +679,10 @@ class StarShellSession:
     if getattr(self, "_aol_save", None) is not None:
       state = replace(state, rows=tuple(replace(row, available=False, reason="Saving AOL preference…")
                                         if row.key == "AlwaysOnLateral" else row for row in state.rows))
+    if self.profile == Profile.LARGE and not favorite:
+      state = value_editor_state(state, getattr(self, "feature_edit_key", None) if page is None else None)
+      if state.editor and state.rows[0].key in (*LANE_CHANGE_KEYS, "CustomCruise", "CustomCruiseLong", "ToyotaRadarMode"):
+        state = replace(state, save_hint="Changes require confirmation")
     return state
 
   def _vehicle_selector(self) -> VehicleLarge:
@@ -756,14 +754,7 @@ class StarShellSession:
     state = self.sounds_owner.snapshot()
     if self.profile == Profile.LARGE:
       rows = tuple(row for row in state.rows if not row.key.startswith(SOUND_AUTO_PREFIX))
-      rows = tuple(replace(row, presets=tuple(
-        (value, "Mute" if value == "0" else value if value == "Auto" else value + "%")
-        for value in SOUND_PRESETS if value == "Auto" or row.minimum <= int(value) <= row.maximum))
-        if row.unit == "%" else row for row in rows)
-      if self.sounds_edit_key is not None:
-        row = next(row for row in rows if row.key == self.sounds_edit_key)
-        return replace(state, title=row.label, subtitle=row.reason, rows=(row,), parent_title="Sounds & Alerts", editor=True)
-      state = replace(state, page="sounds:overview", rows=tuple(replace(row, page=row.key) for row in rows), subtitle="")
+      return sound_editor_state(replace(state, rows=rows), self.sounds_edit_key)
     return state
 
   def sounds_request(self, request: FeatureSettingsRequest) -> bool:
@@ -774,7 +765,8 @@ class StarShellSession:
     return ok
 
   def appearance_snapshot(self):
-    return self.pip_snapshot() if getattr(self, "appearance_page", "appearance") == "pip" else self.appearance_owner.snapshot(self.profile)
+    state = self.pip_snapshot() if getattr(self, "appearance_page", "appearance") == "pip" else self.appearance_owner.snapshot(self.profile)
+    return value_editor_state(state, getattr(self, "appearance_edit_key", None)) if self.profile == Profile.LARGE else state
 
   def pip_snapshot(self):
     return self.pip_owner.snapshot()
@@ -854,6 +846,7 @@ class StarShellSession:
                            for row in display.rows if not row.key.startswith(DISPLAY_AUTO_PREFIX))
       power_rows = tuple(replace(row, presets=SYSTEM_PRESETS[row.key], page=row.key) if row.key in SYSTEM_PRESETS else row
                          for row in power.rows)
+      power_rows = value_editor_state(replace(power, rows=power_rows), None).rows
       if getattr(self, "display_edit_key", None) is not None:
         row = next(row for row in display_rows + power_rows if row.key == self.display_edit_key)
         return replace(state, page=getattr(self, "display_page", "system"), title=row.label, subtitle=row.reason, rows=(replace(row, page=""),),
@@ -1049,21 +1042,30 @@ class StarShellSession:
       return
     state = self.appearance_snapshot()
     if action.kind == "back":
-      if getattr(self, "appearance_page", "appearance") == "pip":
+      if getattr(self, "appearance_edit_key", None) is not None:
+        self.appearance_edit_key = None
+        self._pip_request_epoch = getattr(self, "_pip_request_epoch", 0) + 1
+      elif getattr(self, "appearance_page", "appearance") == "pip":
         self.appearance_page = "appearance"
         self._pip_request_epoch = getattr(self, "_pip_request_epoch", 0) + 1
+        self.appearance_scroll = 0
       else:
         self.selected = Destination.STAR
-      self.appearance_scroll = 0
+        self.appearance_scroll = 0
       self.input.cancel()
-    elif action.kind == "open" and action.row is not None and action.row in state.rows and action.row.page == "pip":
-      self.appearance_page = "pip"
-      self.appearance_scroll = 0
+    elif action.kind == "open" and not state.editor and action.row is not None and action.row in state.rows:
+      if action.row.presets and action.row.available:
+        self.appearance_edit_key = action.row.key
+      elif action.row.page == "pip":
+        self.appearance_page = "pip"
+        self.appearance_scroll = 0
+      else:
+        return
       self.input.cancel()
-    elif action.kind == "scroll":
+    elif action.kind == "scroll" and not state.editor:
       self.appearance_scroll = feature_scroll(self.appearance_scroll, action.direction, len(state.rows))
-    elif action.kind == "change" and action.row is not None and action.row in state.rows:
-      request = row_change(action.row, action.direction)
+    elif action.kind in ("change", "action") and action.row is not None and action.row in state.rows:
+      request = value_request(state, action)
       if request is not None:
         self.appearance_request(request)
     elif action.kind == "reset" and action.row is not None and action.row in state.rows and \
@@ -1117,28 +1119,37 @@ class StarShellSession:
     state = self.feature_snapshot()
     if action.kind == "back":
       self._lane_change_request_epoch = getattr(self, "_lane_change_request_epoch", 0) + 1
-      parent = feature_parent_page(self.feature_page)
-      if parent is None or self.feature_page == self.feature_root_page:
-        self.selected = Destination.STAR
+      if getattr(self, "feature_edit_key", None) is not None:
+        self.feature_edit_key = None
       else:
-        self.feature_page = parent
-      self.feature_scroll = 0
+        parent = feature_parent_page(self.feature_page)
+        if parent is None or self.feature_page == self.feature_root_page:
+          self.selected = Destination.STAR
+        else:
+          self.feature_page = parent
+        self.feature_scroll = 0
       self.input.cancel()
-    elif action.kind == "scroll":
+    elif action.kind == "scroll" and not state.editor:
       self.feature_scroll = feature_scroll(self.feature_scroll, action.direction, len(state.rows))
-    elif action.kind == "open" and action.row in state.rows and action.row.page:
+    elif action.kind == "open" and not state.editor and action.row in state.rows and action.row.page:
       self._lane_change_request_epoch = getattr(self, "_lane_change_request_epoch", 0) + 1
-      if action.row.page == SELECTION_PAGE:
+      if action.row.presets:
+        if not action.row.available:
+          return
+        self.feature_edit_key = action.row.key
+      elif action.row.page == SELECTION_PAGE:
         self._vehicle_selector().open(action.row.source)
       else:
         self.feature_page = action.row.page
         self.feature_scroll = 0
       self.input.cancel()
-    elif action.kind == "change" and action.row is not None and action.row in state.rows:
-      request = row_change(action.row, action.direction)
+    elif action.kind in ("change", "action") and action.row is not None and action.row in state.rows:
+      request = value_request(state, action)
       if request is not None:
         if request.key in VEHICLE_BOOL_KEYS:
           self._confirm_vehicle_bool(request)
+        elif request.key in ("CustomCruise", "CustomCruiseLong", "ToyotaRadarMode"):
+          self._confirm_vehicle_bool(request, f"Set {action.row.label.lower()} to {request.value} {action.row.unit}".rstrip() + "?")
         elif request.key in LANE_CHANGE_KEYS:
           self._confirm_lane_change(request)
         else:
@@ -1205,12 +1216,12 @@ class StarShellSession:
         self.feature_request(replace(request, confirmation=True))
     gui_app.push_widget(ConfirmDialog(question, "Save", callback=confirmed))
 
-  def _confirm_vehicle_bool(self, request: FeatureSettingsRequest) -> None:
+  def _confirm_vehicle_bool(self, request: FeatureSettingsRequest, question: str | None = None) -> None:
     from openpilot.system.ui.widgets.confirm_dialog import ConfirmDialog
     from openpilot.system.ui.widgets import DialogResult
     page = self.feature_page
     epoch = self._lane_change_request_epoch
-    question = vehicle_question(request)
+    question = question or vehicle_question(request)
     def confirmed(result: DialogResult) -> None:
       if result == DialogResult.CONFIRM and self._mode == ShellMode.SETTINGS and \
          self.selected == Destination.DRIVING_CONTROLS and self.feature_page == page and \
@@ -1300,9 +1311,11 @@ class StarShellSession:
                                                    force_drive_label=label))
     if self.profile == Profile.LARGE and mode == ShellMode.SETTINGS and self.selected == Destination.DRIVING_CONTROLS:
       feature = self.feature_snapshot()
-      self.feature_scroll = feature_scroll(self.feature_scroll, 0, len(feature.rows))
-      feature = replace(feature, scroll=self.feature_scroll, sidebar_expanded=self.sidebar_expanded,
-                        parent_title="StarPilot" if self.feature_page == self.feature_root_page else feature_parent_title(self.feature_page))
+      if not feature.editor:
+        self.feature_scroll = feature_scroll(self.feature_scroll, 0, len(feature.rows))
+      feature = replace(feature, scroll=0 if feature.editor else self.feature_scroll, sidebar_expanded=self.sidebar_expanded,
+                        parent_title=feature.parent_title if feature.editor else
+                        "StarPilot" if self.feature_page == self.feature_root_page else feature_parent_title(self.feature_page))
       snapshot = replace(snapshot, features=feature)
     if self.profile == Profile.LARGE and mode == ShellMode.SETTINGS and self.selected == Destination.SOUNDS:
       sounds = self.sounds_snapshot()
@@ -1312,9 +1325,11 @@ class StarShellSession:
       snapshot = replace(snapshot, sounds=sounds)
     if self.profile == Profile.LARGE and mode == ShellMode.SETTINGS and self.selected == Destination.APPEARANCE:
       appearance = self.appearance_snapshot()
-      self.appearance_scroll = feature_scroll(self.appearance_scroll, 0, len(appearance.rows))
-      appearance = replace(appearance, scroll=self.appearance_scroll, sidebar_expanded=self.sidebar_expanded,
-                           parent_title="Appearance" if getattr(self, "appearance_page", "appearance") == "pip" else "StarPilot")
+      if not appearance.editor:
+        self.appearance_scroll = feature_scroll(self.appearance_scroll, 0, len(appearance.rows))
+      appearance = replace(appearance, scroll=0 if appearance.editor else self.appearance_scroll, sidebar_expanded=self.sidebar_expanded,
+                           parent_title=appearance.parent_title if appearance.editor else
+                           "Appearance" if getattr(self, "appearance_page", "appearance") == "pip" else "StarPilot")
       snapshot = replace(snapshot, appearance=appearance)
     if self.profile == Profile.LARGE and mode == ShellMode.SETTINGS and self.selected == Destination.SYSTEM:
       display = self.system_snapshot()
@@ -1431,7 +1446,11 @@ class StarShellSession:
         self._unavailable("experimental mode owner")
     elif request.source == "settings":
       if action.kind == SettingsActionKind.CLOSE:
-        if self.selected == Destination.SYSTEM and (getattr(self, "display_edit_key", None) is not None or
+        if self.selected == Destination.DRIVING_CONTROLS and getattr(self, "feature_edit_key", None) is not None:
+          self._feature_ui(FeatureUiAction("back"))
+        elif self.selected == Destination.APPEARANCE and getattr(self, "appearance_edit_key", None) is not None:
+          self._appearance_ui(FeatureUiAction("back"))
+        elif self.selected == Destination.SYSTEM and (getattr(self, "display_edit_key", None) is not None or
                                                    getattr(self, "display_page", "system") == "display"):
           self._display_ui(FeatureUiAction("back"))
         elif self.selected != Destination.STAR:
@@ -1452,12 +1471,14 @@ class StarShellSession:
             self.selected = Destination.DRIVING_CONTROLS
             self.feature_page = self.feature_root_page = FeaturePage.VEHICLE if destination == Destination.VEHICLE else FeaturePage.HUB
             self.feature_scroll = 0
+            self.feature_edit_key = None
           elif destination == Destination.SOUNDS:
             self.sounds_scroll = 0
             self.sounds_edit_key = None
           elif destination == Destination.APPEARANCE:
             self.appearance_scroll = 0
             self.appearance_page = "appearance"
+            self.appearance_edit_key = None
           elif destination == Destination.SYSTEM:
             self.display_scroll = 0
             self.display_page = "system"

@@ -11,7 +11,9 @@ from unittest.mock import Mock, patch
 
 import pyray as rl
 
-from openpilot.starpilot.ui.feature_settings_state import FEATURE_ROW_TOP, FEATURE_ROW_HEIGHT, FeatureInput, FeatureUiAction
+from openpilot.starpilot.ui.feature_settings_state import (
+  FEATURE_ROW_TOP, FEATURE_ROW_HEIGHT, FeatureInput, FeatureUiAction, feature_row_top, value_buttons, value_done_rect,
+)
 from openpilot.starpilot.ui.starpilot_settings_adapter_large import StarPilotSettingsAdapterLarge
 from openpilot.starpilot.ui.network_panel import NetworkPanelBridge
 from openpilot.starpilot.ui.tests.test_feature_settings_visuals import fake_fonts
@@ -43,6 +45,13 @@ class NativeSettingsPageTests(unittest.TestCase):
 
   def click(self, pane, x=1930, index=0):
     pos = MousePos(x + pane.origin[0], FEATURE_ROW_TOP + (index + .5) * FEATURE_ROW_HEIGHT + pane.origin[1])
+    pane._handle_mouse_press(pos)
+    pane._handle_mouse_release(pos)
+
+  def choose(self, pane, value):
+    state = pane.snapshot()
+    _, (x, y, width, height), _ = next(button for button in value_buttons(state, state.rows[0], feature_row_top(state)) if button[0] == value)
+    pos = MousePos(x + width / 2 + pane.origin[0], y + height / 2 + pane.origin[1])
     pane._handle_mouse_press(pos)
     pane._handle_mouse_release(pos)
 
@@ -348,12 +357,14 @@ class NativeSettingsPageTests(unittest.TestCase):
     pane._handle_mouse_release(pos)
     action.callback.assert_not_called()
     self.click(pane, 2000)
+    self.assertTrue(pane.snapshot().editor)
+    self.choose(pane, 'Unmetered')
     action.callback.assert_called_once_with(2)
-    self.click(pane, 1800)
+    self.choose(pane, 'Metered')
     self.assertEqual(action.callback.call_args.args, (1,))
     action.callback.reset_mock()
     action.set_enabled(False)
-    self.click(pane, 2000)
+    self.choose(pane, 'Unmetered')
     action.set_enabled(True)
     pane.hide_event()
     self.click(pane, 2000)
@@ -404,6 +415,7 @@ class NativeSettingsPageTests(unittest.TestCase):
     action.toggle._callback.assert_not_called()
     self.assertFalse(action.get_state())
     self.click(pane, 2000, index=1)
+    self.choose(pane, 'Relaxed')
     pane.panel.request_personality.assert_called_once_with(2)
     personality.callback.assert_not_called()
     self.assertEqual(personality.selected_button, 1)
@@ -445,11 +457,13 @@ class NativeSettingsPageTests(unittest.TestCase):
       pane._update_state()
       self.assertEqual(saved['IsLdwEnabled'], desired)
       self.assertEqual(pane.snapshot().rows[0].value, 'On' if desired else 'Off')
+    self.click(pane, 2000, index=1)
     for expected in (2, 0, 1):
-      self.click(pane, 2000, index=1)
+      self.choose(pane, personality.action_item.buttons[expected])
       pane._update_state()
       self.assertEqual(saved['LongitudinalPersonality'], expected)
-      self.assertEqual(pane.snapshot().rows[1].value, personality.action_item.buttons[expected])
+      self.assertEqual(pane.snapshot().rows[0].value, personality.action_item.buttons[expected])
+    pane._emit(FeatureUiAction('back'))
     owner._toggle_defs['IsLdwEnabled'] = ('', '', '', True)
     ui.engaged = True
     self.click(pane, 2000)
@@ -461,6 +475,31 @@ class NativeSettingsPageTests(unittest.TestCase):
       self.assertEqual(saved['ExperimentalMode'], desired)
       self.assertEqual(pane.snapshot().rows[2].value, 'On' if desired else 'Off')
     app.push_widget.assert_not_called()
+
+  def test_native_choice_editor_preserves_position_done_and_touch_guards(self):
+    with patch.object(gui_app, 'font', return_value=rl.Font()):
+      action = MultipleButtonAction(['Default', 'Metered', 'Unmetered'], 255, callback=Mock())
+    pane = self.panel([*(item(str(i), button_action()) for i in range(5)), item('Wi-Fi Network Metered', action)])
+    pane.scroll = 5
+    self.click(pane)
+    state = pane.snapshot()
+    row = state.rows[0]
+    self.assertTrue(state.editor)
+    self.assertEqual(state.parent_title, 'Device')
+    _, (x, y, width, height), _ = next(button for button in value_buttons(state, row, feature_row_top(state)) if button[0] == 'Unmetered')
+    pos = MousePos(x + width / 2, y + height / 2)
+    pane._handle_mouse_press(pos)
+    action.set_selected_button(1)
+    pane._handle_mouse_release(pos)
+    action.callback.assert_not_called()
+    state = pane.snapshot()
+    x, y, width, height = value_done_rect(state)
+    done = MousePos(x + width / 2, y + height / 2)
+    pane._handle_mouse_press(done)
+    pane._handle_mouse_release(done)
+    self.assertFalse(pane.snapshot().editor)
+    self.assertEqual(pane.scroll, 5)
+    pane.on_back.assert_not_called()
 
   def network_panel(self):
     manager = Mock(spec=WifiManager, is_connection_saved=lambda ssid: ssid == "Saved", connected_ssid="Saved",
