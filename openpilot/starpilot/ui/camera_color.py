@@ -1,4 +1,4 @@
-"""High-contrast camera color: monochrome disengaged, muted for AOL, vivid Technicolor engaged."""
+"""High-contrast camera color: faint when disengaged, muted for AOL, vivid Technicolor engaged."""
 
 from openpilot.starpilot.ui.runtime_snapshot import display_message
 
@@ -16,13 +16,13 @@ highp vec3 road_color(highp vec3 rgb, highp float strength) {
 
 def road_color_strength(ui) -> float:
   if not ui.started:
-    return 0.0
+    return 0.2
   now = ui.display_time_ns()
   control = display_message(ui.sm, 'carControl', now, after_frame=ui.started_frame)
   if control is None:
-    return 0.0
+    return 0.2
   selfdrive = display_message(ui.sm, 'selfdriveState', now, after_frame=ui.started_frame)
   # Enabled includes stock ACC and temporary pedal/steering overrides.
   if control.longActive or (selfdrive is not None and selfdrive.enabled):
     return 1.0
-  return 0.45 if control.latActive else 0.0
+  return 0.45 if control.latActive else 0.2
