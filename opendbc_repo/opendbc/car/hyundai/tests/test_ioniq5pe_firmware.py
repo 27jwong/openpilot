@@ -100,7 +100,7 @@ class TestIoniq5PEFirmware(unittest.TestCase):
             continue
           calls = []
 
-          def capture(versions):
+          def capture(versions, calls=calls):
             codes = original(versions)
             calls.append(codes)
             return codes
