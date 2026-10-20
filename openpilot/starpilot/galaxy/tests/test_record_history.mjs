@@ -58,9 +58,10 @@ assert.equal(cards[0].routeId, current)
 const app = readFileSync(new URL('../web/js/app.js', import.meta.url), 'utf8')
 assert.match(app, /<LocalRecordingsPage v-else-if="isActive\('\/recordings'\) && authState.localAccess"/)
 assert.match(app, /<div v-if="authState.localAccess" class="gx-nav-section"><div class="gx-nav-section__title">Routes<\/div>/)
-assert.match(app, /<GxState v-else-if="isActive\('\/recordings'\)">Routes require a local Galaxy connection/)
+assert.match(app, /<div v-else-if="isActive\('\/recordings'\)" class="gx-stack">\s*<GxState[^>]*>Routes are unavailable through the Galaxy tunnel\. Open Galaxy locally to access Routes\.<\/GxState>\s*<LocalAccess :mode="state.monitorMode" :on-unauthorized="sessionExpired" \/>/)
 assert.match(app, /<BottomNav[^>]*:local-access="authState.localAccess"/)
 assert.match(BottomNav.template, /:disabled="item.path === '\/recordings' && !localAccess"/)
+assert.match(BottomNav.template, /Routes are unavailable through the Galaxy tunnel\. Open Galaxy locally to access Routes\./)
 
 function fixture() {
   const requests = [], states = [], timers = new Map()

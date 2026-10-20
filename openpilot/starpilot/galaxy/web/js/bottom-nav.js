@@ -20,7 +20,7 @@ export const BottomNav = {
   template: `<nav class="blur-nav" aria-label="Primary navigation" :style="{'--active-tab': activeTab}">
     <span class="gx-nav-indicator" aria-hidden="true"></span>
     <button v-for="(item, index) in tabs" :key="item.path" type="button" class="nav-item"
-      :disabled="item.path === '/recordings' && !localAccess" :title="item.path === '/recordings' && !localAccess ? 'Routes require a local Galaxy connection' : null"
+      :disabled="item.path === '/recordings' && !localAccess" :title="item.path === '/recordings' && !localAccess ? 'Routes are unavailable through the Galaxy tunnel. Open Galaxy locally to access Routes.' : null"
       :class="{active: index === activeTab}" :aria-current="index === activeTab ? 'page' : null" @click="$emit('navigate', item.path)">
       <i class="bi" :class="item.icon" aria-hidden="true"></i><span>{{ item.name }}</span>
     </button>
