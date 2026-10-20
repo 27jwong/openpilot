@@ -486,21 +486,35 @@ class TestPENormalSelection(unittest.TestCase):
     from openpilot.starpilot.vehicle_preferences import VehicleStartupPreferences
     from openpilot.starpilot.vehicle_startup import VehicleStartupOwner
 
+    from tempfile import TemporaryDirectory
+    from pathlib import Path
+
     class Saved:
       def __init__(self, alpha):
-        self.values = {'AolEnabled': b'1', 'LongPitch': b'0'}
+        self.values = {'AlwaysOnLateral': b'1', 'LongPitch': b'0'}
         if alpha is not None:
           self.values['AlphaLongitudinalEnabled'] = alpha
+        self.directory = TemporaryDirectory()
+        self.root = Path(self.directory.name)
+        for key, value in self.values.items():
+          (self.root / key).write_bytes(value)
+
+      def get_param_path(self, key):
+        return str(self.root / key)
 
       def get(self, key, **kwargs):
-        return self.values.get(key)
+        path = self.root / key
+        raw = path.read_bytes() if path.exists() else None
+        return raw.decode(kwargs["encoding"]) if raw is not None and kwargs.get("encoding") else raw
 
       def get_bool(self, key):
-        return self.values.get(key) == b'1'
+        return self.get(key) == b'1'
 
     for alpha, release in ((None, False), (b'0', False), (b'1', False), (b'1', True)):
       with self.subTest(alpha=alpha, release=release):
         saved = Saved(alpha)
+        self.addCleanup(saved.directory.cleanup)
+        before_files = {p.name: p.read_bytes() for p in saved.root.iterdir()}
         before = dict(saved.values)
         request = alpha_long_requested(saved, is_release=release)
         startup = VehicleStartupOwner()
@@ -527,6 +541,7 @@ class TestPENormalSelection(unittest.TestCase):
         self.assertEqual(ci.CP.alphaLongitudinalAvailable, not release)
         self.assertEqual(ci.CP.safetyConfigs[0].safetyParam, 0x5495 if request else 0x5491)
         self.assertEqual(saved.values, before)
+        self.assertEqual({p.name: p.read_bytes() for p in saved.root.iterdir()}, before_files)
         if request:
           self.assertIsInstance(startup.owner, PEPendingStartup)
           self.assertEqual(startup.owner.owner.phase, Phase.PENDING)

@@ -168,6 +168,13 @@ class TestPELongDebug(PEFixture, unittest.TestCase):
     self.assertEqual(self.safety.safety_fwd_hook(0, 0x3A4), 2)
     self.assertEqual(self.safety.safety_fwd_hook(0, 0x3C5), 2)
 
+  def test_longitudinal_and_ordinary_direct_angle_remain_withdrawn_on_gas(self):
+    self.ready()
+    self.safety.set_timer(self.now)
+    self.assertTrue(self.safety.safety_rx_hook(self.packet('ACCELERATOR', 1, {'GEAR': 5, 'ACCELERATOR_PEDAL': 4})))
+    self.assertFalse(self.safety.safety_tx_hook(self.angle(value=.1)))
+    self.assertFalse(self.safety.safety_tx_hook(self.packet('SCC_CONTROL', 1, {'ACCMode': 1, 'aReqRaw': 1., 'aReqValue': 1.})))
+
 
 class TestPELongReleaseDenied(PEFixture, unittest.TestCase):
   def test_release_never_admits_proposed_pe_long_profile(self):
