@@ -952,7 +952,7 @@ class TransportPauseFeedback:
       (native.pandaSerial, tuple(p.hardwareSerial for p in native.pandaInventory)) == self.lateral_inventory)
 
   def observe(self, sm, cp, cs, now_ns, *, latched=True, cancel_source_ns=0, brake_source_ns=0,
-              gm_withdrawal_source_ns=0, intent_producer_session='', main_arm_ns=0):
+              gm_withdrawal_source_ns=0, intent_producer_session='', main_arm_ns=0, startup_calibration_pending=False):
     self.temporary_host_qualified = False
     self.qualified = False
     self.awaiting = False
@@ -980,6 +980,15 @@ class TransportPauseFeedback:
           signature[14:16] != self.signature[14:16]):
         self.failed = True
         return True
+      if (cp.brand == 'chrysler' and current and continuity and latched and
+          not self.failed and not self.ever_lateral_active):
+        from openpilot.starpilot.car.chrysler.aol import cold_calibration_intent_current
+        native = _healthy_transport_native(sm, cp, cs, str(axis.sessionId), now_ns)
+        if cold_calibration_intent_current(self, sm, cp, cs, axis, native, now_ns,
+            pending=startup_calibration_pending, producer=intent_producer_session):
+          self.session = str(axis.sessionId)
+          self.sequence, self.signature = int(axis.sequence), signature
+          return False
       if current and continuity and 0 < main_arm_ns <= now_ns <= main_arm_ns + AXIS_MAX_AGE_NS:
         from openpilot.starpilot.car.gm.aol import prior_main_off_intent_current
         if prior_main_off_intent_current(self, sm, cp, cs, axis, now_ns,

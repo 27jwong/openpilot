@@ -32,7 +32,8 @@ from openpilot.selfdrive.selfdrived.helpers import (ExcessiveActuationCheck, jet
 from openpilot.starpilot.models import jetlink_adapter
 from openpilot.system.manager.process_health import driving_process_failures
 from openpilot.selfdrive.selfdrived.state import StateMachine
-from opendbc.car.gm.aol import native_bootstrap_supported, qualified_gm
+from opendbc.car.gm.aol import qualified_gm
+from openpilot.starpilot.aol.vehicle import native_bootstrap_supported
 from opendbc.car.gm.steering_authority import monitored_profile
 from openpilot.starpilot.car.gm.steering_companion import SteeringCompanion
 from openpilot.starpilot.car.hyundai.aol import qualified_ioniq6

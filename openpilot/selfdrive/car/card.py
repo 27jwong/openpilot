@@ -61,7 +61,8 @@ from openpilot.starpilot.aol.vehicle import create_intent as create_aol_intent, 
 from openpilot.starpilot.aol.wire import IntentState, encode_intent
 from openpilot.starpilot.conditional_mode.manual import Button, ButtonTracker, IoniqMediaMapCache, WheelMapCache, Press, ioniq6_media_eligible
 from openpilot.starpilot.longitudinal.ioniq6_start import eligible as ioniq6_long_eligible
-from opendbc.car.gm.aol import native_bootstrap_supported, qualified_gm
+from opendbc.car.gm.aol import qualified_gm
+from openpilot.starpilot.aol.vehicle import native_bootstrap_supported
 from opendbc.car.gm.values import CAR as GM_CAR, GMFlags, is_volt_ascm_longitudinal, is_volt_sdgm_profile, is_bolt_present_no_acc_pedal_profile
 from opendbc.car.gm.lateral import lane_centering_supported as gm_lane_centering_supported
 from opendbc.car.gm.ordinary_cc import control_transport_required as gm_cc_transport_required
@@ -567,7 +568,8 @@ class Car:
         brake_source_ns=brake_source_ns,
         gm_withdrawal_source_ns=gm_withdrawal_source_ns,
         intent_producer_session=getattr(self, 'slc_producer_session', ''),
-        main_arm_ns=getattr(self.aol_card_intent, 'main_arm_ns', 0))
+        main_arm_ns=getattr(self.aol_card_intent, 'main_arm_ns', 0),
+        startup_calibration_pending=getattr(self.aol_card_intent, 'startup_calibration_pending', False))
       fault_active = True if transport_reset else None
       event_ns = int(self.sm.logMonoTime['onroadEvents'])
       if (getattr(self.aol_card_intent, 'requires_fault_observation', self.aol_card_intent.explicit_latch) and
@@ -823,7 +825,7 @@ class Car:
       getattr(self, '_aol_can_observation', None), now_ns)
 
   def aol_disarming_fault(self, CS, event_ns: int, now_ns: int, *, transport_observed_healthy=False) -> bool:
-    from openpilot.starpilot.car.gm.aol import intent_disarming_fault
+    from openpilot.starpilot.aol.vehicle import intent_disarming_fault
     if getattr(self, 'aol_transport_feedback', None) is None:
       self.aol_transport_feedback = TransportPauseFeedback(self.CP)
     hkg_cancel_retained = hkg_cancel_intent_retained(self.CP, CS, self.sm, self.aol_transport_feedback,
@@ -834,7 +836,8 @@ class Car:
         cancel_source_ns=self.aol_cancel_source(CS, now_ns), brake_source_ns=self.aol_honda_brake_source(CS, now_ns),
         gm_withdrawal_source_ns=self.aol_gm_withdrawal_source(CS, now_ns),
         intent_producer_session=getattr(self, 'slc_producer_session', ''),
-        main_arm_ns=getattr(self.aol_card_intent, 'main_arm_ns', 0)):
+        main_arm_ns=getattr(self.aol_card_intent, 'main_arm_ns', 0),
+        startup_calibration_pending=getattr(self.aol_card_intent, 'startup_calibration_pending', False)):
       return True
     events = self.sm['onroadEvents']
     if self.aol_transport_feedback.retention_qualified or self.aol_transport_feedback.retention_pending:
