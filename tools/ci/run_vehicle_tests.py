@@ -33,6 +33,7 @@ DEBUG_SAFETY_CLASS_TARGETS = {
 
 
 RELEASE_TARGETS = (
+  "opendbc_repo/opendbc/car/hyundai/tests/test_disable_response.py",
   "openpilot/starpilot/aol/tests/test_angle_stop_native_feedback.py",
   "openpilot/starpilot/aol/tests/test_angle_stop_fault_guards.py",
   "openpilot/starpilot/aol/tests/test_torque_stock_cruise_transition.py",
