@@ -258,6 +258,13 @@ class CarState(CarStateBase):
     self._prev_steering_angle = ret.steeringAngleDeg
     ret.cruiseState.standstill = ret.standstill if not self.CP.openpilotLongitudinalControl else False
 
+    # Only the AOL gestures consume the cancel button (CAN on GEN2, CAN_OFF on GEN1), so it is reported just for the
+    # qualified, AOL-marked configuration and every other GEN2 car keeps its existing, button-less behaviour.
+    if qualified(self.CP, marked_only=True):
+      prev_cancel_button = self.cancel_button
+      self.cancel_button = cp.vl["CRZ_BTNS"]["CAN"]
+      ret.buttonEvents = create_button_events(self.cancel_button, prev_cancel_button, {1: ButtonType.cancel})
+
     self.cp = cp
     self.cp_cam = cp_cam
     self.acc = copy.copy(cp.vl["ACC"])
