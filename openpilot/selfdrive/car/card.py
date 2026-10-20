@@ -264,7 +264,9 @@ class Car:
           if long_cp is not None:
             preflight = inspect_ioniq6_long_sources(self.can_callbacks[0])
             cloudlog.event('ioniq6_long_preflight', reason=preflight.reason)
-            if preflight.source_period is None:
+            if preflight.source_period is None or preflight.vehicle_ready is not False:
+              # Reboot in READY retains original stock CP before CI/parsers and
+              # publication. Unknown evidence cannot be treated as Ready=False.
               long_cp = None
           if long_cp is not None:
             initialize_aol_preference(long_cp)
