@@ -357,7 +357,8 @@ static void gm_rx_hook(const CANPacket_t *msg) {
         gm_volt_removed_pcm_us = now;
         if (!gm_volt_removed_pcm) { gm_volt_removed_credit = false; }
       } else if (!gm_bolt_pedal_removed && !gm_bolt_present_cc_cancel && (msg->addr == 0x1C4U) && (GET_LEN(msg) == 8U)) {
-        gm_volt_removed_pcm = (msg->data[1] >> 5) != 0U;
+        const uint8_t cruise_state = msg->data[1] >> 5;
+        gm_volt_removed_pcm = (cruise_state != 0U) && (!gm_volt_camera_removed || (cruise_state != 3U));
         gm_volt_removed_pcm_us = now;
         if (!gm_volt_removed_pcm) { gm_volt_removed_credit = false; }
       } else {
@@ -444,7 +445,8 @@ static void gm_rx_hook(const CANPacket_t *msg) {
 
       // enter controls on rising edge of ACC, exit controls when ACC off
       if (gm_pcm_cruise && !gm_cc_gateway_stock) {
-        bool cruise_engaged = (msg->data[1] >> 5) != 0U;
+        const uint8_t cruise_state = msg->data[1] >> 5;
+        const bool cruise_engaged = (cruise_state != 0U) && (!gm_volt_camera_removed || (cruise_state != 3U));
         pcm_cruise_check(cruise_engaged);
       } else if (gm_pedal_acc) {
         cruise_engaged_prev = (msg->data[1] >> 5) != 0U;
