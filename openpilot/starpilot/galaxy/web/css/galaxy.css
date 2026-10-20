@@ -1401,6 +1401,7 @@ input[type="checkbox"]:disabled { opacity: .4; cursor: not-allowed; }
 .gx-boot--restart { isolation: isolate; overflow: hidden; background: url("../assets/restart-background.webp") center 42% / cover no-repeat #0c0a14; }
 .gx-boot--restart::before { content: ""; position: absolute; inset: 0; z-index: -1; background: radial-gradient(ellipse at center, #38205499 0%, #151020c7 65%, #0c0a14f2 100%); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
 .gx-boot--done { opacity: 0; }
+.gx-boot[hidden] { display: none; }
 .gx-boot h1, .gx-boot p { margin: 0; }
 .gx-boot h1 { font-size: clamp(2rem, 7vw, 3rem); letter-spacing: .08em; }
 .gx-boot p { max-width: 30rem; color: #c9b6e3; }
