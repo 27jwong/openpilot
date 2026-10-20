@@ -79,6 +79,7 @@ def official_navigation_display(instruction, route, *, destination, drive_id: in
     # route resends, but reset it for a new trip or changed route.
     identity = f'comma:{longitude},{latitude}:{len(coordinates)}:{endpoints}'
     return NavigationDisplay((identity, drive_id), text, instruction.maneuverType,
-                             instruction.maneuverModifier, *(max(0., value) for value in distances))
+                             instruction.maneuverModifier, max(0., distances[0]),
+                             max(0., distances[1]), max(0., distances[2]))
   except (AttributeError, KeyError, TypeError, ValueError, OverflowError):
     return None

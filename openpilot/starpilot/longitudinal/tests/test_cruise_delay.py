@@ -55,11 +55,11 @@ class NativeCruiseDelayTests(unittest.TestCase):
         real_helper = planner_module.get_cruise_accel
         forwarded = []
 
-        def observe(*args, **options):
+        def observe(*args, forwarded=forwarded, real_helper=real_helper, **options):
           forwarded.append(options['a_target_prev'])
           return real_helper(*args, **options)
 
-        def old_lower_bound(*args, **options):
+        def old_lower_bound(*args, real_helper=real_helper, **options):
           # Counterfactual for the exact pre-#39127 lower bound; native MPC,
           # production caller, profiles and final candidate selection stay real.
           options['a_target_prev'] = None
