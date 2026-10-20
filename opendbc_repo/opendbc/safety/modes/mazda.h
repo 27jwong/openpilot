@@ -105,10 +105,15 @@ static void mazda_rx_hook(const CANPacket_t *msg) {
       }
 
       if (msg->addr == MAZDA_2019_CRUISE) {
-        acc_main_on = true;
+        // The AOL profile reads main-on from this same message in mazda_aol_rx, so only the ordinary profile assumes it.
+        if (!mazda_aol_enabled) {
+          acc_main_on = true;
+        }
         bool cruise_engaged = msg->data[0] & 0x20U;
         bool pre_enable = msg->data[0] & 0x40U;
+        const bool was_allowed = controls_allowed;
         pcm_cruise_check((cruise_engaged || pre_enable));
+        mazda_aol_engagement(msg, cruise_engaged || pre_enable, !was_allowed && controls_allowed);
       }
     }
 
@@ -303,8 +308,10 @@ static safety_config mazda_init(uint16_t param) {
     mazda_rx_checks[i] = selected_rx[i];
   }
 
+  // AOL is qualified for exactly two words: 0 (stock-camera GEN1) and GEN2 alone (CX-30 over the torque interceptor).
+  mazda_aol_gen2 = (param == (uint16_t)FLAG_GEN2);
   mazda_aol_reset();
-  mazda_aol_enabled = (param == 0U) && ((unsigned int)alternative_experience == 32U);
+  mazda_aol_enabled = ((param == 0U) || mazda_aol_gen2) && ((unsigned int)alternative_experience == 32U);
   MAZDA_TX_MSGS[0].check_relay = !mazda_aol_enabled;
   MAZDA_TX_MSGS[2].check_relay = !mazda_aol_enabled;
   if (mazda_aol_enabled) {
@@ -338,7 +345,7 @@ static safety_config mazda_init(uint16_t param) {
     ret = BUILD_SAFETY_CFG(mazda_rx_checks, MAZDA_2019_TX_MSGS);
   }
 
-  if (((unsigned int)alternative_experience == 32U) && (param != 0U)) {
+  if (((unsigned int)alternative_experience == 32U) && !mazda_aol_enabled) {
     ret.tx_msgs = NULL;
     ret.tx_msgs_len = 0;
   }
