@@ -32,7 +32,7 @@ from openpilot.selfdrive.selfdrived.helpers import (ExcessiveActuationCheck, jet
 from openpilot.starpilot.models import jetlink_adapter
 from openpilot.system.manager.process_health import driving_process_failures
 from openpilot.selfdrive.selfdrived.state import StateMachine
-from opendbc.car.gm.aol import native_bootstrap_supported
+from opendbc.car.gm.aol import native_bootstrap_supported, qualified_gm
 from opendbc.car.gm.steering_authority import monitored_profile
 from openpilot.starpilot.car.gm.steering_companion import SteeringCompanion
 from openpilot.starpilot.car.hyundai.aol import qualified_ioniq6
@@ -802,7 +802,7 @@ class SelfdriveD:
 
   def held_axis_override_wait(self, CS, proof, now_ns):
     """Recognize an already applied override; never admit a new physical edge."""
-    if (proof is None or not qualified_ioniq6(self.CP) or not self.sm.seen['carControl'] or
+    if (proof is None or not (qualified_ioniq6(self.CP) or qualified_gm(self.CP)) or not self.sm.seen['carControl'] or
         not self.sm.valid['carControl'] or self.sm['carControl'].longActive or
         not 0 < int(self.sm.logMonoTime['carControl']) <= now_ns or
         now_ns - int(self.sm.logMonoTime['carControl']) > INTENT_MAX_AGE_NS):
@@ -893,6 +893,7 @@ class SelfdriveD:
            sample.steerFaultPermanent or (sample.brakePressed or sample.regenBraking) and not held_brake or
            active_longitudinal and sample.gasPressed and not held_gas or
            sample.seatbeltUnlatched or sample.accFaulted or sample.doorOpen or physical_cancel(sample, self.CP) or
+           qualified_gm(self.CP) and not sample.cruiseState.available or
            sample.gearShifter not in (car.CarState.GearShifter.drive, car.CarState.GearShifter.sport,
                                      car.CarState.GearShifter.low, car.CarState.GearShifter.brake)
            for sample, valid in samples):
@@ -961,7 +962,7 @@ class SelfdriveD:
 
   def defer_expired_axis_publication(self, CS, initial_state, *, now_ns=None):
     """Keep an existing unexpired proof for one normal tick; issue no new lease."""
-    if REPLAY or not self.aol_replay or not self.axis_transport_required or not qualified_ioniq6(self.CP):
+    if REPLAY or not self.aol_replay or not self.axis_transport_required or not (qualified_ioniq6(self.CP) or qualified_gm(self.CP)):
       return False
     proof = getattr(self, 'aol_step_input_proof', None)
     if now_ns is None:
@@ -1414,7 +1415,7 @@ class SelfdriveD:
         final_ns = time.monotonic_ns()
         if ((axis.lateralActive or axis.longitudinalActive) and
             (not 0 < self.aol_car_state_log_ns <= final_ns or final_ns - self.aol_car_state_log_ns > INTENT_MAX_AGE_NS) and
-            qualified_ioniq6(self.CP)):
+            (qualified_ioniq6(self.CP) or qualified_gm(self.CP))):
           if (source_context is not None and source_context[1] and
               self.defer_expired_axis_publication(CS, source_context[0])):
             # Serialization crossed the same source boundary. Retain only the
