@@ -15,7 +15,6 @@ export function showBootScreen(next, text, refresh = false) {
   mode = next
   screen.hidden = false
   screen.classList.remove("gx-boot--done")
-  screen.classList.toggle("gx-boot--restart", next === "restart")
   screen.classList.toggle("gx-boot--failed", next === "failed")
   message.textContent = text
   retry.hidden = !refresh
