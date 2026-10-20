@@ -2,6 +2,9 @@
 
 static bool mazda_aol_enabled = false;
 static bool mazda_aol_startup_pending = true;
+// GEN2 (CX-30) steers through the torque interceptor on bus 1. It exposes neither the camera's LKAS state nor an EPS
+// lockout flag, so only the cruise state and the gear gate AOL there; GEN1 keeps its four stock sources.
+static bool mazda_aol_gen2 = false;
 static bool mazda_aol_token = false;
 static bool mazda_aol_neutral = false;
 static bool mazda_aol_buttons_neutral = false;
@@ -32,7 +35,8 @@ static void mazda_aol_clear(void) {
 static void mazda_aol_reset(void) {
   mazda_aol_clear();
   mazda_aol_enabled = false;
-  mazda_aol_startup_pending = true;
+  // Only the GEN1 profile waits for the camera's startup MAIN edge; GEN2 has no such bit.
+  mazda_aol_startup_pending = !mazda_aol_gen2;
   mazda_aol_requested = false;
   mazda_aol_seen = 0U;
   mazda_aol_sources = 0U;
@@ -46,11 +50,12 @@ static void mazda_aol_reset(void) {
 
 static bool mazda_aol_current(void) {
   const uint32_t now = microsecond_timer_get();
-  return (mazda_aol_seen == 15U) &&
+  const uint8_t required = mazda_aol_gen2 ? 3U : 15U;
+  return ((mazda_aol_seen & required) == required) &&
     (safety_get_ts_elapsed(now, mazda_aol_main_ts) <= 300000U) &&
     (safety_get_ts_elapsed(now, mazda_aol_gear_ts) <= 300000U) &&
-    (safety_get_ts_elapsed(now, mazda_aol_eps_ts) <= 300000U) &&
-    (safety_get_ts_elapsed(now, mazda_aol_cam_ts) <= 300000U);
+    (mazda_aol_gen2 || ((safety_get_ts_elapsed(now, mazda_aol_eps_ts) <= 300000U) &&
+                        (safety_get_ts_elapsed(now, mazda_aol_cam_ts) <= 300000U)));
 }
 
 static void mazda_aol_request(uint8_t mask) {
@@ -95,13 +100,25 @@ static uint8_t mazda_aol_request_mask(void) {
 static uint8_t mazda_aol_permission(void) {
   const uint8_t request = mazda_aol_request_mask();
   uint8_t permission = 0U;
-  if (acc_main_on && vehicle_moving && (mazda_aol_sources == 1U)) {
+  if (mazda_aol_gen2) {
+    // GEN2 already steers and blends openpilot longitudinal at a standstill while cruise is engaged, so AOL adds only
+    // its host handshake there. The latch that outlives cruise needs drive and main on, but not motion: the CX-30 steers
+    // at a standstill through the torque interceptor, and withdrawing permission at a stop made the host drop the latch.
+    const bool latched = mazda_aol_token && acc_main_on && (mazda_aol_sources == 1U);
+    if (controls_allowed || latched) {
+      permission = request & 1U;
+    }
+    if (controls_allowed) {
+      permission |= request & 2U;
+    }
+  } else if (acc_main_on && vehicle_moving && (mazda_aol_sources == 1U)) {
     if (controls_allowed || mazda_aol_token) {
       permission = request & 1U;
     }
     if (controls_allowed) {
       permission |= request & 2U;
     }
+  } else {
   }
   return permission;
 }
@@ -109,7 +126,15 @@ static uint8_t mazda_aol_permission(void) {
 static void mazda_aol_optional_rx(const CANPacket_t *msg) {
   if (mazda_aol_enabled) {
     const uint32_t now = microsecond_timer_get();
-    if (msg_matches(msg, 0x228U, 0U, 8U)) {
+    if (mazda_aol_gen2) {
+      // GEAR on the camera-side bus, the same copy the host parses. Drive is 1..6; P, R, N and the shift transient are not.
+      if (msg_matches(msg, 0x228U, 2U, 8U)) {
+        const uint8_t gear = (msg->data[4] >> 1U) & 0xFU;
+        mazda_aol_seen |= 2U;
+        mazda_aol_gear_ts = now;
+        mazda_aol_sources = (mazda_aol_sources & 6U) | (((gear >= 1U) && (gear <= 6U)) ? 1U : 0U);
+      }
+    } else if (msg_matches(msg, 0x228U, 0U, 8U)) {
       mazda_aol_seen |= 2U;
       mazda_aol_gear_ts = now;
       mazda_aol_sources = (mazda_aol_sources & 6U) | (((msg->data[0] & 7U) == 4U) ? 1U : 0U);
@@ -130,34 +155,47 @@ static void mazda_aol_optional_rx(const CANPacket_t *msg) {
   }
 }
 
+// A healthy main-off observation must precede the main-on edge that grants the token.
+static void mazda_aol_main_changed(const CANPacket_t *msg) {
+  if ((mazda_aol_session && !heartbeat_engaged) || !aol_rx_healthy() || !mazda_aol_current() || safety_rx_checks_invalid || ((mazda_aol_sources & 4U) != 0U)) {
+    mazda_aol_clear();
+  } else if (!acc_main_on) {
+    mazda_aol_clear();
+    mazda_aol_startup_pending = false;
+    mazda_aol_neutral = true;
+  } else if (!mazda_aol_gen2 && mazda_aol_startup_pending && GET_BIT(msg, 3U)) {
+    mazda_aol_startup_pending = false;
+  } else if (!mazda_aol_gen2 && mazda_aol_startup_pending && vehicle_moving && (mazda_aol_sources == 1U) && !brake_pressed && !gas_pressed &&
+             ((aol_host_axis_mask & 1U) != 0U) &&
+             (safety_get_ts_elapsed(microsecond_timer_get(), aol_host_request_ts) <= AOL_HOST_REQUEST_TIMEOUT_US)) {
+    // Dom follows fresh MAIN at boot. Wait through physical restrictions,
+    // then require a strictly later host ACK within the original deadline.
+    mazda_aol_startup_pending = false;
+    mazda_aol_grant();
+    mazda_aol_pending = true;
+    mazda_aol_session = false;
+  } else if (mazda_aol_neutral) {
+    mazda_aol_grant();
+    mazda_aol_neutral = false;
+  } else {
+  }
+}
+
 static void mazda_aol_rx(const CANPacket_t *msg) {
   if (mazda_aol_enabled) {
-    if (msg_matches(msg, 0x21CU, 0U, 8U)) {
+    if (mazda_aol_gen2) {
+      // CRUZE_STATE on the main bus: CRZ_STATE 0 is main off, anything else is available (1 ready, 2 engaged, 4 gas override).
+      if (msg_matches(msg, 0x44AU, 0U, 8U)) {
+        mazda_aol_seen |= 1U;
+        mazda_aol_main_ts = microsecond_timer_get();
+        acc_main_on = (msg->data[0] & 0x70U) != 0U;
+        mazda_aol_main_changed(msg);
+      }
+    } else if (msg_matches(msg, 0x21CU, 0U, 8U)) {
       mazda_aol_seen |= 1U;
       mazda_aol_main_ts = microsecond_timer_get();
       acc_main_on = GET_BIT(msg, 17U);
-      if ((mazda_aol_session && !heartbeat_engaged) || !aol_rx_healthy() || !mazda_aol_current() || safety_rx_checks_invalid || ((mazda_aol_sources & 4U) != 0U)) {
-        mazda_aol_clear();
-      } else if (!acc_main_on) {
-        mazda_aol_clear();
-        mazda_aol_startup_pending = false;
-        mazda_aol_neutral = true;
-      } else if (mazda_aol_startup_pending && GET_BIT(msg, 3U)) {
-        mazda_aol_startup_pending = false;
-      } else if (mazda_aol_startup_pending && vehicle_moving && (mazda_aol_sources == 1U) && !brake_pressed && !gas_pressed &&
-                 ((aol_host_axis_mask & 1U) != 0U) &&
-                 (safety_get_ts_elapsed(microsecond_timer_get(), aol_host_request_ts) <= AOL_HOST_REQUEST_TIMEOUT_US)) {
-        // Dom follows fresh MAIN at boot. Wait through physical restrictions,
-        // then require a strictly later host ACK within the original deadline.
-        mazda_aol_startup_pending = false;
-        mazda_aol_grant();
-        mazda_aol_pending = true;
-        mazda_aol_session = false;
-      } else if (mazda_aol_neutral) {
-        mazda_aol_grant();
-        mazda_aol_neutral = false;
-      } else {
-      }
+      mazda_aol_main_changed(msg);
     } else if (msg_matches(msg, 0x9DU, 0U, 8U)) {
       // Mapped Cancel can request LAT only after the same fresh physical edge
       // and current host acknowledgment used by the other cruise buttons.
@@ -180,7 +218,7 @@ static void mazda_aol_rx(const CANPacket_t *msg) {
 // A healthy inactive observation is required; startup-active and held-active
 // packets cannot create or restore an independent token after a disarming fault.
 static void mazda_aol_engagement(const CANPacket_t *msg, bool cruise_engaged, bool normal_engagement) {
-  if (mazda_aol_enabled && msg_matches(msg, 0x21CU, 0U, 8U)) {
+  if (mazda_aol_enabled && msg_matches(msg, mazda_aol_gen2 ? 0x44AU : 0x21CU, 0U, 8U)) {
     const bool request_current = !mazda_aol_requested ||
       (safety_get_ts_elapsed(microsecond_timer_get(), aol_host_request_ts) <= AOL_HOST_REQUEST_TIMEOUT_US);
     const bool healthy = !(mazda_aol_session && !heartbeat_engaged) && acc_main_on && (mazda_aol_sources == 1U) &&
