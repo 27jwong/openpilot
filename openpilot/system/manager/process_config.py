@@ -75,6 +75,11 @@ def android_auto_enabled(started: bool, params: Params, CP: car.CarParams) -> bo
   # role until the user enables projection on supported hardware.
   return COMMA_HARDWARE and platform.system() == "Linux" and params.get_bool("AndroidAutoEnabled")
 
+def spotify_enabled(started: bool, params: Params, CP: car.CarParams) -> bool:
+  # One stat of a feature-owned flag; Spotify keeps its settings out of Params.
+  from openpilot.starpilot.soloist.paths import enabled
+  return COMMA_HARDWARE and platform.system() == "Linux" and enabled()
+
 def jetlink_enabled(started: bool, params: Params, CP: car.CarParams) -> bool:
   if not COMMA_HARDWARE or platform.system() != 'Linux':
     return False
@@ -139,6 +144,8 @@ procs = [
   PythonProcess("navigationd", "openpilot.starpilot.navigation.runtime", always_run),
   PythonProcess("navtilesd", "openpilot.starpilot.navigation.navtilesd", always_run, enabled=platform.system() == "Linux"),
   PythonProcess("galaxy", "openpilot.starpilot.galaxy.managed", galaxy_local),
+  PythonProcess("galaxy_phone", "openpilot.starpilot.galaxy_bluetooth.bootstrap", galaxy_local,
+                enabled=COMMA_HARDWARE and not os.environ.get("OPENPILOT_PREFIX"), restart_on_exit=True),
   PythonProcess("replay_owner", "openpilot.starpilot.replay.owner", only_offroad,
                 enabled=platform.system() == "Linux", restart_on_exit=True),
   PythonProcess("galaxy_hotspot", "openpilot.starpilot.galaxy.hotspot_daemon", galaxy_local,
@@ -149,6 +156,7 @@ procs = [
                  restart_on_exit=True),
   PythonProcess("android_autod", "openpilot.starpilot.system.android_auto.daemon", android_auto_enabled, enabled=COMMA_HARDWARE,
                 restart_on_exit=True),  # boot can race bluetoothd (NoSuchUnit)
+  PythonProcess("spotifyd", "openpilot.starpilot.soloist.supervisor", spotify_enabled, enabled=COMMA_HARDWARE, restart_on_exit=True),
   # Boot can race the audio device; selfdrived blocks engagement while soundd is down.
   PythonProcess("soundd", "openpilot.selfdrive.ui.soundd", driverview, restart_on_exit=True),
   PythonProcess("locationd", "openpilot.selfdrive.locationd.locationd", only_onroad),
