@@ -1,5 +1,6 @@
 from opendbc.car import structs
 from opendbc.car.mazda.stock_aol import qualified, temporary_restriction
+from opendbc.car.mazda.values import MazdaFlags
 from openpilot.starpilot.aol.policy import AolVehiclePolicy
 from openpilot.starpilot.car.mazda.stock_intent import MazdaStockCardIntent
 
@@ -12,11 +13,13 @@ def policy_for(cp):
 
 
 def native_profile_supported(model, param):
-  return model == int(structs.CarParams.SafetyModel.mazda) and param == 0
+  # Word 0 is the stock-camera GEN1 profile; the bare GEN2 flag is the CX-30 torque-interceptor profile.
+  return model == int(structs.CarParams.SafetyModel.mazda) and param in (0, int(MazdaFlags.GEN2))
 
 
 def native_accepts_cp(cp, model, param):
-  return qualified(cp, marked_only=True) and native_profile_supported(model, param)
+  return (qualified(cp, marked_only=True) and native_profile_supported(model, param) and
+          param == int(cp.safetyConfigs[0].safetyParam))
 
 
 def native_latch_rejected(cp, native):
