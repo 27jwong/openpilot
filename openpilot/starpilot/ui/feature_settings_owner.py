@@ -795,7 +795,7 @@ class FeatureSettingsOwner:
         nostalgia, source, valid = self._value("NostalgiaMode")
         readable = self._readable("NostalgiaMode")
         nostalgia_allowed = configurable and self.authority("aol") and capability is not None and readable
-        rows.append(FeatureRow("NostalgiaMode", "Ioniq 6 Nostalgia Mode — Left Paddle",
+        rows.append(FeatureRow("NostalgiaMode", "Left Paddle Longitudinal Pause",
                                "On" if nostalgia == "1" else "Off" if nostalgia == "0" else "Invalid saved value",
                                source, ("Off", "On") if valid and nostalgia in ("0", "1") else (),
                                available=nostalgia_allowed,

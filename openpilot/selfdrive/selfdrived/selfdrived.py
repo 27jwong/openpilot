@@ -1889,7 +1889,8 @@ class SelfdriveD:
         event.name == EventName.steerTempUnavailable and CS.steerFaultTemporary and not CS.steerFaultPermanent or
         seatbelt_lateral_soft_event_allowed(self.CP, CS, intent, native, event,
           source_ns=self.aol_car_state_log_ns, now_ns=now_ns, axis_session_id=self.aol_session_id,
-          pending_lateral_request=not previous.lateral_active and not self.aol_authority_lost))
+          pending_lateral_request=not previous.lateral_active and not self.aol_authority_lost,
+          gear_pause=reverse_pause))
         for event in self.events.to_msg())
       cold_main_wait = self.cold_gm_main_readiness(CS, intent, now_ns)
       self.aol_fault_reason = ('availabilityPause' if ordinary_availability or cold_main_wait else
