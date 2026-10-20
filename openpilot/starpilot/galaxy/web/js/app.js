@@ -250,8 +250,10 @@ createApp({
         <SettingsPage @nested="ensureBackEntry" ref="activeSettings" v-else-if="drivingSettingsPage" :key="drivingSettingsPage" :mode="state.monitorMode" :unauthorized="sessionExpired" :initial-page="drivingSettingsPage" :title="'Driving settings · ' + drivingSettingsPage.replaceAll('_', ' ')" :return-to="returnToDriving" />
         <SettingsPage @nested="ensureBackEntry" ref="activeSettings" v-else-if="route.path === '/settings'" :key="state.searchPage || 'hub'" :mode="state.monitorMode" :unauthorized="sessionExpired"
           :initial-page="state.searchPage || 'hub'" :return-to="state.searchPage ? returnFromSearch : null" />
-        <PlotsPage v-else-if="['/tuning', '/tuning/plots'].includes(route.path)" :mode="state.monitorMode" :unauthorized="sessionExpired" />
-        <FlmPage v-else-if="route.path === '/tuning/flm'" :mode="state.monitorMode" :unauthorized="sessionExpired" :go="go" />
+        <div v-else-if="['/tuning', '/tuning/plots', '/tuning/flm'].includes(route.path)" class="gx-stack">
+          <PlotsPage :mode="state.monitorMode" :unauthorized="sessionExpired" />
+          <FlmPage embedded :mode="state.monitorMode" :unauthorized="sessionExpired" />
+        </div>
         <GxState v-else :title="pageName">This capability is unavailable in this build. No operation was attempted.</GxState>
       </div></Transition></div></main>
       <BottomNav :path="route.path" :local-access="authState.localAccess" @navigate="go" />
