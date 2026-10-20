@@ -1266,6 +1266,13 @@ class SelfdriveD:
     intent = getattr(self, 'aol_last_intent', None)
     companion = getattr(self, 'aol_intent_companion', None)
     user_disable = self.events.contains(ET.USER_DISABLE)
+    if user_disable:
+      from opendbc.car.hyundai.canfd_angle_aol import qualified as angle_qualified
+
+      if angle_qualified(self.CP, marked_only=True):
+        native = current_native(self.sm, self.CP, now_ns=now_ns, axis_session_id=self.aol_session_id)
+        if stock_lateral_role(self, CS, native, intent):
+          user_disable = False
     if user_disable and self.held_axis_override_wait(CS, proof, now_ns)[0]:
       # A moving held brake repeats pedalPressed while ordinary control is
       # already disabled. Its existing lateral-only override is not a new edge.

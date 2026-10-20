@@ -49,6 +49,7 @@ RELEASE_TARGETS = (
   "opendbc_repo/opendbc/safety/tests/test_nexo_stock_aol.py",
   "opendbc_repo/opendbc/safety/tests/test_hyundai_stock_angle_aol.py",
   "opendbc_repo/opendbc/car/hyundai/tests/test_stock_angle_aol.py",
+  "openpilot/starpilot/aol/tests/test_stock_angle_pedals.py",
   "opendbc_repo/opendbc/car/hyundai/tests/test_g90_startup.py",
   "opendbc_repo/opendbc/car/hyundai/tests/test_shared_session_recovery_contract.py",
   "opendbc_repo/opendbc/car/hyundai/tests/test_ev9_ready.py",
