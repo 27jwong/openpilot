@@ -1022,7 +1022,7 @@ class Car:
       self.pm.send('slcDashboardObservation', source)
 
     change = self.v_cruise_helper.slc_cruise_change
-    if (self.slc_replay or self.curve_replay) and not self.CP.pcmCruise:
+    if self.slc_replay or self.curve_replay:
       if change is not None:
         self.slc_receipts.append(('driverChange', change, change[0], change[1], int(cs_send.logMonoTime)))
       for kind, detail, previous_mps, selected_mps, observed_ns in self.slc_receipts:
