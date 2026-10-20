@@ -22,7 +22,7 @@ CONTROLLER_PROFILES = {
   'Stadia':    {'name': 'Stadia',    'steer': 'ABS_X', 'accel': 'ABS_RZ', 'lo': 0.,      'hi': 255.},
   'X-Box':     {'name': 'Xbox',      'steer': 'ABS_X', 'accel': 'ABS_RY', 'lo': -32768., 'hi': 32767.},
   'DualSense': {'name': 'DualSense', 'steer': 'ABS_X', 'accel': 'ABS_RY', 'lo': 0.,      'hi': 255.},
-  'Sony Interactive Entertainment Wireless Controller': {'name': 'DualShock 4', 'steer': 'ABS_X', 'accel': 'ABS_RZ', 'lo': 0., 'hi': 255.},
+  'Wireless Controller': {'name': 'DualShock 4', 'steer': 'ABS_X', 'accel': 'ABS_RZ', 'lo': 0., 'hi': 255.},
 }
 DEFAULT_PROFILE = 'X-Box'
 
