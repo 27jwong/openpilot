@@ -1048,6 +1048,23 @@ class TransportPauseFeedback:
         # native, source, or healthy lateral baseline leases.
         self.sequence, self.signature = int(axis.sequence), signature
         return False
+      if cp.brand == 'ford' and current and continuity:
+        from openpilot.starpilot.car.ford.reverse_intent import retain_reverse_intent
+        from openpilot.starpilot.car.ford.physical_pause import retain_physical_pause_intent
+        from openpilot.starpilot.car.ford.gas_override import retained_gas_lateral_native
+
+        if retain_reverse_intent(self, sm, cp, cs, axis, now_ns, latched=latched, producer=intent_producer_session):
+          return False
+        if retain_physical_pause_intent(self, sm, cp, cs, axis, now_ns, latched=latched, producer=intent_producer_session):
+          return False
+        gas_native = retained_gas_lateral_native(self, sm, cp, cs, axis, now_ns, latched=latched, producer=intent_producer_session)
+        if gas_native is not None:
+          # Only current independently granted LAT evidence; no combined baseline or lease renewal.
+          self.lateral_baseline_ns = stamp
+          self.lateral_source_ns = int(axis.sourceCarStateMonoTime)
+          self.lateral_native_ns = int(gas_native.observedMonoTime)
+          self.sequence, self.signature = int(axis.sequence), signature
+          return False
       brake_native = (self._honda_brake_lateral_current(sm, cp, cs, axis, now_ns,
         latched=latched, brake_source_ns=brake_source_ns) if current and continuity else None)
       if brake_native is not None:
