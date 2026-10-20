@@ -6,6 +6,7 @@ from openpilot.starpilot.ui.presentation import BitmapFonts
 from dataclasses import replace
 from types import SimpleNamespace
 import unittest
+import pytest
 from unittest.mock import patch
 import pyray as rl
 from openpilot.cereal import log, messaging
@@ -157,3 +158,9 @@ class DrawerNativeTest(unittest.TestCase):
     self.assertEqual([text for text, _ in drawn], ['Dash', '56', 'Vision', '56'])
     self.assertIn(('56', FontRole.MEDIUM), drawn)  # The accepted source's reading is emphasized.
     self.assertIn(('56', FontRole.NORMAL), drawn)
+
+
+@pytest.fixture(autouse=True)
+def mock_sign_graphics(monkeypatch):
+  for name in ('draw_rectangle_rounded_lines_ex', 'draw_circle', 'draw_ring'):
+    monkeypatch.setattr('openpilot.starpilot.ui.speed_limit_widget.rl.' + name, Mock())

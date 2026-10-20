@@ -22,6 +22,7 @@ from openpilot.starpilot.ui.presentation import Profile
 
 
 def road(document=None, **changes):
+  changes.setdefault('slc_prompt_open', True)
   return replace(OnroadState(True, True, 15.0, 80.0, SpeedLimitObservation(),
                             appearance=OnroadAppearance(show_developer_sidebar=True), viewport_width=1860),
                  customization=document or default_document(), **changes)
@@ -180,7 +181,7 @@ def test_pre_action_saved_layout_migrates_without_losing_positions_or_palette(re
       assert migrated["layouts"][profile][key] == {
         **position, **({"size": customization_metadata()["profiles"][profile]["widgets"][key]["width"]}
                      if key == "steering_wheel" else {})}
-  assert migrated["layouts"]["large"]["speed_limit_actions"] == {"x": 288, "y": 667, "enabled": False}
+  assert migrated["layouts"]["large"]["speed_limit_actions"] == {"x": 288, "y": 407, "enabled": False}
   assert migrated["layouts"]["compact"]["speed_limit_actions"] == default_document()["layouts"]["compact"]["speed_limit_actions"]
 
 
@@ -333,6 +334,8 @@ def test_speed_limit_actions_move_independently_of_cruise_card_and_keep_touch_pr
   assert slc_controls(Profile.COMPACT, state)[0].bounds == (174, 180, 310, 234)
   emit = Mock()
   inputs = OnroadInput(emit)
+  from openpilot.starpilot.ui.tests.test_slc_ui_actions import tap_sign
+  tap_sign(inputs, state)
   for x, y in ((400, 650), (300, 400)):
     inputs.press(x, y, state)
     inputs.release(x, y, state)
@@ -362,6 +365,10 @@ def test_moved_compact_actions_relocate_hitboxes_without_weakening_state_gate():
   assert slc_controls(Profile.COMPACT, state)[0].bounds == (100, 180, 236, 234)
   emit = Mock()
   inputs = OnroadInput(emit, Profile.COMPACT)
+  from openpilot.starpilot.ui.tests.test_slc_ui_actions import tap_sign
+  document["layouts"]["compact"]["speed_limit"]["enabled"] = True
+  tap_sign(inputs, state)
+  document["layouts"]["compact"]["speed_limit"]["enabled"] = False
   inputs.press(110, 200, state)
   inputs.release(110, 200, state)
   assert emit.call_count == 1
@@ -408,9 +415,9 @@ def test_compact_us_sign_keeps_camera_visible_at_saved_position(speed, size):
     hud._speed_limit_sign(state)
   fill.assert_not_called()
   rect = outline.call_args.args[0]
-  assert (rect.x, rect.y, rect.width, rect.height) == (310, 38, 100, 116)
+  assert (rect.x, rect.y, rect.width, rect.height) == (304, 34, 108, 124)
   assert outline.call_args.args[3] == 2
-  assert [(call.args[0], call.args[2]) for call in fonts.draw.call_args_list] == [("SPEED", 20), ("LIMIT", 20), (str(speed), size)]
+  assert [(call.args[0], call.args[2]) for call in fonts.draw.call_args_list] == [("SPEED", 17), ("LIMIT", 17), (str(speed), size)]
   for color in [outline.call_args.args[-1], *(call.args[-1] for call in fonts.draw.call_args_list)]:
     assert tuple(getattr(color, channel) for channel in ("r", "g", "b", "a")) == rl.WHITE
 
@@ -692,7 +699,7 @@ def test_overlapping_small_sign_restores_after_pending_and_actions_keep_exact_in
              horizontal_ink=lambda text, role, size: (0., 10.), draw=Mock())
   hud = CompactHudRenderer(Mock(spec=BitmapFonts, **vars(fonts)), Mock())
   state = replace(state, appearance=replace(state.appearance, show_speed_limit_sign=True))
-  hud._speed_limit_sign(state)
+  hud._speed_limit_sign(replace(state, slc_prompt_open=True))
   fonts.draw.assert_not_called()
   with patch.object(rl, "draw_rectangle_rounded"), patch.object(rl, "draw_rectangle_rounded_lines_ex"):
     hud._speed_limit_sign(replace(state, speed_limit=replace(observation, pending_speed_limit_mps=None)))
@@ -701,6 +708,8 @@ def test_overlapping_small_sign_restores_after_pending_and_actions_keep_exact_in
   inputs = OnroadInput(emit, Profile.COMPACT)
   for x, kind in ((200, SlcActionKind.ACCEPT), (350, SlcActionKind.REJECT)):
     emit.reset_mock()
+    from openpilot.starpilot.ui.tests.test_slc_ui_actions import tap_sign
+    tap_sign(inputs, state)
     inputs.press(x, 200, state)
     inputs.release(x, 200, state)
     inputs.release(x, 200, state)

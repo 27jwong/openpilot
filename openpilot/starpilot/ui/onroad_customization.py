@@ -87,8 +87,8 @@ PROFILES: dict[str, LayoutProfile] = {
               "protectedWidget": "speed_limit_actions",
               "reservedZones": [],
               "widgets": {
-                "max_speed": _widget("Maximum speed", "max_speed", 162, 162, 0, 0),
-                "speed_limit": _widget("Speed limit", "speed_limit", 118, 132, 330, 20),
+                "max_speed": _widget("Set speed", "max_speed", 162, 162, 0, 0),
+                "speed_limit": _widget("Speed limit", "speed_limit", 118, 132, 174, 12),
                 "speed_limit_actions": _widget("Speed limit actions", "speed_limit_actions", 282, 54, 174, 180),
                 "steering_wheel": _widget("Steering wheel", "steering_wheel", 50, 50, 21, 176),
                 "driver_monitor": _widget("Driver monitoring", "driver_monitor", 60, 60, 16, 10)}}}

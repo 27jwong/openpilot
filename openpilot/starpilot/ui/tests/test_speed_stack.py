@@ -54,7 +54,7 @@ def test_v4_migration_preserves_settings_and_clamps_only_enlarged_widgets():
   migrated = validate_document(doc)
   assert migrated['version'] == 7
   assert migrated['layouts']['large']['cruise_limits']['x'] == 1510
-  assert migrated['layouts']['large']['speed_limit_actions'] == {'x': 1510, 'y': 567, 'enabled': True}
+  assert migrated['layouts']['large']['speed_limit_actions'] == {'x': 1510, 'y': 307, 'enabled': True}
   assert migrated['layouts']['large']['current_speed'] == old_speed
   assert migrated['speedSources'] is True
   assert rgba(migrated, 'cardFill', 'large', 'cruise_limits') == (18, 52, 86, 120)

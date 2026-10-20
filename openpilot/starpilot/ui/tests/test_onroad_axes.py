@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace as NS
 import unittest
+import pytest
 from unittest.mock import Mock, patch
 
 import pyray as rl
@@ -387,3 +388,9 @@ class TestOnroadAxes(unittest.TestCase):
 
 if __name__ == "__main__":
   unittest.main()
+
+
+@pytest.fixture(autouse=True)
+def mock_sign_graphics(monkeypatch):
+  for name in ('draw_rectangle_rounded_lines_ex', 'draw_circle', 'draw_ring'):
+    monkeypatch.setattr('openpilot.starpilot.ui.speed_limit_widget.rl.' + name, Mock())
