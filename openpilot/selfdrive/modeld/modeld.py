@@ -415,7 +415,7 @@ def main(demo=False):
   pub_socks = ["modelIdentity", "modelV2", "drivingModelData", "cameraOdometry", "laneChangeAssistWire"] + (["chestnutGpuState"] if CHESTNUT else [])
   pm = PubMaster(pub_socks)
   sm = SubMaster(["deviceState", "carState", "narrowRoadCameraState", "extrinsicsCalibration", "driverMonitoringState",
-                  "carControl", "lateralDelay", "starpilotNavigation", "longitudinalPlan"])
+                  "carControl", "controlsState", "lateralDelay", "starpilotNavigation", "longitudinalPlan"])
 
   publish_state = PublishState()
   params = Params()
@@ -529,6 +529,9 @@ def main(demo=False):
       'traffic_convention': traffic_convention,
       'action_t': np.array([lat_action_t, long_action_t], dtype=np.float32),
     }
+
+    if not sm['carControl'].latActive:
+      prev_action.desiredCurvature = sm['controlsState'].curvature
 
     if isinstance(model, CatalogModelState) or model is jetlink_model:
       inputs['prev_action'] = np.array([prev_action.desiredCurvature * max(1.0, v_ego) ** 2,
