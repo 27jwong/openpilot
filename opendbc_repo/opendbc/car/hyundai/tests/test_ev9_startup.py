@@ -213,7 +213,7 @@ class TestEV9Startup(unittest.TestCase):
       return []
     owner.callbacks = (recv, sent.extend)
     with patch('opendbc.car.hyundai.ev9_startup.time.sleep'):
-      self.assertFalse(owner._ready())
+      self.assertIsNone(owner._ready())
     self.assertEqual(len(polls), 5)
 
   def test_unsuppressed_reply_classification(self):
