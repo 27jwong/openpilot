@@ -78,6 +78,7 @@ static bool gm_sdgm_brake_c9 = false;
 static bool gm_cc_gateway_stock = false;
 // Exact EV|NO_ACC word20 was rejected previously; it is a DEBUG-only Volt CC owner.
 static bool gm_volt_cc_long = false;
+static bool gm_volt_cc_f1 = false;
 static bool gm_ordinary_cc_long = false;
 static bool gm_malibu_cc_f1 = false;
 static bool gm_malibu_cc_stock = false;
@@ -284,7 +285,7 @@ static void gm_rx_hook(const CANPacket_t *msg) {
       } else if ((msg_matches(msg, 0xC9U, 0U)) && (GET_LEN(msg) == 8U)) {
         source = 2;
         gm_volt_cc_main = GET_BIT(msg, 29U);
-      } else if ((msg_matches(msg, gm_malibu_cc_f1 ? 0xF1U : 0xBEU, 0U)) && (GET_LEN(msg) == 6U)) {
+      } else if ((msg_matches(msg, (gm_malibu_cc_f1 || gm_volt_cc_f1) ? 0xF1U : 0xBEU, 0U)) && (GET_LEN(msg) == 6U)) {
         source = 3;
       } else if ((msg->addr == 0x1F5U) && (GET_LEN(msg) == 8U)) {
         source = 4;
@@ -406,9 +407,9 @@ static void gm_rx_hook(const CANPacket_t *msg) {
       cruise_button_prev = button;
     }
 
-    if (gm_malibu_cc_f1) {
+    if (gm_malibu_cc_f1 || gm_volt_cc_f1) {
       if (msg_matches(msg, 0xF1U, 0U) && (GET_LEN(msg) == 6U)) {
-        gm_malibu_f1_brake = (msg->data[1] >= 21U) || GET_BIT(msg, 1U);
+        gm_malibu_f1_brake = gm_volt_cc_f1 ? (msg->data[1] >= 6U) : ((msg->data[1] >= 21U) || GET_BIT(msg, 1U));
       }
       if (msg_matches(msg, 0xC9U, 0U) && (GET_LEN(msg) == 8U)) {
         gm_malibu_c9_brake = GET_BIT(msg, 40U);
@@ -418,7 +419,7 @@ static void gm_rx_hook(const CANPacket_t *msg) {
 
     // Reference for brake pressed signals:
     // https://github.com/commaai/openpilot/blob/master/selfdrive/car/gm/carstate.py
-    if ((msg_matches(msg, 0xBEU, 0U)) && !gm_camera_gateway && !gm_malibu_cc_f1 && (((gm_hw == GM_ASCM) && !gm_volt_gateway_alt_brake) || (gm_ascm_intercept && !gm_ascm_brake_c9) ||
+    if ((msg_matches(msg, 0xBEU, 0U)) && !gm_camera_gateway && !gm_malibu_cc_f1 && !gm_volt_cc_f1 && (((gm_hw == GM_ASCM) && !gm_volt_gateway_alt_brake) || (gm_ascm_intercept && !gm_ascm_brake_c9) ||
                                    (gm_sdgm && !gm_sdgm_brake_c9))) {
       brake_pressed = msg->data[1] >= 8U;
     }
@@ -993,6 +994,11 @@ static safety_config gm_init(uint16_t safety_param) {
   gm_volt_removed_cancel_seen = false;
   gm_volt_removed_cancel_us = 0U;
 
+  gm_volt_cc_f1 = false;
+#ifdef ALLOW_DEBUG
+  gm_volt_cc_f1 = safety_param == 0xC163U;
+  if (gm_volt_cc_f1) { param = GM_PARAM_EV | GM_PARAM_NO_ACC; }
+#endif
   gm_malibu_cc_f1 = (safety_param == 0xC161U) || (safety_param == 0xC162U);
   gm_malibu_cc_stock = safety_param == 0xC162U;
   gm_malibu_f1_brake = false;
@@ -1554,7 +1560,11 @@ static safety_config gm_init(uint16_t safety_param) {
       gm_ordinary_cc_rx_checks[3].msg[0].frequency = gm_malibu_cc_f1 ? 100U : 80U;
       SET_RX_CHECKS(gm_ordinary_cc_rx_checks, ret);
     }
-    else { SET_RX_CHECKS(gm_volt_cc_rx_checks, ret); }
+    else {
+      gm_volt_cc_rx_checks[3].msg[0].addr = gm_volt_cc_f1 ? 0xF1U : 0xBEU;
+      gm_volt_cc_rx_checks[3].msg[0].frequency = gm_volt_cc_f1 ? 100U : 80U;
+      SET_RX_CHECKS(gm_volt_cc_rx_checks, ret);
+    }
     SET_TX_MSGS(GM_CC_GATEWAY_STOCK_TX_MSGS, ret);
     if (gm_ordinary_cc_long && !gm_malibu_cc_stock) {
       static const CanMsg GM_ORDINARY_CC_TX_MSGS[] = {
