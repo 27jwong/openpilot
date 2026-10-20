@@ -34,7 +34,7 @@ class EV9Startup(HyundaiECUStartup):
     for address, data, bus in frames:
       if address == self.address and bus == self.bus and len(data) >= 4 and data[:4] == b"\x03\x28\x01\x01":
         self.disable_attempted = True
-    self.callbacks[1](frames)
+    super()._send(frames)
 
   def _disable(self, can_recv, can_send, **kwargs):
     # Keep the original outcome distinction: command silence is sent,
