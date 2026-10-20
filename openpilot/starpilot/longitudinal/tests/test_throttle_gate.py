@@ -117,11 +117,15 @@ class NativePlannerThrottleTests(unittest.TestCase):
       now[0] = stamp + 10_000_000
       # Feed both actual CP owners the same synthetic plant motion. Stock ACC
       # MPC uses measurements; OP longitudinal uses its predicted state.
-      plant_speed = planners[1].v_desired_filter.x
-      plant_accel = planners[1].output_a_target
+      plant_speed = float(planners[1].v_desired_filter.x)
+      plant_accel = float(planners[1].output_a_target)
       for planner, sm in zip(planners, streams, strict=True):
         sm['carState'].vEgo = plant_speed
         sm['carState'].aEgo = plant_accel
+        # Compare lead priority at equal serialized controller states, not
+        # closed-loop drift between measured and predicted state owners.
+        planner.v_desired_filter.x = sm['carState'].vEgo
+        planner.output_a_target = sm['carState'].aEgo
         sm.logMonoTime['modelV2'] = stamp
         planner.update(sm)
         self.assertEqual(planner.mpc.solution_status, 0)
