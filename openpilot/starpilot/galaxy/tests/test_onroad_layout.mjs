@@ -52,7 +52,7 @@ export function snapshot() {
   metadata.roadColorFields = [{ id: 'path', label: 'Path', default: '#30FF9CFF' },
     { id: 'pathEdge', label: 'Path edges', default: '#00FF40FF' }, { id: 'laneLines', label: 'Lane lines', default: '#FFFFFFFF' }]
   metadata.profiles.compact.widgets.speed_limit_actions.visualInsetTop = 32
-  const document = { version: 7, roadColors: { large: {}, compact: {} }, widgetColors: { large: {}, compact: {} }, palette: Object.fromEntries(metadata.paletteFields.map((field) => [field.id, field.default])),
+  const document = { version: 8, roadColors: { large: {}, compact: {} }, widgetColors: { large: {}, compact: {} }, palette: Object.fromEntries(metadata.paletteFields.map((field) => [field.id, field.default])),
     layouts: Object.fromEntries(Object.entries(metadata.profiles).map(([id, profile]) => [id,
       Object.fromEntries(Object.entries(profile.widgets).map(([key, definition]) => [key,
         { ...definition.default, ...(definition.resizable ? { size: definition.resizable.default } : {}) }]))])) }
@@ -498,7 +498,8 @@ vm.state.scene = "slc_display"
 vm.selectProfile("compact")
 assert.equal(vm.state.scene, "general")
 const smallScenes = vm.sceneGroups.flatMap(group => group.scenes.map(scene => scene.id))
-for (const id of ["slc_pedal", "slc_retained", "slc_display"]) assert.ok(!smallScenes.includes(id), id)
+for (const id of ["slc_pedal", "slc_display"]) assert.ok(!smallScenes.includes(id), id)
+assert.ok(smallScenes.includes('slc_retained'))  // The override X is visible on the Small screen too.
 assert.ok(smallScenes.includes("slc_unavailable") && smallScenes.includes("slc_disengaged"))
 vm.selectProfile("large")
 assert.equal(vm.sceneGroups.flatMap(group => group.scenes).length, vm.scenes.length)

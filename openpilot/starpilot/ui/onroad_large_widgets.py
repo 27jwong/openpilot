@@ -1,7 +1,7 @@
 """Adapted large StarPilot onroad widgets with supplied observations.
 
-Geometry and drawing order follow the frozen SetSpeedWidget, SpeedLimitWidget,
-HudRenderer and ExpButton. See the adjacent UI LICENSE for retained source.
+The speed group uses the reviewed device geometry; the current speed and wheel
+retain their native anchors. See the adjacent UI LICENSE for retained source.
 """
 
 from pathlib import Path
@@ -16,7 +16,7 @@ from openpilot.starpilot.ui.onroad_widget_style import draw_control_card
 from openpilot.starpilot.ui.presentation import BitmapFonts, FontRole, Profile
 from openpilot.starpilot.ui.wheel_feedback import WheelFeedbackFade
 from openpilot.starpilot.ui.unified_speed_presentation import resolve_unified_speed
-from openpilot.starpilot.ui.speed_limit_widget import SpeedLimitWidget
+from openpilot.starpilot.ui.speed_limit_widget import SpeedLimitWidget, draw_caption, draw_ink, draw_text
 
 
 ENGAGED = rl.Color(128, 216, 166, 255)
@@ -37,12 +37,13 @@ class UnifiedSpeedWidget:
     self.sign = SpeedLimitWidget(fonts, Profile.LARGE)
 
   def _draw_sources(self, rect, state):
-    """Each enabled source as a small label over its reading; the accepted source is highlighted."""
+    """Each enabled source as a small label over its reading; the selected source is highlighted."""
     from openpilot.starpilot.ui.large_speed_geometry import PADDING
     rows = [row for row in state.speed_limit.source_readings if row.enabled]
     if not rows:
       text = 'No sources enabled' if state.speed_limit.source_readings else 'No speed limit'
-      _center(self.fonts, text, FontRole.NORMAL, 26, rect, rect.y + 22)
+      width = self.fonts.measure(text, FontRole.NORMAL, 26).width
+      draw_text(self.fonts, text, FontRole.NORMAL, 26, rect.x + (rect.width - width) / 2, rect.y + 22, rl.WHITE)
       return
     active = state.speed_limit.source if str(state.speed_limit.kind) == 'valid' else state.speed_limit.accepted_source
     labels = {'dashboard': 'Dash', 'map': 'Map', 'vision': 'Vision', 'online': 'Online'}
@@ -54,8 +55,10 @@ class UnifiedSpeedWidget:
       size = 22
       while size > 12 and self.fonts.measure(labels[row.source], FontRole.NORMAL, size).width > cell - 4:
         size -= 1
-      _center(self.fonts, labels[row.source], FontRole.NORMAL, size, box, rect.y + 10, color)
-      _center(self.fonts, value, FontRole.MEDIUM if row.source == active else FontRole.NORMAL, 30, box, rect.y + 36, color)
+      for text, role, font_size, y in ((labels[row.source], FontRole.NORMAL, size, rect.y + 10),
+                                     (value, FontRole.MEDIUM if row.source == active else FontRole.NORMAL, 30, rect.y + 36)):
+        width = self.fonts.measure(text, role, font_size).width
+        draw_text(self.fonts, text, role, font_size, box.x + (box.width - width) / 2, y, color)
 
   def render(self, content: rl.Rectangle, state: OnroadState) -> None:
     from openpilot.starpilot.ui.large_speed_geometry import GAP, WIDTH, PADDING, SOURCE_ROW_HEIGHT, card_height
@@ -68,26 +71,17 @@ class UnifiedSpeedWidget:
     rect = rl.Rectangle(saved['x'], saved['y'], WIDTH, height)
     sources = state.customization.get('speedSources') is True
     separate = state.customization.get('speedSourcesCard') is True
-    if sources and not separate:
-      rect.height += SOURCE_ROW_HEIGHT
     fill = rl.Color(*rgba(state.customization, 'cardFill', 'large', 'cruise_limits'))
     border = rl.Color(*rgba(state.customization, 'cardBorder', 'large', 'cruise_limits'))
     text = rl.Color(*rgba(state.customization, 'text', 'large', 'cruise_limits'))
-    muted = rl.Color(172, 190, 203, 255)
-    draw_control_card(rect, fill=fill, border=border, border_width=1, roundness=.09)
     if shown.mode != 'limit_only':
       x = rect.x + PADDING
-      self.fonts.draw('SET SPEED', FontRole.MEDIUM, 24, x, rect.y + 18, muted)
-      size = 92
-      while size > 52 and self.fonts.measure(shown.max_text, FontRole.SPEED, size).width > 146:
+      draw_caption(self.fonts, 'SET', x, rect.y + 19, unit=shown.unit)
+      size = 104
+      while size > 72 and self.fonts.measure(shown.max_text, FontRole.SET_SPEED, size).width > 126:
         size -= 1
-      self.fonts.draw(shown.max_text, FontRole.SPEED, size, x, rect.y + 50, text)
-      self.fonts.draw(shown.unit, FontRole.NORMAL, 26, x, rect.y + 140, muted)
+      draw_ink(self.fonts, shown.max_text, FontRole.SET_SPEED, size, x, rect.y + 51, text)
     self.sign.render(state)
-    status_size = 23
-    while status_size > 16 and self.fonts.measure(shown.status, FontRole.NORMAL, status_size).width > WIDTH - 2 * PADDING:
-      status_size -= 1
-    self.fonts.draw(shown.status, FontRole.NORMAL, status_size, rect.x + PADDING, rect.y + 178, muted)
     if sources:
       row = rl.Rectangle(rect.x, rect.y + height + (GAP if separate else 0), WIDTH, SOURCE_ROW_HEIGHT)
       if separate:

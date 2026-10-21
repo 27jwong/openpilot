@@ -51,6 +51,37 @@ def tap_control(touch, current, kind):
 
 
 class TestSlcTouch(unittest.TestCase):
+  def test_padding_tolerates_drift_but_cancels_on_leaving_the_original_target(self):
+    for profile in Profile:
+      emitted, current = [], state()
+      touch = OnroadInput(emitted.append, profile)
+      left, top, right, bottom = speed_limit_bounds(profile, current)
+      x, y = (left + right) / 2, (top + bottom) / 2
+      touch.press(x, y, current)
+      touch.release(x + 12, y + 12, current)
+      self.assertTrue(touch.present(current).slc_prompt_open)
+      controls = slc_controls(profile, touch.present(current))
+      for control in controls:
+        left, top, right, bottom = control.bounds
+        x, y = (left + right) / 2, (top + bottom) / 2
+        for drift in (0, 6, 12):
+          tap_sign(touch, current)
+          touch.press(x, y, current)
+          self.assertEqual(touch.pressed_action, control.request)
+          touch.release(x + drift, y + drift, current)
+          self.assertEqual(emitted.pop(), control.request)
+        tap_sign(touch, current)
+        touch.press(x, y, current)
+        touch.move(right + 1, y, current)
+        touch.release(x, y, current)
+        self.assertFalse(emitted)
+        self.assertIsNone(touch.pressed_action)
+      tap_sign(touch, current)
+      x = (controls[0].bounds[2] + controls[1].bounds[0]) / 2
+      touch.press(x, y, current)
+      touch.release(x, y, current)
+      self.assertFalse(emitted)
+
   def test_both_profiles_offer_accept_and_decline_only_after_tapping_the_sign(self):
     for profile in Profile:
       current, emitted = state(), []
@@ -97,6 +128,21 @@ class TestSlcTouch(unittest.TestCase):
         touch.release(x, y, changed)
         self.assertFalse(emitted)
         self.assertFalse(touch.present(changed).slc_prompt_open)
+
+  def test_moving_a_target_during_a_press_cancels_the_action(self):
+    import copy
+    for profile in Profile:
+      emitted, current = [], state()
+      touch = OnroadInput(emitted.append, profile)
+      tap_sign(touch, current)
+      control = slc_controls(profile, touch.present(current))[0]
+      left, top, right, bottom = control.bounds
+      x, y = (left + right) / 2, (top + bottom) / 2
+      touch.press(x, y, current)
+      document = copy.deepcopy(current.customization)
+      document['layouts'][str(profile)]['speed_limit_actions']['x'] += 1
+      touch.release(x, y, replace(current, customization=document))
+      self.assertFalse(emitted)
 
   def test_automatic_countdown_has_no_touch_confirmation(self):
     current = state()

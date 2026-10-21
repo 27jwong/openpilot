@@ -18,7 +18,7 @@ from openpilot.starpilot.ui.onroad_conditional import reason as conditional_reas
 from openpilot.starpilot.ui.presentation import BitmapFonts, FontRole, Profile
 from openpilot.starpilot.ui.onroad_widget_style import draw_widget_frame
 from openpilot.starpilot.ui.wheel_feedback import WheelFeedbackFade
-from openpilot.starpilot.ui.speed_limit_widget import SpeedLimitWidget
+from openpilot.starpilot.ui.speed_limit_widget import MUTED, SpeedLimitWidget, draw_caption, draw_ink
 from openpilot.starpilot.ui.moon import draw_moon
 
 
@@ -89,7 +89,7 @@ def draw_lead_icon(rect: rl.Rectangle) -> None:
 
 
 class CompactHudRenderer:
-  """Frozen compact MAX and torque placement with caller-supplied speed."""
+  """Compact speed group and the native steering-wheel placement."""
 
   def __init__(self, fonts: BitmapFonts, asset_directory: Path):
     self.fonts = fonts
@@ -137,18 +137,15 @@ class CompactHudRenderer:
     cruise = "–" if state.cruise_kph is None else str(round(state.cruise_kph if state.metric else state.cruise_kph * 0.621371))
     mx, my = widget_offset(state.customization, "compact", "max_speed")
     if set_speed_alpha > 0.01 and placement(state.customization, "compact", "max_speed")["enabled"]:
-      shadow = rl.Color(0, 0, 0, int(255 / 2 * set_speed_alpha))
-      try:
-        rl.draw_circle_gradient(rl.Vector2(81 + mx, 81 + my), 81, shadow, rl.BLANK)
-      except (RuntimeError, TypeError):
-        rl.draw_circle_gradient(int(81 + mx), int(81 + my), 81, shadow, rl.BLANK)
       red, green, blue, alpha = rgba(state.customization, "text", "compact", "max_speed")
-      color = rl.Color(red, green, blue, int(alpha * 0.9 * set_speed_alpha))
-      speed_size = 112
-      while speed_size > 72 and self.fonts.measure(cruise, FontRole.SET_SPEED, speed_size).width > 128:
+      color = rl.Color(red, green, blue, int(alpha * set_speed_alpha))
+      muted = rl.Color(MUTED.r, MUTED.g, MUTED.b, int(255 * set_speed_alpha))
+      speed_size = 108
+      while speed_size > 72 and self.fonts.measure(cruise, FontRole.SET_SPEED, speed_size).width > 124:
         speed_size -= 1
-      self.fonts.draw(cruise, FontRole.SET_SPEED, speed_size, 17 + mx, -4 + my, color)
-      self.fonts.draw("SET", FontRole.SEMI_BOLD, 36, 25 + mx, 109 + my, color)
+      draw_caption(self.fonts, 'SET', 23 + mx, 10 + my, muted, unit='km/h' if state.metric else 'mph')
+      draw_ink(self.fonts, cruise, FontRole.SET_SPEED, speed_size, 17 + mx, 34 + my, color)
+
   def render_steering_wheel(self, state: OnroadState) -> None:
     color = self._feedback.update(state.wheel_acceleration, state.appearance.wheel_pedal_feedback, state.observed_ns, state.drive_frame)
     if state.lateral_active:

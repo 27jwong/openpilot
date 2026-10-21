@@ -351,6 +351,7 @@ def test_compact_sign_keeps_accepted_value_without_pulsing_on_recovery(tmp_path)
   _, recovered, _ = drive.step(400)
   fonts = Mock()
   fonts.measure.return_value = Mock(width=20, height=20)
+  fonts.vertical_ink.return_value = (0, 20)
   renderer = CompactHudRenderer(fonts, Path('/unused'))
   with patch('openpilot.starpilot.ui.onroad_compact_widgets.rl.draw_rectangle_rounded_lines_ex'), \
        patch('openpilot.starpilot.ui.onroad_compact_widgets.rl.draw_circle'), \
