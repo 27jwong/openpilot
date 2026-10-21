@@ -5,6 +5,18 @@ from opendbc.car.hyundai.ecu_startup import HyundaiECUStartup, Outcome
 from opendbc.car.hyundai.ev9_keeper import EV9Keeper as StartupKeeper
 
 
+def commit_controller_tester(owner, frames, *, valid):
+  keeper = getattr(owner, "keeper", None)
+  if keeper is None or owner.handed_off or not valid or owner.closed or not owner.published:
+    return
+  tester = make_tester_present_msg(owner.address, owner.bus, suppress_response=True)
+  if tester not in frames:
+    return
+  keeper.stop()
+  owner.check()
+  owner.handed_off = True
+
+
 class ContinuousECUStartup(HyundaiECUStartup):
   def __init__(self, cp, callbacks, *, address, bus, label, clock=time.monotonic, keeper_factory=StartupKeeper):
     super().__init__(cp, callbacks, address=address, bus=bus, label=label)
@@ -16,8 +28,7 @@ class ContinuousECUStartup(HyundaiECUStartup):
   def prepare(self, *, admission):
     result = super().prepare(admission=admission)
     if self.continuity_required() and self.outcome is Outcome.SENT_UNCONFIRMED:
-      self.keeper = self.keeper_factory(
-        lambda: self.callbacks[1]([make_tester_present_msg(self.address, self.bus, suppress_response=True)]), clock=self.clock)
+      self.keeper = self.keeper_factory(lambda: self.callbacks[1]([make_tester_present_msg(self.address, self.bus, suppress_response=True)]), clock=self.clock)
       try:
         self.keeper.start()
       except Exception:
@@ -30,28 +41,20 @@ class ContinuousECUStartup(HyundaiECUStartup):
 
   def check(self):
     super().check()
-    keeper = getattr(self, 'keeper', None)
+    keeper = getattr(self, "keeper", None)
     if keeper is not None and keeper.abort_reason is not None:
       keeper.stop()
       self.outcome = Outcome.ABORT_UNCERTAIN
-      raise RuntimeError(f'{self.label} startup diagnostic continuity failed')
+      raise RuntimeError(f"{self.label} startup diagnostic continuity failed")
 
   def maintain(self, *, configured):
     self.check()
 
   def sent(self, frames, *, valid):
-    keeper = getattr(self, 'keeper', None)
-    if keeper is None or self.handed_off or not valid or self.closed or not self.published:
-      return
-    tester = make_tester_present_msg(self.address, self.bus, suppress_response=True)
-    if tester not in frames:
-      return
-    keeper.stop()
-    self.check()
-    self.handed_off = True
+    commit_controller_tester(self, frames, valid=valid)
 
   def close(self):
-    keeper = getattr(self, 'keeper', None)
+    keeper = getattr(self, "keeper", None)
     if keeper is not None:
       keeper.stop()
     super().close()
