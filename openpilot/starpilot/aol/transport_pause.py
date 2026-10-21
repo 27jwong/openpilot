@@ -263,6 +263,7 @@ class TransportPauseFeedback:
     self.ever_lateral_active = False
     self.lag_withdrawal_ns = 0
     self.cold_main_wait_ns = 0
+    self.cold_park_waiting = False
     self.lateral_only_baseline = False
     self.lateral_source_ns = 0
     self.lateral_inventory = None
@@ -962,6 +963,7 @@ class TransportPauseFeedback:
       axis = sm['aolAxisState']
       if not latched or cp_identity(cp) != self.cp or self.session and str(axis.sessionId) != self.session:
         self.temporary_eps_event_ns = 0
+        self.cold_park_waiting = False
       stamp = int(sm.logMonoTime['aolAxisState'])
       reason = str(axis.faultReason)
       signature = (str(axis.sessionId), int(axis.sequence), stamp, int(axis.observedMonoTime),
@@ -976,10 +978,28 @@ class TransportPauseFeedback:
                      cp_identity(cp) == self.cp)
       continuity = bool(not self.session or axis.sessionId == self.session and
                         (axis.sequence > self.sequence or axis.sequence == self.sequence and signature == self.signature))
-      if (self.cold_main_wait_ns and current and continuity and self.signature is not None and
+      if ((self.cold_main_wait_ns or self.cold_park_waiting) and current and continuity and self.signature is not None and
           signature[14:16] != self.signature[14:16]):
         self.failed = True
         return True
+      if (cp.brand == 'gm' and current and continuity and latched and not self.failed and
+          not self.ever_lateral_active and not self.pending_event and reason == 'none' and
+          axis.nativeAcknowledged and not any(signature[9:13]) and
+          intent_producer_session and signature[14] == intent_producer_session and
+          (self.signature is None or signature[14:16] == self.signature[14:16]) and
+          0 < axis.sourceCarStateMonoTime <= stamp and now_ns - axis.sourceCarStateMonoTime <= AXIS_MAX_AGE_NS):
+        from openpilot.starpilot.car.gm.aol import cold_park_readiness
+        native = _healthy_transport_native(sm, cp, cs, str(axis.sessionId), now_ns)
+        event_ns = int(sm.logMonoTime['onroadEvents'])
+        if (axis.faultEventMonoTime == event_ns and sm.seen['onroadEvents'] and
+            sm.valid['onroadEvents'] and sm.alive['onroadEvents'] and
+            0 < event_ns <= stamp and now_ns - event_ns <= 1_500_000_000 and
+            cold_park_readiness(cp, cs, native, sm['onroadEvents'])):
+          self.cold_park_waiting = True
+          self.session = str(axis.sessionId)
+          self.sequence, self.signature = int(axis.sequence), signature
+          self.temporary_host_qualified = True
+          return False
       if cp.brand == 'ford' and latched:
         from openpilot.starpilot.car.ford.command_pause import retain_command_pause_intent
         if retain_command_pause_intent(self, sm, cp, cs, axis, now_ns, latched=latched, producer=intent_producer_session):
@@ -1138,6 +1158,7 @@ class TransportPauseFeedback:
         return False
       current = bool(current and (transport_healthy or cancel_native is not None))
       if current and baseline and not latched:
+        self.cold_park_waiting = False
         self.temporary_eps_event_ns = 0
         self.session = ''
         self.pending_event = 0
@@ -1235,6 +1256,7 @@ class TransportPauseFeedback:
           self.ever_lateral_active = True
           self.lag_withdrawal_ns = 0
           self.cold_main_wait_ns = 0
+          self.cold_park_waiting = False
           self.temporary_eps_event_ns = 0
           self.lateral_native_ns = int(native.observedMonoTime)
           self.lateral_inventory = (native.pandaSerial, tuple(p.hardwareSerial for p in native.pandaInventory))

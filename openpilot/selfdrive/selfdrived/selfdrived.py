@@ -1613,6 +1613,21 @@ class SelfdriveD:
         sample.vEgo < (self.aol_settings.pause_brake_mps if self.aol_settings is not None else 0.0)
         for sample, _ in getattr(self, 'car_state_samples', ())))
 
+  def cold_gm_park_readiness(self, CS, intent, now_ns):
+    from openpilot.starpilot.car.gm.aol import cold_park_readiness
+    from openpilot.starpilot.aol.transport_pause import _healthy_transport_native
+    from openpilot.starpilot.aol.runtime import INTENT_MAX_AGE_NS
+    if (self.CP.brand != 'gm' or not self.initialized or self.enabled or self.active or getattr(self, 'aol_ever_active', False) or
+        self.aol_authority_lost or not getattr(self, 'conditional_car_state_valid', False) or
+        intent is None or not intent.settingsQualified or not intent.lateralArmed or intent.allowedLatch or
+        intent.pauseLateral or intent.pauseLongitudinal or
+        intent.carStateLogMonoTime != self.aol_car_state_log_ns or
+        not 0 < intent.carStateLogMonoTime <= intent.observedMonoTime <= now_ns <= intent.validUntilMonoTime or
+        now_ns - intent.carStateLogMonoTime > INTENT_MAX_AGE_NS):
+      return False
+    native = _healthy_transport_native(self.sm, self.CP, CS, self.aol_session_id, now_ns)
+    return cold_park_readiness(self.CP, CS, native, self.events.to_msg())
+
   def cold_gm_main_readiness(self, CS, intent, now_ns):
     from openpilot.starpilot.car.gm.aol import cold_main_readiness
     from openpilot.starpilot.aol.transport_pause import _healthy_transport_native
@@ -1897,7 +1912,9 @@ class SelfdriveD:
           gear_pause=reverse_pause))
         for event in self.events.to_msg())
       cold_main_wait = self.cold_gm_main_readiness(CS, intent, now_ns)
-      self.aol_fault_reason = ('availabilityPause' if ordinary_availability or cold_main_wait else
+      cold_park_wait = self.cold_gm_park_readiness(CS, intent, now_ns)
+      self.aol_fault_reason = ('none' if cold_park_wait else
+                               'availabilityPause' if ordinary_availability or cold_main_wait else
                                'critical' if self.aol_authority_lost or self.events.contains(ET.IMMEDIATE_DISABLE) or
                                aol_hard_soft_fault and not availability else
                                'availabilityPause' if availability else 'transportPause' if pause else 'none')
@@ -1938,6 +1955,8 @@ class SelfdriveD:
         self.aol_fault_reason = 'none'
       if cold_main_wait:
         self.aol_axis_decision = AxisDecision()
+      if cold_park_wait:
+        self.aol_axis_decision = AxisDecision(native_acknowledged=True)
       if self.aol_ordinary_source_pause:
         self.aol_axis_decision = self.ordinary_source_withdrawal()
       elif availability:

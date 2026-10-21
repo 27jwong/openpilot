@@ -129,6 +129,30 @@ def create_intent(cp, settings):
   return GmAolCardIntent(settings, cp) if qualified_gm(cp) else None
 
 
+def cold_park_readiness(cp, cs, native, events):
+  """Retain cold MAIN intent while parked; acknowledge only idle native axes."""
+  from opendbc.car.structs import car
+  from openpilot.cereal import log
+  names = (log.OnroadEvent.EventName.wrongGear, log.OnroadEvent.EventName.seatbeltNotLatched,
+           log.OnroadEvent.EventName.commIssue, log.OnroadEvent.EventName.commIssueAvgFreq,
+           log.OnroadEvent.EventName.locationdTemporaryError)
+  return bool(qualified_gm(cp) and aol_enabled(cp) and
+    cs.gearShifter == car.CarState.GearShifter.park and cs.standstill and
+    math.isfinite(cs.vEgo) and abs(cs.vEgo) <= .3 and
+    cs.canValid and not cs.canTimeout and cs.cruiseState.available and not cs.cruiseState.enabled and
+    not cs.steerFaultTemporary and not cs.steerFaultPermanent and not cs.accFaulted and
+    not cs.doorOpen and not cs.gasPressed and not cs.steeringDisengage and
+    native is not None and native.pandaInventory and
+    not native.requestedLateral and not native.lateralAllowed and
+    not native.requestedLongitudinal and not native.longitudinalAllowed and
+    not any(event.immediateDisable or event.softDisable and event.name not in names or
+      event.userDisable and not (
+        event.name == log.OnroadEvent.EventName.wrongGear and event.noEntry and event.softDisable or
+        event.name == log.OnroadEvent.EventName.pedalPressed and (cs.brakePressed or cs.regenBraking) or
+        event.name == log.OnroadEvent.EventName.pcmDisable and not cs.cruiseState.enabled)
+      for event in events))
+
+
 def cold_main_readiness(cp, cs, native, events, *, recovering=False):
   """A MAIN request may wait for host startup without acquiring either axis."""
   from openpilot.cereal import log
