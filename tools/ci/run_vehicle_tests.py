@@ -33,6 +33,7 @@ DEBUG_SAFETY_CLASS_TARGETS = {
 
 
 RELEASE_TARGETS = (
+  "opendbc_repo/opendbc/car/hyundai/tests/test_classic_aol_dash.py",
   "opendbc_repo/opendbc/car/hyundai/tests/test_g90_continuity.py",
   "opendbc_repo/opendbc/car/hyundai/tests/test_disable_response.py",
   "openpilot/starpilot/aol/tests/test_angle_stop_native_feedback.py",
