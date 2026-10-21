@@ -40,7 +40,9 @@ class TestJeepBrakeHoldPreference(unittest.TestCase):
       row = next(
         row for row in owner.snapshot('vehicle', parked=True, system_long=False, lateral_context=True, metric=False).rows if row.key == 'JeepBrakeHold'
       )
-      request = replace(row_change(row), confirmation=True)
+      change = row_change(row)
+      assert change is not None
+      request = replace(change, confirmation=True)
       for group in groups:
         groups[group] = False
         self.assertFalse(owner.apply(request))

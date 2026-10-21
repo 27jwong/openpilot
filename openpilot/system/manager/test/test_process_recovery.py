@@ -128,6 +128,7 @@ class TestProcessRecovery(unittest.TestCase):
     self.step(p)
     old = p.proc
     self.assertIsNotNone(old)
+    assert isinstance(old, Child)
     old.exitcode = 1
     self.step(p)
     self.assertIs(p.proc, old)
@@ -135,6 +136,7 @@ class TestProcessRecovery(unittest.TestCase):
     self.step(p)
     self.assertIsNot(p.proc, old)
     self.assertTrue(old.joined)
+    assert isinstance(p.proc, Child)
     p.proc.exitcode = 1
     self.step(p)
     self.step(p, started=False)
