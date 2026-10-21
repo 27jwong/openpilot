@@ -57,6 +57,7 @@ class ToyotaSafetyFlags(IntFlag):
   LTA = (4 << 8)
   SECOC = (8 << 8)
   LONG_FILTER = (16 << 8)
+  RAV4H_FILTER_PROFILE = (128 << 8)  # Exact smartDSU owner; bit14 remains reserved for ALT_CRUISE
 
 
 class ToyotaFlags(IntFlag):

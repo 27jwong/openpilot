@@ -33,6 +33,8 @@ DEBUG_SAFETY_CLASS_TARGETS = {
 
 
 RELEASE_TARGETS = (
+  "opendbc_repo/opendbc/car/toyota/tests/test_rav4h_filter.py",
+  "opendbc_repo/opendbc/safety/tests/test_toyota_rav4h_filter.py",
   "openpilot/starpilot/aol/tests/test_sonata_irq_callers.py",
   "openpilot/starpilot/aol/tests/test_sonata_irq_policy.py",
   "opendbc_repo/opendbc/car/hyundai/tests/test_classic_aol_dash.py",

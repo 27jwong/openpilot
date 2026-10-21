@@ -167,6 +167,8 @@ class VehicleStartupPreferences:
     if not self.toyota_filter:
       from opendbc.car.toyota.prius_longitudinal import prepare_stock as prepare_prius_stock
       prepare_prius_stock(cp)
+      from opendbc.car.toyota.rav4h_filter import prepare_stock as prepare_rav4h_stock
+      prepare_rav4h_stock(cp)
     self._prepare_bolt(cp, fingerprints)
     prepare_disable_longitudinal(cp, self.disable_bolt_long)
     self._prepare_camera_pedal(cp)
@@ -196,6 +198,8 @@ class VehicleStartupPreferences:
     if not self.toyota_filter:
       from opendbc.car.toyota.prius_longitudinal import prepare_stock as prepare_prius_stock
       prepare_prius_stock(cp)
+      from opendbc.car.toyota.rav4h_filter import prepare_stock as prepare_rav4h_stock
+      prepare_rav4h_stock(cp)
     self._prepare_bolt(cp)
     prepare_disable_longitudinal(cp, self.disable_bolt_long)
     self._prepare_camera_pedal(cp)
