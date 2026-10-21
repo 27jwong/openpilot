@@ -67,16 +67,12 @@ def vision_slc_development(started: bool, params: Params, CP: car.CarParams) -> 
   return started and feature_enabled(params, CP, 'slc', os.environ) and feature_enabled(params, CP, 'vision', os.environ)
 
 def galaxy_local(started: bool, params: Params, CP: car.CarParams) -> bool:
-  # Keep the authenticated local service reachable across ignition changes.
   return os.getenv("STARPILOT_GALAXY_DISABLE") != "1"
 
 def android_auto_enabled(started: bool, params: Params, CP: car.CarParams) -> bool:
-  # A missing key is typed false. The manager does not start or recover a phone
-  # role until the user enables projection on supported hardware.
   return COMMA_HARDWARE and platform.system() == "Linux" and params.get_bool("AndroidAutoEnabled")
 
 def spotify_enabled(started: bool, params: Params, CP: car.CarParams) -> bool:
-  # One stat of a feature-owned flag; Spotify keeps its settings out of Params.
   from openpilot.starpilot.soloist.paths import enabled
   return COMMA_HARDWARE and platform.system() == "Linux" and enabled()
 
