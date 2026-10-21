@@ -33,6 +33,7 @@ DEBUG_SAFETY_CLASS_TARGETS = {
 
 
 RELEASE_TARGETS = (
+  "openpilot/starpilot/aol/tests/test_sonata_hybrid_cancel_scope.py",
   "opendbc_repo/opendbc/car/hyundai/tests/test_sibling_continuity.py",
   "openpilot/starpilot/aol/tests/test_sonata_stock_transition.py",
   "openpilot/starpilot/aol/tests/test_classic_stock_full_engagement.py",
