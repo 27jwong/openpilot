@@ -3,6 +3,8 @@ from opendbc.safety.tests import common
 from opendbc.safety.tests.libsafety import libsafety_py
 from opendbc.safety.tests import test_toyota as toyota_tests
 
+libsafety_py.ffi.cdef("extern safety_config current_safety_config;")
+
 
 class TestRav4hFilterNative(unittest.TestCase):
   init = toyota_tests.TestToyotaHighlanderAol.init
@@ -183,3 +185,33 @@ class TestRav4hFilterNative(unittest.TestCase):
       self.safety.set_timer(1_000_000 + step * 10_000)
       self.base.physical(cruise=True)
       self.assertEqual(self.safety.aol_get_permission_mask(), 3 if step <= 20 else 0)
+
+  def test_shared_workspace_repeated_normal_alt_filtered_switches(self):
+    sequence = (73, 329, 0x9049, 73, 329, 0x9249, 73, 0x9049, 73)
+    for word in sequence:
+      self.init(word, 32)
+      config = self.safety.current_safety_config
+      expected = [(0xAA, 8, 83, False), (0x260, 8, 50, True), (0x1D2, 8, 33, True),
+                  (0x224 if word == 329 else 0x226, 8, 40, True)]
+      if word in (0x9049, 0x9249):
+        expected.append((0x2FF, 8, 50, False))
+      actual = []
+      for index in range(config.rx_checks_len):
+        check = config.rx_checks[index]
+        msg = check.msg[0]
+        actual.append((msg.addr, msg.len, msg.frequency, bool(msg.ignore_quality_flag)))
+        self.assertEqual(msg.bus, 0)
+        self.assertFalse(check.status.msg_seen)
+        self.assertEqual(check.status.last_timestamp, 0)
+        self.assertEqual(check.status.wrong_counters, 0)
+        self.assertFalse(check.status.lagging)
+      self.assertEqual(actual, expected)
+      self.base.physical(cruise=True)
+      if word == 329:
+        self.rx(0x224, bytes(8))
+      if word in (0x9049, 0x9249):
+        self.assertFalse(self.safety.safety_config_valid())
+        self.assertEqual(self.safety.aol_get_permission_mask(), 0)
+        self.rx(0x2FF, bytes(8))
+        self.assertEqual(self.safety.aol_get_permission_mask(), 1 if word == 0x9249 else 3)
+      self.assertTrue(self.safety.safety_config_valid())
