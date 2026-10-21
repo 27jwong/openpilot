@@ -91,7 +91,7 @@ int main() {
     auto chrysler = status();
     chrysler.safety_mode = 9U;
     chrysler.safety_param = static_cast<uint16_t>(word);
-    assert(aol_capable(chrysler, 9U, VEHICLE_REGISTRY) == ((word == 0U) || (word == 1U) || (word == 8U)));
+    assert(aol_capable(chrysler, 9U, VEHICLE_REGISTRY) == ((word == 0U) || (word == 1U) || (word == 4U) || (word == 8U)));
     chrysler.capability_flags = 0U;
     assert(!aol_capable(chrysler, 9U, VEHICLE_REGISTRY));
   }
