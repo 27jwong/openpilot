@@ -12,7 +12,6 @@ from unittest.mock import patch
 from opendbc.can import CANPacker
 from opendbc.car import structs
 from opendbc.car.hyundai.interface import CarInterface
-from opendbc.car.hyundai.values import CAR
 from opendbc.car.hyundai.classic_long_aol import qualified as qualified_classic
 from opendbc.safety.tests.libsafety import libsafety_py
 from opendbc.safety.tests.test_hyundai import checksum
@@ -129,7 +128,7 @@ def test_actual_classic_family_cancel_and_manual_withdrawal(identity, monkeypatc
       cp = classic_params(identity, lda=True)
       assert qualified_classic(cp) and not cp.pcmCruise and cp.openpilotLongitudinalControl
       assert cp.lateralTuning.which() == 'torque'
-      expects_owner = identity == CAR.GENESIS_G90
+      expects_owner = True
       assert CarInterface.startup_required(cp) == expects_owner
       from opendbc.car import car_helpers, gen_empty_fingerprint
       from opendbc.car.hyundai import ecu_startup

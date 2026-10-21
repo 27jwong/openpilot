@@ -33,6 +33,10 @@ DEBUG_SAFETY_CLASS_TARGETS = {
 
 
 RELEASE_TARGETS = (
+  "opendbc_repo/opendbc/car/hyundai/tests/test_ordinary_classic_startup_contract.py",
+  "opendbc_repo/opendbc/car/hyundai/tests/test_ordinary_classic_startup_protocol.py",
+  "opendbc_repo/opendbc/car/hyundai/tests/test_ordinary_classic_stock_fallback.py",
+  "opendbc_repo/opendbc/car/hyundai/tests/test_ordinary_classic_guards.py",
   "openpilot/starpilot/aol/tests/test_native_inventory_control_cadence.py",
   "openpilot/starpilot/aol/tests/test_classic_family_button_scope.py",
   "openpilot/starpilot/aol/tests/test_hkg_independent_cancel_contract.py",

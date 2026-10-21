@@ -1,3 +1,4 @@
+from openpilot.starpilot.aol.tests.classic_startup_test_helpers import prepared_classic_card
 import pytest
 import importlib
 import os
@@ -7,7 +8,6 @@ from unittest.mock import patch
 from opendbc.can import CANPacker
 from opendbc.car import structs
 from opendbc.car.hyundai.interface import CarInterface
-from opendbc.car.hyundai.radar_interface import RadarInterface
 from opendbc.car.hyundai.values import CAR
 from opendbc.car.hyundai.classic_long_aol import qualified as qualified_classic
 from opendbc.safety.tests.libsafety import libsafety_py
@@ -112,8 +112,8 @@ def test_alpha_set_without_lkas_arms_persistent_lateral(identity, withdrawal, mo
       saved.put_bool('IsReleaseBranch', False, block=True)
       cp = classic_params(identity, lda=True)
       assert qualified_classic(cp) and not cp.pcmCruise and cp.openpilotLongitudinalControl
-      assert cp.lateralTuning.which() == 'torque' and not CarInterface.startup_required(cp)
-      card = card_module.Car(CI=CarInterface(cp), RI=RadarInterface(cp))
+      assert cp.lateralTuning.which() == 'torque' and CarInterface.startup_required(cp)
+      card = prepared_classic_card(cp)
       assert qualified_classic(card.CP, marked_only=True)
       assert card.CP.safetyConfigs[0].safetyParam == (0xC04 if identity == CAR.HYUNDAI_SONATA else 0xC06) and card.CP.alternativeExperience == 32
       assert isinstance(card.aol_card_intent, ClassicLongCardIntent)
@@ -285,7 +285,8 @@ def test_alpha_set_without_lkas_arms_persistent_lateral(identity, withdrawal, mo
         assert card.aol_card_intent.allowed_latch, 'FULL_ENGAGEMENT_DID_NOT_ARM_IMPLICIT_AOL'
         assert card.aol_card_intent._last_latch_edge_ns > 0
         edge = card.aol_card_intent._last_latch_edge_ns
-        assert diagnostic_requests == [b'\x10\x03', b'\x28\x83\x01']
+        assert diagnostic_requests == []
+        assert card._classic_startup_requests == (b'\x10\x03', b'\x28\x83\x01')
         assert card.ci_initialized and saved.get_bool('ControlsReady')
         if not expect_retention:
           for _ in range(2):
