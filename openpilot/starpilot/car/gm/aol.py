@@ -4,7 +4,7 @@ import math
 from opendbc.car.gm.cancel_remap import aol_enabled, enabled as cancel_remap_enabled, supported as cancel_remap_supported
 
 from opendbc.car.structs import CarParams
-from opendbc.car.gm.values import CAR, control_flags, camera_acc_pedal_profile, is_volt_ascm_longitudinal
+from opendbc.car.gm.values import CAR, GMFlags, control_flags, camera_acc_pedal_profile, is_volt_ascm_longitudinal
 from opendbc.car.gm.aol import GM_AOL_ALTERNATIVE_EXPERIENCE, GM_AOL_WORDS, qualified_gm
 from openpilot.starpilot.aol.policy import AolVehiclePolicy
 from openpilot.starpilot.aol.intent import AOL_TOGGLE, AolCardIntent
@@ -26,6 +26,13 @@ def native_profile_supported(model: int, param: int) -> bool:
 def native_accepts_cp(cp, model: int, param: int) -> bool:
   return (qualified_gm(cp) and aol_enabled(cp) and
           native_profile_supported(model, param))
+
+
+def stock_ascm_independent_lateral(cp) -> bool:
+  """Stock cruise's engagement speed does not cancel independent lateral intent."""
+  return bool(qualified_gm(cp) and cp.carFingerprint == CAR.CHEVROLET_VOLT_ASCM and
+              cp.pcmCruise and not cp.openpilotLongitudinalControl and
+              not cp.flags & GMFlags.PEDAL_LONG)
 
 
 class GmAolCardIntent(AolCardIntent):
