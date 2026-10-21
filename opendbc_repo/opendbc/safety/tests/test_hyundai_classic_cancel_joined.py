@@ -12,7 +12,7 @@ class TestClassicCancelDebug:
 
 
 class TestClassicCancelReleaseDenied:
-  @pytest.mark.parametrize('word', [0xC04, 0xC06])
+  @pytest.mark.parametrize('word', [0xC04, 0xC05, 0xC06, 0xC44, 0xC45, 0xC46])
   def test_release_does_not_admit_classic_longitudinal_or_independent_lateral(self, word):
     safety = libsafety_py.libsafety
     safety.init_tests()

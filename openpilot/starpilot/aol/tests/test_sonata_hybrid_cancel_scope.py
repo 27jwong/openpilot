@@ -42,7 +42,7 @@ def test_hybrid_added_scope_preserves_existing_profile_vetoes(defect):
   elif defect == 'passive':
     cp.passive = True
   elif defect == 'fingerprint':
-    cp.carFingerprint = CAR.HYUNDAI_IONIQ
+    cp.carFingerprint = CAR.HYUNDAI_IONIQ_5
   elif defect == 'identity_flags':
     cp.flags = int(cp.flags) & ~int(HyundaiFlags.HYBRID)
   before = cp.to_dict()

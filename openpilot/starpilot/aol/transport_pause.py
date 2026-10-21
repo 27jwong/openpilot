@@ -64,6 +64,21 @@ def _healthy_transport_native(sm, cp, cs, session, now_ns, native=None, *, requi
     return None
 
 
+def _newer_combined_intent_native(sm, cp, cs, axis, now_ns):
+  if (not axis.nativeAcknowledged or not axis.desiredLateral or not axis.lateralActive or
+      not axis.desiredLongitudinal or not axis.longitudinalActive or not cs.cruiseState.enabled or
+      cs.brakePressed or cs.gasPressed or cs.accFaulted):
+    return None
+  native = _healthy_transport_native(sm, cp, cs, str(axis.sessionId), now_ns, require_longitudinal=False)
+  if (native is None or not native.pandaInventory or not native.requestedLateral or not native.lateralAllowed or
+      not native.requestedLongitudinal or not native.longitudinalAllowed or
+      not 0 < int(sm.logMonoTime['pandaStates']) < native.sourcePandaStatesMonoTime or
+      any(not slot.controlsAllowed for slot, config in zip(native.pandaInventory, cp.safetyConfigs, strict=True)
+          if str(config.safetyModel) not in ('silent', 'noOutput'))):
+    return None
+  return native
+
+
 def independent_lateral_health(sm, cp, cs, session, now_ns):
   """Structural health for retaining LAT intent; never grant either output axis."""
   native = _healthy_transport_native(sm, cp, cs, session, now_ns, require_longitudinal=False)
@@ -1138,6 +1153,8 @@ class TransportPauseFeedback:
                       0 < axis.sourceCarStateMonoTime <= stamp and
                       stamp - axis.sourceCarStateMonoTime <= AXIS_MAX_AGE_NS)
       native = _healthy_transport_native(sm, cp, cs, str(axis.sessionId), now_ns)
+      if native is None and latched and current and continuity and baseline:
+        native = _newer_combined_intent_native(sm, cp, cs, axis, now_ns)
       lateral_native = (self._native_long_withdrawal_lateral_current(sm, cp, cs, axis, now_ns,
         latched=latched, producer=intent_producer_session)
         if native is None and current and continuity and baseline else None)
