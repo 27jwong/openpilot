@@ -76,6 +76,7 @@ class CarController(CarControllerBase):
     self.mache_lateral = MachELateralController(CP) if mache_qualified(CP) else None
     self.mache_extended_announced = False
     self.mache_ui_active = False
+    self.hands_free_cluster_input = None
     self.generic_canfd = generic_canfd_qualified(CP)
     self.classic_lateral = GenericCanfdLateralController(CP) if self.generic_canfd else create_classic_controller(CP)
     self.new_port_curvature = create_new_port_curvature(CP)
@@ -99,6 +100,8 @@ class CarController(CarControllerBase):
 
   def update(self, CC, CS, now_nanos):
     can_sends = []
+    if self.hands_free_cluster_input is not None:
+      self.hands_free_cluster_input.update()
     if not CC.latActive:
       self.mache_ui_active = False
     if (self.mache_lateral is not None or self.classic_lateral is not None or self.new_port_curvature is not None) and self.manual_turn_inputs is not None:
@@ -344,9 +347,11 @@ class CarController(CarControllerBase):
 
       if (self.frame % CarControllerParams.ACC_UI_STEP) == 0 or send_ui:
         show_distance_bars = self.frame - self.distance_bar_frame < 400
+        hands_free_cluster = bool(self.mache_lateral is not None and self.mache_extended_announced and
+                                  self.hands_free_cluster_input is not None and self.hands_free_cluster_input.enabled)
         can_sends.append(fordcan.create_acc_ui_msg(self.packer, self.CAN, self.CP, main_on, ui_enabled,
                                                    fcw_alert, CS.out.cruiseState.standstill, show_distance_bars,
-                                                   hud_control, CS.acc_tja_status_stock_values))
+                                                   hud_control, CS.acc_tja_status_stock_values, hands_free_cluster))
 
     self.main_on_last = main_on
     self.lkas_enabled_last = ui_enabled
