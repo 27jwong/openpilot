@@ -1504,6 +1504,14 @@ class Car:
         inactive = car.CarControl.new_message().as_reader()
         now_boot_ns = time.clock_gettime_ns(time.CLOCK_BOOTTIME)
         if ev6_startup:
+          now_mono_ns = time.monotonic_ns()
+          source_ns = int(self.sm.logMonoTime['carControl'])
+          receipt_ns = int(self.sm.recv_time['carControl'] * 1e9)
+          current = bool(0 < source_ns <= now_mono_ns and now_mono_ns - source_ns <= 150_000_000 and
+                         0 < receipt_ns <= now_mono_ns and now_mono_ns - receipt_ns <= 150_000_000)
+          if not self.vehicle_startup.before_control(configured=True, ci=self.CI, now_ns=now_boot_ns, control_current=current):
+            self.publish_sendcan([], valid=False)
+            return
           self.last_actuators_output, can_sends = self.CI.apply(inactive, now_boot_ns)
         else:
           self.last_actuators_output, can_sends = cast(GMInterface, self.CI).apply(inactive, now_boot_ns, startup_keepalive=True)

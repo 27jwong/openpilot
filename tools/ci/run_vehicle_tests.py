@@ -33,6 +33,13 @@ DEBUG_SAFETY_CLASS_TARGETS = {
 
 
 RELEASE_TARGETS = (
+  "opendbc_repo/opendbc/car/hyundai/tests/test_startup_owner_current_admission.py::test_actual_card_only_publishes_prepared_takeover_with_current_owner_evidence[panda-g90]",
+  "opendbc_repo/opendbc/car/hyundai/tests/test_startup_owner_current_admission.py::test_actual_card_only_publishes_prepared_takeover_with_current_owner_evidence[panda-ev6-1p]",
+  "opendbc_repo/opendbc/car/hyundai/tests/test_startup_owner_current_admission.py::test_actual_card_only_publishes_prepared_takeover_with_current_owner_evidence[panda-gv70-1p]",
+  "opendbc_repo/opendbc/car/hyundai/tests/test_startup_owner_current_admission.py::test_actual_card_only_publishes_prepared_takeover_with_current_owner_evidence[panda-ev6-init-1p]",
+  "opendbc_repo/opendbc/car/hyundai/tests/test_startup_owner_current_admission.py::test_actual_card_only_publishes_prepared_takeover_with_current_owner_evidence[panda-ev6-2p]",
+  "opendbc_repo/opendbc/car/hyundai/tests/test_startup_owner_current_admission.py::test_actual_card_only_publishes_prepared_takeover_with_current_owner_evidence[panda-gv70-2p]",
+  "opendbc_repo/opendbc/car/hyundai/tests/test_startup_owner_current_admission.py::test_actual_card_only_publishes_prepared_takeover_with_current_owner_evidence[panda-ev6-init-2p]",
   "opendbc_repo/opendbc/car/hyundai/tests/test_radar_hda1_startup.py",
   "opendbc_repo/opendbc/car/hyundai/tests/test_radar_hda1_startup_guards.py",
   "opendbc_repo/opendbc/car/hyundai/tests/test_radar_hda1_startup_lifecycle.py::test_exact_factory_stock_copy_and_owner_preserve_all_params",
