@@ -9,6 +9,7 @@ from contextlib import ExitStack
 from unittest.mock import patch
 from opendbc.car.gm.values import DBC
 from opendbc.car import Bus, structs
+from opendbc.car.can_definitions import CanData
 from opendbc.can import CANPacker
 from opendbc.safety.tests.libsafety import libsafety_py as native
 from openpilot.cereal import messaging
@@ -29,7 +30,7 @@ from opendbc.car.gm.values import CruiseButtons
 
 def automatic_params():
   fp = recorded_fingerprint()
-  packets = [[SimpleNamespace(address=a, dat=bytes(n), src=b) for b, m in fp.items() for a, n in m.items()]]
+  packets = [[CanData(address=a, dat=bytes(n), src=b) for b, m in fp.items() for a, n in m.items()]]
   with patch.dict(car_helpers.os.environ, {'SKIP_FW_QUERY': '1', 'FINGERPRINT': ''}):
     ci = car_helpers.get_car(lambda wait_for_one=False: packets, lambda _: None, lambda _: None, False, False)
   assert ci.CP.safetyConfigs[0].safetyParam == 0xC163
