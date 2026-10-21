@@ -980,6 +980,10 @@ class TransportPauseFeedback:
           signature[14:16] != self.signature[14:16]):
         self.failed = True
         return True
+      if cp.brand == 'ford' and latched:
+        from openpilot.starpilot.car.ford.command_pause import retain_command_pause_intent
+        if retain_command_pause_intent(self, sm, cp, cs, axis, now_ns, latched=latched, producer=intent_producer_session):
+          return False
       if (cp.brand == 'chrysler' and current and continuity and latched and
           not self.failed and not self.ever_lateral_active):
         from openpilot.starpilot.car.chrysler.aol import cold_calibration_intent_current
