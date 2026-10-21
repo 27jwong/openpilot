@@ -353,6 +353,20 @@ class TransportPauseFeedback:
       all(not event.immediateDisable and
           (not event.softDisable or event.name == log.OnroadEvent.EventName.steerTempUnavailable) for event in events))
     users = [event for event in events if event.userDisable]
+    from opendbc.car.hyundai.canfd_angle_aol import qualified as angle_qualified
+    from opendbc.car import structs
+    gears = structs.CarState.GearShifter
+
+    # Stock PCM off is not the driver's independent AOL toggle. Retain only
+    # previously established intent while the exact location input fault has
+    # withdrawn output; the native/session/source checks below still apply.
+    stock_location_user = bool(location_fault and angle_qualified(cp, marked_only=True) and users and
+      not axis.desiredLongitudinal and not axis.longitudinalActive and
+      cs.cruiseState.available and not cs.cruiseState.enabled and
+      cs.gearShifter in (gears.drive, gears.low, gears.sport, gears.brake) and
+      not cs.doorOpen and not cs.seatbeltUnlatched and not cs.brakePressed and not cs.regenBraking and
+      all(event.name == log.OnroadEvent.EventName.pcmDisable and not event.softDisable and
+          not event.immediateDisable for event in users))
     pedal = bool(cs.brakePressed and users and all(event.name == log.OnroadEvent.EventName.pedalPressed and
       not event.softDisable and not event.immediateDisable for event in users) and not faults)
     if axis.longitudinalActive and not location_fault or not (temporary or eps_recovery or pedal):
@@ -364,7 +378,7 @@ class TransportPauseFeedback:
         int(getattr(axis, 'intentIntegrityEpoch', 0)) != self.availability_epoch or
         not self.lateral_inventory or not self.lateral_baseline_ns or
         not cs.canValid or cs.canTimeout or cs.steerFaultPermanent or cs.accFaulted or cs.steerFaultTemporary or
-        users and not pedal or str(axis.faultReason) not in ('none', 'critical') or
+        users and not (pedal or stock_location_user) or str(axis.faultReason) not in ('none', 'critical') or
         not 0 < self.lateral_source_ns <= axis.sourceCarStateMonoTime <= stamp <= now_ns or
         now_ns - axis.sourceCarStateMonoTime > AXIS_MAX_AGE_NS or
         not sm.seen['onroadEvents'] or not sm.valid['onroadEvents'] or not sm.alive['onroadEvents']):
