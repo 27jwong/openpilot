@@ -33,6 +33,10 @@ DEBUG_SAFETY_CLASS_TARGETS = {
 
 
 RELEASE_TARGETS = (
+  'opendbc_repo/opendbc/car/hyundai/tests/test_generic_hda2_startup.py',
+  'opendbc_repo/opendbc/car/hyundai/tests/test_generic_hda2_startup_guards.py',
+  'opendbc_repo/opendbc/car/hyundai/tests/test_generic_hda2_startup_lifecycle.py::test_exact_factory_stock_copy_and_owner_preserve_all_params',
+  'opendbc_repo/opendbc/car/hyundai/tests/test_generic_hda2_startup_lifecycle.py::test_actual_card_rejected_generic_hda2_restores_stock',
   "opendbc_repo/opendbc/car/hyundai/tests/test_ioniq5pe_ready_stock_contract.py",
   "opendbc_repo/opendbc/car/hyundai/tests/test_radar_hda2_startup.py",
   "opendbc_repo/opendbc/car/hyundai/tests/test_radar_hda2_startup_guards.py",

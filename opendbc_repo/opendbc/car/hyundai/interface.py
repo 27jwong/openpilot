@@ -45,7 +45,8 @@ class CarInterface(CarInterfaceBase):
     from opendbc.car.hyundai.ordinary_classic_startup import required as ordinary_classic_required
     from opendbc.car.hyundai.radar_hda1_startup import required as radar_hda1_required
     from opendbc.car.hyundai.radar_hda2_startup import required as radar_hda2_required
-    return (radar_hda2_required(cp) or radar_hda1_required(cp) or ordinary_classic_required(cp) or pe_long_required(cp) or
+    from opendbc.car.hyundai.generic_hda2_startup import required as generic_hda2_required
+    return (generic_hda2_required(cp) or radar_hda2_required(cp) or radar_hda1_required(cp) or ordinary_classic_required(cp) or pe_long_required(cp) or
             legacy_required(cp) or blended_required(cp) or required(cp) or
             ev6_required(cp) or gv70_required(cp) or ev9_required(cp) or torque_ev_required(cp))
 
@@ -87,6 +88,9 @@ class CarInterface(CarInterfaceBase):
     from opendbc.car.hyundai.radar_hda2_startup import RadarHDA2Startup, required as radar_hda2_required
     if radar_hda2_required(cp):
       return RadarHDA2Startup(cp, callbacks) if requested else None
+    from opendbc.car.hyundai.generic_hda2_startup import GenericHDA2Startup, required as generic_hda2_required
+    if generic_hda2_required(cp):
+      return GenericHDA2Startup(cp, callbacks) if requested else None
     from opendbc.car.hyundai.blended_longitudinal import startup_owner
     return startup_owner(cp, callbacks, requested=requested)
 
