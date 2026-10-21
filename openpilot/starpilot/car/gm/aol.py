@@ -28,6 +28,14 @@ def native_accepts_cp(cp, model: int, param: int) -> bool:
           native_profile_supported(model, param))
 
 
+def cc_independent_lateral_below_engage(cp, intent, *, enabled, active):
+  """An armed independent Bolt LAT request uses its steering speed gate."""
+  from opendbc.car.gm.values import is_bolt_cc_profile
+  return bool(not enabled and not active and qualified_gm(cp) and aol_enabled(cp) and
+              is_bolt_cc_profile(cp) and intent is not None and intent.settingsQualified and
+              intent.allowedLatch and intent.lateralArmed and not intent.pauseLateral)
+
+
 def stock_ascm_independent_lateral(cp) -> bool:
   """Stock cruise's engagement speed does not cancel independent lateral intent."""
   return bool(qualified_gm(cp) and cp.carFingerprint == CAR.CHEVROLET_VOLT_ASCM and

@@ -23,6 +23,10 @@ from openpilot.starpilot.lateral.tests.test_lane_runtime import feed
 @pytest.mark.parametrize('index', range(8))
 @pytest.mark.parametrize('main_action', [0, 9])
 def test_cold_park_main_waits_without_losing_intent(index, main_action):
+  _exercise_parked_main(index, main_action)
+
+
+def _exercise_parked_main(index, main_action, *, below_engage=False):
   cp = list(cases())[index]
   case = fixture.IoniqAvailabilityTests(methodName='runTest')
   with OpenpilotPrefix(), ExitStack() as cleanup:
@@ -172,7 +176,12 @@ def test_cold_park_main_waits_without_losing_intent(index, main_action):
     packer = CANPacker(DBC[cp.carFingerprint][Bus.pt])
 
     def physical(tick, stamp, driving):
-      packets = parsed_packets(cp, packer, stamp, tick, max(4.0, cp.minSteerSpeed + 2.0, cp.minEnableSpeed + 2.0) if driving else 0.0, True)
+      speed = max(4.0, cp.minSteerSpeed + 2.0)
+      if below_engage:
+        assert speed < cp.minEnableSpeed
+      else:
+        speed = max(speed, cp.minEnableSpeed + 2.0)
+      packets = parsed_packets(cp, packer, stamp, tick, speed if driving else 0.0, True)
       packets = [f for f in packets if f[0] not in (0x1F5, 0x12A, 0x184, 0x17D)]
       if cp.pcmCruise and cp.networkLocation == structs.CarParams.NetworkLocation.fwdCamera:
         address = packer.make_can_msg('ASCMActiveCruiseControlStatus', 2, {})[0]

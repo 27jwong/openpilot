@@ -1575,7 +1575,7 @@ class SelfdriveD:
 
 
   def _decide_aol_axes(self, CS, intent, native, *, now_ns=0, ordinary_lag=False):
-    from openpilot.starpilot.car.gm.aol import physical_cancel_lateral_allowed, stock_ascm_independent_lateral
+    from openpilot.starpilot.car.gm.aol import physical_cancel_lateral_allowed, stock_ascm_independent_lateral, cc_independent_lateral_below_engage
     from openpilot.starpilot.car.hyundai.aol import physical_cancel_lateral_allowed as hkg_cancel_lateral_allowed
     from openpilot.starpilot.aol.dm import lateral_event_context
     retained_dm_lateral, lateral_events = lateral_event_context(self, CS, intent, native, now_ns, ordinary_lag)
@@ -1599,7 +1599,9 @@ class SelfdriveD:
                                axis_session_id=getattr(self, 'aol_session_id', '')),
                            cruise_main_required=getattr(self, 'aol_cruise_main_required', True),
                            allow_below_engage_speed=bool((is_volt_ascm_longitudinal(self.CP) or
-                                                        stock_ascm_independent_lateral(self.CP)) and
+                                                        stock_ascm_independent_lateral(self.CP) or
+                                                        cc_independent_lateral_below_engage(self.CP, intent,
+                                                          enabled=self.enabled, active=self.active)) and
                                                        not self.CP.flags & GMFlags.PEDAL_LONG)),
       immediate_disable=self.events.contains(ET.IMMEDIATE_DISABLE),
       dm_lockout=bool(not self.sm.all_checks(['driverMonitoringState']) or
