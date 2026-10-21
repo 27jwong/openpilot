@@ -59,7 +59,7 @@ class TestVisionProducer(unittest.TestCase):
     return next_pair
 
   def run_frame(self, streams, *, completion_age_ns=10_000_000, model_states=None):
-    core = Mock()
+    core = Mock(last_published_support_at=1.)
     core.observe.return_value = (55, 0.9, 2, 1)
     client = Mock()
     client.is_connected.return_value = True
@@ -178,7 +178,7 @@ class TestVisionProducer(unittest.TestCase):
       return Buffer(frame_id)
 
     client.recv.side_effect = receive
-    core = Mock()
+    core = Mock(last_published_support_at=1.)
 
     def observe(_frame, *, now):
       self.assertEqual(released, [12] if core.observe.call_count == 1 else [12, 13, 14, 15, 16, 17])
@@ -220,7 +220,7 @@ class TestVisionProducer(unittest.TestCase):
     self.assertEqual(messages[2].producerSessionId, messages[3].producerSessionId)
 
   def test_throttled_and_already_stale_frames_do_not_convert(self):
-    core = Mock()
+    core = Mock(last_published_support_at=1.)
     core.observe.return_value = None
     client = Mock()
     client.is_connected.return_value = True
@@ -255,7 +255,7 @@ class TestVisionProducer(unittest.TestCase):
     self.assertEqual([message.frameId for message in messages], [12, 14])
 
   def test_expired_inference_cools_down_without_accepting_old_result(self):
-    core = Mock()
+    core = Mock(last_published_support_at=1.)
     core.observe.return_value = None
     client = Mock()
     client.is_connected.return_value = True

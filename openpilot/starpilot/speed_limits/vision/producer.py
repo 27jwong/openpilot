@@ -89,7 +89,8 @@ def _camera_frame(client) -> tuple[np.ndarray, int, int] | None:
 
 
 def _send(pm, *, session: str, status: str, stream: str, observed_ns: int = 0,
-          eof_boot_ns: int = 0, frame_id: int = 0, result: tuple[int, float, int, int] | None = None) -> None:
+          eof_boot_ns: int = 0, frame_id: int = 0, result: tuple[int, float, int, int] | None = None,
+          valid_until_ns: int | None = None) -> None:
   from openpilot.cereal import messaging
 
   msg = messaging.new_message('slcVisionObservation', valid=True)
@@ -107,7 +108,7 @@ def _send(pm, *, session: str, status: str, stream: str, observed_ns: int = 0,
     event.confidence = confidence
     event.supportCount = support
     event.episode = episode
-    event.validUntilMonoTime = observed_ns + MAX_RESULT_AGE_NS
+    event.validUntilMonoTime = observed_ns + MAX_RESULT_AGE_NS if valid_until_ns is None else valid_until_ns
   pm.send('slcVisionObservation', msg)
 
 
@@ -270,8 +271,12 @@ def main() -> None:
         last_unavailable = observed_pair[0] / 1e9
         _send(pm, session=session, status='unavailable', stream=stream)
         continue
+      # A confirmed sign remains the known road limit after it leaves view.
+      # Keep its actual support time separate from this fresh camera heartbeat.
+      sign_observed_ns = int(core.last_published_support_at * 1e9) if result is not None else source_observed_ns
       _send(pm, session=session, status='valid' if result is not None else 'unknown', stream=stream,
-            observed_ns=source_observed_ns, eof_boot_ns=eof_boot_ns, frame_id=frame_id, result=result)
+            observed_ns=sign_observed_ns, eof_boot_ns=eof_boot_ns, frame_id=frame_id, result=result,
+            valid_until_ns=source_observed_ns + MAX_RESULT_AGE_NS)
     except Exception as error:
       cloudlog.error('vision SLC camera unavailable: %s', error)
       _send(pm, session=session, status='unavailable', stream=stream)

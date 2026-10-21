@@ -38,7 +38,7 @@ class TestVision(unittest.TestCase):
     self.assertIsNone(core.infer(black))
     self.assertEqual(core.last_detector_forward_count, 1)
 
-  def test_confirmation_reuses_frozen_thresholds_and_expires_support(self):
+  def test_confirmation_reuses_frozen_thresholds_and_retains_confirmed_limit(self):
     core = VisionModelCore.__new__(VisionModelCore)
     core.is_metric = False
     core.history = model.deque()
@@ -54,7 +54,24 @@ class TestVision(unittest.TestCase):
     with patch.object(core, 'infer', side_effect=lambda _frame: next(reads)):
       self.assertIsNone(core.observe(frame, now=1.0))
       self.assertEqual(core.observe(frame, now=1.2), (55, 0.76, 2, 1))
-      self.assertIsNone(core.observe(frame, now=3.21))
+      self.assertEqual(core.observe(frame, now=3.21), (55, 0.76, 2, 1))
+      self.assertEqual(core.last_published_support_at, 1.2)
+
+  def test_confirmed_sign_survives_leaving_view_and_changes_only_on_confirmation(self):
+    core = VisionModelCore.__new__(VisionModelCore)
+    core.history = model.deque()
+    core.reset()
+    frame = np.zeros((2, 2, 3), dtype=np.uint8)
+    reads = [Detection(55, 0.60), Detection(55, 0.76), None, Detection(65, 0.99), None]
+    with patch.object(core, 'infer', side_effect=reads):
+      self.assertIsNone(core.observe(frame, now=1.0))
+      self.assertEqual(core.observe(frame, now=1.2)[0], 55)
+      self.assertEqual(core.observe(frame, now=60.0)[0], 55)
+      self.assertEqual(core.last_published_support_at, 1.2)
+      self.assertEqual(core.observe(frame, now=61.0)[0], 65)
+      self.assertEqual(core.last_published_support_at, 61.0)
+      core.reset()
+      self.assertIsNone(core.observe(frame, now=62.0))
 
   def test_camera_reset_discards_pre_reconnect_consensus_and_episode(self):
     core = VisionModelCore.__new__(VisionModelCore)
@@ -187,6 +204,23 @@ class TestVision(unittest.TestCase):
                       ObservationKind.VALID)
         selected = select_limit(observations, settings.selection)
         self.assertEqual(selected.selected_source, Source.VISION)
+
+  def test_retained_sign_needs_current_camera_and_producer_health(self):
+    message = self._event()
+    event = message.slcVisionObservation.vision
+    # The sign was last seen at monotonic1s. This camera heartbeat is at60s.
+    event.cameraFrameEofBootTime = 64_000_000_000
+    event.validUntilMonoTime = 62_000_000_000
+    kw = {'receipt_mono_ns': 60_100_000_000, 'now_mono_ns': 60_100_000_000,
+          'now_boot_ns': 64_100_000_000, 'car_fingerprint': 'IONIQ6', 'drive_session': 'drive-a'}
+    self.assertIs(vision_observation(event, **kw).kind, ObservationKind.VALID)
+    self.assertEqual(event.observedMonoTime, 1_000_000_000)
+    self.assertIs(vision_observation(event, **dict(kw, receipt_mono_ns=59_000_000_000)).kind,
+                  ObservationKind.STALE)
+    event.cameraFrameEofBootTime = 61_000_000_000
+    self.assertIs(vision_observation(event, **kw).kind, ObservationKind.STALE)
+    event.status = 'unavailable'
+    self.assertIs(vision_observation(event, **kw).kind, ObservationKind.UNKNOWN)
 
   def test_native_shared_source_choice_is_dev_and_parked_guarded(self):
     with tempfile.TemporaryDirectory() as root:
