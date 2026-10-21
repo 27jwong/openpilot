@@ -86,5 +86,6 @@ def test_real_card_socket_clock_crossing_preserves_sdgm_axes(c9, full_op):
     assert axis.lateralActive and cc.latActive and bool(cc.longActive) == full_op
     assert log.OnroadEvent.EventName.controlsMismatch not in sd.events.names
     assert sd.steering_companion.samples[source][0] == source
+    assert sd.steering_companion.latest is not None
     assert sd.steering_companion.latest[0] == later
     assert axis.validUntilMonoTime == axis.observedMonoTime + 30_000_000

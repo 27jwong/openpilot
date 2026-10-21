@@ -177,6 +177,7 @@ def test_phone_map_keeps_moving_between_delayed_fixes(tmp_path):
     positions = []
     for frame in range(101):
       overlay._advance(data, 100. + frame / 50)
+      assert overlay._world is not None
       positions.append(overlay._world[0])
     assert all(b > a for a, b in zip(positions, positions[1:], strict=False)), 'no one-second freeze between phone fixes'
     assert overlay.status == 'live'
