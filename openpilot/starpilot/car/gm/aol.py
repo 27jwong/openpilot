@@ -36,6 +36,13 @@ def cc_independent_lateral_below_engage(cp, intent, *, enabled, active):
               intent.allowedLatch and intent.lateralArmed and not intent.pauseLateral)
 
 
+def f1_conventional_lateral_owner(cp) -> bool:
+  """Exact development F1 conventional-cruise owner; no pedal or ACC profile."""
+  from opendbc.car.gm.values import VOLT_CC_F1_WORD, is_volt_cc_profile
+  return bool(qualified_gm(cp) and aol_enabled(cp) and is_volt_cc_profile(cp) and
+              int(cp.safetyConfigs[0].safetyParam) == VOLT_CC_F1_WORD)
+
+
 def stock_ascm_independent_lateral(cp) -> bool:
   """Stock cruise's engagement speed does not cancel independent lateral intent."""
   return bool(qualified_gm(cp) and cp.carFingerprint == CAR.CHEVROLET_VOLT_ASCM and
@@ -270,17 +277,20 @@ def intent_disarming_fault(cp, events, state, **context):
 
 
 def physical_longitudinal_withdrawal_source(cp, cs, parser, observation, now_ns) -> int:
-  """Bind a Bolt pedal-owner withdrawal to its parsed CAN and local receipt."""
+  """Bind a qualified GM physical withdrawal to parsed CAN and local receipt."""
   from opendbc.car.gm.values import CruiseButtons, is_bolt_present_no_acc_pedal_profile
   from opendbc.car.structs import car
   try:
-    if (not qualified_gm(cp) or not is_bolt_present_no_acc_pedal_profile(cp) or
+    if (not qualified_gm(cp) or not (is_bolt_present_no_acc_pedal_profile(cp) or f1_conventional_lateral_owner(cp)) or
         not aol_enabled(cp) or
         observation is None or observation[0] is not cs or not cs.canValid or cs.canTimeout):
       return 0
     fields = []
     if cs.brakePressed and parser.vl['ECMEngineStatus']['BrakePressed']:
       fields.append(('ECMEngineStatus', 'BrakePressed'))
+    if (f1_conventional_lateral_owner(cp) and cs.brakePressed and
+        parser.vl['EBCMBrakePedalPosition']['BrakePedalPosition'] >= 6):
+      fields.append(('EBCMBrakePedalPosition', 'BrakePedalPosition'))
     if cs.regenBraking and parser.vl['EBCMRegenPaddle']['RegenPaddle']:
       fields.append(('EBCMRegenPaddle', 'RegenPaddle'))
     if (parser.vl['ASCMSteeringButton']['ACCButtons'] == CruiseButtons.CANCEL and
@@ -308,7 +318,7 @@ def retained_physical_longitudinal_intent(feedback, sm, cp, cs, axis, now_ns, *,
   from openpilot.starpilot.aol.runtime import AXIS_MAX_AGE_NS, SAFETY_MAX_AGE_NS
   from openpilot.starpilot.aol.transport_pause import independent_lateral_health
   occurrence = feedback.gm_withdrawal_ns or source_ns
-  if (not qualified_gm(cp) or not is_bolt_present_no_acc_pedal_profile(cp) or
+  if (not qualified_gm(cp) or not (is_bolt_present_no_acc_pedal_profile(cp) or f1_conventional_lateral_owner(cp)) or
       not aol_enabled(cp) or
       not latched or feedback.failed or feedback.paused or feedback.pending_event or
       feedback.retention_started_ns or not feedback.session or str(axis.sessionId) != feedback.session or
@@ -356,12 +366,12 @@ def retained_physical_longitudinal_intent(feedback, sm, cp, cs, axis, now_ns, *,
 
 
 def physical_cancel_lateral_allowed(cp, cs, intent, native, *, source_ns, now_ns) -> bool:
-  """Exact armed Bolt Cancel removes only the lateral NO_ENTRY restriction."""
+  """Exact armed physical Cancel removes only the lateral NO_ENTRY restriction."""
   from opendbc.car.gm.values import is_bolt_present_no_acc_pedal_profile
   from opendbc.car.structs import car
   from openpilot.starpilot.aol.runtime import AXIS_MAX_AGE_NS, SAFETY_MAX_AGE_NS, native_inventory_matches_cp
   try:
-    return bool(qualified_gm(cp) and is_bolt_present_no_acc_pedal_profile(cp) and
+    return bool(qualified_gm(cp) and (is_bolt_present_no_acc_pedal_profile(cp) or f1_conventional_lateral_owner(cp)) and
       aol_enabled(cp) and
       intent is not None and intent.settingsQualified and intent.allowedLatch and intent.lateralArmed and
       intent.producerSessionId and intent.carStateLogMonoTime == source_ns and
