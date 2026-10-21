@@ -139,9 +139,9 @@ class ResumePlanInputs:
 def configure_controller(CI, params):
   cp = CI.CP
   controller = CI.CC
-  if controller is not None and getattr(controller, "mache_lateral", None) is not None:
-    from openpilot.starpilot.car.ford.cluster_preferences import MachEClusterPreference
-    controller.hands_free_cluster_input = MachEClusterPreference(params)
+  from openpilot.starpilot.car.ford.cluster_preferences import FordClusterPreference, qualified as cluster_qualified
+  if controller is not None and cluster_qualified(cp):
+    controller.hands_free_cluster_input = FordClusterPreference(params)
   if controller is not None and cp.brand == 'gm':
     from opendbc.car.gm.values import (is_bolt_euv_longitudinal, is_volt_longitudinal,
                                      camera_acc_pedal_profile, volt_cc_pedal_profile)

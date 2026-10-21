@@ -12,7 +12,7 @@ from opendbc.car.ford.tests.test_mache_ui_owner import setup, UI
 from opendbc.car.ford.values import CAR
 from openpilot.common.params import Params
 from openpilot.common.prefix import OpenpilotPrefix
-from openpilot.starpilot.car.ford.cluster_preferences import KEY, MachEClusterPreference, read_choice
+from openpilot.starpilot.car.ford.cluster_preferences import KEY, FordClusterPreference, read_choice
 from openpilot.starpilot.controller_extensions import configure_controller
 from openpilot.starpilot.ui.feature_settings_owner import FeatureSettingsOwner
 from openpilot.starpilot.ui.feature_settings_state import row_change
@@ -33,7 +33,7 @@ def test_saved_opt_in_through_actual_controller_configuration_and_warning_priori
     saved = Params()
     owner, state = setup()
     configure_controller(SimpleNamespace(CP=owner.CP, CC=owner), saved)
-    assert isinstance(owner.hands_free_cluster_input, MachEClusterPreference)
+    assert isinstance(owner.hands_free_cluster_input, FordClusterPreference)
     assert not owner.hands_free_cluster_input.enabled
     parser = CANParser('ford_lincoln_base_pt', [('ACCDATA_3', 5)], 0)
     command = structs.CarControl(latActive=True)

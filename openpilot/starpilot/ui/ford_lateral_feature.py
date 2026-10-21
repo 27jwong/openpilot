@@ -62,12 +62,12 @@ class FordLateralFeature:
 
 
 class FordClusterFeature:
-  """Shared native/Galaxy saved display preference for the Mach-E."""
+  """Shared native/Galaxy saved display preference for Ford CAN-FD profiles."""
   def __init__(self, owner):
     self.owner = owner
 
   def capability(self):
-    from opendbc.car.ford.mache_lateral import qualified
+    from openpilot.starpilot.car.ford.cluster_preferences import qualified
     cp = self.owner.vehicle_params()
     try:
       if cp is None or not qualified(cp):

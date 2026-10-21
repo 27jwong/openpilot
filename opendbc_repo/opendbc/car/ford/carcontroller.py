@@ -77,6 +77,7 @@ class CarController(CarControllerBase):
     self.mache_extended_announced = False
     self.mache_ui_active = False
     self.hands_free_cluster_input = None
+    self.cluster_extended_announced = False
     self.generic_canfd = generic_canfd_qualified(CP)
     self.classic_lateral = GenericCanfdLateralController(CP) if self.generic_canfd else create_classic_controller(CP)
     self.new_port_curvature = create_new_port_curvature(CP)
@@ -329,6 +330,10 @@ class CarController(CarControllerBase):
       self.accel = accel
       self.gas = gas
 
+    # Track the actual outgoing LKA announcement for every CAN-FD display owner.
+    if any(address == 0x3CA for address, _, _ in can_sends):
+      self.cluster_extended_announced = True
+
     ### ui ###
     # AOL safety forwards stock UI until an active lateral replacement owns it.
     # Avoid competing cluster messages while stock remains the display owner.
@@ -347,7 +352,7 @@ class CarController(CarControllerBase):
 
       if (self.frame % CarControllerParams.ACC_UI_STEP) == 0 or send_ui:
         show_distance_bars = self.frame - self.distance_bar_frame < 400
-        hands_free_cluster = bool(self.mache_lateral is not None and self.mache_extended_announced and
+        hands_free_cluster = bool(self.cluster_extended_announced and
                                   self.hands_free_cluster_input is not None and self.hands_free_cluster_input.enabled)
         can_sends.append(fordcan.create_acc_ui_msg(self.packer, self.CAN, self.CP, main_on, ui_enabled,
                                                    fcw_alert, CS.out.cruiseState.standstill, show_distance_bars,
