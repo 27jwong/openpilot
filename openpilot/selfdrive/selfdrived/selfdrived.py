@@ -273,14 +273,17 @@ class SelfdriveD:
     if not monitored_profile(self.CP):
       self.steering_authority_unavailable = False
       return
+    companion = getattr(self, 'steering_companion', None)
+    if companion is None:
+      companion = self.steering_companion = SteeringCompanion()
+    # Receiving may cross a publication boundary. Validate every original source
+    # against the clock after the bounded drain, without renewing any receipt.
+    drained = companion.drain()
     now_ns = self.aol_car_state_log_ns if REPLAY and self.aol_car_state_log_ns else time.monotonic_ns()
     source_ns = self.aol_car_state_log_ns
     source_current = bool(getattr(self, 'conditional_car_state_valid', False) and CS.canValid and not CS.canTimeout and
                           0 < source_ns <= now_ns and now_ns - source_ns <= INTENT_MAX_AGE_NS)
-    companion = getattr(self, 'steering_companion', None)
-    if companion is None:
-      companion = self.steering_companion = SteeringCompanion()
-    pair = companion.current(self.sm, source_ns=source_ns, now_ns=now_ns)
+    pair = companion.current(self.sm, source_ns=source_ns, now_ns=now_ns, drain=False) if drained else None
     if not source_current:
       pair = None
     previous_axes = self.aol_axis_decision
@@ -1257,7 +1260,14 @@ class SelfdriveD:
     self.enabled = self.active = False
     if ET.ENABLE in self.state_machine.current_alert_types:
       self.state_machine.current_alert_types.remove(ET.ENABLE)
-    if was_enabled or previous.lateral_active or previous.longitudinal_active or intent is not None and intent.allowedLatch:
+    cold_gm_startup = bool(not self.initialized and qualified_gm(self.CP) and
+      not getattr(self, 'aol_ever_active', False) and not self.aol_authority_lost and
+      not self.events.contains(ET.IMMEDIATE_DISABLE))
+    # Armed MAIN while initializing is intent, not previously granted actuation.
+    # Expiry still removes the source and all output; actual active/fault paths
+    # retain their existing immediate withdrawal and warning ownership.
+    if (was_enabled or previous.lateral_active or previous.longitudinal_active or
+        intent is not None and intent.allowedLatch and not cold_gm_startup):
       self.aol_fault_reason = 'critical'
       self.aol_authority_lost = True
       self.events.add(EventName.controlsMismatch)
