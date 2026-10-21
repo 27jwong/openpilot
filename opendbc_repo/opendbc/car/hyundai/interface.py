@@ -385,6 +385,9 @@ class CarInterface(CarInterfaceBase):
         self.CS.forte_lkas_sources.update(can_packets)
     ret = super().update(can_packets)
     self.CS.finalize_blended_cancel(ret)
+    pe_startup = getattr(self.CC, 'pe_startup', None)
+    if pe_startup is not None:
+      pe_startup.observe_parked_ready_can(can_packets)
     return ret
 
   @staticmethod
