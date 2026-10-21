@@ -33,7 +33,6 @@ DEBUG_SAFETY_CLASS_TARGETS = {
 
 
 RELEASE_TARGETS = (
-  "opendbc_repo/opendbc/car/hyundai/tests/test_ioniq5pe_parked_ready.py",
   "opendbc_repo/opendbc/car/hyundai/tests/test_radar_hda2_startup.py",
   "opendbc_repo/opendbc/car/hyundai/tests/test_radar_hda2_startup_guards.py",
   "opendbc_repo/opendbc/car/hyundai/tests/test_radar_hda2_startup_lifecycle.py::test_exact_factory_stock_copy_and_owner_preserve_all_params",

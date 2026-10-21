@@ -68,7 +68,6 @@ class PEPendingStartup:
     self.native_context = None
     self.emission_current = False
     self.quiet_failure = None
-    self.parked_ready = None
 
   def _ready_probe(self):
     observer = PEReadySource()
@@ -87,32 +86,13 @@ class PEPendingStartup:
 
     return observer.current(self.boot_clock(), start, 100_000_000)
 
-  def _parked_ready_probe(self):
-    from opendbc.car.hyundai.ioniq5pe_parked_ready import PEParkedReadyProof
-    observer = PEParkedReadyProof(self.stock_cp, self.boot_clock())
-    deadline = self.clock() + .5
-    while self.clock() < deadline:
-      packets = self.callbacks[0](wait_for_one=False)
-      stamped = [(int(getattr(packet, 'log_mono_time_ns', 0)), list(packet)) for packet in packets]
-      observer.observe(stamped, self.boot_clock())
-      if observer.current(self.boot_clock()):
-        return observer
-      time.sleep(.005)
-    return None
-
-  def observe_parked_ready_can(self, packets):
-    if self.pending_target and not self.session_attempted and self.parked_ready is not None:
-      self.parked_ready.observe(packets, self.boot_clock())
-
   def prepare(self, *, admission):
     if self.owner.phase is not Phase.NEW:
       raise RuntimeError('PE preparation is single-use')
     self.diagnostic_admission = admission
     self.prepared_floor_ns = self.boot_clock()
     ready = self._ready_probe() if admission() is True and self.prepared_floor_ns > 0 else None
-    if ready is True:
-      self.parked_ready = self._parked_ready_probe()
-    if ready is not False and self.parked_ready is None:
+    if ready is not False:
       self.owner.phase = Phase.STOCK
       self.owner.cp = copy_cp(self.stock_cp)
     else:
@@ -230,11 +210,9 @@ class PEPendingStartup:
     parser = ci.can_parsers[Bus.pt]
     accelerator = parser.message_states[parser.dbc.name_to_msg['ACCELERATOR'].address]
     ready = ci.CS.pe_ready.current(self.boot_clock(), self.prepared_floor_ns, accelerator.timeout_threshold)
-    ready_allowed = (ready is False if self.parked_ready is None else
-                     ready is True and self.parked_ready.matches_target(ci, self.boot_clock()))
-    if not ready_allowed:
+    if ready is not False:
       self.pending_target = False
-      self.fault = 'PE startup source/READY/park proof lost before takeover; no ECU mutation'
+      self.fault = 'PE Ready/unknown before takeover; abort published target without ECU mutation'
       self.owner.phase = Phase.ABORT
       raise RuntimeError(self.fault)
     try:
@@ -249,14 +227,6 @@ class PEPendingStartup:
       ack_floor_ns = self.boot_clock()
       if not self._confirm_quiet(ci, ack_floor_ns):
         raise RuntimeError(f'PE acknowledged request did not establish quiet/current ownership: {self.quiet_failure}')
-      if self.parked_ready is not None:
-        state = ci.CS.out
-        from opendbc.car import structs
-        if (state.gearShifter != structs.CarState.GearShifter.park or not state.standstill or
-            state.gasPressed or state.regenBraking or state.doorOpen or state.seatbeltUnlatched or
-            state.steerFaultTemporary or state.steerFaultPermanent or state.accFaulted or
-            ci.CS.pe_ready.current(self.boot_clock(), ack_floor_ns, accelerator.timeout_threshold) is not True):
-          raise RuntimeError('PE parked READY state lost during acknowledged takeover')
       self.owner.phase = Phase.OWNED
       self.source_floor_ns = self.boot_clock()
       self._tester()
