@@ -56,11 +56,6 @@
   {.msg = {{0x1D2, 0, 8, 33U, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},                            \
   {.msg = {{0x226, 0, 8, 40U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true},  { 0 }, { 0 }}},  \
 
-#define TOYOTA_ALT_BRAKE_RX_CHECKS(lta)                                                                                                    \
-  TOYOTA_COMMON_RX_CHECKS(lta)                                                                                                             \
-  {.msg = {{0x1D2, 0, 8, 33U, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},                           \
-  {.msg = {{0x224, 0, 8, 40U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},  \
-
 #define TOYOTA_SECOC_RX_CHECKS                                                                                                             \
   TOYOTA_COMMON_RX_CHECKS(false)                                                                                                           \
   {.msg = {{0x176, 0, 8, 32U, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},                           \
@@ -571,23 +566,18 @@ static safety_config toyota_init(uint16_t param) {
 
     SET_RX_CHECKS(toyota_lta_rx_checks, ret);
   } else {
+    // The final entry belongs only to the exact RAV4H filter profile. Share
+    // the ordinary checks instead of duplicating their mutable status table.
     static RxCheck toyota_lka_rx_checks[] = {
       TOYOTA_RX_CHECKS(false)
+      {.msg = {{0x2FF, 0, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = false}, { 0 }, { 0 }}},
     };
-    static RxCheck toyota_lka_alt_brake_rx_checks[] = {
-      TOYOTA_ALT_BRAKE_RX_CHECKS(false)
-    };
-
-    if ((param == 0x9049U) || (param == 0x9249U)) {
-      static RxCheck toyota_rav4h_filter_rx_checks[] = {
-        TOYOTA_RX_CHECKS(false)
-        {.msg = {{0x2FF, 0, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = false}, { 0 }, { 0 }}},
-      };
-      SET_RX_CHECKS(toyota_rav4h_filter_rx_checks, ret);
-    } else if (!toyota_alt_brake) {
-      SET_RX_CHECKS(toyota_lka_rx_checks, ret);
-    } else {
-      SET_RX_CHECKS(toyota_lka_alt_brake_rx_checks, ret);
+    // The alternate-brake profile differs only in this source address. Reuse
+    // the same workspace; set_safety_hooks resets all active mutable status.
+    toyota_lka_rx_checks[3].msg[0].addr = toyota_alt_brake ? 0x224U : 0x226U;
+    SET_RX_CHECKS(toyota_lka_rx_checks, ret);
+    if ((param != 0x9049U) && (param != 0x9249U)) {
+      ret.rx_checks_len -= 1;  // Ordinary profiles do not require smartDSU.
     }
   }
 
