@@ -8,7 +8,7 @@ from opendbc.car.common.pid import PIDController
 from opendbc.car.secoc import add_mac, build_sync_mac
 from opendbc.car.interfaces import CarControllerBase
 from opendbc.car.toyota import toyotacan
-from opendbc.car.toyota import prius_longitudinal, rav4h_filter
+from opendbc.car.toyota import prius_longitudinal, rav4h_filter, pedal
 from opendbc.car.toyota.door_locks import DoorLocks
 from opendbc.car.toyota.values import CAR, CarControllerParams, ToyotaFlags, TOYOTA_AUTO_HOLD_CARS, uses_toyota_auto_hold_aeb
 from opendbc.can import CANPacker
@@ -73,6 +73,7 @@ class CarController(CarControllerBase):
     self.door_locks = DoorLocks()
     self.reverse_cruise_input = None
     self.prius_filter_input = None
+    self.pedal_input = None
     self.rav4h_filter_input = None
     self.params = CarControllerParams(self.CP)
     self.last_torque = 0
@@ -143,12 +144,15 @@ class CarController(CarControllerBase):
       filter_allowed = bool(self.rav4h_filter_input is not None and self.rav4h_filter_input.update(now_nanos) and
                             CS.out.canValid and not CS.out.canTimeout and CS.sdsu_state == 0 and
                             not CS.out.accFaulted and not CS.out.stockAeb)
+    pedal_owner = pedal.configured(self.CP)
+    if pedal_owner:
+      filter_allowed = bool(self.pedal_input is not None and self.pedal_input.update(now_nanos) and CS.pedal_ready)
     long_active = CC.longActive and filter_allowed
     actuators = CC.actuators
     stopping = actuators.longControlState == LongCtrlState.stopping
     hud_control = CC.hudControl
     pcm_cancel_cmd = CC.cruiseControl.cancel
-    if rav4h_long and not filter_allowed and CS.out.cruiseState.enabled:
+    if (rav4h_long or pedal_owner) and not filter_allowed and CS.out.cruiseState.enabled:
       pcm_cancel_cmd = True
     lat_active = CC.latActive and abs(CS.out.steeringTorque) < MAX_USER_TORQUE
     CS.zss_lateral_active = bool(CC.latActive)
@@ -275,7 +279,7 @@ class CarController(CarControllerBase):
         if not should_resume and CS.out.cruiseState.standstill:
           self.standstill_req = True
 
-      if rav4h_long and (not filter_allowed or not long_active and CS.out.standstill):
+      if (rav4h_long or pedal_owner) and (not filter_allowed or not long_active and CS.out.standstill):
         self.standstill_req = True
 
       if self.frame % 3 == 0:
@@ -360,7 +364,7 @@ class CarController(CarControllerBase):
           self.permit_braking = True
           self.standstill_req = True
 
-        if rav4h_long and not long_active:
+        if (rav4h_long or pedal_owner) and not long_active:
           pcm_accel_cmd = 0.
         main_accel_cmd = 0. if self.CP.flags & ToyotaFlags.SECOC.value else pcm_accel_cmd
         can_sends.append(toyotacan.create_accel_command(self.packer, main_accel_cmd, pcm_cancel_cmd, self.permit_braking, self.standstill_req, lead,
@@ -424,6 +428,9 @@ class CarController(CarControllerBase):
     new_actuators.steeringAngleDeg = self.last_angle
     new_actuators.accel = self.accel
 
+    if pedal_owner and self.frame % 2 == 0:
+      pedal_value = pedal.amount(self.CP, CC, CS, self.accel) if filter_allowed and not self.brake_hold_active else 0.
+      can_sends.append(pedal.command(self.packer, pedal_value, self.frame // 2))
     self.frame += 1
     if _projection is not None:
       _projection.finish(new_actuators.torque)

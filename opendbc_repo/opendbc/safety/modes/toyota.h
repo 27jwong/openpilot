@@ -105,11 +105,29 @@ static bool toyota_hold_ready(int permission) {
          (safety_get_ts_elapsed(now, toyota_hold_gas_ts) <= 1000000U);
 }
 
+static uint8_t toyota_pedal_checksum(const CANPacket_t *msg) {
+  uint8_t crc = 0xFFU;
+  for (int i = 4; i >= 0; i--) {
+    crc ^= msg->data[i];
+    for (unsigned int bit = 0U; bit < 8U; bit++) {
+      crc = ((crc & 0x80U) != 0U) ? (uint8_t)((crc << 1U) ^ 0xD5U) : (uint8_t)(crc << 1U);
+    }
+  }
+  return crc;
+}
+
+static uint8_t toyota_get_counter(const CANPacket_t *msg) {
+  return (msg->addr == 0x201U) ? (msg->data[4] & 0xFU) : 0U;
+}
+
 static uint32_t toyota_compute_checksum(const CANPacket_t *msg) {
   int len = GET_LEN(msg);
   uint8_t checksum = (uint8_t)(msg->addr) + (uint8_t)((unsigned int)(msg->addr) >> 8U) + (uint8_t)(len);
   for (int i = 0; i < (len - 1); i++) {
     checksum += (uint8_t)msg->data[i];
+  }
+  if (toyota_pedal && (msg->addr == 0x201U)) {
+    checksum = toyota_pedal_checksum(msg);
   }
   return checksum;
 }
@@ -121,6 +139,9 @@ static uint32_t toyota_get_checksum(const CANPacket_t *msg) {
 
 static bool toyota_get_quality_flag_valid(const CANPacket_t *msg) {
   bool valid = false;
+  if (toyota_pedal && (msg->addr == 0x201U)) {
+    valid = (GET_LEN(msg) == 6U) && ((msg->data[4] >> 4U) == 0U);
+  }
   if (msg->addr == 0x260U) {
     valid = !GET_BIT(msg, 3U);  // STEER_TORQUE_SENSOR.STEER_ANGLE_INITIALIZING
   }
@@ -181,6 +202,11 @@ static void toyota_optional_rx_hook(const CANPacket_t *msg) {
 
 static void toyota_rx_hook(const CANPacket_t *msg) {
   if (msg->bus == 0U) {
+    if (toyota_pedal && (msg->addr == 0x201U) && (GET_LEN(msg) == 6U)) {
+      const unsigned int gas = (((unsigned int)msg->data[0] << 8U) + msg->data[1] +
+                                ((unsigned int)msg->data[2] << 8U) + msg->data[3]) / 2U;
+      gas_pressed = gas > 805U;
+    }
     if (toyota_aol_rav4h_filter && (msg->addr == 0x2FFU) && (GET_LEN(msg) == 8U)) {
       // Only normal sDSU state owns replacement LONG. AEB stays healthy and retains independent LAT.
       toyota_sdsu_control = (msg->data[2] >> 4U) == 0U;
@@ -243,7 +269,7 @@ static void toyota_rx_hook(const CANPacket_t *msg) {
       if (msg_matches(msg, 0x1D2U, 0U)) {
         bool cruise_engaged = GET_BIT(msg, 5U);  // PCM_CRUISE.CRUISE_ACTIVE
         pcm_cruise_check(cruise_engaged);
-        gas_pressed = !GET_BIT(msg, 4U);  // PCM_CRUISE.GAS_RELEASED
+        if (!toyota_pedal) { gas_pressed = !GET_BIT(msg, 4U); }  // PCM_CRUISE.GAS_RELEASED
       }
       if (!toyota_alt_brake && (msg_matches(msg, 0x226U, 0U))) {
         brake_pressed = GET_BIT(msg, 37U);  // BRAKE_MODULE.BRAKE_PRESSED (toyota_nodsu_pt_generated.dbc)
@@ -311,7 +337,19 @@ static bool toyota_tx_hook(const CANPacket_t *msg) {
   };
 
   bool tx = true;
-  const bool filter_ready = !toyota_aol_rav4h_filter || aol_rx_healthy();
+  if (toyota_pedal && (msg->addr == 0x200U)) {
+    const bool neutral = (msg->data[0] == 0U) && (msg->data[1] == 0U) &&
+                         (msg->data[2] == 0U) && (msg->data[3] == 0U) && !GET_BIT(msg, 39U);
+    // Match Dom's bounded0.5 maximum and the receiver's two distinct raw scales.
+    const unsigned int gas1 = ((unsigned int)msg->data[0] << 8U) | msg->data[1];
+    const unsigned int gas2 = ((unsigned int)msg->data[2] << 8U) | msg->data[3];
+    tx = (GET_LEN(msg) == 6U) && (msg->data[5] == toyota_pedal_checksum(msg)) &&
+         ((msg->data[4] & 0x70U) == 0U) && (neutral ||
+          (!toyota_stock_longitudinal && aol_rx_healthy() && longitudinal_controls_allowed() &&
+           !gas_pressed && !brake_pressed && GET_BIT(msg, 39U) && (gas1 >= 475U) && (gas1 <= 1275U) && (gas2 >= 949U) && (gas2 <= 1749U) &&
+           (gas2 >= (gas1 + 473U)) && (gas2 <= (gas1 + 475U))));
+  }
+  const bool filter_ready = !(toyota_aol_rav4h_filter || toyota_pedal) || aol_rx_healthy();
   const bool filter_long_ready = filter_ready && (!toyota_aol_rav4h_filter || toyota_sdsu_control);
 
   // Check if msg is sent on BUS 0
@@ -510,6 +548,15 @@ static safety_config toyota_init(uint16_t param) {
     TOYOTA_FILTER_LONG_TX_MSGS
   };
 
+  static const CanMsg TOYOTA_PEDAL_LONG_TX_MSGS[] = {
+    TOYOTA_COMMON_LONG_TX_MSGS
+    {0x200, 0, 6, .check_relay = false},
+  };
+  static const CanMsg TOYOTA_PEDAL_STOCK_TX_MSGS[] = {
+    TOYOTA_COMMON_TX_MSGS
+    {0x200, 0, 6, .check_relay = false},
+  };
+
   static const CanMsg TOYOTA_SECOC_LONG_TX_MSGS[] = {
     TOYOTA_COMMON_SECOC_LONG_TX_MSGS
   };
@@ -534,7 +581,13 @@ static safety_config toyota_init(uint16_t param) {
   toyota_dbc_eps_torque_factor = param & TOYOTA_EPS_FACTOR;
 
   safety_config ret;
-  if (toyota_secoc) {
+  if (toyota_pedal) {
+    if (toyota_stock_longitudinal) {
+      SET_TX_MSGS(TOYOTA_PEDAL_STOCK_TX_MSGS, ret);
+    } else {
+      SET_TX_MSGS(TOYOTA_PEDAL_LONG_TX_MSGS, ret);
+    }
+  } else if (toyota_secoc) {
     if (toyota_stock_longitudinal) {
       SET_TX_MSGS(TOYOTA_SECOC_TX_MSGS, ret);
     } else {
@@ -575,13 +628,20 @@ static safety_config toyota_init(uint16_t param) {
     // The alternate-brake profile differs only in this source address. Reuse
     // the same workspace; set_safety_hooks resets all active mutable status.
     toyota_lka_rx_checks[3].msg[0].addr = toyota_alt_brake ? 0x224U : 0x226U;
+    toyota_lka_rx_checks[4].msg[0] = (CanMsgCheck){.addr = toyota_pedal ? 0x201 : 0x2FF,
+      .bus = 0U, .len = toyota_pedal ? 6 : 8, .frequency = 50U,
+      .ignore_checksum = !toyota_pedal, .ignore_counter = !toyota_pedal,
+      .max_counter = toyota_pedal ? 15U : 0U, .ignore_quality_flag = false};
     SET_RX_CHECKS(toyota_lka_rx_checks, ret);
-    if ((param != 0x9049U) && (param != 0x9249U)) {
+    if (!toyota_pedal && (param != 0x9049U) && (param != 0x9249U)) {
       ret.rx_checks_len -= 1;  // Ordinary profiles do not require smartDSU.
     }
   }
 
   if (((param & 0xC000U) != 0U) && (param != 0x9049U) && (param != 0x9249U)) {
+    ret.tx_msgs_len = 0;
+  }
+  if (((param & 0x2000U) != 0U) && !toyota_pedal) {
     ret.tx_msgs_len = 0;
   }
   return ret;
@@ -598,6 +658,7 @@ const safety_hooks toyota_hooks = {
   .optional_rx = toyota_optional_rx_hook,
   .tx = toyota_tx_hook,
   .fwd = toyota_fwd_hook,
+  .get_counter = toyota_get_counter,
   .get_checksum = toyota_get_checksum,
   .compute_checksum = toyota_compute_checksum,
   .get_quality_flag_valid = toyota_get_quality_flag_valid,

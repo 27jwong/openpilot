@@ -2,6 +2,7 @@ import copy
 import math
 
 from opendbc.can import CANDefine, CANParser
+from opendbc.car.toyota import pedal
 from opendbc.car import Bus, DT_CTRL, create_button_events, structs
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.common.filter_simple import FirstOrderFilter
@@ -47,6 +48,7 @@ class CarState(CarStateBase):
     self.angle_offset = FirstOrderFilter(None, 60.0, DT_CTRL, initialized=False)
     self.dashboard_limit = LimitTracker()
 
+    self.pedal_ready = False
     self.lkas_button = 0
     self.distance_button = 0
 
@@ -260,6 +262,11 @@ class CarState(CarStateBase):
       ret.accFaulted = ret.accFaulted or not sdsu_fresh or self.sdsu_state not in (0, 7)
       ret.stockAeb = ret.stockAeb or self.sdsu_state == 7
 
+    if pedal.configured(self.CP):
+      stamp = cp.ts_nanos.get("GAS_SENSOR", {}).get("STATE", 0)
+      self.pedal_ready = bool(cp.pedal_valid and stamp > 0 and 0 <= cp._last_update_nanos - stamp <= 200_000_000)
+      ret.gasPressed = (cp.vl['GAS_SENSOR']['INTERCEPTOR_GAS'] + cp.vl['GAS_SENSOR']['INTERCEPTOR_GAS2']) / 2 > 805
+      ret.accFaulted = ret.accFaulted or not self.pedal_ready
     ret.buttonEvents = buttonEvents
     timestamp, expiry = parser_expiry(cp_cam, "RSA1", "TSGN1")
     if timestamp > self.dashboard_limit.observation.observed_ns:
@@ -287,7 +294,9 @@ class CarState(CarStateBase):
     if CP.flags & ToyotaFlags.ZSS:
       pt_messages.append(("SECONDARY_STEER_ANGLE", math.nan))
 
-    pt_parser = Rav4hCANParser if rav4h_filter_configured(CP) else CANParser
+    if pedal.configured(CP):
+      pt_messages.append(("GAS_SENSOR", 50))
+    pt_parser = pedal.PedalCANParser if pedal.configured(CP) else Rav4hCANParser if rav4h_filter_configured(CP) else CANParser
     return {
       Bus.pt: pt_parser(DBC[CP.carFingerprint][Bus.pt], pt_messages, 0),
       Bus.cam: CANParser(dbc_name, cam_messages, 2),

@@ -5,7 +5,7 @@ from opendbc.car.toyota.values import CAR, ToyotaFlags, ToyotaSafetyFlags, EPS_S
 from openpilot.starpilot.aol.policy import AolVehiclePolicy
 from openpilot.starpilot.aol.intent import AolCardIntent, AOL_TOGGLE
 
-AOL_WORDS = frozenset((73, 585, 4169, 4681, 2121, 0x9049, 0x9249))
+AOL_WORDS = frozenset((73, 585, 4169, 4681, 2121, 0x9049, 0x9249, 0x2049, 0x2249))
 
 
 SECOC_TORQUE_CARS = frozenset((CAR.TOYOTA_SIENNA_4TH_GEN,))
@@ -34,6 +34,9 @@ def secoc_qualified(cp, *, marked_only=False):
 
 
 def qualified(cp, *, marked_only=False):
+  from opendbc.car.toyota import pedal
+  if pedal.configured(cp):
+    return cp.alternativeExperience in ((32,) if marked_only else (0, 32))
   from opendbc.car.toyota.rav4h_filter import configured as rav4h_filter_configured
   if rav4h_filter_configured(cp):
     hold_permission = 128 if cp.flags & ToyotaFlags.AUTO_BRAKE_HOLD else 0

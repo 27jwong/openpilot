@@ -194,6 +194,10 @@ class CarInterface(CarInterfaceBase):
       if ret.flags & ToyotaFlags.HYBRID.value:
         ret.longitudinalActuatorDelay = 0.05
 
+    from opendbc.car.toyota import pedal
+    if pedal.hardware_supported(candidate, fingerprint, car_fw):
+      ret.flags |= int(ToyotaFlags.GAS_INTERCEPTOR)
+      ret.safetyConfigs[0].safetyParam = pedal.LONG_WORD
     return ret
 
   @staticmethod

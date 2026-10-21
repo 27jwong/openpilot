@@ -1,6 +1,7 @@
 #pragma once
 
 static bool toyota_aol_enabled = false;
+static bool toyota_pedal = false;
 
 static bool toyota_aol_secoc = false;
 static bool toyota_aol_stock = false;
@@ -108,8 +109,9 @@ static void toyota_aol_observe(const CANPacket_t *msg) {
 
 static void toyota_aol_configure(uint16_t param) {
   toyota_aol_reset();
+  toyota_pedal = (param == 0x2049U) || (param == 0x2249U);
   toyota_aol_rav4h_filter = (param == 0x9049U) || (param == 0x9249U);
-  toyota_aol_stock = (param == 585U) || (param == 4681U) || (param == 0x9249U);
+  toyota_aol_stock = (param == 585U) || (param == 4681U) || (param == 0x9249U) || (param == 0x2249U);
 #ifdef ALLOW_DEBUG
   toyota_aol_secoc = (param == 2121U);
 #else
@@ -120,6 +122,7 @@ static void toyota_aol_configure(uint16_t param) {
                        (toyota_aol_secoc && (alternative_experience == 32)) ||
 #endif
                        ((param == 0x9049U) && ((alternative_experience == 32) || (alternative_experience == 160))) ||
+                       ((param == 0x2049U) && (alternative_experience == 32)) ||
                        ((param == 4169U) && (alternative_experience == 32)) ||
                        ((param == 73U) && ((alternative_experience == 32) || (alternative_experience == 160) || (alternative_experience == 288)));
   if (toyota_aol_enabled) {

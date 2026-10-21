@@ -33,6 +33,7 @@ DEBUG_SAFETY_CLASS_TARGETS = {
 
 
 RELEASE_TARGETS = (
+  "opendbc_repo/opendbc/safety/tests/test_toyota_pedal.py",
   "opendbc_repo/opendbc/car/hyundai/tests/test_ordinary_classic_startup_contract.py",
   "opendbc_repo/opendbc/car/hyundai/tests/test_ordinary_classic_startup_protocol.py",
   "opendbc_repo/opendbc/car/hyundai/tests/test_ordinary_classic_stock_fallback.py",
