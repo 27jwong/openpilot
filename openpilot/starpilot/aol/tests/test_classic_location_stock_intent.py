@@ -585,6 +585,9 @@ def test_real_classic_stock_engagement_then_location_loss_keeps_intent(raw_fault
               accepted = bool(native.safety_tx_hook(libsafety_py.make_CANPacket(frame.address, frame.src, frame.dat)))
               assert accepted == (not relay_fault)
               native_counts['accepted' if accepted else 'blocked'] += 1
+              if accepted and frame.address == 0x340 and not command.latActive:
+                assert (int.from_bytes(bytes(frame.dat)[2:4], 'little') & 0x7ff) == 1024
+                assert not bytes(frame.dat)[3] & 8
               if accepted and frame.address == 0x340 and (int.from_bytes(bytes(frame.dat)[2:4], 'little') & 0x7ff) != 1024:
                 native_counts['nonzero'] += 1
                 native_counts['lateral_only_nonzero'] += int(not native.get_controls_allowed())
