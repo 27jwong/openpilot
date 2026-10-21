@@ -488,10 +488,12 @@ class Car:
 
     # Update carState from CAN
     CS = self.CI.update(can_list)
+    from openpilot.starpilot.car.gm.aol import f1_conventional_lateral_owner
     cancel_boot_ns = (time.clock_gettime_ns(time.CLOCK_BOOTTIME)
                       if (getattr(self.CI.CS, 'ev6_aol_source_healthy', False) or
                           qualified_honda_stock_aol(self.CP, marked_only=True) or
-                          qualified_gm(self.CP) and is_bolt_present_no_acc_pedal_profile(self.CP) and
+                          qualified_gm(self.CP) and (is_bolt_present_no_acc_pedal_profile(self.CP) or
+                                                     f1_conventional_lateral_owner(self.CP)) and
                           int(self.CP.alternativeExperience) in (32, 96)) else 0)
     self.observe_ioniq6_long_authority(can_list, CS)
     media_owner = getattr(self, 'ioniq6_media', None)

@@ -281,15 +281,19 @@ def exercise_f1(main_action=0, gesture='none'):
       for a, data, bus in packets:
         safety.safety_fwd_hook(bus, a)
         assert safety.safety_rx_hook(native.make_CANPacket(a, bus, data))
-      cs = card.CI.update([(now, packets)])
+      raw = messaging.new_message('can', len(packets), valid=True, logMonoTime=now)
+      for dst, (address, data, bus) in zip(raw.can, packets, strict=True):
+        dst.address, dst.dat, dst.src = address, data, bus
+      with (
+        patch('openpilot.selfdrive.car.card.messaging.drain_sock_raw', return_value=[raw.to_bytes()]),
+        patch.object(card.sm, 'update', side_effect=lambda timeout, _now=now: receive_card(_now)),
+        patch('openpilot.selfdrive.car.card.time.monotonic_ns', return_value=now),
+        patch('openpilot.selfdrive.car.card.time.clock_gettime_ns', return_value=now),
+      ):
+        cs, _ = card.state_update(defer_radar=True)
       safety.safety_tick()
       assert cs.canValid and not cs.canTimeout
-      receive_card(now)
-      card.update_cruise_speed(cs)
-      card._aol_can_observation = (cs, now, now, now)
-      fault = card.aol_disarming_fault(cs, int(card.sm.logMonoTime['onroadEvents']), now)
-      card.aol_card_intent.update(cs, fault_active=fault, now_ns=now)
-      card.observe_aol_calibration(cs, now, False)
+      assert card._aol_can_observation[0] is cs and card._aol_can_observation[1:] == (now, now, now)
       allowed = card.aol_card_intent.output(cs)[0]
       request = int(allowed) | (2 if sd.aol_axis_decision.desired_longitudinal else 0)
       safety.aol_set_host_request(request)

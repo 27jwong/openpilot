@@ -292,3 +292,40 @@ def test_f1_physical_withdrawal_keeps_only_current_granted_lateral(gesture, case
       assert not current['aolAxisState'].longitudinalActive and not native.longitudinalAllowed
     finally:
       card.vehicle_startup.close()
+
+
+@pytest.mark.parametrize('gesture', ['foot', 'analog', 'paddle'])
+def test_f1_actual_state_update_binds_physical_receipt(gesture):
+  from openpilot.cereal import messaging
+  from openpilot.starpilot.aol.tests.test_gm import TestGmAol as GmCardFixture
+  now = 10_020_000_000
+  with OpenpilotPrefix(), ExitStack() as cleanup:
+    settings = Params()
+    settings.put_bool('AlwaysOnLateral', True, block=True)
+    card = GmCardFixture.card(params(), settings)
+    cleanup.callback(card.vehicle_startup.close)
+    packer = CANPacker(DBC[card.CP.carFingerprint][Bus.pt])
+    for i in range(100):
+      cs, _ = tick(card.CI, packer, now - 1_000_000_000 + i * 10_000_000, counter=i % 4, active=False)
+
+    class Capture:
+      def update(self, rows):
+        self.rows = rows
+
+    capture = Capture()
+    _, frames = tick(capture, packer, now, counter=0, active=False, brake=gesture == 'foot', analog=6 if gesture == 'analog' else 0, regen=gesture == 'paddle')
+    event = messaging.new_message('can', len(frames), valid=True, logMonoTime=now)
+    for dst, (address, data, bus) in zip(event.can, frames, strict=True):
+      dst.address, dst.dat, dst.src = address, data, bus
+    # Only CAN transport and clocks are fixtures; state_update parses the real bytes.
+    with (
+      patch('openpilot.selfdrive.car.card.messaging.drain_sock_raw', return_value=[event.to_bytes()]),
+      patch('openpilot.selfdrive.car.card.time.monotonic_ns', return_value=now),
+      patch('openpilot.selfdrive.car.card.time.clock_gettime_ns', return_value=now),
+    ):
+      cs, _ = card.state_update(defer_radar=True)
+    assert cs.canValid and not cs.canTimeout
+    assert cs.brakePressed == (gesture in ('foot', 'analog')) and cs.regenBraking == (gesture == 'paddle')
+    observed = card._aol_can_observation
+    assert observed[0] is cs and observed[1:] == (now, now, now)
+    assert card.aol_gm_withdrawal_source(cs, now) == now
