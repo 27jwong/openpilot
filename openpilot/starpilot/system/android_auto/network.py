@@ -91,9 +91,10 @@ def recover_autoconnect(log: Callable[..., None], marker: Path = AUTOCONNECT_MAR
     lease = NetworkLease(log, interface)
     try:
       path = next((path for path, name in lease._wifi_devices() if name == interface), "")
-      if path:
-        lease._set(path, NM_DEVICE_IFACE, "Autoconnect", "b", True)
-        log("wifi_autoconnect_recovered", interface=interface)
+      if not path:
+        return False
+      lease._set(path, NM_DEVICE_IFACE, "Autoconnect", "b", True)
+      log("wifi_autoconnect_recovered", interface=interface)
     except NetworkError as error:
       log("wifi_autoconnect_recover_failed", error=str(error))
       return False
@@ -346,7 +347,8 @@ class NetworkLease:
       return
     try:
       if self._get(self.device_path, NM_DEVICE_IFACE, "Autoconnect"):
-        self._write_marker()
+        if not self._write_marker():
+          return
         self._set(self.device_path, NM_DEVICE_IFACE, "Autoconnect", "b", False)
         self.autoconnect_paused = True
       elif _paused_interface(self.marker) == self.interface:
@@ -354,12 +356,14 @@ class NetworkLease:
     except NetworkError as error:
       self.log("wifi_autoconnect_pause_failed", error=str(error))
 
-  def _write_marker(self) -> None:
+  def _write_marker(self) -> bool:
     try:
       self.marker.parent.mkdir(parents=True, exist_ok=True)
       self.marker.write_text(json.dumps({"interface": self.interface, "boot": _boot_id()}))
+      return True
     except OSError as error:
       self.log("wifi_autoconnect_marker_failed", error=str(error))
+      return False
 
   def _networks(self, path: str) -> list:
     config = self._get(path, NM_DEVICE_IFACE, "Ip4Config")

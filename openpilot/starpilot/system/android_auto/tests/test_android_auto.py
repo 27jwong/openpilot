@@ -1114,6 +1114,28 @@ def test_recover_autoconnect_keeps_the_marker_when_networkmanager_fails(tmp_path
   assert marker.exists()
 
 
+def test_recover_autoconnect_waits_for_missing_wifi_device(tmp_path, monkeypatch):
+  from openpilot.starpilot.system.android_auto import network
+  marker = tmp_path / "paused.json"
+  marker.write_text(json.dumps({"interface": "wlan0", "boot": network._boot_id()}))
+  monkeypatch.setattr(network.NetworkLease, "_wifi_devices", lambda self: [])
+  assert not network.recover_autoconnect(lambda event, **fields: None, marker)
+  assert marker.exists()
+
+
+def test_autoconnect_stays_on_when_recovery_marker_cannot_be_written(tmp_path, monkeypatch):
+  from openpilot.starpilot.system.android_auto import network
+  lease = network.NetworkLease(lambda *args, **kwargs: None)
+  lease.device_path = "/dev/wlan0"
+  lease.marker = tmp_path / "missing" / "paused.json"
+  monkeypatch.setattr(lease, "_get", lambda *args: True)
+  monkeypatch.setattr(lease, "_write_marker", lambda: False)
+  changes = []
+  monkeypatch.setattr(lease, "_set", lambda *args: changes.append(args))
+  lease._pause_autoconnect()
+  assert not lease.autoconnect_paused and changes == []
+
+
 def test_supervisor_retries_wifi_recovery_while_idle(monkeypatch):
   from openpilot.starpilot.system.android_auto import network, supervisor
   results = [False, True]

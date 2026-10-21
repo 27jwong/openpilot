@@ -134,9 +134,9 @@ class DedicatedLease:
       if self._cancel.is_set() and self.iface is not None:
         self.iface.close()  # the session already ended; nothing else will close it
 
-  def _finish_opening(self, timeout: float | None = None) -> None:
+  def _finish_opening(self) -> None:
     if self._opening is not None:
-      self._opening.join(timeout)
+      self._opening.join()
       self._opening = None
     error, self._open_error = self._open_error, None
     if error is not None and not self._cancel.is_set():
@@ -191,7 +191,7 @@ class DedicatedLease:
   def release(self, restore: bool = True) -> None:
     if restore:
       self._cancel.set()
-      self._finish_opening(timeout=15)
+      self._finish_opening()
     if self.lease is not None:
       self.lease.release(restore=restore)
     if restore:
