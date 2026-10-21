@@ -324,13 +324,17 @@ def exercise_sdgm(c9, alpha, condition="healthy"):
           sd.CS_prev.cruiseState.enabled = True
         if condition in ("future_current", "old_current"):
           source = decision_ns + 1 if condition == "future_current" else old_axis.sourceCarStateMonoTime
-          captured["carState"].logMonoTime = source
+          state = captured["carState"]
+          assert state is not None
+          state.logMonoTime = source
           wire = captured["aolIntentWire"]
+          assert wire is not None
           wire.aolIntentWire = encode_intent(replace(decode_intent(wire.aolIntentWire), carStateLogMonoTime=source))
         changes = {"producer": {"producerSessionId": "other-card"}, "settings": {"settingsQualified": False},
                    "pause_lateral": {"pauseLateral": True}}
         if condition in changes:
           wire = captured["aolIntentWire"]
+          assert wire is not None
           wire.aolIntentWire = encode_intent(replace(decode_intent(wire.aolIntentWire), **changes[condition]))
         if condition == "epoch":
           sd.aol_intent_companion.integrity_epoch += 1
