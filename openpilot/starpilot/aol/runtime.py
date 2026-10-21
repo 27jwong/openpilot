@@ -214,7 +214,6 @@ def refresh_expired_lateral_snapshot(sm, *, now_ns: int) -> bool:
       axis.qualified and axis.nativeAcknowledged and axis.sessionId and
       axis.lateralActive and axis.desiredLateral and
       not axis.longitudinalActive and not axis.desiredLongitudinal and
-      not sm['selfdriveState'].enabled and
       0 < sm.logMonoTime['aolAxisState'] <= axis.observedMonoTime <= axis.validUntilMonoTime < now_ns):
     # All normal authority, source, physical and native gates run on the newly
     # received snapshot. An empty receive leaves the expired proof untouched.

@@ -40,10 +40,14 @@ BASE = 10_000_000_000
     'disabled_long_candidate',
     'clock_crosses_deadline',
     'old_long_axis',
+    'stock_cruise_off',
+    'stock_cruise_off_denied',
+    'new_host_long',
   ],
 )
 def test_queued_fresh_sdgm_axis_is_consumed_before_steering_gate(c9, case):
-  cp = sdgm_params(alpha=case != 'stock_sibling', brake_c9=c9)
+  stock_transition = case in ('stock_cruise_off', 'stock_cruise_off_denied')
+  cp = sdgm_params(alpha=case != 'stock_sibling' and not stock_transition, brake_c9=c9)
   cp.alternativeExperience |= 32
   with OpenpilotPrefix():
     params = Params()
@@ -59,6 +63,9 @@ def test_queued_fresh_sdgm_axis_is_consumed_before_steering_gate(c9, case):
     for tick in range(101):
       ns = BASE - 1_000_000_000 + tick * 10_000_000
       packets = parsed_packets(cp, packer, ns, tick, 24.78, True)
+      if stock_transition:
+        packets = [packet for packet in packets if packet[0] != 0x1C4]
+        packets.append(packer.make_can_msg('AcceleratorPedal2', 0, {'CruiseState': 2}))
       cs = ci.update([(ns, packets)])
       safety.set_timer(ns // 1000)
       safety.set_aol_test_heartbeat(True)
@@ -67,14 +74,17 @@ def test_queued_fresh_sdgm_axis_is_consumed_before_steering_gate(c9, case):
         assert safety.safety_rx_hook(native.make_CANPacket(a, bus, data))
       safety.safety_tick()
       safety.aol_set_host_request(1)
-    assert cs.canValid and not cs.canTimeout and not safety.get_controls_allowed()
+    assert cs.canValid and not cs.canTimeout
+    assert bool(safety.get_controls_allowed()) == stock_transition
+    assert bool(cs.cruiseState.enabled) == stock_transition
     mask = safety.aol_get_permission_mask()
     assert mask & 1 and not mask & 2
 
     def batch(ns):
       captured = []
       with patch.object(controls.sm, 'update_msgs', side_effect=lambda stamp, rows: captured.extend(rows)):
-        feed(controls, ns, 5, active=False, enabled=False)
+        normal_enabled = stock_transition and ns == BASE or case == 'new_host_long' and ns > BASE
+        feed(controls, ns, 5, active=normal_enabled, enabled=normal_enabled)
       state = messaging.new_message('carState', valid=True, logMonoTime=ns)
       state.carState = cs
       axis = messaging.new_message('aolAxisState', valid=True, logMonoTime=ns)
@@ -87,7 +97,18 @@ def test_queued_fresh_sdgm_axis_is_consumed_before_steering_gate(c9, case):
       wire = messaging.new_message('aolSafetyWire', 0, valid=True, logMonoTime=ns)
       wire.aolSafetyWire = encode_safety(
         SafetyState(
-          1, True, ns, ns + 200_000_000, 4, cp.safetyConfigs[0].safetyParam, bool(mask & 1), bool(mask & 2), True, False, 'native-test-panda', 'late-sdgm'
+          1,
+          True,
+          ns,
+          ns + 200_000_000,
+          4,
+          cp.safetyConfigs[0].safetyParam,
+          bool(mask & 1),
+          bool(mask & 2),
+          bool(safety.aol_get_request_mask() & 1),
+          False,
+          'native-test-panda',
+          'late-sdgm',
         )
       )
       return [r for r in captured if r.which() != 'carState'] + [state.as_reader(), axis.as_reader(), wire.as_reader()]
@@ -103,6 +124,31 @@ def test_queued_fresh_sdgm_axis_is_consumed_before_steering_gate(c9, case):
       command, _ = controls.state_control()
     assert command.latActive and not command.longActive
     original_deadline = controls.sm['aolAxisState'].validUntilMonoTime
+    if stock_transition:
+      stamp = BASE + 25_000_000
+      packets = parsed_packets(cp, packer, stamp, 101, 24.78, True)
+      cs = ci.update([(stamp, packets)])
+      safety.set_timer(stamp // 1000)
+      for a, data, bus in packets:
+        safety.safety_fwd_hook(bus, a)
+        assert safety.safety_rx_hook(native.make_CANPacket(a, bus, data))
+      safety.aol_set_host_request(0 if case == 'stock_cruise_off_denied' else 1)
+      mask = safety.aol_get_permission_mask()
+      assert not safety.get_controls_allowed() and not cs.cruiseState.enabled and cs.cruiseState.available
+      assert bool(mask & 1) == (case == 'stock_cruise_off')
+    if case == 'new_host_long':
+      stamp = BASE + 25_000_000
+      packets = parsed_packets(cp, packer, stamp, 101, 24.78, True)
+      packets = [packet for packet in packets if packet[0] != 0x1E1]
+      packets.append(packer.make_can_msg('ASCMSteeringButton', 0, {'ACCButtons': 2}))
+      cs = ci.update([(stamp, packets)])
+      safety.set_timer(stamp // 1000)
+      for a, data, bus in packets:
+        safety.safety_fwd_hook(bus, a)
+        assert safety.safety_rx_hook(native.make_CANPacket(a, bus, data))
+      safety.aol_set_host_request(3)
+      mask = safety.aol_get_permission_mask()
+      assert safety.get_controls_allowed() and mask == 3
     pending = batch(BASE + 25_000_000)
     now = BASE + 31_000_000
     values = {v.which(): v.as_builder() for v in pending}
@@ -133,6 +179,25 @@ def test_queued_fresh_sdgm_axis_is_consumed_before_steering_gate(c9, case):
       )
     elif case == 'live_snapshot':
       now = BASE + 29_000_000
+    elif case == 'new_host_long':
+      values['aolAxisState'].aolAxisState.longitudinalActive = True
+      values['aolAxisState'].aolAxisState.desiredLongitudinal = True
+      values['aolSafetyWire'].aolSafetyWire = encode_safety(
+        SafetyState(
+          1,
+          True,
+          BASE + 25_000_000,
+          BASE + 225_000_000,
+          4,
+          cp.safetyConfigs[0].safetyParam,
+          bool(mask & 1),
+          bool(mask & 2),
+          True,
+          True,
+          'native-test-panda',
+          'late-sdgm',
+        )
+      )
     elif case == 'disabled_long_candidate':
       values['aolAxisState'].aolAxisState.longitudinalActive = True
       values['aolAxisState'].aolAxisState.desiredLongitudinal = True
@@ -156,7 +221,7 @@ def test_queued_fresh_sdgm_axis_is_consumed_before_steering_gate(c9, case):
       patch('openpilot.selfdrive.controls.controlsd.time.monotonic_ns', return_value=now) as decision_clock,
     ):
       command, _ = controls.state_control()
-    expected = case in ('healthy', 'live_snapshot', 'disabled_long_candidate', 'stock_sibling')
+    expected = case in ('healthy', 'live_snapshot', 'disabled_long_candidate', 'stock_sibling', 'stock_cruise_off', 'new_host_long')
     assert command.latActive == expected and not command.longActive, (case, command.to_dict())
     if case in ('live_snapshot', 'old_long_axis'):
       receive_latest.assert_not_called()
@@ -164,11 +229,18 @@ def test_queued_fresh_sdgm_axis_is_consumed_before_steering_gate(c9, case):
       receive_latest.assert_called_once_with(0)
     safety.set_timer(now // 1000)
     safety.set_aol_test_heartbeat(True)
-    safety.aol_set_host_request(int(command.latActive))
+    if case != 'new_host_long':
+      safety.aol_set_host_request(int(command.latActive))
     _, frames = ci.apply(command.as_reader(), now)
     assert frames
     for a, data, bus in frames:
       assert safety.safety_tx_hook(native.make_CANPacket(a, bus, data)), (case, hex(a), bus)
+    if case == 'new_host_long':
+      controls.sm.update_msgs((now + 1_000_000) / 1e9, pending)
+      with patch('openpilot.selfdrive.controls.controlsd.time.monotonic_ns', return_value=now + 1_000_000):
+        normal_command, _ = controls.state_control()
+      assert normal_command.enabled and normal_command.latActive and normal_command.longActive
+      assert safety.get_controls_allowed() and safety.aol_get_permission_mask() == 3
     assert old[-2].aolAxisState.validUntilMonoTime == original_deadline == BASE + 30_000_000
 
 

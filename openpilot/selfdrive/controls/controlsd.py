@@ -228,9 +228,9 @@ class Controls:
 
     if lateral_inputs_refreshed:
       # A newly received physical veto wins over an older admitted axis. This
-      # LAT-only refresh cannot enable ordinary LONG while normal controls are off.
+      # LAT-only refresh cannot enable ordinary LONG; its next normal cycle owns that transition.
       CC.latActive = bool(CC.latActive and CS.canValid and not CS.canTimeout)
-      CC.longActive = bool(CC.longActive and CC.enabled and CS.canValid and not CS.canTimeout)
+      CC.longActive = False
 
     fault_latch = getattr(self, 'hyundai_lateral_fault', None)
     if fault_latch is not None:
