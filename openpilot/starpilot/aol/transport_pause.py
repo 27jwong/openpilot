@@ -354,18 +354,23 @@ class TransportPauseFeedback:
           (not event.softDisable or event.name == log.OnroadEvent.EventName.steerTempUnavailable) for event in events))
     users = [event for event in events if event.userDisable]
     from opendbc.car.hyundai.canfd_angle_aol import qualified as angle_qualified
+    from opendbc.car.hyundai.canfd_stock_aol import qualified as stock_canfd_qualified
     from opendbc.car import structs
     gears = structs.CarState.GearShifter
 
     # Stock PCM off is not the driver's independent AOL toggle. Retain only
     # previously established intent while the exact location input fault has
     # withdrawn output; the native/session/source checks below still apply.
-    stock_location_user = bool(location_fault and angle_qualified(cp, marked_only=True) and users and
+    stock_angle = angle_qualified(cp, marked_only=True)
+    stock_hkg = stock_angle or stock_canfd_qualified(cp, marked_only=True)
+    stock_user = stock_lateral_user_event(cp)
+    stock_location_user = bool(location_fault and stock_hkg and users and
       not axis.desiredLongitudinal and not axis.longitudinalActive and
       cs.cruiseState.available and not cs.cruiseState.enabled and
       cs.gearShifter in (gears.drive, gears.low, gears.sport, gears.brake) and
       not cs.doorOpen and not cs.seatbeltUnlatched and not cs.brakePressed and not cs.regenBraking and
-      all(event.name == log.OnroadEvent.EventName.pcmDisable and not event.softDisable and
+      (not cs.gasPressed or stock_angle) and
+      all(event.name == stock_user and not event.softDisable and
           not event.immediateDisable for event in users))
     pedal = bool(cs.brakePressed and users and all(event.name == log.OnroadEvent.EventName.pedalPressed and
       not event.softDisable and not event.immediateDisable for event in users) and not faults)
