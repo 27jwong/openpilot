@@ -355,6 +355,7 @@ class TransportPauseFeedback:
     users = [event for event in events if event.userDisable]
     from opendbc.car.hyundai.canfd_angle_aol import qualified as angle_qualified
     from opendbc.car.hyundai.canfd_stock_aol import qualified as stock_canfd_qualified
+    from opendbc.car.hyundai.classic_scc_aol import qualified as stock_classic_qualified
     from opendbc.car import structs
     gears = structs.CarState.GearShifter
 
@@ -362,7 +363,7 @@ class TransportPauseFeedback:
     # previously established intent while the exact location input fault has
     # withdrawn output; the native/session/source checks below still apply.
     stock_angle = angle_qualified(cp, marked_only=True)
-    stock_hkg = stock_angle or stock_canfd_qualified(cp, marked_only=True)
+    stock_hkg = stock_angle or stock_canfd_qualified(cp, marked_only=True) or stock_classic_qualified(cp, marked_only=True)
     stock_user = stock_lateral_user_event(cp)
     stock_location_user = bool(location_fault and stock_hkg and users and
       not axis.desiredLongitudinal and not axis.longitudinalActive and
