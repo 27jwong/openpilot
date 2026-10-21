@@ -528,12 +528,8 @@ vm.state.selected = "current_speed"
 vm.setSpeedSources("speedSources", true)
 assert.notEqual(vm.state.draft.speedSources, true) // Only from the cruise widget's own panel.
 vm.state.selected = "cruise_limits"
-vm.setSpeedAlign("center")
-assert.equal(vm.state.draft.speedAlign, "center")
-vm.setSpeedAlign("justify")
-assert.equal(vm.state.draft.speedAlign, "center") // Only left, center or right.
-vm.undo()
-assert.equal(vm.state.draft.speedAlign ?? "left", "left")
+assert.doesNotMatch(OnroadLayoutPage.template, /speedAlign|Text alignment/)
+assert.equal(OnroadLayoutPage.methods.setSpeedAlign, undefined)
 vm.setSpeedSources("palette", true)
 assert.equal(vm.state.draft.palette === true, false) // Only the two sources settings.
 // Moving or removing widgets keeps the same backdrop; scene and size changes replace it.
@@ -715,7 +711,9 @@ function feedFixture() {
 const normal = feedFixture()
 normal.feed.start()
 assert.equal(normal.requests[0].url, "./api/ui/layout")
-await normal.reply(0)
+const legacyAlignment = snapshot()
+legacyAlignment.document.speedAlign = "right"
+await normal.reply(0, legacyAlignment)
 const draft = copy(normal.feed.data.document); draft.layouts.compact.max_speed.x = 80
 normal.feed.save(draft)
 normal.feed.load(); normal.feed.save(draft)
@@ -724,6 +722,7 @@ assert.deepEqual(JSON.parse(normal.requests[1].options.body), { revision: "saved
 assert.equal(normal.requests[1].options.credentials, "same-origin")
 await normal.reply(1, { ...snapshot(), document: draft, revision: "new-revision" })
 assert.equal(normal.updates.at(-1).draft.layouts.compact.max_speed.x, 80)
+assert.equal(normal.updates.at(-1).draft.speedAlign, "right") // Unrelated edits preserve legacy layout fields.
 assert.equal(normal.feed.data.revision, "new-revision")
 
 for (const status of [409, 503, 400]) {

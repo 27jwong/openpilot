@@ -423,17 +423,25 @@ class TestAcceptance(unittest.TestCase):
         self.assertIsNone(result.control_target_mps)
         self.assertIsNone(result.history_write)
 
-  def test_accepted_or_pending_candidate_cannot_also_be_rejected(self):
-    accepted_conflict = replace(saved(), rejected=frozenset({HIGH}))
-    pending_conflict = replace(self.pending().state, rejected=frozenset({LOW}))
-    for state in (accepted_conflict, pending_conflict):
-      with self.subTest(state=state):
-        result = step(state, valid(HIGH), ACTIVE, Policy(False, False, True), now_ns=NS)
-        self.assertTrue(result.errors)
-        self.assertIsNone(result.control_target_mps)
-        self.assertIsNone(result.history_write)
-        self.assertIs(result.state, state)
-        self.assertEqual(result.state.accepted.candidate, HIGH)
+  def test_pending_candidate_cannot_also_be_rejected(self):
+    state = replace(self.pending().state, rejected=frozenset({LOW}))
+    result = step(state, valid(HIGH), ACTIVE, Policy(False, False, True), now_ns=NS)
+    self.assertTrue(result.errors)
+    self.assertIsNone(result.control_target_mps)
+    self.assertIsNone(result.history_write)
+    self.assertIs(result.state, state)
+    self.assertEqual(result.state.accepted.candidate, HIGH)
+
+  def test_rejecting_a_returned_limit_preserves_its_earlier_accepted_history(self):
+    other = self.pending()
+    returned = self.pending(candidate=HIGH, state=other.state, now_ns=NS)
+    declined = self.act(returned.state, ActionKind.REJECT, now_ns=2 * NS)
+    held = step(declined.state, valid(HIGH), ACTIVE, Policy(), now_ns=3 * NS)
+    self.assertFalse(held.errors)
+    self.assertEqual(held.basis, 'rejected')
+    self.assertEqual(held.state.accepted, returned.state.accepted)
+    self.assertIn(HIGH, held.state.rejected)
+    self.assertIsNone(held.state.pending)
 
   def test_changed_limits_do_not_accumulate_obsolete_rejections(self):
     state = saved()
@@ -537,6 +545,18 @@ class TestAcceptance(unittest.TestCase):
       self.assertEqual(result.state.accepted, shown.state.accepted)
       self.assertTrue(result.adoption.clear_override)
       self.assertEqual(result.adoption.reconciliation_speed_mps, HIGH.speed_mps)
+
+  def test_explicit_adopt_clears_same_speed_rejection_after_provider_change(self):
+    rejected = self.act(self.pending().state, ActionKind.REJECT)
+    refreshed = replace(LOW, source='map', observation_identity=geographic('refreshed'))
+    shown = step(rejected.state, valid(refreshed), ACTIVE, Policy(), now_ns=2 * NS)
+    adopted = step(shown.state, valid(refreshed), ACTIVE, Policy(), now_ns=3 * NS,
+                   adopt=self.adopt_request(shown.state, sequence=1))
+    self.assertTrue(adopted.adoption_receipt.consumed)
+    self.assertFalse(adopted.state.rejected)
+    held = step(adopted.state, valid(refreshed), ACTIVE, Policy(), now_ns=4 * NS)
+    self.assertFalse(held.errors)
+    self.assertEqual(held.basis, 'accepted')
 
   def test_adopt_precedes_confirmation_timeout(self):
     pending = self.pending()

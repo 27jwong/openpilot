@@ -7,6 +7,7 @@ import pytest
 
 from opendbc.car.dashboard_speed_limit import Status
 from opendbc.car.structs import car
+from openpilot.common.constants import CV
 from openpilot.selfdrive.car.cruise import VCruiseHelper
 from openpilot.selfdrive.controls.lib import longitudinal_planner as planner
 from openpilot.starpilot.speed_limits import acceptance as acc, physical_actions
@@ -95,6 +96,34 @@ def test_expired_adoption_does_not_retry_after_driver_or_authority_changes(drive
   assert tick(runtime, sm, cp, 3.2, **kwargs).command is None
 
 
+@pytest.mark.parametrize('failure', ['rejected', 'expired'])
+@pytest.mark.parametrize('response', ['reject', 'timeout'])
+def test_returned_limit_cannot_retry_an_older_adoption_after_decline(drive, failure, response):
+  sm, cp = drive
+  runtime = Runtime(parse({'SpeedLimitController': True, 'SLCPriority1': 'Dashboard', 'SLCConfirmation': True}))
+  pending = tick(runtime, sm, cp, 0).message.slcState
+  first = tick(runtime, sm, cp, 1, request=Action(runtime.session_id, 1, pending.decisionId, pending.presentationId, 'accept'))
+  command = first.command.slcCruiseCommand
+  sm['slcDashboardObservation'].speedMps = 20.
+  receipt = command_receipt(runtime, command, 1.05, 60., 60., applied=False) if failure == 'rejected' else None
+  tick(runtime, sm, cp, 1.05, cruise_event=receipt)
+  sm['slcDashboardObservation'].speedMps = 25.
+  pending = tick(runtime, sm, cp, 4).message.slcState
+  action = Action(runtime.session_id, 2, pending.decisionId, pending.presentationId, 'reject') if response == 'reject' else None
+  seconds = 5 if action else 14
+  declined = tick(runtime, sm, cp, seconds, request=action)
+  assert declined.result.acceptance.basis == ('driver_reject' if action else 'timeout_reject')
+  assert declined.command is None
+  held = tick(runtime, sm, cp, seconds + .1)
+  assert not held.result.errors and not runtime.state.reset_required and held.command is None
+  assert sm['carState'].vCruise == 60.
+  # An explicit later adoption remains available after declining the new decision.
+  current = declined.message.slcState
+  readopted = tick(runtime, sm, cp, seconds + .2,
+    request=Action(runtime.session_id, 3, 0, current.presentationId, 'adopt'))
+  assert readopted.command is not None and readopted.command.slcCruiseCommand.targetMps == 25.
+
+
 @pytest.mark.parametrize('limit,offset,bounded', [(140., 10., 145.), (10., -5., 8.)])
 @pytest.mark.parametrize('metric', [False, True])
 def test_adoption_and_display_use_existing_cruise_bounds(drive, limit, offset, bounded, metric):
@@ -120,30 +149,37 @@ def test_adoption_and_display_use_existing_cruise_bounds(drive, limit, offset, b
   assert 8 <= helper.v_cruise_kph <= 145
 
 
-def test_manual_override_compares_against_the_applied_rounded_set_speed(drive):
+@pytest.mark.parametrize('metric,display', [(True, 72), (False, 55), (False, 60), (False, 65), (False, 70)])
+@pytest.mark.parametrize('direction', [-1, 1])
+def test_manual_override_compares_against_the_applied_rounded_set_speed(drive, metric, display, direction):
   sm, cp = drive
   cp.pcmCruise = False
-  sm['slcDashboardObservation'].speedMps = 45 * .44704
-  runtime = Runtime(parse({'SpeedLimitController': True, 'SLCPriority1': 'Dashboard', 'IsMetric': True}))
+  sm['slcDashboardObservation'].speedMps = 45 * CV.MPH_TO_MS if metric else display * CV.MPH_TO_MS
+  runtime = Runtime(parse({'SpeedLimitController': True, 'SLCPriority1': 'Dashboard', 'IsMetric': metric}))
   tick(runtime, sm, cp, 0)
   adopted = tick(runtime, sm, cp, 3)
   helper = VCruiseHelper(cp)
-  helper.apply_slc_target(adopted.command.slcCruiseCommand.targetMps, True)
-  assert helper.v_cruise_kph == 72.
-  sm['carState'].vCruise = sm['carState'].vCruiseCluster = 72.
-  tick(runtime, sm, cp, 3.05, cruise_event=command_receipt(runtime, adopted.command.slcCruiseCommand, 3.05, 60., 72.))
-  for event_id, (previous, chosen) in enumerate(((72., 73.), (73., 74.), (74., 73.), (73., 72.)), 2):
-    helper.adjust_v_cruise(car.CarState.ButtonEvent.Type.accelCruise if chosen > previous else
-                          car.CarState.ButtonEvent.Type.decelCruise, sm['carState'], True)
-    assert helper.v_cruise_kph == chosen
+  helper.apply_slc_target(adopted.command.slcCruiseCommand.targetMps, metric)
+  baseline = helper.v_cruise_kph
+  conversion = 1 if metric else CV.KPH_TO_MPH
+  assert round(baseline * conversion) == display
+  sm['carState'].vCruise = sm['carState'].vCruiseCluster = baseline
+  tick(runtime, sm, cp, 3.05, cruise_event=command_receipt(runtime, adopted.command.slcCruiseCommand, 3.05, 60., baseline))
+  for event_id, (step, distance) in enumerate(zip((direction, direction, -direction, -direction), (1, 2, 1, 0), strict=True), 2):
+    previous = float(helper.v_cruise_kph)
+    helper.adjust_v_cruise(car.CarState.ButtonEvent.Type.accelCruise if step > 0 else
+                          car.CarState.ButtonEvent.Type.decelCruise, sm['carState'], metric)
+    chosen = float(helper.v_cruise_kph)
+    assert round(chosen * conversion) == display + direction * distance
     sm['carState'].vCruise = sm['carState'].vCruiseCluster = chosen
     seconds = 3.05 + event_id * .05
     stamp = START + round(seconds * 1e9)
     output = tick(runtime, sm, cp, seconds, cruise_event=CruiseEvent(event_id, stamp, previous / 3.6,
       chosen / 3.6, 'accel' if chosen > previous else 'decel', 'card-producer', stamp))
     assert output.result.override.event_receipt.consumed
-    assert output.message.slcState.driverOverrideActive == (chosen != 72.)
+    assert output.message.slcState.driverOverrideActive == (distance != 0)
     assert output.command is None
+  assert helper.v_cruise_kph == pytest.approx(baseline, abs=1e-6)
 
 
 @pytest.mark.parametrize('fallback', [0, 2])
@@ -287,6 +323,53 @@ def test_pcm_software_set_speed_survives_native_speed_and_consumes_confirmation(
   assert helper.v_cruise_kph == 90.
   helper.update_v_cruise(cs, True, True, slc_enabled=False)
   assert helper.v_cruise_kph == pytest.approx(59.)
+
+
+@pytest.mark.parametrize('pending', [False, True])
+@pytest.mark.parametrize('signal,direction,normal_speed', [
+  ('CcAslButtnSetIncPress', 'accel', 61.), ('CcAslButtnSetDecPress', 'decel', 59.),
+])
+def test_ford_parser_buttons_adjust_set_speed_or_confirm_without_a_second_step(pending, signal, direction, normal_speed):
+  from opendbc.can import CANPacker
+  from opendbc.car import Bus, gen_empty_fingerprint
+  from opendbc.car.ford.carstate import CarState
+  from opendbc.car.ford.interface import CarInterface
+  from opendbc.car.ford.values import CAR, DBC
+  from openpilot.selfdrive.car.cruise import CRUISE_LONG_PRESS, SlcPendingConfirmation
+
+  cp = CarInterface.get_params(CAR.FORD_ESCAPE_MK4, gen_empty_fingerprint(), [], True, False, False)
+  source = CarState(cp)
+  parsers = source.get_can_parsers(cp)
+  packer = CANPacker(DBC[cp.carFingerprint][Bus.pt])
+  helper = VCruiseHelper(cp)
+  choice = SlcPendingConfirmation('drive', 1, 1) if pending else None
+  now_ns = START
+
+  def frame(pressed, decision=None):
+    nonlocal now_ns
+    parsers[Bus.pt].update([(now_ns, [
+      packer.make_can_msg('Steering_Data_FD1', parsers[Bus.pt].bus, {signal: pressed}),
+      packer.make_can_msg('EngBrakeData', parsers[Bus.pt].bus, {'CcStat_D_Actl': 4, 'Veh_V_DsplyCcSet': 60}),
+    ])])
+    now_ns += 10_000_000
+    helper.update_v_cruise(source.update(parsers), True, True, decision, slc_enabled=True)
+
+  for _ in range(3):
+    frame(0)
+  helper.apply_slc_target(60. / 3.6, True)
+  frame(1, choice)
+  consumed = helper.slc_consumed_button
+  assert (consumed is not None) == pending
+  if pending:
+    assert consumed.pending == choice and consumed.button == direction
+    if direction == 'accel':
+      helper.apply_slc_target(25., True)
+    for _ in range(CRUISE_LONG_PRESS + 1):
+      frame(1)
+      assert helper.slc_consumed_button is None and helper.slc_cruise_change is None
+  frame(0)
+  assert helper.v_cruise_kph == (90. if pending and direction == 'accel' else 60. if pending else normal_speed)
+  assert (helper.slc_cruise_change is None) == pending
 
 
 def test_automatic_countdown_never_consumes_plus_or_minus_and_late_accept_is_declined():

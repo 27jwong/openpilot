@@ -261,7 +261,8 @@ class VCruiseHelper:
       target_kph = round(target_mps * CV.MS_TO_KPH)
     else:
       target_kph = round(target_mps * CV.MS_TO_MPH) * CV.MPH_TO_KPH
-    self.v_cruise_kph = float(np.clip(target_kph, V_CRUISE_MIN, V_CRUISE_MAX))
+    # Match ordinary button precision so stepping away and back restores this target.
+    self.v_cruise_kph = float(np.clip(round(target_kph, 1), V_CRUISE_MIN, V_CRUISE_MAX))
     self.v_cruise_cluster_kph = self.v_cruise_kph
 
   def initialize_v_cruise(self, CS, experimental_mode: bool, *, resume: bool | None = None, initial_speed: object = V_CRUISE_INITIAL) -> None:

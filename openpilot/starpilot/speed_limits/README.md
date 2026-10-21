@@ -42,7 +42,8 @@ limit is qualified again.
 A qualified manual change to a different set speed marks an override, for increases
 and decreases. An X crosses the sign while override is active. Returning to the
 applied set speed clears it, using card's receipt to account for whole-unit rounding. Adopting
-a new limit also clears it. New-limit decisions continue during override.
+a new limit also clears it. Adoption retains the ordinary buttons' 0.1 km/h internal
+precision, including for mph targets. New-limit decisions continue during override.
 
 The accelerator temporarily allows higher vehicle speed without changing set speed
 or creating an SLC override. Adoption and confirmation can update software set
@@ -74,6 +75,8 @@ qualified planner presentation. A command receipt distinguishes application from
 limit acceptance. Rejected or expired commands may retry with current evidence
 while the accepted limit and expected set speed remain current, with no pending
 decision or manual override. Applied commands are not repeated.
+Declining or timing out a returned limit never revives an earlier adoption command;
+the historical adoption remains recorded independently of the new rejection.
 
 Transport changes append to reserved custom messages. `SlcState` appends automatic
 countdown metadata at ordinals 51–52 and latest-received display metadata at 53–55.

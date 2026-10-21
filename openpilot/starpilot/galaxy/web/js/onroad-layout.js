@@ -851,14 +851,6 @@ export const OnroadLayoutPage = {
       this.recordChange(before)
       this.state.notice = ""
     },
-    setSpeedAlign(align) {
-      if (!this.editable || this.state.drag || this.state.layerDrag || this.selectedWidget?.kind !== "cruise_limits" ||
-        !["left", "center", "right"].includes(align)) return
-      const before = clone(this.state.draft)
-      this.state.draft.speedAlign = align
-      this.recordChange(before)
-      this.state.notice = ""
-    },
     setLargeUiGammaTrial(value) {
       if (!this.projection || !this.editable || this.state.drag || this.state.layerDrag) return
       const before = clone(this.state.draft)

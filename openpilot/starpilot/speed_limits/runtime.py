@@ -430,7 +430,8 @@ class Runtime:
   def _command(self, result: comp.Result, sm, now_ns: int, old_pending,
                action: acc.DriverAction | None, adopt: acc.AdoptRequest | None):
     decision = result.acceptance
-    if (decision is None or decision.state.accepted is None or decision.state.pending is not None or decision.authority is None or
+    if (decision is None or decision.basis not in ('accepted', 'driver_accept', 'driver_adopt') or
+        decision.state.accepted is None or decision.state.pending is not None or decision.authority is None or
         not decision.authority.can_control or result.coordinate is None or
         result.domain is None or result.domain.context is None or result.selection is None or
         result.selection.observation.candidate is None or

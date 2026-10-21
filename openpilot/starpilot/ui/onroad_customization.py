@@ -14,7 +14,7 @@ from openpilot.starpilot.ui.large_speed_geometry import (WIDTH, CARD_HEIGHT, ACT
 
 PARAM_KEY = "OnroadCustomizations"
 MAX_BYTES = 16384
-# Text alignment inside the cruise and speed-limit card; left is the original look.
+# Legacy saved layouts retain this field even though the paired speed widget uses fixed alignment.
 SPEED_ALIGNMENTS = ("left", "center", "right")
 PALETTE = {"cardFill": "#000000A6", "cardBorder": "#C4CDD0B4", "text": "#FFFFFFFF"}
 ROAD_COLORS = {"path": "#30FF9CFF", "pathEdge": "#00FF40FF", "laneLines": "#FFFFFFFF"}

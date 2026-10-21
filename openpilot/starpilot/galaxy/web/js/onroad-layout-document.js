@@ -105,9 +105,9 @@ export function previewPoint(event, rect, profile) {
   }
 }
 
-// Android Auto display switches, independent of the comma screen's preferences.
-// Text alignment inside the cruise and speed-limit card, matching onroad_customization.SPEED_ALIGNMENTS.
+// Legacy saved layouts retain this field even though the paired speed widget uses fixed alignment.
 export const SPEED_ALIGNMENTS = ["left", "center", "right"]
+// Android Auto display switches, independent of the comma screen's preferences.
 export const PROJECTION_DISPLAY_SWITCHES = ["blindSpotBorder", "signalBorder", "blindSpotCamera", "hidePersonalityAlerts", "wheelPedalFeedback", "leadIndicator"]
 
 export function validDocument(document, metadata) {

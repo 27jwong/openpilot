@@ -144,6 +144,7 @@ class AdoptionProposal:
 class State:
   session_id: str
   observation: Observation = Observation(ObservationKind.ABSENT)
+  # A historical adoption may match a returned proposal the driver now declines.
   accepted: AcceptedLimit | None = None
   pending: PendingDecision | None = None
   rejected: frozenset[Candidate] = frozenset()
@@ -273,8 +274,6 @@ def _state_errors(state: State) -> list[str]:
                       all(_candidate_valid(c, state.session_id) for c in state.rejected))
   if not rejections_valid:
     errors.append("invalid rejection history")
-  elif state.accepted is not None and _accepted_valid(state.accepted) and state.accepted.candidate in state.rejected:
-    errors.append("accepted candidate is also rejected")
   if state.pending is not None:
     pending = state.pending
     if (not isinstance(pending, PendingDecision) or not _candidate_valid(pending.candidate) or
@@ -413,7 +412,7 @@ def step(state: State, observation: Observation, authority: Authority, policy: P
       adopt_receipt = replace(adopt_receipt, status="different_presentation")
     else:
       # Recorded for any authority; only an owner of longitudinal control commands a target.
-      state, history = _accept(replace(state, rejected=state.rejected - {candidate}), candidate, now_ns)
+      state, history = _accept(replace(state, rejected=frozenset(c for c in state.rejected if c.speed_mps != candidate.speed_mps)), candidate, now_ns)
       assert state.accepted is not None
       adopt_receipt = replace(adopt_receipt, consumed=True, status="adopt")
       if not authority.can_control:
