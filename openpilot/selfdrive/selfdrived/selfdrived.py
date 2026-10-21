@@ -803,12 +803,12 @@ class SelfdriveD:
 
     return CS
 
-  def held_axis_override_wait(self, CS, proof, now_ns):
+  def held_axis_override_wait(self, CS, proof, now_ns, *, fresh_successor=False):
     """Recognize an already applied override; never admit a new physical edge."""
     if (proof is None or not (qualified_ioniq6(self.CP) or qualified_gm(self.CP)) or not self.sm.seen['carControl'] or
         not self.sm.valid['carControl'] or self.sm['carControl'].longActive or
         not 0 < int(self.sm.logMonoTime['carControl']) <= now_ns or
-        now_ns - int(self.sm.logMonoTime['carControl']) > INTENT_MAX_AGE_NS):
+        not fresh_successor and now_ns - int(self.sm.logMonoTime['carControl']) > INTENT_MAX_AGE_NS):
       return False, False
     previous = self.CS_prev
     samples = getattr(self, 'car_state_samples', ()) or ((CS, self.conditional_car_state_valid),)
@@ -1273,6 +1273,17 @@ class SelfdriveD:
     source_ns = self.aol_car_state_log_ns
     intent = getattr(self, 'aol_last_intent', None)
     companion = getattr(self, 'aol_intent_companion', None)
+    fresh_successor = bool(proof[1] < source_ns <= now_ns and now_ns - source_ns <= INTENT_MAX_AGE_NS and
+        self.conditional_car_state_valid and CS.canValid and not CS.canTimeout and
+        intent is not None and intent.carStateLogMonoTime == source_ns and
+        intent.producerSessionId == proof[4] and intent.settingsQualified and
+        0 < intent.observedMonoTime <= now_ns <= intent.validUntilMonoTime and
+        now_ns - intent.observedMonoTime <= INTENT_MAX_AGE_NS and
+        companion is not None and companion.integrity_epoch == proof[5] and
+        decision.native_acknowledged and not self.aol_authority_lost and
+        getattr(self, 'aol_fault_reason', 'none') == 'none' and
+        not self.events.contains(ET.IMMEDIATE_DISABLE) and
+        (not decision.longitudinal_active or self.enabled and self.active))
     user_disable = self.events.contains(ET.USER_DISABLE)
     if user_disable:
       from opendbc.car.hyundai.canfd_angle_aol import qualified as angle_qualified
@@ -1287,21 +1298,17 @@ class SelfdriveD:
         if stock_lateral_role(self, CS, native, intent, allow_independent_cancel=True,
                               allow_independent_brake=True, now_ns=now_ns):
           user_disable = False
-    if user_disable and self.held_axis_override_wait(CS, proof, now_ns)[0]:
-      # A moving held brake repeats pedalPressed while ordinary control is
-      # already disabled. Its existing lateral-only override is not a new edge.
-      user_disable = any(event.userDisable and event.name != EventName.pedalPressed for event in self.events.to_msg())
-    if (proof[1] < source_ns <= now_ns and now_ns - source_ns <= INTENT_MAX_AGE_NS and
-        self.conditional_car_state_valid and CS.canValid and not CS.canTimeout and
-        intent is not None and intent.carStateLogMonoTime == source_ns and
-        intent.producerSessionId == proof[4] and intent.settingsQualified and
-        0 < intent.observedMonoTime <= now_ns <= intent.validUntilMonoTime and
-        now_ns - intent.observedMonoTime <= INTENT_MAX_AGE_NS and
-        companion is not None and companion.integrity_epoch == proof[5] and
-        decision.native_acknowledged and not self.aol_authority_lost and
-        getattr(self, 'aol_fault_reason', 'none') == 'none' and
-        not user_disable and not self.events.contains(ET.IMMEDIATE_DISABLE) and
-        (not decision.longitudinal_active or self.enabled and self.active)):
+    if user_disable and self.held_axis_override_wait(CS, proof, now_ns, fresh_successor=fresh_successor and qualified_gm(self.CP))[0]:
+      # A fresh same-owner source can establish its own LAT permission after
+      # an old output expires. Held-brake continuity does not renew that output;
+      # the current native proof below still has to grant the new decision.
+      stock_already_off = bool(fresh_successor and qualified_gm(self.CP) and self.CP.pcmCruise and
+        not self.CP.openpilotLongitudinalControl and not CS.cruiseState.enabled and
+        not self.CS_prev.cruiseState.enabled and all(valid and not sample.cruiseState.enabled
+          for sample, valid in getattr(self, 'car_state_samples', ())))
+      user_disable = any(event.userDisable and event.name != EventName.pedalPressed and not
+        (stock_already_off and event.name == EventName.pcmDisable) for event in self.events.to_msg())
+    if fresh_successor and not user_disable:
       native = current_native(self.sm, self.CP, now_ns=now_ns, axis_session_id=self.aol_session_id)
       prior_native = getattr(self, 'aol_published_input_native', None)
       if (native is not None and prior_native is not None and native.pandaSerial == prior_native.pandaSerial and
