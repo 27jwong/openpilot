@@ -107,7 +107,7 @@ class TestVision(unittest.TestCase):
     self.assertIs(valid.kind, ObservationKind.VALID)
     self.assertAlmostEqual(valid.candidate.speed_mps, 24.5872, places=4)
     self.assertIs(vision_observation(decoded, receipt_mono_ns=1_020_000_000, now_mono_ns=1_030_000_000,
-                                     now_boot_ns=5_260_000_000, car_fingerprint='IONIQ6',
+                                     now_boot_ns=7_000_000_001, car_fingerprint='IONIQ6',
                                      drive_session='drive-a').kind, ObservationKind.STALE)
     self.assertIs(vision_observation(decoded, receipt_mono_ns=1_020_000_000, now_mono_ns=1_300_000_000,
                                      now_boot_ns=5_050_000_000, car_fingerprint='IONIQ6',
@@ -150,6 +150,43 @@ class TestVision(unittest.TestCase):
     self.assertIs(runtime._observations(sm, cp, 1_030_000_000, 5_260_000_000)[Source.VISION].kind,
                   ObservationKind.UNKNOWN)
     self.assertIs(runtime.vision_diagnostic.kind, ObservationKind.STALE)
+
+  def test_slow_vision_result_uses_original_frame_deadline(self):
+    message = self._event()
+    event = message.slcVisionObservation.vision
+    event.validUntilMonoTime = 3_000_000_000
+    decoded = messaging.log_from_bytes(message.to_bytes()).slcVisionObservation.vision
+    kw = {'receipt_mono_ns': 1_500_000_000, 'now_mono_ns': 1_500_000_000,
+          'now_boot_ns': 5_500_000_000, 'car_fingerprint': 'IONIQ6', 'drive_session': 'drive-a'}
+    self.assertIs(vision_observation(decoded, **kw).kind, ObservationKind.VALID)
+    self.assertIs(vision_observation(decoded, **dict(kw, now_mono_ns=3_000_000_001,
+                  now_boot_ns=7_000_000_001)).kind, ObservationKind.STALE)
+
+  def test_runtime_slow_vision_supports_display_and_control(self):
+    message = self._event()
+    message.slcVisionObservation.vision.validUntilMonoTime = 3_000_000_000
+    wire = messaging.log_from_bytes(message.to_bytes()).slcVisionObservation
+
+    class SM:
+      valid = {'slcVisionObservation': True, 'carState': False}
+      alive = {'slcVisionObservation': True, 'carState': False}
+      logMonoTime = {'slcVisionObservation': 1_500_000_000, 'carState': 0}
+
+      def __getitem__(self, _name):
+        return wire
+
+    for control in (False, True):
+      with self.subTest(control=control):
+        settings = parse({'SpeedLimitController': control, 'ShowSpeedLimits': True,
+                          'SLCPriority1': 'Vision', 'SLCPriority2': 'Dashboard'})
+        runtime = Runtime(settings, session_id='drive-a', vision_enabled=True,
+                          vision_control_qualified=control, vision_display_qualified=True)
+        observations = runtime._observations(SM(), SimpleNamespace(carFingerprint='IONIQ6'),
+                                             1_500_000_000, 5_500_000_000)
+        self.assertIs(observations[Source.VISION].kind,
+                      ObservationKind.VALID)
+        selected = select_limit(observations, settings.selection)
+        self.assertEqual(selected.selected_source, Source.VISION)
 
   def test_native_shared_source_choice_is_dev_and_parked_guarded(self):
     with tempfile.TemporaryDirectory() as root:
