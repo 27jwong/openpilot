@@ -78,8 +78,8 @@ class FakeHeadUnit:
                unsolicited_focus: bool = False, version: tuple[int, int] = (1, 7), ack_codec_config: bool | int = True,
                connect_to: tuple[str, int] | None = None, ack_fragments: bool = False):
     self.unsolicited_focus = unsolicited_focus
-    self.connect_to = connect_to  # dial the phone, as HeadunitPad does, instead of waiting for it
-    self.ack_fragments = ack_fragments  # like HeadunitPad: one ACK per received video fragment
+    self.connect_to = connect_to
+    self.ack_fragments = ack_fragments
     self.fragments = 0
     self.ack_codec_config = ack_codec_config
     self.codec_configs: list[tuple[int | None, bytes, int]] = []  # (session, SPS/PPS, frames received before it)

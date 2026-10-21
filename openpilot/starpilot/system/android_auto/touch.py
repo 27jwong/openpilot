@@ -27,7 +27,6 @@ ACTION_POINTER_UP = 6
 MAX_INPUT_BYTES = 16 * 1024
 MAX_KEYCODES = 256
 DEFAULT_TOUCH_SOCKET = "/tmp/starpilot-android-auto-touch.sock"
-# Android keycodes the head unit sends for the steering wheel and its own media buttons.
 MEDIA_KEYS = {85: "play_pause", 87: "next", 88: "previous", 126: "play", 127: "pause"}
 
 

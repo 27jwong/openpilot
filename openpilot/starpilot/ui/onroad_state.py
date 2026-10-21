@@ -335,7 +335,7 @@ class OnroadInput:
   def __init__(self, emit: Callable[[OnroadRequest | SlcUiRequest], None], profile: Profile = Profile.LARGE, slop: float = 5):
     self.emit = emit
     self.profile = profile
-    self.slop = slop  # how far a tap may drift before it stops being a tap
+    self.slop = slop
     self._press: tuple[float, float, bool, str] | None = None
     self._slc_press: tuple[float, float, SlcUiRequest] | None = None
 

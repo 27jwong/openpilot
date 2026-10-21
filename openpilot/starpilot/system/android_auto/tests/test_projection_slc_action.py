@@ -177,10 +177,9 @@ def test_projected_taps_tolerate_touchscreen_drift():
   emitted = []
   gesture = OnroadInput(emitted.append, slop=30)
   gesture.press(x, y, state)
-  gesture.move(x + 12, y - 9, state)  # 8 by 6 physical pixels on the head unit
+  gesture.move(x + 12, y - 9, state)
   gesture.release(x + 15, y - 12, state)
   assert emitted == [OnroadRequest('set_experimental', True, '')]
-  # A drag is still not a tap.
   gesture.press(x, y, state)
   gesture.release(x + 40, y, state)
   assert len(emitted) == 1

@@ -50,7 +50,6 @@ JOIN_TIMEOUT_S = 120.0
 BSSID_SHARE = 0.75
 CONNECTION_ID = "starpilot-android-auto"
 SECURITY_WPA3 = (32,)
-# Written before a session turns wlan0 autoconnect off, removed once it is back on; a crash leaves it for recovery.
 AUTOCONNECT_MARKER = DATA_DIR / "wifi_autoconnect_paused.json"
 
 
@@ -189,7 +188,7 @@ class NetworkLease:
         if self._get(path, NM_DEVICE_IFACE, "DeviceType") == DEVICE_TYPE_WIFI:
           devices.append((path, self._get(path, NM_DEVICE_IFACE, "Interface")))
       except NetworkError:
-        continue  # removed while listing
+        continue
     return devices
 
   def _wifi_device(self) -> str:
@@ -321,7 +320,6 @@ class NetworkLease:
     if self.device_ready:
       return
     deadline = time.monotonic() + DEVICE_READY_TIMEOUT_S
-    # NetworkManager registers a new interface a moment after the kernel creates it.
     while not (path := next((path for path, name in self._wifi_devices() if name == self.interface), "")):
       self._wait_step(deadline, cancelled, f"{self.interface} is not a NetworkManager Wi-Fi device")
     self.device_path = path
@@ -352,7 +350,7 @@ class NetworkLease:
         self._set(self.device_path, NM_DEVICE_IFACE, "Autoconnect", "b", False)
         self.autoconnect_paused = True
       elif _paused_interface(self.marker) == self.interface:
-        self.autoconnect_paused = True  # an earlier session paused it and never got to turn it back on
+        self.autoconnect_paused = True
     except NetworkError as error:
       self.log("wifi_autoconnect_pause_failed", error=str(error))
 
@@ -430,7 +428,6 @@ class NetworkLease:
     reactivated only when the session finally stops, avoiding churn between attempts.
     """
     with self._lock:
-      # Each attempt's release closes D-Bus; the final one may still owe a restore.
       if self.router is None and not (restore and (self.previous_connection or self.autoconnect_paused)):
         return
       ours_active = False
@@ -455,7 +452,7 @@ class NetworkLease:
           self._set(self.device_path, NM_DEVICE_IFACE, "Autoconnect", "b", True)
           self.marker.unlink(missing_ok=True)
         except (NetworkError, OSError) as error:
-          self.log("wifi_autoconnect_restore_failed", error=str(error))  # the marker stays; the daemon retries while idle
+          self.log("wifi_autoconnect_restore_failed", error=str(error))
         self.autoconnect_paused = False
       if restore and ours_active and self.previous_connection and self.device_path:
         try:

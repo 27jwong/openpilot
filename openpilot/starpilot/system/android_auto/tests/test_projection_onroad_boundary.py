@@ -468,7 +468,6 @@ class TestProjectionOnroad(unittest.TestCase):
     self.assertIs(view._with_mode_notice(experimental, 1_000 + projection.MODE_NOTICE_NS), experimental)
     self.assertEqual(view._with_mode_notice(chill, 5_000_000_000).alert.text1, 'Chill Mode')
 
-    # Conditional mode: automatic switching and unreported frames stay quiet; a driver override is announced.
     view = projection.ProjectionOnroad(dependencies=native)
     def conditional(reason, effective=True):
       return State(experimental_enabled=effective, conditional_configured=ModeChoice.CEM,
@@ -479,7 +478,6 @@ class TestProjectionOnroad(unittest.TestCase):
       self.assertIs(view._with_mode_notice(frame, now), frame)
     self.assertEqual(view._with_mode_notice(conditional('manual_chill', False), 10).alert.text1, 'Chill Mode')
 
-    # Disengaged, conditional mode reports nothing, so the banner follows the mode flag.
     view = projection.ProjectionOnroad(dependencies=native)
     def parked(experimental):
       return State(experimental_enabled=experimental, conditional_configured=ModeChoice.CCM, engaged=False)
@@ -487,7 +485,6 @@ class TestProjectionOnroad(unittest.TestCase):
     self.assertEqual(view._with_mode_notice(parked(True), 1).alert.text1, 'Experimental Mode')
     self.assertEqual(view._with_mode_notice(parked(False), 3_000_000_000).alert.text1, 'Chill Mode')
 
-    # The planner handing back to conditional mode, and engaging or disengaging, are not the driver's doing.
     view = projection.ProjectionOnroad(dependencies=native)
     view._with_mode_notice(conditional('manual_chill', False), 0)
     for now, frame in enumerate((conditional('lead', True), conditional('manual_experimental', True)), start=1):

@@ -101,7 +101,6 @@ def test_sender_is_best_effort_when_native_ui_unavailable(tmp_path):
 
 
 def test_tap_after_a_frame_draw_still_sends(transport):
-  # The car screen reads car state, draws for ~25 ms, then handles taps: past carState's 20 ms control limit.
   import time
   from openpilot.starpilot.system.android_auto.projection_bookmark import request_bookmark
   from openpilot.starpilot.ui.runtime_snapshot import current_message, display_message

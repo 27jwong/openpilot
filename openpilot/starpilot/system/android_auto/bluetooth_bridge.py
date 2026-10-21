@@ -320,7 +320,6 @@ class SharedBluetoothOwner(BluetoothOwner):
       self.phone_lease = None
       window = self.pairing
       if isinstance(window, OpenPairingSession) and not window.done.is_set():
-        # Let the phone window put its visibility back before the lease restores the original.
         window.cancel()
         window.done.wait(5.0)
       if lease.session is not None:
@@ -639,7 +638,6 @@ class SharedBluetoothOwner(BluetoothOwner):
         raise BluetoothRejected('Stop projection before changing its adapter', code='projection_active')
       device = lease.phone.device(address)
       if operation == 'forget':
-        # Any other device on this adapter, never the projection receiver (rejected above).
         if device is None or not device['path'].startswith(lease.adapter_path + '/'):
           raise BluetoothRejected('Device is unavailable', code='changed')
         client.operation('forget', address)
@@ -707,7 +705,6 @@ class SharedBluetoothOwner(BluetoothOwner):
         window = OpenPairingSession(session, lambda: self.session_valid(session) and self.parked(), self.clock)
         self.pairing = window
         self.window_paired = None
-        # The lease already journals the original visibility; the window only returns it to the lease's state.
         threading.Thread(target=self._accept_worker, args=(window, lambda *_: None, lambda: None), daemon=True).start()
         threading.Thread(target=self._watch_pair, args=(window,), daemon=True).start()
       elif operation == 'cancel_pair':
