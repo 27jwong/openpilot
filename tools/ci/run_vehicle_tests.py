@@ -33,6 +33,9 @@ DEBUG_SAFETY_CLASS_TARGETS = {
 
 
 RELEASE_TARGETS = (
+  "opendbc_repo/opendbc/car/hyundai/tests/test_radar_hda1_startup.py",
+  "opendbc_repo/opendbc/car/hyundai/tests/test_radar_hda1_startup_guards.py",
+  "opendbc_repo/opendbc/car/hyundai/tests/test_radar_hda1_startup_lifecycle.py::test_exact_factory_stock_copy_and_owner_preserve_all_params",
   "opendbc_repo/opendbc/safety/tests/test_toyota_pedal.py",
   "opendbc_repo/opendbc/car/hyundai/tests/test_ordinary_classic_startup_contract.py",
   "opendbc_repo/opendbc/car/hyundai/tests/test_ordinary_classic_startup_protocol.py",
