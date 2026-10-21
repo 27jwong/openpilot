@@ -9,20 +9,22 @@ from opendbc.safety.tests.libsafety import libsafety_py
 from opendbc.safety.tests import test_toyota as toyota_tests
 
 
-def firmware():
+def firmware(candidate=CAR.TOYOTA_COROLLA_TSS2):
   return [
     structs.CarParams.CarFw(ecu=e, address=a, subAddress=s or 0, fwVersion=v[0], brand="toyota", bus=0)
-    for (e, a, s), v in FW_VERSIONS[CAR.TOYOTA_COROLLA_TSS2].items()
+    for (e, a, s), v in FW_VERSIONS[candidate].items()
   ]
 
 
-def factory():
-  return CarInterface.get_params(CAR.TOYOTA_COROLLA_TSS2, {0: {0x201: 6}, 1: {}, 2: {}}, firmware(), False, False, False)
+def factory(candidate=CAR.TOYOTA_COROLLA_TSS2):
+  return CarInterface.get_params(candidate, {0: {0x201: 6}, 1: {}, 2: {}}, firmware(candidate), False, False, False)
 
 
 class TestPairedPedal(unittest.TestCase):
+  candidate = CAR.TOYOTA_COROLLA_TSS2
+
   def setUp(self):
-    self.cp = factory()
+    self.cp = factory(self.candidate)
     self.packer = CANPacker(DBC[self.cp.carFingerprint][Bus.pt])
     self.safety = libsafety_py.libsafety
     self.base = toyota_tests.TestToyotaHighlanderAol()
@@ -54,7 +56,7 @@ class TestPairedPedal(unittest.TestCase):
     self.assertTrue(pedal.configured(self.cp))
     self.assertEqual(self.cp.safetyConfigs[0].safetyParam, 0x2049)
     for fp in ({0: {0x201: 7}, 1: {}, 2: {}}, {0: {}, 1: {0x201: 6}, 2: {}}, {0: {0x201: 6, 0x2FF: 8}, 1: {}, 2: {}}):
-      cp = CarInterface.get_params(CAR.TOYOTA_COROLLA_TSS2, fp, firmware(), False, False, False)
+      cp = CarInterface.get_params(self.candidate, fp, firmware(self.candidate), False, False, False)
       self.assertFalse(pedal.configured(cp))
     self.assertTrue(pedal.prepare_stock(self.cp))
     self.assertEqual(self.cp.safetyConfigs[0].safetyParam, 0x2249)
@@ -152,15 +154,16 @@ class TestPairedPedal(unittest.TestCase):
   def test_exact_firmware_identity_and_unsupported_siblings(self):
     for ecu in (structs.CarParams.Ecu.eps, structs.CarParams.Ecu.fwdCamera):
       for field, value in (("fwVersion", b"unknown"), ("bus", 1), ("brand", ""), ("logging", True), ("address", 0x999)):
-        fw = firmware()
+        fw = firmware(self.candidate)
         selected = next(item for item in fw if item.ecu == ecu)
         setattr(selected, field, value)
-        cp = CarInterface.get_params(CAR.TOYOTA_COROLLA_TSS2, {0: {0x201: 6}, 1: {}, 2: {}}, fw, False, False, False)
+        cp = CarInterface.get_params(self.candidate, {0: {0x201: 6}, 1: {}, 2: {}}, fw, False, False, False)
         self.assertFalse(pedal.configured(cp), (ecu, field))
-      missing = [item for item in firmware() if item.ecu != ecu]
-      cp = CarInterface.get_params(CAR.TOYOTA_COROLLA_TSS2, {0: {0x201: 6}, 1: {}, 2: {}}, missing, False, False, False)
+      missing = [item for item in firmware(self.candidate) if item.ecu != ecu]
+      cp = CarInterface.get_params(self.candidate, {0: {0x201: 6}, 1: {}, 2: {}}, missing, False, False, False)
       self.assertFalse(pedal.configured(cp))
-    for car in (CAR.TOYOTA_PRIUS, CAR.TOYOTA_RAV4H, CAR.TOYOTA_RAV4_TSS2_2023, CAR.TOYOTA_CHR_TSS2, CAR.TOYOTA_SIENNA_4TH_GEN):
+    for car in (CAR.TOYOTA_PRIUS, CAR.TOYOTA_RAV4H, CAR.TOYOTA_RAV4_TSS2_2022, CAR.TOYOTA_RAV4_TSS2_2023,
+                CAR.TOYOTA_RAV4_PRIME, CAR.TOYOTA_CHR_TSS2, CAR.TOYOTA_SIENNA_4TH_GEN):
       cp = CarInterface.get_params(car, {0: {0x201: 6}, 1: {}, 2: {}}, [], True, False, False)
       self.assertFalse(pedal.configured(cp))
 
@@ -189,3 +192,20 @@ class TestPairedPedal(unittest.TestCase):
       self.rx((a, d[:-1], b))
     self.assertFalse(self.tx(0.1))
     self.assertTrue(self.tx(0))
+
+
+class TestRav4CameraPairedPedal(TestPairedPedal):
+  candidate = CAR.TOYOTA_RAV4_TSS2
+
+  def test_existing_tunes_and_nonpedal_configuration_preserved(self):
+    from opendbc.car.toyota.values import ToyotaFlags
+
+    ordinary = CarInterface.get_params(self.candidate, {0: {}, 1: {}, 2: {}}, firmware(self.candidate), False, False, False)
+    paired = self.cp.as_reader().as_builder()
+    paired.flags &= ~int(ToyotaFlags.GAS_INTERCEPTOR)
+    paired.safetyConfigs[0].safetyParam = ordinary.safetyConfigs[0].safetyParam
+    self.assertEqual(paired.to_dict(), ordinary.to_dict())
+
+  def test_known_firmware_is_candidate_specific(self):
+    cp = CarInterface.get_params(self.candidate, {0: {0x201: 6}, 1: {}, 2: {}}, firmware(CAR.TOYOTA_COROLLA_TSS2), False, False, False)
+    self.assertFalse(pedal.configured(cp))

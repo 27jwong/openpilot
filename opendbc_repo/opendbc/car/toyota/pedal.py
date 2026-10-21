@@ -1,4 +1,4 @@
-"""Dom pedal protocol for the exact Corolla TSS2 camera-longitudinal owner."""
+"""Dom pedal protocol for the qualified Corolla/RAV4 TSS2 camera-longitudinal owners."""
 import numpy as np
 from opendbc.can import CANParser
 from opendbc.car import structs, CanData
@@ -6,6 +6,7 @@ from opendbc.car.toyota.values import CAR, ToyotaFlags, MIN_ACC_SPEED, PEDAL_TRA
 
 LONG_WORD = 0x2049
 STOCK_WORD = 0x2249
+CAMERA_PEDAL_CARS = frozenset((CAR.TOYOTA_COROLLA_TSS2, CAR.TOYOTA_RAV4_TSS2))
 
 
 def checksum(data):
@@ -18,7 +19,7 @@ def checksum(data):
 
 
 def hardware_supported(candidate, fingerprint, car_fw):
-  if candidate != CAR.TOYOTA_COROLLA_TSS2 or fingerprint.get(0, {}).get(0x201) != 6:
+  if candidate not in CAMERA_PEDAL_CARS or fingerprint.get(0, {}).get(0x201) != 6:
     return False
   if any(0x201 in fingerprint.get(bus, {}) for bus in (1, 2)) or any(
       addr in messages for messages in fingerprint.values() for addr in (0x2FF, 0x2AA)):
@@ -34,7 +35,7 @@ def hardware_supported(candidate, fingerprint, car_fw):
 
 
 def configured(cp):
-  if cp is None or cp.brand != 'toyota' or cp.carFingerprint != CAR.TOYOTA_COROLLA_TSS2 or (
+  if cp is None or cp.brand != 'toyota' or cp.carFingerprint not in CAMERA_PEDAL_CARS or (
       cp.notCar or cp.passive or cp.dashcamOnly or not cp.pcmCruise or
       cp.steerControlType != structs.CarParams.SteerControlType.torque or len(cp.safetyConfigs) != 1):
     return False

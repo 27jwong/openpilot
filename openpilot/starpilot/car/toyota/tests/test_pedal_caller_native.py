@@ -1,4 +1,4 @@
-"""Actual Corolla camera-long pedal factory/Card/SelfdriveD/Controls/CI/native join.
+"""Actual Corolla/RAV4 camera-long pedal factory/Card/SelfdriveD/Controls/CI/native join.
 
 Synthetic boundaries: firmware acquisition, CAN/perception/process producers and
 USB/axis transport. No CP/CS fields, native permission, health/frequency flags, or initialized/ControlsReady
@@ -75,10 +75,10 @@ def deliver(sm, messages):
   sm.update_msgs(time.monotonic(), admitted)
 
 
-def firmware():
+def firmware(candidate=CAR.TOYOTA_COROLLA_TSS2):
   return [
     structs.CarParams.CarFw(ecu=e, address=a, subAddress=s or 0, fwVersion=v[0], brand='toyota', bus=0)
-    for (e, a, s), v in FW_VERSIONS[CAR.TOYOTA_COROLLA_TSS2].items()
+    for (e, a, s), v in FW_VERSIONS[candidate].items()
   ]
 
 
@@ -221,7 +221,7 @@ def control_inputs(controls, published, state, sd_events, native, now):
   return values
 
 
-def run_case(stock, scenario='nominal', *, aol=True):
+def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_COROLLA_TSS2):
   SYNTHETIC_LAST.clear()
   NATIVE_LAST.clear()
   safety = libsafety_py.libsafety
@@ -236,12 +236,12 @@ def run_case(stock, scenario='nominal', *, aol=True):
       ('ToyotaAutoHold', False),
     ):
       params.put_bool(k, v, block=True)
-    fw = firmware()
+    fw = firmware(candidate)
     exact, found = match_fw_to_car(fw, '', log=False)
-    assert exact and found == {CAR.TOYOTA_COROLLA_TSS2}
+    assert exact and found == {candidate}
     fp = gen_empty_fingerprint()
     fp[0][0x201] = 6
-    observed = (CAR.TOYOTA_COROLLA_TSS2, fp, '0' * 17, fw, structs.CarParams.FingerprintSource.fw, True)
+    observed = (candidate, fp, '0' * 17, fw, structs.CarParams.FingerprintSource.fw, True)
     with (
       patch.object(car_helpers, 'fingerprint', return_value=observed),
       patch.object(card_module, 'can_comm_callbacks', return_value=(lambda *a: [], lambda x: None)),
@@ -450,28 +450,33 @@ def run_case(stock, scenario='nominal', *, aol=True):
       assert seen_active
       assert seen_pedal == (not stock)
     finally:
-      (OUT / ('actual-' + scenario + ('-stock-trace.json' if stock else '-long-trace.json'))).write_text(json.dumps(trace, indent=2) + '\n')
+      (OUT / (str(candidate) + '-actual-' + scenario + ('-stock-trace.json' if stock else '-long-trace.json'))).write_text(json.dumps(trace, indent=2) + '\n')
       safety.set_alternative_experience(0)
       safety.set_safety_hooks(structs.CarParams.SafetyModel.noOutput, 0)
       host.vehicle_startup.close()
 
 
+@pytest.fixture(scope='module', params=(CAR.TOYOTA_COROLLA_TSS2, CAR.TOYOTA_RAV4_TSS2))
+def pedal_candidate(request):
+  return request.param
+
+
 @pytest.mark.parametrize('stock', (False, True))
-def test_actual_matched_factory_card_selfdrived_controls_native(stock):
-  run_case(stock)
+def test_actual_matched_factory_card_selfdrived_controls_native(stock, pedal_candidate):
+  run_case(stock, candidate=pedal_candidate)
 
 
 @pytest.mark.parametrize('stock', (False, True))
 @pytest.mark.parametrize('scenario', ('physical', 'faults'))
-def test_actual_physical_fault_recovery_paths(scenario, stock):
-  run_case(stock, scenario)
+def test_actual_physical_fault_recovery_paths(scenario, stock, pedal_candidate):
+  run_case(stock, scenario, candidate=pedal_candidate)
 
 
 @pytest.mark.parametrize('stock', (False, True))
-def test_actual_saved_runtime_long_off_preserves_owner(stock):
-  run_case(stock, 'off')
+def test_actual_saved_runtime_long_off_preserves_owner(stock, pedal_candidate):
+  run_case(stock, 'off', candidate=pedal_candidate)
 
 
 @pytest.mark.parametrize('stock', (False, True))
-def test_actual_ordinary_cruise_without_aol(stock):
-  run_case(stock, aol=False)
+def test_actual_ordinary_cruise_without_aol(stock, pedal_candidate):
+  run_case(stock, aol=False, candidate=pedal_candidate)
