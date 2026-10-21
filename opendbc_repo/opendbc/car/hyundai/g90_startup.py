@@ -2,12 +2,12 @@
 from copy import deepcopy
 import time
 
-from opendbc.car import Bus, make_tester_present_msg
+from opendbc.car import Bus
 from opendbc.car.hyundai.values import CAR, HyundaiFlags
 from opendbc.car.isotp_parallel_query import IsoTpParallelQuery
 from opendbc.can.parser import MAX_BAD_COUNTER
-from opendbc.car.hyundai.ev9_keeper import EV9Keeper as StartupKeeper
-from opendbc.car.hyundai.ecu_startup import HyundaiECUStartup, Outcome, stock_copy as stock_copy
+from opendbc.car.hyundai.ecu_continuity import ContinuousECUStartup, StartupKeeper
+from opendbc.car.hyundai.ecu_startup import Outcome, stock_copy as stock_copy
 
 
 def required(cp):
@@ -16,56 +16,12 @@ def required(cp):
           not cp.flags & (HyundaiFlags.CANFD | HyundaiFlags.CAMERA_SCC | HyundaiFlags.CANFD_CAMERA_SCC))
 
 
-class G90Startup(HyundaiECUStartup):
+class G90Startup(ContinuousECUStartup):
   def __init__(self, cp, callbacks, *, clock=time.monotonic, keeper_factory=StartupKeeper):
-    super().__init__(cp, callbacks, address=0x7d0, bus=0, label='G90')
-    self.clock = clock
-    self.keeper_factory = keeper_factory
-    self.keeper = None
-    self.handed_off = False
+    super().__init__(cp, callbacks, address=0x7d0, bus=0, label='G90', clock=clock, keeper_factory=keeper_factory)
 
-  def prepare(self, *, admission):
-    result = super().prepare(admission=admission)
-    if required(self.cp) and self.outcome is Outcome.SENT_UNCONFIRMED:
-      self.keeper = self.keeper_factory(
-        lambda: self.callbacks[1]([make_tester_present_msg(self.address, self.bus, suppress_response=True)]), clock=self.clock)
-      try:
-        self.keeper.start()
-      except Exception:
-        if self.keeper.thread is not None and self.keeper.thread.ident is None:
-          self.keeper.event.set()
-          self.keeper.thread = None
-        self.close()
-        raise
-    return result
-
-  def check(self):
-    super().check()
-    keeper = getattr(self, 'keeper', None)
-    if keeper is not None and keeper.abort_reason is not None:
-      keeper.stop()
-      self.outcome = Outcome.ABORT_UNCERTAIN
-      raise RuntimeError('G90 startup diagnostic continuity failed')
-
-  def maintain(self, *, configured):
-    self.check()
-
-  def sent(self, frames, *, valid):
-    keeper = getattr(self, 'keeper', None)
-    if keeper is None or self.handed_off or not valid or self.closed or not self.published:
-      return
-    tester = make_tester_present_msg(self.address, self.bus, suppress_response=True)
-    if tester not in frames:
-      return
-    keeper.stop()
-    self.check()
-    self.handed_off = True
-
-  def close(self):
-    keeper = getattr(self, 'keeper', None)
-    if keeper is not None:
-      keeper.stop()
-    super().close()
+  def continuity_required(self):
+    return required(self.cp)
 
   def _query(self, *args, **kwargs):
     return IsoTpParallelQuery(*args, **kwargs)
