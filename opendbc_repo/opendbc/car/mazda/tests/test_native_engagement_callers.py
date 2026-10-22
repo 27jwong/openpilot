@@ -3,6 +3,10 @@
 Native masks originate from actual libsafety RX, never a requested expected value.
 Root must run this in its matching native runtime; no standalone artifact fallback.
 """
+import ctypes
+import subprocess
+from pathlib import Path
+
 import pytest
 from opendbc.can import CANPacker
 from opendbc.car import Bus, structs
@@ -25,10 +29,46 @@ def test_longitudinal_cancel_assignment_keeps_lateral_actual_callers(identity, m
   _exercise_actual_family_callers(identity, monkeypatch, scenario='long_cancel', cancel_action=4)
 
 
-def _exercise_actual_family_callers(identity, monkeypatch, *, scenario='brake', cancel_action=3):
+
+@pytest.fixture(scope='module')
+def armed_intent_decoder(tmp_path_factory):
+  import capnproto
+  from openpilot.common.basedir import BASEDIR
+
+  root = Path(BASEDIR)
+  tmp = tmp_path_factory.mktemp('mazda-armed-intent')
+  source = tmp / 'armed_intent.cc'
+  source.write_text(r'''
+#include "openpilot/selfdrive/pandad/aol_wire.h"
+extern "C" bool mazda_test_armed(const unsigned char *data, size_t size, uint64_t message_ns,
+                                 uint64_t state_ns, uint64_t now_ns, const char *producer) {
+  return aol_armed_intent(kj::ArrayPtr<const capnp::byte>(data, size), message_ns, state_ns, now_ns,
+                          false, std::string(producer));
+}
+''')
+  library = tmp / 'armed_intent.so'
+  generated = [root / ('openpilot/cereal/gen/cpp/' + name + '.capnp.c++') for name in ('custom', 'car')]
+  subprocess.run(['c++', '-std=c++17', '-O1', '-shared', '-fPIC', '-Wall', '-Werror', '-I', str(root),
+                  '-I', str(root / 'openpilot/cereal/gen/cpp'), '-I', capnproto.INCLUDE_DIR,
+                  str(source), *map(str, generated), '-L', capnproto.LIB_DIR, '-lcapnp', '-lkj',
+                  '-Wl,-rpath,' + capnproto.LIB_DIR, '-o', str(library)], check=True, timeout=40)
+  host = ctypes.CDLL(str(library))
+  armed = host.mazda_test_armed
+  armed.argtypes = (ctypes.c_void_p, ctypes.c_size_t, ctypes.c_uint64, ctypes.c_uint64, ctypes.c_uint64, ctypes.c_char_p)
+  armed.restype = ctypes.c_bool
+  assert not armed(b'', 0, 0, 0, 0, b'')
+  yield armed
+
+
+@pytest.mark.parametrize('identity', (CAR.MAZDA_CX5_2022, CAR.MAZDA_CX9_2021))
+def test_reverse_return_retains_lateral_actual_callers(identity, monkeypatch, armed_intent_decoder):
+  _exercise_actual_family_callers(identity, monkeypatch, scenario='reverse', armed_intent=armed_intent_decoder)
+
+
+def _exercise_actual_family_callers(identity, monkeypatch, *, scenario='brake', cancel_action=3, armed_intent=None):
   from openpilot.cereal import messaging
   from openpilot.selfdrive.car import card as card_module
-  from openpilot.starpilot.aol.wire import SafetyState, encode_safety
+  from openpilot.starpilot.aol.wire import PandaSlot, SafetyState, encode_safety
   from openpilot.starpilot.aol.tests.test_ioniq_availability import IoniqAvailabilityTests
   from opendbc.safety.tests.common import make_msg
   from opendbc.safety.tests.libsafety import libsafety_py
@@ -73,11 +113,11 @@ def _exercise_actual_family_callers(identity, monkeypatch, *, scenario='brake', 
       local_patch.setattr(card.pm, 'send', capture)
       packer = CANPacker(DBC[identity][Bus.pt])
 
-      def step(*, engaged=False, brake=False, cancel=False, main=True):
+      def step(*, engaged=False, brake=False, cancel=False, main=True, reverse=False):
         nonlocal tick, first_engagement_ns
         tick += 1
         now[0] = 10_000_000_000 + tick * 10_000_000
-        frames = complete_frames(packer, card.CP, tick, main=main, engaged=engaged, brake=brake, cancel=cancel)
+        frames = complete_frames(packer, card.CP, tick, main=main, engaged=engaged, brake=brake, cancel=cancel, reverse=reverse)
         frames.append(packer.make_can_msg('STEER', 0, {'STEER_ANGLE': 1.0}))
         safety.set_timer(now[0] // 1000)
         prior_state = previous_sd.get('selfdriveState')
@@ -90,6 +130,20 @@ def _exercise_actual_family_callers(identity, monkeypatch, *, scenario='brake', 
         request_lat = bool(prior_axis is not None and prior_axis.aolAxisState.desiredLateral)
         request_long = bool(prior_axis is not None and prior_axis.aolAxisState.desiredLongitudinal)
         request_mask = int(request_lat) | (int(request_long) << 1)
+        # Match pandad: a current, producer-bound armed intent can retain the
+        # heartbeat while output is intentionally paused. Validate its actual
+        # serialized payload with production aol_armed_intent, not a fake grant.
+        prior_intent = received.get('aolIntentWire')
+        if armed_intent is not None and prior_axis is not None and prior_axis.valid and prior_intent is not None and prior_intent.valid:
+          prior = prior_axis.aolAxisState
+          axis_fresh = (prior.qualified and prior.sessionId == card.aol_axis_session() and
+                        prior.observedMonoTime == prior_axis.logMonoTime and
+                        0 < prior.observedMonoTime <= now[0] <= prior.validUntilMonoTime)
+          if axis_fresh:
+            payload = bytes(prior_intent.aolIntentWire)
+            heartbeat |= bool(armed_intent(payload, len(payload), int(prior_intent.logMonoTime),
+                                        int(prior.sourceCarStateMonoTime), now[0],
+                                        str(prior.intentProducerSessionId).encode()))
         safety.set_aol_test_heartbeat(heartbeat)
         for address, data, bus in frames:
           safety.safety_rx_hook(make_msg(bus, address, dat=data))
@@ -130,7 +184,10 @@ def _exercise_actual_family_callers(identity, monkeypatch, *, scenario='brake', 
         wire = messaging.new_message('aolSafetyWire', 0, valid=True, logMonoTime=now[0])
         wire.aolSafetyWire = encode_safety(SafetyState(1, True, now[0], now[0] + 30_000_000,
           int(card.CP.safetyConfigs[0].safetyModel.raw), 0, bool(mask & 1), bool(mask & 2),
-          reported_request_lat, reported_request_long, 'native-mazda-test', card.aol_axis_session()))
+          reported_request_lat, reported_request_long, 'native-mazda-test', card.aol_axis_session(), now[0],
+          (PandaSlot(0, 'native-mazda-test', int(card.CP.safetyConfigs[0].safetyModel.raw), 0, 32,
+                     safety.get_controls_allowed(), bool(not safety.safety_config_valid()),
+                     False, int(bool(safety.get_relay_malfunction()))),)))
         events.append(wire)
         card.sm.update_msgs(now[0] / 1e9, [event.as_reader() for event in events])
         state, _ = card.state_update()
@@ -182,6 +239,25 @@ def _exercise_actual_family_callers(identity, monkeypatch, *, scenario='brake', 
           assert not card.aol_card_intent.allowed_latch
           assert not axis.lateralActive and not command.latActive and not command.longActive
           assert safety.aol_get_permission_mask() == 0
+        return
+      if scenario == 'reverse':
+        for _ in range(30):
+          step(brake=True)
+        for _ in range(30):
+          state, axis, host_state, command = step()
+        assert card.aol_card_intent.allowed_latch and axis.lateralActive and not axis.longitudinalActive
+        for _ in range(30):
+          state, axis, host_state, command = step(reverse=True)
+          assert card.aol_card_intent.allowed_latch, 'Reverse erased established Mazda lateral intent'
+          assert not axis.lateralActive and not axis.longitudinalActive
+          assert not command.latActive and not command.longActive and safety.aol_get_permission_mask() == 0
+        for _ in range(30):
+          state, axis, host_state, command = step()
+        assert card.aol_card_intent.allowed_latch and axis.lateralActive and command.latActive
+        assert not axis.longitudinalActive and not command.longActive and not safety.get_controls_allowed()
+        for _ in range(5):
+          state, axis, host_state, command = step(main=False)
+          assert not card.aol_card_intent.allowed_latch and not command.latActive
         return
       nonzero = False
       for _ in range(30):

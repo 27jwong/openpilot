@@ -1126,6 +1126,14 @@ class TransportPauseFeedback:
             extra_user_events=(log.OnroadEvent.EventName.cruiseDisabled,),
             informational_events=(log.OnroadEvent.EventName.userBookmarkNotPaired,), allow_withdrawal_join=True):
           return False
+      if cp.brand == 'mazda' and current and continuity:
+        from opendbc.car.mazda.stock_aol import qualified as mazda_qualified
+        from openpilot.starpilot.aol.reverse_intent import retain_reverse_intent
+
+        if retain_reverse_intent(self, sm, cp, cs, axis, now_ns, latched=latched, producer=intent_producer_session,
+            qualified_cp=mazda_qualified(cp, marked_only=True),
+            informational_events=(log.OnroadEvent.EventName.userBookmarkNotPaired,), allow_withdrawal_join=True):
+          return False
       if cp.brand == 'nissan' and current and continuity:
         from openpilot.starpilot.car.nissan.aol import qualified as nissan_qualified
         from openpilot.starpilot.aol.reverse_intent import retain_reverse_intent
