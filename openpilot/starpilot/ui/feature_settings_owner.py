@@ -374,7 +374,7 @@ class FeatureSettingsOwner:
     def authorized():
       return (bool(request.vehicle_fingerprint) and self.vehicle_fingerprint() == request.vehicle_fingerprint and
               request.capability is not None and request.capability == self._toyota_radar_capability() and
-              self.authority("vehicle") and request.expected in (None, b"0", b"1", b"2"))
+              self.authority("toyota_radar") and request.expected in (None, b"0", b"1", b"2"))
     return commit_exact(self.params, key=KEY, max_bytes=8, raw=str(CHOICES.index(request.value)).encode(),
                         expected=request.expected, authorized=authorized, temp_prefix=".toyota-radar-").verified
 
@@ -759,7 +759,7 @@ class FeatureSettingsOwner:
         raw, readable = read_saved(self.params, KEY, 8)
         valid = readable and raw in (None, b"0", b"1", b"2")
         rows.append(FeatureRow(KEY, "Continental Radar", CHOICES[int(raw or b"0")] if valid else "Invalid saved choice",
-          raw, CHOICES if valid else (), available=bool(valid and configurable and self.authority("vehicle")),
+          raw, CHOICES if valid else (), available=bool(valid and configurable and self.authority("toyota_radar")),
           reason=("Optional RAV4 2022/2023 receiver. Off retains the original radar choice. Applies after startup; " +
                   "native safety and ECU configuration are unchanged."),
           capability=radar_capability, default_value="Off"))

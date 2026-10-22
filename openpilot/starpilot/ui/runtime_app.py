@@ -660,11 +660,14 @@ class StarShellSession:
     if cp is None or not getattr(cp, "carFingerprint", ""):
       return False
     if group in ("lane_change", "conditional", "conditional_wheel", "switchback_wheel", "aol_wheel",
-                 "lane", "long", "toyota_cruise", "long_output", "slc", "torque", "aol", "vehicle"):
+                 "lane", "long", "toyota_cruise", "long_output", "slc", "torque", "aol", "vehicle", "toyota_radar"):
       if not preference_authority:
         return False
       if group == "toyota_cruise":
         from openpilot.starpilot.controllers.toyota_cruise import capability
+        return capability(cp) is not None
+      if group == "toyota_radar":
+        from openpilot.starpilot.car.toyota.radar_preferences import capability
         return capability(cp) is not None
       if group == "vehicle":
         from opendbc.car.toyota.interface import toyota_auto_hold_supported
