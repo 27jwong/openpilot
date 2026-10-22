@@ -674,6 +674,10 @@ class Car:
       observe_physical = getattr(self.aol_card_intent, 'observe_physical_samples', None)
       if observe_physical is not None:
         observe_physical(self.CI.CS, now_ns=now_ns)
+      startup_readiness = getattr(self.aol_card_intent, 'observe_startup_readiness', None)
+      if startup_readiness is not None:
+        startup_readiness(self.sm, CS, native=native, panda_ready=angle_panda_ready,
+                          now_ns=now_ns, producer=self.slc_producer_session)
       self.aol_card_intent.update(CS, fault_active=fault_active, now_ns=now_ns, native_rejection_ns=rejection_ns,
                                   standard_enabled=(host_enabled if getattr(self.aol_card_intent, 'observe_stock_engagement', False)
                                                     else host_control_enabled))

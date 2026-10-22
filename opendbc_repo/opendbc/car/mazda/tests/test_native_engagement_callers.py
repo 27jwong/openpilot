@@ -90,7 +90,7 @@ def test_eps_recovery_actual_callers(identity, lateral_only, monkeypatch, armed_
 
 
 def _exercise_actual_family_callers(identity, monkeypatch, *, scenario='brake', cancel_action=3, armed_intent=None,
-                                    lateral_only=False, unbelted=False):
+                                    lateral_only=False):
   from openpilot.cereal import messaging
   from openpilot.selfdrive.car import card as card_module
   from openpilot.starpilot.aol.wire import PandaSlot, SafetyState, encode_safety
@@ -107,17 +107,16 @@ def _exercise_actual_family_callers(identity, monkeypatch, *, scenario='brake', 
     now, tick, queued = [10_000_000_000], 0, []
     received, previous_sd = {}, {}
     first_engagement_ns = None
-    belt_off = [False]
     try:
       sd, controls, drive = case._authority_callers(False, cp=card.CP.as_reader().as_builder(), genuine_events=True)
-      if scenario in ('cancel', 'long_cancel', 'mapped_cancel', 'temporary'):
+      if scenario in ('cancel', 'long_cancel', 'mapped_cancel', 'temporary', 'startup', 'startup_stopped'):
         from openpilot.starpilot.aol.intent import read_settings
         sd.aol_settings = read_settings(saved)
         assert sd.aol_settings.cancel_actions == (cancel_action, 0, 0)
         assert card.aol_card_intent.settings == sd.aol_settings
       assert sd.CP.to_dict() == card.CP.to_dict() == ci.CP.to_dict() == controls.CP.to_dict()
       safety.init_tests()
-      safety.set_alternative_experience(32)
+      safety.set_alternative_experience(int(card.CP.alternativeExperience))
       safety.set_safety_hooks(structs.CarParams.SafetyModel.mazda, 0)
       safety.set_aol_test_heartbeat(False)
       local_patch.setattr(card_module.time, 'monotonic_ns', lambda: now[0])
@@ -147,9 +146,6 @@ def _exercise_actual_family_callers(identity, monkeypatch, *, scenario='brake', 
         frames = complete_frames(packer, card.CP, tick, main=main, engaged=engaged, brake=brake, cancel=cancel, reverse=reverse,
                                  speed_kph=speed_kph, permanent=permanent, temporary=temporary)
         frames.append(packer.make_can_msg('STEER', 0, {'STEER_ANGLE': 1.0}))
-        if belt_off[0]:
-          belt = packer.make_can_msg('SEATBELT', 0, {'DRIVER_SEATBELT': 0})
-          frames = [row for row in frames if not (row[0] == belt[0] and row[2] == 0)] + [belt]
         safety.set_timer(now[0] // 1000)
         prior_state = previous_sd.get('selfdriveState')
         prior_axis = previous_sd.get('aolAxisState')
@@ -186,14 +182,15 @@ def _exercise_actual_family_callers(identity, monkeypatch, *, scenario='brake', 
         mask = safety.aol_get_permission_mask()
         reported_request_lat = bool(reported_request_mask & 1)
         reported_request_long = bool(reported_request_mask & 2)
-        if first_engagement_ns is None:
+        if first_engagement_ns is None and not scenario.startswith('startup'):
           assert request_mask == reported_request_mask == mask == 0, 'No axis request before actual SD desire'
           if engaged:
             assert not heartbeat and safety.get_controls_allowed(), 'Cold physical engagement must precede host acknowledgment'
             first_engagement_ns = now[0]
         if mask & 1:
           assert heartbeat and request_lat and reported_request_lat, 'Native lateral permission needs actual request and heartbeat'
-          assert first_engagement_ns is not None and now[0] > first_engagement_ns, 'Native acknowledgment must follow physical grant'
+          assert (scenario.startswith('startup') or first_engagement_ns is not None and now[0] > first_engagement_ns), (
+            'Native acknowledgment must follow physical grant')
         source = messaging.log_from_bytes(card_module.can_list_to_can_capnp(frames)).as_builder()
         source.logMonoTime = now[0]
         queued[:] = [source.to_bytes()]
@@ -205,7 +202,7 @@ def _exercise_actual_family_callers(identity, monkeypatch, *, scenario='brake', 
         panda = events[-1].pandaStates[0]
         panda.safetyModel = card.CP.safetyConfigs[0].safetyModel
         panda.safetyParam = 0
-        panda.alternativeExperience = 32
+        panda.alternativeExperience = int(card.CP.alternativeExperience)
         panda.controlsAllowed = safety.get_controls_allowed()
         if 'onroadEvents' not in previous_sd:
           events.append(messaging.new_message('onroadEvents', 0, valid=True, logMonoTime=now[0]))
@@ -216,7 +213,7 @@ def _exercise_actual_family_callers(identity, monkeypatch, *, scenario='brake', 
         wire.aolSafetyWire = encode_safety(SafetyState(1, True, now[0], now[0] + 30_000_000,
           int(card.CP.safetyConfigs[0].safetyModel.raw), 0, bool(mask & 1), bool(mask & 2),
           reported_request_lat, reported_request_long, 'native-mazda-test', card.aol_axis_session(), now[0],
-          (PandaSlot(0, 'native-mazda-test', int(card.CP.safetyConfigs[0].safetyModel.raw), 0, 32,
+          (PandaSlot(0, 'native-mazda-test', int(card.CP.safetyConfigs[0].safetyModel.raw), 0, int(card.CP.alternativeExperience),
                      safety.get_controls_allowed(), bool(not safety.safety_config_valid()),
                      False, int(bool(safety.get_relay_malfunction()))),)))
         events.append(wire)
@@ -245,29 +242,49 @@ def _exercise_actual_family_callers(identity, monkeypatch, *, scenario='brake', 
           assert any(frame.address == 0x243 for frame in outgoing.sendcan)
           for frame in outgoing.sendcan:
             assert safety.safety_tx_hook(make_msg(frame.src, frame.address, dat=frame.dat))
-        if unbelted and belt_off[0]:
-          assert state.seatbeltUnlatched
-          assert not axis.desiredLongitudinal and not axis.longitudinalActive and not command.longActive
-          assert not safety.aol_get_permission_mask() & 2
         return state, axis, host_state, command
 
       for _ in range(120):
-        step()
+        state, axis, host_state, command = step(speed_kph=0. if scenario == 'startup_stopped' else 80.)
+        if scenario == 'startup_stopped':
+          assert not command.latActive and not command.longActive and safety.aol_get_permission_mask() == 0
+      if scenario == 'startup_stopped':
+        for _ in range(30):
+          state, axis, host_state, command = step()
+      if scenario == 'startup_managed':
+        state, axis, host_state, command = step()
+        assert state.canValid and state.cruiseState.available and not state.cruiseState.enabled
+        assert not card.aol_card_intent.allowed_latch and not command.latActive and not command.longActive
+        assert safety.aol_get_permission_mask() == 0 and not safety.get_controls_allowed()
+        return
+      if scenario in ('startup', 'startup_stopped'):
+        state, axis, host_state, command = step()
+        assert state.canValid and state.cruiseState.available and not state.cruiseState.enabled
+        assert card.aol_card_intent.allowed_latch, 'MAIN already ON at boot never armed Mazda lateral intent'
+        assert axis.lateralActive and command.latActive and safety.aol_get_permission_mask() == 1
+        assert not host_state.enabled and not command.longActive and not safety.get_controls_allowed()
+        for _ in range(5):
+          step(cancel=True)
+        for off_tick in range(120):
+          state, axis, host_state, command = step()
+          assert not card.aol_card_intent.allowed_latch and not command.latActive
+          for frame in received['sendcan'].sendcan:
+            if frame.address == 0x243 and frame.src == 0:
+              assert (((frame.dat[0] & 15) << 8) | frame.dat[1]) - 2048 == 0
+          # The first native poll precedes this cycle's published OFF decision.
+          # Its next real request must withdraw the previous grant completely.
+          if off_tick:
+            assert safety.aol_get_permission_mask() == 0
+          assert not safety.get_controls_allowed()
+        for _ in range(10):
+          state, axis, host_state, command = step(main=False)
+          assert not card.aol_card_intent.allowed_latch and not command.latActive
+        return
       assert not card.aol_card_intent.allowed_latch
       for _ in range(30):
         state, axis, host_state, command = step(engaged=True)
       assert state.canValid and host_state.enabled and command.latActive
       assert card.aol_card_intent.allowed_latch
-      if unbelted:
-        for _ in range(30):
-          state, axis, host_state, command = step(brake=True)
-        assert card.aol_card_intent.allowed_latch and axis.lateralActive and not axis.longitudinalActive
-        belt_off[0] = True
-        for _ in range(5):
-          state, axis, host_state, command = step()
-          assert state.seatbeltUnlatched and card.aol_card_intent.allowed_latch
-          assert axis.lateralActive and command.latActive and not command.longActive
-          assert safety.aol_get_permission_mask() == 1
       if lateral_only:
         for _ in range(30):
           state, axis, host_state, command = step(brake=True)
@@ -387,10 +404,82 @@ def _exercise_actual_family_callers(identity, monkeypatch, *, scenario='brake', 
       patch_scope.__exit__(None, None, None)
       case.doCleanups()
 
-  exercise_startup(identity, False, False, True, monkeypatch, probe=probe, cancel_action=cancel_action)
+  exercise_startup(identity, False, False, True, monkeypatch, probe=probe, cancel_action=cancel_action,
+                   mapping=(0, 0) if scenario in ('startup', 'startup_stopped') else (9, 9))
+
 
 @pytest.mark.parametrize('identity', (CAR.MAZDA_CX5_2022, CAR.MAZDA_CX9_2021))
-@pytest.mark.parametrize('scenario', ('mapped_cancel', 'temporary'))
-def test_unbelted_lateral_pause_recovery_actual_callers(identity, scenario, monkeypatch, armed_intent_decoder):
-  _exercise_actual_family_callers(identity, monkeypatch, scenario=scenario, cancel_action=3,
-                                 armed_intent=armed_intent_decoder, unbelted=True)
+def test_main_already_on_startup_actual_callers(identity, monkeypatch, armed_intent_decoder):
+  _exercise_actual_family_callers(identity, monkeypatch, scenario='startup', cancel_action=9, armed_intent=armed_intent_decoder)
+
+
+@pytest.mark.parametrize('identity', (CAR.MAZDA_CX5_2022, CAR.MAZDA_CX9_2021))
+def test_main_on_startup_respects_button_managed_aol(identity, monkeypatch, armed_intent_decoder):
+  _exercise_actual_family_callers(identity, monkeypatch, scenario='startup_managed', armed_intent=armed_intent_decoder)
+
+
+@pytest.mark.parametrize('identity', (CAR.MAZDA_CX5_2022, CAR.MAZDA_CX9_2021))
+def test_main_on_startup_stopped_then_drive_actual_callers(identity, monkeypatch, armed_intent_decoder):
+  _exercise_actual_family_callers(identity, monkeypatch, scenario='startup_stopped', cancel_action=9,
+                                 armed_intent=armed_intent_decoder)
+
+
+@pytest.mark.parametrize('identity', (CAR.MAZDA_CX5_2022, CAR.MAZDA_CX9_2021))
+def test_main_on_startup_disabled_aol_actual_card_controls_native(identity, monkeypatch):
+  from openpilot.cereal import messaging
+  from openpilot.selfdrive.car import card as card_module
+  from openpilot.starpilot.lateral.tests.test_lane_runtime import feed
+  from opendbc.safety.tests.common import make_msg
+  from opendbc.safety.tests.libsafety import libsafety_py
+
+  def probe(card, ci, controls, saved):
+    now, queued = [10_000_000_000], []
+    monkeypatch.setattr(card_module.time, 'monotonic_ns', lambda: now[0])
+    monkeypatch.setattr(card_module.time, 'clock_gettime_ns', lambda clock: now[0])
+    monkeypatch.setattr(card_module.messaging, 'drain_sock_raw', lambda *args, **kwargs: list(queued))
+    monkeypatch.setattr(card.sm, 'update', lambda *args: None)
+    packer = CANPacker(DBC[identity][Bus.pt])
+    safety = libsafety_py.libsafety
+    safety.init_tests()
+    safety.set_alternative_experience(int(card.CP.alternativeExperience))
+    safety.set_safety_hooks(structs.CarParams.SafetyModel.mazda, 0)
+    try:
+      assert card.CP.alternativeExperience == 0
+      for tick in range(1, 131):
+        now[0] += 10_000_000
+        safety.set_timer(now[0] // 1000)
+        frames = complete_frames(packer, card.CP, tick, main=True)
+        for address, data, bus in frames:
+          safety.safety_rx_hook(make_msg(bus, address, dat=data))
+        safety.safety_tick()
+        safety.aol_set_host_request(0)
+        source = messaging.log_from_bytes(card_module.can_list_to_can_capnp(frames)).as_builder()
+        source.logMonoTime = now[0]
+        queued[:] = [source.to_bytes()]
+        events = [messaging.new_message(name, size, valid=True, logMonoTime=now[0])
+                  for name, size in (('deviceState', None), ('onroadEvents', 0), ('pandaStates', 1))]
+        events[0].deviceState.started = True
+        events[0].deviceState.startedMonoTime = 9_000_000_000
+        panda = events[-1].pandaStates[0]
+        panda.safetyModel = card.CP.safetyConfigs[0].safetyModel
+        panda.safetyParam = 0
+        panda.alternativeExperience = 0
+        card.sm.update_msgs(now[0] / 1e9, [e.as_reader() for e in events])
+        state, _ = card.state_update()
+        card.state_publish(state, None)
+        feed(controls, now[0], tick, active=False, enabled=False,
+             can_valid=state.canValid, can_timeout=state.canTimeout)
+        observed = messaging.new_message('carState', valid=bool(state.canValid), logMonoTime=now[0])
+        observed.carState = state
+        controls.sm.update_msgs(now[0] / 1e9, [observed.as_reader()])
+        command, _ = controls.state_control()
+        assert card.aol_card_intent is None and not command.latActive and not command.longActive
+        assert safety.aol_get_permission_mask() == 0 and not safety.get_controls_allowed()
+      assert state.canValid and state.cruiseState.available and not state.cruiseState.enabled
+      assert card.CP.to_dict() == controls.CP.to_dict()
+    finally:
+      safety.init_tests()
+      safety.set_alternative_experience(0)
+      safety.set_safety_hooks(structs.CarParams.SafetyModel.noOutput, 0)
+
+  exercise_startup(identity, False, False, False, monkeypatch, probe=probe)
