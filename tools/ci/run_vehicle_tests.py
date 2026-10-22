@@ -86,6 +86,7 @@ RELEASE_TARGETS = (
   "openpilot/starpilot/aol/tests/test_sonata_temporary_withdrawals.py",
   "openpilot/starpilot/aol/tests/test_expired_axis_zero_request.py",
   "openpilot/starpilot/aol/tests/test_independent_lateral_soft_takeover.py",
+  "openpilot/starpilot/aol/tests/test_classic_startup_neutral_replacement.py",
   "openpilot/starpilot/tests/test_ev6_startup.py",
   "openpilot/starpilot/aol/tests/test_ev6_stock_parity.py",
   "openpilot/starpilot/aol/tests/test_ev6_physical_authorization.py",

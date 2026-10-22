@@ -16,6 +16,9 @@ from tools.ci.record_firmware import compile_commands
 
 
 class TestVehicleCollection(unittest.TestCase):
+  def test_classic_initialization_neutral_replacement_runs_in_release_ci(self):
+    self.assertIn('openpilot/starpilot/aol/tests/test_classic_startup_neutral_replacement.py', targets_for('safety-release'))
+
   def test_independent_lateral_soft_takeover_runs_in_release_ci(self):
     self.assertIn('openpilot/starpilot/aol/tests/test_independent_lateral_soft_takeover.py', targets_for('safety-release'))
 
