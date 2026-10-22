@@ -94,3 +94,42 @@ def test_reappearing_widget_uses_remaining_controller_time():
   pulse.update(state(), 12.)
   assert rgba(pulse.color(rl.WHITE, 12.5)) == (188, 132, 255, 255)
   assert rgba(pulse.color(rl.WHITE, 13.)) == rgba(rl.WHITE)
+
+
+def display_state(limit=20., **changes):
+  current = state()
+  return replace(current, speed_limit=replace(current.speed_limit, speed_limit_mps=limit,
+    pending_speed_limit_mps=None, automatic_adoption_pending=False, action_enabled=False, pending_since_ns=0), **changes)
+
+
+def test_display_only_new_limit_pulses_without_restarting_on_repeated_messages():
+  pulse = SpeedLimitPulse()
+  pulse.update(display_state(), 10.)
+  pulse.update(display_state(), 10.5)
+  assert rgba(pulse.color(rl.WHITE, 10.5)) == (188, 132, 255, 255)
+  pulse.update(display_state(), 13.5)
+  assert rgba(pulse.color(rl.WHITE, 13.5)) == rgba(rl.WHITE)
+  pulse.update(display_state(25.), 14.)
+  pulse.update(display_state(25.), 14.5)
+  assert rgba(pulse.color(rl.WHITE, 14.5)) == (188, 132, 255, 255)
+
+
+def test_display_only_hidden_stale_and_reappearance_do_not_invent_new_limit():
+  pulse = SpeedLimitPulse()
+  pulse.update(display_state(), 10., visible=False)
+  pulse.update(display_state(), 10.5)
+  assert rgba(pulse.color(rl.WHITE, 10.5)) == rgba(rl.WHITE)
+  current = display_state()
+  stale = replace(current, speed_limit=replace(current.speed_limit, kind=ObservationKind.STALE,
+                  speed_limit_mps=None, last_received_speed_limit_mps=25.))
+  pulse.update(stale, 11.)
+  assert rgba(pulse.color(rl.WHITE, 11.5)) == rgba(rl.WHITE)
+  pulse.update(display_state(25.), 12.)
+  assert rgba(pulse.color(rl.WHITE, 12.5)) == rgba(rl.WHITE)
+
+
+def test_display_only_new_drive_can_highlight_its_first_limit():
+  pulse = SpeedLimitPulse()
+  pulse.update(display_state(), 10.)
+  pulse.update(display_state(drive_frame=2), 20.)
+  assert rgba(pulse.color(rl.WHITE, 20.5)) == (188, 132, 255, 255)
