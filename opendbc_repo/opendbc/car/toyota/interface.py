@@ -133,7 +133,7 @@ class CarInterface(CarInterfaceBase):
       ret.safetyConfigs[0].safetyParam |= int(ToyotaSafetyFlags.LONG_FILTER)
 
     # since we don't yet parse radar on TSS2 radar-based ACC cars, gate longitudinal behind alpha toggle
-    if ret.flags & ToyotaFlags.RADAR_ACC:
+    if ret.flags & ToyotaFlags.RADAR_ACC or radar_filter:
       ret.alphaLongitudinalAvailable = True
 
       if alpha_long and not radar_filter:
@@ -187,6 +187,9 @@ class CarInterface(CarInterfaceBase):
     # native/axis/fault gates; a stock cruise stop does not withdraw steering.
     ret.steerAtStandstill = ret.minSteerSpeed <= 0.
     ret.autoResumeSng = ret.openpilotLongitudinalControl and (rav4h_sdsu or not ret.flags & ToyotaFlags.LONG_FILTER)
+
+    if radar_filter and not ret.flags & ToyotaFlags.TSS2:
+      ret.autoResumeSng = False  # Preserve the pre-TSS2 stock stop timer.
 
     if not ret.openpilotLongitudinalControl:
       ret.safetyConfigs[0].safetyParam |= ToyotaSafetyFlags.STOCK_LONGITUDINAL.value

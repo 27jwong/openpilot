@@ -47,12 +47,16 @@ def lexus_is_qualified(cp, *, marked_only=False):
 
 def radar_filter_qualified(cp, *, marked_only=False):
   from opendbc.car.toyota.radar_filter import configured
-  if (not configured(cp) or cp.carFingerprint != CAR.TOYOTA_RAV4_TSS2_2022 or
+  if (not configured(cp) or cp.carFingerprint not in (CAR.TOYOTA_RAV4_TSS2_2022, CAR.TOYOTA_CAMRY, CAR.TOYOTA_CHR, CAR.TOYOTA_CHR_TSS2) or
       not cp.pcmCruise or cp.notCar or cp.passive or cp.dashcamOnly or
       cp.alternativeExperience not in ((32,) if marked_only else (0, 32))):
     return False
-  required = ToyotaFlags.TSS2 | ToyotaFlags.NO_DSU | ToyotaFlags.RADAR_ACC | ToyotaFlags.RAISED_ACCEL_LIMIT | ToyotaFlags.RADAR_CAN_FILTER
-  allowed = required | ToyotaFlags.HYBRID | ToyotaFlags.HAS_BSM | ToyotaFlags.ARS510_RADAR | ToyotaFlags.ARS510_FUSED
+  required = ToyotaFlags.NO_DSU | ToyotaFlags.RADAR_CAN_FILTER
+  if cp.carFingerprint in (CAR.TOYOTA_RAV4_TSS2_2022, CAR.TOYOTA_CHR_TSS2):
+    required |= ToyotaFlags.TSS2 | ToyotaFlags.RADAR_ACC | ToyotaFlags.RAISED_ACCEL_LIMIT
+  allowed = required | ToyotaFlags.HYBRID | ToyotaFlags.HAS_BSM
+  if cp.carFingerprint == CAR.TOYOTA_RAV4_TSS2_2022:
+    allowed |= ToyotaFlags.ARS510_RADAR | ToyotaFlags.ARS510_FUSED
   return bool(cp.flags & required == required and not int(cp.flags) & ~int(allowed) and
               (not cp.flags & ToyotaFlags.ARS510_FUSED or cp.flags & ToyotaFlags.ARS510_RADAR))
 

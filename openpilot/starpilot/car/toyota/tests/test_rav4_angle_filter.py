@@ -49,11 +49,11 @@ def test_filter_detection_rejects_wrong_topology(fault):
   elif fault in ('pedal', 'sdsu'):
     fp[0][0x201 if fault == 'pedal' else 0x2FF] = 8
   else:
-    candidate = CAR.TOYOTA_CHR_TSS2
+    candidate = CAR.TOYOTA_RAV4_TSS2
   cp = factory(True, fp, candidate)
   assert not cp.flags & (1 << 18)
-  assert cp.flags & ToyotaFlags.DISABLE_RADAR
-  assert cp.safetyConfigs[0].safetyParam == (0x449 if candidate == CAR.TOYOTA_RAV4_TSS2_2023 else 73)
+  baseline = factory(True, gen_empty_fingerprint(), candidate)
+  assert cp.to_dict() == baseline.to_dict()
 
 
 @pytest.mark.parametrize('key,value', [('DisableOpenpilotLongitudinal', b'1'), ('SafeMode', b'1')])

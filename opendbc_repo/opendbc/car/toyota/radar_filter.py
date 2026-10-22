@@ -1,10 +1,13 @@
-"""Dom's bus-0 radar CAN-filter path for the RAV4 (2022 torque and 2023–25 angle control)."""
+"""Dom's bus-0 radar CAN-filter paths for qualified RAV4, Camry and C-HR configurations."""
 from opendbc.car import structs
 from opendbc.car.toyota.values import CAR, ToyotaFlags
 
 LONG_WORD = 0x1449
 STOCK_WORD = 0x1649
 PROFILES = {
+  CAR.TOYOTA_CAMRY: (structs.CarParams.SteerControlType.torque, 0x1049, 0x1249),
+  CAR.TOYOTA_CHR: (structs.CarParams.SteerControlType.torque, 0x1049, 0x1249),
+  CAR.TOYOTA_CHR_TSS2: (structs.CarParams.SteerControlType.torque, 0x1049, 0x1249),
   CAR.TOYOTA_RAV4_TSS2_2022: (structs.CarParams.SteerControlType.torque, 0x1049, 0x1249),
   CAR.TOYOTA_RAV4_TSS2_2023: (structs.CarParams.SteerControlType.angle, LONG_WORD, STOCK_WORD),
 }
