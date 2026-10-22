@@ -20,6 +20,11 @@ def test_unassigned_cancel_retains_lateral_main_off_revokes_actual_callers(ident
   _exercise_actual_family_callers(identity, monkeypatch, scenario='cancel', cancel_action=0)
 
 
+@pytest.mark.parametrize('identity', (CAR.MAZDA_CX5_2022, CAR.MAZDA_CX9_2021))
+def test_longitudinal_cancel_assignment_keeps_lateral_actual_callers(identity, monkeypatch):
+  _exercise_actual_family_callers(identity, monkeypatch, scenario='long_cancel', cancel_action=4)
+
+
 def _exercise_actual_family_callers(identity, monkeypatch, *, scenario='brake', cancel_action=3):
   from openpilot.cereal import messaging
   from openpilot.selfdrive.car import card as card_module
@@ -39,10 +44,10 @@ def _exercise_actual_family_callers(identity, monkeypatch, *, scenario='brake', 
     first_engagement_ns = None
     try:
       sd, controls, drive = case._authority_callers(False, cp=card.CP.as_reader().as_builder(), genuine_events=True)
-      if scenario == 'cancel':
+      if scenario in ('cancel', 'long_cancel'):
         from openpilot.starpilot.aol.intent import read_settings
         sd.aol_settings = read_settings(saved)
-        assert sd.aol_settings.cancel_actions == (0, 0, 0)
+        assert sd.aol_settings.cancel_actions == (cancel_action, 0, 0)
         assert card.aol_card_intent.settings == sd.aol_settings
       assert sd.CP.to_dict() == card.CP.to_dict() == ci.CP.to_dict() == controls.CP.to_dict()
       safety.init_tests()
@@ -161,7 +166,7 @@ def _exercise_actual_family_callers(identity, monkeypatch, *, scenario='brake', 
         state, axis, host_state, command = step(engaged=True)
       assert state.canValid and host_state.enabled and command.latActive
       assert card.aol_card_intent.allowed_latch
-      if scenario == 'cancel':
+      if scenario in ('cancel', 'long_cancel'):
         for _ in range(5):
           state, axis, host_state, command = step(cancel=True)
           assert state.cruiseState.available and not state.cruiseState.enabled
