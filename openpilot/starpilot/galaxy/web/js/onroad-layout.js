@@ -232,8 +232,8 @@ export const LayoutWidgetPreview = {
           <path d="M38 48 H78 M67 37 L78 48 L67 59" />
         </g>
       </g>
-      <g v-else-if="widget.kind === 'jetlink_status'" :opacity="(widget.opacity ?? 85) / 100">
-        <rect :width="widget.width" :height="widget.height" :rx="widget.height / 2" fill="#0f0d17eb" />
+      <g v-else-if="widget.kind === 'jetlink_status'">
+        <rect :width="widget.width" :height="widget.height" :rx="widget.height / 2" fill="#0f0d17" :fill-opacity="235 / 255 * (widget.opacity ?? 85) / 100" />
         <circle :cx="widget.height / 2" :cy="widget.height / 2" r="9" fill="#46c86e" />
         <text :x="widget.height - 6" y="40" font-size="28" font-weight="600" fill="#f5f2fc">Link up</text>
         <text :x="widget.height - 6" y="68" font-size="22" fill="#b8b2c8">Jetlink • iPhone</text>

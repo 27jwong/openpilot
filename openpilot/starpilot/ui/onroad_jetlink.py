@@ -1,4 +1,4 @@
-"""Jetlink's Android Auto card; both live rendering and previews use this drawing."""
+"""Jetlink status card shared by the native and Android Auto screens."""
 import pyray as rl
 
 from openpilot.starpilot.models.jetlink_status import JetlinkStatus
