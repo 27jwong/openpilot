@@ -588,12 +588,16 @@ class TransportPauseFeedback:
     # This exception validates intent only. The normal vehicle-health helper
     # continues to reject temporary EPS for transport and availability proofs.
     from openpilot.starpilot.car.nissan.aol import temporary_eps_restriction
-    nissan_eps = bool(temporary_eps_restriction(cp, cs) and self.lateral_only_baseline and
+    from openpilot.starpilot.car.ford.aol import temporary_eps_restriction as ford_temporary_eps_restriction
+    stock_ford_eps = bool(ford_temporary_eps_restriction(cp, cs) and
+      all(not event.userDisable or event.name == log.OnroadEvent.EventName.pcmDisable and not event.softDisable and
+          not event.immediateDisable for event in events))
+    restricted_eps = bool((temporary_eps_restriction(cp, cs) or stock_ford_eps) and self.lateral_only_baseline and
       not axis.desiredLongitudinal and not axis.longitudinalActive)
-    native = _configured_transport_native(sm, cp, self.session, now_ns, allow_restricted_lateral=nissan_eps)
+    native = _configured_transport_native(sm, cp, self.session, now_ns, allow_restricted_lateral=restricted_eps)
     if (native is None or not native.pandaInventory or
         held_original and not (native.requestedLateral and (native.lateralAllowed or
-          nissan_eps and not native.requestedLongitudinal and not native.longitudinalAllowed)) or
+          restricted_eps and not native.requestedLongitudinal and not native.longitudinalAllowed)) or
         axis.longitudinalActive and not native.longitudinalAllowed or
         native.observedMonoTime < self.lateral_native_ns or
         (native.pandaSerial, tuple(p.hardwareSerial for p in native.pandaInventory)) != self.lateral_inventory):

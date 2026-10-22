@@ -156,8 +156,10 @@ static void ford_aol_rx(const CANPacket_t *msg) {
 // A real ordinary cruise rising edge can arm retained lateral intent without
 // requiring a historical MAIN/LKAS cycle. This never grants ordinary controls
 // or longitudinal permission; the current request/heartbeat/RX gates still own TX.
+// Accelerator override does not erase this lateral intent. The independent
+// longitudinal permission mask continues to require released accelerator/brake.
 static void ford_aol_full_engagement(bool cruise_rising) {
-  if (ford_aol_enabled && cruise_rising && controls_allowed && !brake_pressed && !gas_pressed &&
+  if (ford_aol_enabled && cruise_rising && controls_allowed && !brake_pressed &&
       !relay_malfunction && aol_rx_healthy() && ford_aol_main_available && ford_aol_drive && (ford_aol_eps == 0U)) {
     ford_aol_token = true;
     ford_aol_token_claimed = false;
