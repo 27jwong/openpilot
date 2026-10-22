@@ -28,7 +28,7 @@ class Chassis:
     self.counters = defaultdict(int)
 
   def frames(self, tick, *, ack=False, fault=False, unavailable=False, gear=4, gas=False, feature=0, cancel=False, speed=18.0):
-    rows = [
+    rows: list[tuple[str, int, int, str | None, dict[str, float]]] = [
       ('ESP_Status', 0, 2, 'ESP_Status_Counter', {'ESP_Vehicle_Speed': speed * 3.6, 'ESP_Vehicle_Speed_Q': 1}),
       (
         'VDM_PropStatus',

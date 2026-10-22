@@ -240,7 +240,7 @@ def test_motion_alerts_attach_saved_camera_images(tmp_path):
       owner.tick()
     paths = {path: (headers, body) for path, headers, body in received}
     assert set(paths) == {'/discord', '/webhook'}
-    for path, (headers, body) in paths.items():
+    for _path, (headers, body) in paths.items():
       assert headers['Content-Type'].startswith('multipart/form-data')
       assert b'name="files[0]"; filename="wide.jpg"' in body and jpgs['wide'] in body
       assert b'name="files[1]"; filename="cabin.jpg"' in body and jpgs['cabin'] in body
