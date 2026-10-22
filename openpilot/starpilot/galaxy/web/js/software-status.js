@@ -186,12 +186,15 @@ export class SoftwareStatusFeed {
         this.unauthorized()
         return null
       }
-      if (!response.ok) {
+      // A tunnel may return its own JSON error page with a successful HTTP status.
+      const deviceUnreachable = !payload?.code && [payload?.error, payload?.message].some(message =>
+        typeof message === "string" && /^Your comma cannot be reached(?:\. Check your connection and try again\.?)?$/i.test(message.trim()))
+      if (!response.ok || deviceUnreachable) {
         const error = new Error(payload?.error || payload?.message || "Software request failed. Refresh to try again.")
-        error.connectionLost = [502, 504].includes(response.status) ||
+        error.connectionLost = deviceUnreachable || [502, 504].includes(response.status) ||
           response.status === 503 && !payload?.code &&
           !["Software status is unavailable", "Updater status is unavailable"].includes(payload?.error)
-        error.rejected = response.status >= 400 && response.status < 500
+        error.rejected = !error.connectionLost && response.status >= 400 && response.status < 500
         error.startupUnavailable = body === null && response.status === 503 &&
           ["Software status is unavailable", "Updater status is unavailable"].includes(payload?.error)
         throw error

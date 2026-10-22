@@ -641,3 +641,59 @@ for (const [state, outcome] of [['failed', undefined], ['complete', 'up_to_date'
   assert.equal(canceled, 1)
   f.feed.stop()
 }
+
+// Gateway error envelopes are not software snapshots, even when the tunnel uses HTTP 200.
+const unreachableMessage = 'Your comma cannot be reached. Check your connection and try again'
+for (const action of ['update', 'fast', 'rollback', 'install', 'version']) {
+  for (const status of [200, 400, 500, 503]) {
+    for (const field of ['error', 'message']) {
+      for (const duringPoll of [false, true]) {
+        const restarts = []
+        const f = fixture(true, baseline => restarts.push(baseline))
+        f.feed.start()
+        await f.reply(0, snapshot({ operations: { ...operations, canFastUpdate: true, canRollback: true, canInstall: true,
+          history: { installed: [], downloaded: [], currentReleaseNotes: null, downloadedReleaseNotes: null,
+            recent: { branch: 'Dom', head: installed.commit, entries: [{ hash: 'b'.repeat(40), date: '', subject: '' }] } } } }))
+        f.feed.action(action, 'Dom', { expectedCommit: installed.commit, selectedCommit: 'b'.repeat(40) })
+        assert.equal(f.requests.length, 2)
+        if (duringPoll) {
+          await f.reply(1, snapshot({ operations: { ...operations, request: request(action, 'pending', 'Dom') } }))
+          f.fire(1000)
+        }
+        await f.reply(duringPoll ? 2 : 1, { [field]: unreachableMessage }, status)
+        assert.ok(restarts.length, `${action} ${status} ${field} ${duringPoll ? 'poll' : 'POST'} must reconnect`)
+        assert.equal(restarts.at(-1).action, action)
+        assert.equal(f.feed.installBaseline.action, action)
+        if (!duringPoll) assert.equal(f.feed.uncertain, true)
+        f.feed.stop()
+      }
+    }
+  }
+}
+// The same envelope outside a user-started update must remain an ordinary error.
+for (const status of [200, 400, 500]) {
+  const f = fixture(true, () => assert.fail('ordinary status failure must not show update recovery'))
+  f.feed.start()
+  await f.reply(0, { message: unreachableMessage }, status)
+  assert.equal(f.states.at(-1).error, unreachableMessage)
+  f.feed.stop()
+}
+// Structured service and authorization errors keep their existing behavior.
+for (const [status, payload, unauthorized] of [
+  [401, { message: unreachableMessage }, true],
+  [503, { code: 'access_unavailable', message: unreachableMessage }, true],
+  [503, { code: 'setup_required', message: unreachableMessage }, true],
+  [500, { code: 'update_failed', error: 'Failed to apply update' }, false],
+  [503, { error: 'Updater status is unavailable' }, false],
+  [409, { error: 'Update rejected' }, false],
+]) {
+  const f = fixture(true, () => assert.fail('structured/auth error must not show update recovery'))
+  f.feed.start()
+  await f.reply(0, snapshot({ operations: { ...operations, canFastUpdate: true } }))
+  f.feed.action('update', 'Dom')
+  await f.reply(1, payload, status)
+  assert.equal(f.unauthorized, Number(unauthorized))
+  if (!unauthorized) assert.equal(f.states.at(-1).error, payload.error)
+  f.feed.stop()
+}
+console.log('Software status and tunnel-envelope regressions passed')
