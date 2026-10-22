@@ -585,7 +585,8 @@ class Car:
         gm_withdrawal_source_ns=gm_withdrawal_source_ns,
         intent_producer_session=getattr(self, 'slc_producer_session', ''),
         main_arm_ns=getattr(self.aol_card_intent, 'main_arm_ns', 0),
-        startup_calibration_pending=getattr(self.aol_card_intent, 'startup_calibration_pending', False))
+        startup_calibration_pending=getattr(self.aol_card_intent, 'startup_calibration_pending', False),
+        intent_paused=getattr(self.aol_card_intent, 'pause_lateral', False))
       fault_active = True if transport_reset else None
       event_ns = int(self.sm.logMonoTime['onroadEvents'])
       if (getattr(self.aol_card_intent, 'requires_fault_observation', self.aol_card_intent.explicit_latch) and
@@ -859,7 +860,8 @@ class Car:
         gm_withdrawal_source_ns=self.aol_gm_withdrawal_source(CS, now_ns),
         intent_producer_session=getattr(self, 'slc_producer_session', ''),
         main_arm_ns=getattr(self.aol_card_intent, 'main_arm_ns', 0),
-        startup_calibration_pending=getattr(self.aol_card_intent, 'startup_calibration_pending', False)):
+        startup_calibration_pending=getattr(self.aol_card_intent, 'startup_calibration_pending', False),
+        intent_paused=getattr(self.aol_card_intent, 'pause_lateral', False)):
       return True
     events = self.sm['onroadEvents']
     if self.aol_transport_feedback.retention_qualified or self.aol_transport_feedback.retention_pending:

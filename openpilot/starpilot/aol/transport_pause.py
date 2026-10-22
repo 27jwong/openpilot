@@ -361,6 +361,7 @@ class TransportPauseFeedback:
     from opendbc.car.chrysler.aol_contract import qualified as chrysler_qualified
     from openpilot.starpilot.car.nissan.aol import qualified as nissan_qualified
     from opendbc.car.ford.aol import qualified as ford_qualified
+    from opendbc.car.mazda.stock_aol import qualified as mazda_qualified
     from opendbc.car.subaru.stock_aol import qualified as subaru_qualified
     from opendbc.car.hyundai.canfd_angle_aol import qualified as angle_qualified
     from opendbc.car.hyundai.canfd_stock_aol import qualified as stock_canfd_qualified
@@ -376,7 +377,7 @@ class TransportPauseFeedback:
     stock_user = stock_lateral_user_event(cp)
     stock_temporary_user = bool((location_fault or eps_recovery) and (stock_hkg or chrysler_qualified(cp, marked_only=True) or
       ford_qualified(cp, marked_only=True) or nissan_qualified(cp, marked_only=True)
-      or subaru_qualified(cp, marked_only=True)) and users and
+      or subaru_qualified(cp, marked_only=True) or mazda_qualified(cp, marked_only=True)) and users and
       not axis.desiredLongitudinal and not axis.longitudinalActive and
       cs.cruiseState.available and not cs.cruiseState.enabled and
       cs.gearShifter in (gears.drive, gears.low, gears.sport, gears.brake) and
@@ -615,7 +616,17 @@ class TransportPauseFeedback:
     stock_ford_eps = bool(ford_temporary_eps_restriction(cp, cs) and
       all(not event.userDisable or event.name in (log.OnroadEvent.EventName.pcmDisable,
           log.OnroadEvent.EventName.pedalPressed) and not event.softDisable and not event.immediateDisable for event in events))
-    restricted_eps = bool((temporary_eps_restriction(cp, cs) or stock_ford_eps) and self.lateral_only_baseline and
+    from opendbc.car import structs
+    from opendbc.car.mazda.stock_aol import qualified as mazda_qualified
+    stock_mazda_eps = bool(mazda_qualified(cp, marked_only=True) and
+      cs.cruiseState.available and not cs.cruiseState.enabled and
+      cs.gearShifter == structs.CarState.GearShifter.drive and
+      not cs.brakePressed and not cs.regenBraking and not cs.gasPressed and
+      not cs.doorOpen and not cs.seatbeltUnlatched and not cs.accFaulted and
+      not cs.vehicleSensorsInvalid and not cs.steeringDisengage and not cs.buttonEvents and
+      all(not event.userDisable or event.name == log.OnroadEvent.EventName.pcmDisable and
+          not event.softDisable and not event.immediateDisable for event in events))
+    restricted_eps = bool((temporary_eps_restriction(cp, cs) or stock_ford_eps or stock_mazda_eps) and self.lateral_only_baseline and
       not axis.desiredLongitudinal and not axis.longitudinalActive)
     native = _configured_transport_native(sm, cp, self.session, now_ns, allow_restricted_lateral=restricted_eps)
     if (native is None or not native.pandaInventory or
@@ -1034,7 +1045,7 @@ class TransportPauseFeedback:
       (native.pandaSerial, tuple(p.hardwareSerial for p in native.pandaInventory)) == self.lateral_inventory)
 
   def observe(self, sm, cp, cs, now_ns, *, latched=True, cancel_source_ns=0, brake_source_ns=0,
-              gm_withdrawal_source_ns=0, intent_producer_session='', main_arm_ns=0, startup_calibration_pending=False):
+              gm_withdrawal_source_ns=0, intent_producer_session='', main_arm_ns=0, startup_calibration_pending=False, intent_paused=False):
     self.temporary_host_qualified = False
     self.qualified = False
     self.awaiting = False
@@ -1248,10 +1259,41 @@ class TransportPauseFeedback:
       if reason != 'availabilityPause' and not availability_only(sm['onroadEvents']):
         self.retention_started_ns = self.retention_event_ns = 0
         self.retention_verified = False
-      baseline = bool(reason == 'none' and axis.nativeAcknowledged and
+      native = _healthy_transport_native(sm, cp, cs, str(axis.sessionId), now_ns)
+      if (native is None and intent_paused and cs.canValid and not cs.canTimeout and
+          not cs.steerFaultPermanent and not any(signature[9:13])):
+        native = _configured_transport_native(sm, cp, str(axis.sessionId), now_ns)
+      # A fresh negotiated OFF receipt proves transport health while a driver
+      # pause withdraws both axes. It creates no active lateral baseline.
+      from opendbc.car import structs
+      previous = self.signature
+      inactive = bool(not self.failed and self.session and previous is not None and
+        previous[5] == 'none' and previous[14:16] == signature[14:16] and
+        intent_producer_session and signature[14] == intent_producer_session and
+        (intent_paused or bool(getattr(self, 'temporary_eps_event_ns', 0)) or not any(previous[9:13])) and
+        str(axis.mode) == 'off' and not any(signature[9:13]) and
+        cs.cruiseState.available and not cs.accFaulted and not cs.vehicleSensorsInvalid and
+        not cs.doorOpen and not cs.seatbeltUnlatched and not cs.steeringDisengage and
+        (cs.gearShifter in (structs.CarState.GearShifter.drive, structs.CarState.GearShifter.sport,
+                           structs.CarState.GearShifter.low, structs.CarState.GearShifter.brake) or
+         intent_paused and cs.gearShifter in (structs.CarState.GearShifter.reverse, structs.CarState.GearShifter.neutral)) and
+        sm.seen['onroadEvents'] and sm.valid['onroadEvents'] and sm.alive['onroadEvents'] and
+        0 < int(sm.logMonoTime['onroadEvents']) <= now_ns and
+        now_ns - int(sm.logMonoTime['onroadEvents']) <= 1_500_000_000 and
+        all(not event.immediateDisable and
+            (not event.softDisable or intent_paused and event.name in
+             (log.OnroadEvent.EventName.wrongGear, log.OnroadEvent.EventName.steerTempUnavailable)) and
+            (not event.userDisable or event.name in
+             (log.OnroadEvent.EventName.pcmDisable, log.OnroadEvent.EventName.buttonCancel,
+              log.OnroadEvent.EventName.reverseGear) or intent_paused and event.name == log.OnroadEvent.EventName.wrongGear)
+            for event in sm['onroadEvents']) and
+        native is not None and native.pandaInventory and self.healthy_inventory ==
+          (native.pandaSerial, tuple(slot.hardwareSerial for slot in native.pandaInventory)) and
+        not native.requestedLateral and not native.lateralAllowed and
+        not native.requestedLongitudinal and not native.longitudinalAllowed)
+      baseline = bool(reason == 'none' and (axis.nativeAcknowledged or inactive) and
                       0 < axis.sourceCarStateMonoTime <= stamp and
                       stamp - axis.sourceCarStateMonoTime <= AXIS_MAX_AGE_NS)
-      native = _healthy_transport_native(sm, cp, cs, str(axis.sessionId), now_ns)
       if native is None and latched and current and continuity and baseline:
         native = _newer_combined_intent_native(sm, cp, cs, axis, now_ns)
       lateral_native = (self._native_long_withdrawal_lateral_current(sm, cp, cs, axis, now_ns,

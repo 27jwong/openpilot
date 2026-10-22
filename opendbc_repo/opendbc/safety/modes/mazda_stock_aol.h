@@ -143,10 +143,11 @@ static void mazda_aol_rx(const CANPacket_t *msg) {
       } else {
       }
     } else if (msg_matches(msg, 0x9DU, 0U, 8U)) {
-      const bool press = (msg->data[0] & 0x34U) != 0U;
+      // Mapped Cancel can request LAT only after the same fresh physical edge
+      // and current host acknowledgment used by the other cruise buttons.
+      const bool press = (msg->data[0] & 0x35U) != 0U;
       if ((mazda_aol_session && !heartbeat_engaged) || !aol_rx_healthy() || !mazda_aol_current() || safety_rx_checks_invalid || ((mazda_aol_sources & 4U) != 0U)) {
         mazda_aol_clear();
-      } else if ((msg->data[0] & 1U) != 0U) {
       } else if (!press) {
         mazda_aol_buttons_neutral = true;
       } else if (mazda_aol_buttons_neutral && acc_main_on) {

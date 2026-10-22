@@ -172,3 +172,36 @@ class TestMazdaStockAol(unittest.TestCase):
     self.assertTrue(self.safety.safety_rx_hook(self.packet('CRZ_CTRL', {'CRZ_AVAILABLE': 1, 'CRZ_ACTIVE': 0})))
     self.assertFalse(self.safety.get_controls_allowed())
     self.assertEqual(self.safety.aol_get_permission_mask(), 1)
+
+  def test_cancel_requires_neutral_and_current_host_ack(self):
+    self.configure()
+    self.safety.set_aol_test_heartbeat(False)
+    for _ in range(12):
+      self.feed(buttons=3)
+    self.safety.set_aol_test_heartbeat(True)
+    self.feed(buttons=3)
+    self.assertEqual(self.safety.aol_get_permission_mask(), 0)
+    self.safety.set_aol_test_heartbeat(False)
+    self.feed(buttons=0)
+    self.feed(buttons=3)
+    self.assertEqual(self.safety.aol_get_permission_mask(), 0)
+    self.safety.set_aol_test_heartbeat(True)
+    self.time += 1
+    self.safety.set_timer(self.time)
+    self.safety.aol_set_host_request(1)
+    self.assertEqual(self.safety.aol_get_permission_mask(), 1)
+    self.assertFalse(self.safety.get_controls_allowed())
+    self.safety.aol_set_host_request(3)
+    self.assertEqual(self.safety.aol_get_permission_mask(), 1)
+
+  def test_cancel_held_after_fault_and_main_off_never_rearms(self):
+    self.configure()
+    self.arm()
+    self.feed(buttons=3)
+    self.feed(buttons=3, permanent=True)
+    for _ in range(4):
+      self.feed(buttons=3)
+      self.assertEqual(self.safety.aol_get_permission_mask(), 0)
+    self.feed(buttons=0, main=False)
+    self.feed(buttons=3, main=False)
+    self.assertEqual(self.safety.aol_get_permission_mask(), 0)

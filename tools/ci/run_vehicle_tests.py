@@ -36,6 +36,9 @@ AOL_LIFECYCLE_TARGETS = (
   "openpilot/starpilot/aol/tests/test_stock_lateral_honda.py",
   "openpilot/starpilot/aol/tests/test_honda_reverse_join.py",
   "openpilot/starpilot/aol/tests/test_honda_recovery_lifecycle.py",
+  "openpilot/starpilot/aol/tests/test_fresh_inactive_transport.py",
+  "opendbc_repo/opendbc/car/mazda/tests/test_native_engagement_callers.py",
+  "opendbc_repo/opendbc/safety/tests/test_mazda_stock_aol.py",
   "openpilot/starpilot/aol/tests/test_temporary_lag_intent.py",
   "openpilot/starpilot/aol/tests/test_stock_location_recovery.py",
   "openpilot/starpilot/aol/tests/test_stock_eps_recovery.py",
@@ -58,6 +61,8 @@ AOL_LIFECYCLE_TARGETS = (
 )
 
 AOL_LIFECYCLE_SCOPE = {
+  "mazda": ("CX5 2022/CX9 2021 GEN1 stock AE32: engagement/brake/Cancel pause/toggle/Reverse/standstill/EPS recovery; " +
+            "native permanent-fault rearm vetoes"),
   "subaru": "nine stock global identities; five actual factory-to-native lifecycles, brake, Reverse/Drive, EPS recovery, MAIN-off and refusal guards",
   "volkswagen": "stock MQB auto/manual, gateway/camera factory acquisition, MAIN/engagement/brake/Reverse joins, permanent EPS native rearm",
   "gm": "Volt/Bolt factory profiles, MAIN boot, stock/Alpha, BE/C9, pedal/regen, Cancel mappings, RES, lag withdrawal/recovery",
@@ -504,7 +509,7 @@ def run(suite, output, collect_only=False):
     plan["lifecycle_rows"] = AOL_LIFECYCLE_SCOPE
     plan["uncovered"] = ["complete recorded routes and real-time device deadlines", "physical firmware/harness acceptance",
                          "unselected exact variants, including new G90/GV70 report configurations",
-                         "Mazda, Volkswagen, Rivian, Subaru and Tesla complete joined lifecycles"]
+                         "unselected Mazda/Volkswagen profiles; Rivian, Subaru and Tesla complete joined lifecycles"]
   if suite == "safety-release":
     plan["uncovered"].append("full release-mode behavioral safety suite; only explicit selected classes run")
   (output / "plan.json").write_text(json.dumps(plan, sort_keys=True, indent=2) + "\n")

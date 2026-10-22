@@ -75,7 +75,22 @@ def test_permanent_fault_while_stopped_disarms_actual_callers(identity, monkeypa
   _exercise_actual_family_callers(identity, monkeypatch, scenario='stop_fault', armed_intent=armed_intent_decoder)
 
 
-def _exercise_actual_family_callers(identity, monkeypatch, *, scenario='brake', cancel_action=3, armed_intent=None):
+@pytest.mark.parametrize('identity', (CAR.MAZDA_CX5_2022, CAR.MAZDA_CX9_2021))
+@pytest.mark.parametrize('cancel_action', (3, 9))
+def test_mapped_cancel_pause_and_toggle_actual_callers(identity, cancel_action, monkeypatch, armed_intent_decoder):
+  _exercise_actual_family_callers(identity, monkeypatch, scenario='mapped_cancel', cancel_action=cancel_action,
+                                 armed_intent=armed_intent_decoder)
+
+
+@pytest.mark.parametrize('identity', (CAR.MAZDA_CX5_2022, CAR.MAZDA_CX9_2021))
+@pytest.mark.parametrize('lateral_only', (False, True))
+def test_eps_recovery_actual_callers(identity, lateral_only, monkeypatch, armed_intent_decoder):
+  _exercise_actual_family_callers(identity, monkeypatch, scenario='temporary', lateral_only=lateral_only,
+                                 armed_intent=armed_intent_decoder)
+
+
+def _exercise_actual_family_callers(identity, monkeypatch, *, scenario='brake', cancel_action=3, armed_intent=None,
+                                    lateral_only=False):
   from openpilot.cereal import messaging
   from openpilot.selfdrive.car import card as card_module
   from openpilot.starpilot.aol.wire import PandaSlot, SafetyState, encode_safety
@@ -94,7 +109,7 @@ def _exercise_actual_family_callers(identity, monkeypatch, *, scenario='brake', 
     first_engagement_ns = None
     try:
       sd, controls, drive = case._authority_callers(False, cp=card.CP.as_reader().as_builder(), genuine_events=True)
-      if scenario in ('cancel', 'long_cancel'):
+      if scenario in ('cancel', 'long_cancel', 'mapped_cancel', 'temporary'):
         from openpilot.starpilot.aol.intent import read_settings
         sd.aol_settings = read_settings(saved)
         assert sd.aol_settings.cancel_actions == (cancel_action, 0, 0)
@@ -123,12 +138,13 @@ def _exercise_actual_family_callers(identity, monkeypatch, *, scenario='brake', 
       local_patch.setattr(card.pm, 'send', capture)
       packer = CANPacker(DBC[identity][Bus.pt])
 
-      def step(*, engaged=False, brake=False, cancel=False, main=True, reverse=False, speed_kph=80., permanent=False):
+      def step(*, engaged=False, brake=False, cancel=False, main=True, reverse=False, speed_kph=80., permanent=False,
+               temporary=False):
         nonlocal tick, first_engagement_ns
         tick += 1
         now[0] = 10_000_000_000 + tick * 10_000_000
         frames = complete_frames(packer, card.CP, tick, main=main, engaged=engaged, brake=brake, cancel=cancel, reverse=reverse,
-                                 speed_kph=speed_kph, permanent=permanent)
+                                 speed_kph=speed_kph, permanent=permanent, temporary=temporary)
         frames.append(packer.make_can_msg('STEER', 0, {'STEER_ANGLE': 1.0}))
         safety.set_timer(now[0] // 1000)
         prior_state = previous_sd.get('selfdriveState')
@@ -234,6 +250,54 @@ def _exercise_actual_family_callers(identity, monkeypatch, *, scenario='brake', 
         state, axis, host_state, command = step(engaged=True)
       assert state.canValid and host_state.enabled and command.latActive
       assert card.aol_card_intent.allowed_latch
+      if lateral_only:
+        for _ in range(30):
+          state, axis, host_state, command = step(brake=True)
+        assert card.aol_card_intent.allowed_latch and axis.lateralActive and not axis.longitudinalActive
+        for _ in range(30):
+          state, axis, host_state, command = step()
+        assert card.aol_card_intent.allowed_latch and axis.lateralActive and not axis.longitudinalActive
+      if scenario == 'mapped_cancel':
+        for _ in range(5):
+          state, axis, host_state, command = step(cancel=True)
+          if cancel_action == 4:
+            assert axis.lateralActive and command.latActive, 'LONG-only Cancel assignment withdrew Mazda LAT'
+        for _ in range(10):
+          state, axis, host_state, command = step()
+        if cancel_action == 3:
+          assert card.aol_card_intent.allowed_latch, f'Mapped pause Cancel erased Mazda intent: {card.aol_card_intent.latch_clear_reason}'
+          assert card.aol_card_intent.pause_lateral and not axis.lateralActive and not command.latActive
+          for _ in range(5):
+            step(cancel=True)
+          for _ in range(10):
+            state, axis, host_state, command = step()
+          assert card.aol_card_intent.allowed_latch and not card.aol_card_intent.pause_lateral
+          assert axis.lateralActive and command.latActive, 'Second mapped Cancel did not resume existing Mazda intent'
+        elif cancel_action == 4:
+          assert card.aol_card_intent.allowed_latch and card.aol_card_intent.pause_longitudinal
+          assert axis.lateralActive and command.latActive and not command.longActive
+        else:
+          assert not card.aol_card_intent.allowed_latch, 'Mapped toggle Cancel rearmed instead of switching Mazda AOL off'
+          assert not axis.lateralActive and not command.latActive
+          for _ in range(5):
+            step(cancel=True)
+          for _ in range(30):
+            state, axis, host_state, command = step()
+          assert card.aol_card_intent.allowed_latch and axis.lateralActive and command.latActive, (
+            'Mapped Cancel toggle could not rearm from a fresh physical Cancel')
+        return
+      if scenario == 'temporary':
+        kwargs = {'temporary': True}
+        for _ in range(30):
+          state, axis, host_state, command = step(**kwargs)
+          assert card.aol_card_intent.allowed_latch, f'Temporary Mazda restriction erased existing intent: {card.aol_card_intent.latch_clear_reason}'
+          assert not axis.lateralActive and not command.latActive
+          assert safety.aol_get_permission_mask() == 0
+          assert not axis.longitudinalActive and not command.longActive
+        for _ in range(30):
+          state, axis, host_state, command = step()
+        assert card.aol_card_intent.allowed_latch and axis.lateralActive and command.latActive, 'Mazda healthy return did not resume retained lateral'
+        return
       if scenario in ('cancel', 'long_cancel'):
         for _ in range(5):
           state, axis, host_state, command = step(cancel=True)
