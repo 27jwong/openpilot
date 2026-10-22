@@ -13,7 +13,7 @@ SteerControlType = structs.CarParams.SteerControlType
 
 def toyota_auto_hold_supported(CP) -> bool:
   from opendbc.car.toyota.rav4h_filter import enabled as rav4h_filter_enabled
-  if rav4h_filter_enabled(CP):
+  if CP.carFingerprint == CAR.TOYOTA_RAV4H and rav4h_filter_enabled(CP):
     return True
   return bool(CP.brand == "toyota" and CP.carFingerprint in TOYOTA_AUTO_HOLD_CARS and
               CP.openpilotLongitudinalControl and not CP.flags & ToyotaFlags.SECOC and
@@ -179,17 +179,22 @@ class CarInterface(CarInterfaceBase):
     from opendbc.car.toyota.rav4h_filter import hardware_supported, LONG_WORD
     rav4h_sdsu = hardware_supported(candidate, fingerprint, car_fw)
     if rav4h_sdsu:
-      ret.flags |= int(ToyotaFlags.HYBRID | ToyotaFlags.LONG_FILTER)
+      ret.flags |= int(ToyotaFlags.LONG_FILTER)
+      if candidate == CAR.TOYOTA_RAV4H:
+        ret.flags |= int(ToyotaFlags.HYBRID)
       ret.safetyConfigs[0].safetyParam = LONG_WORD
       ret.openpilotLongitudinalControl = True
       ret.alphaLongitudinalAvailable = False
-      stop_and_go = True
+      if candidate == CAR.TOYOTA_RAV4H:
+        stop_and_go = True
     elif candidate == CAR.TOYOTA_RAV4H and 0x2FF in fingerprint.get(0, {}):
       ret.dashcamOnly = True
     # Toyota EPS accepts lateral commands down to zero. Keep the existing
     # native/axis/fault gates; a stock cruise stop does not withdraw steering.
     ret.steerAtStandstill = ret.minSteerSpeed <= 0.
-    ret.autoResumeSng = ret.openpilotLongitudinalControl and (rav4h_sdsu or not ret.flags & ToyotaFlags.LONG_FILTER)
+    ret.autoResumeSng = ret.openpilotLongitudinalControl and (
+      (rav4h_sdsu and candidate in (CAR.TOYOTA_RAV4H, CAR.TOYOTA_HIGHLANDER, CAR.TOYOTA_SIENNA)) or
+      not ret.flags & ToyotaFlags.LONG_FILTER)
 
     if radar_filter and not ret.flags & ToyotaFlags.TSS2:
       ret.autoResumeSng = False  # Preserve the pre-TSS2 stock stop timer.

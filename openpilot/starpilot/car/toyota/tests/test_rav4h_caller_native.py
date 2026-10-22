@@ -2,12 +2,14 @@
 
 Synthetic boundaries: firmware acquisition, CAN/perception/process producers and
 USB/axis transport. No CP/CS fields, native permission, health/frequency flags, or initialized/ControlsReady
-are overwritten. Nominal/physical/OFF cases use elapsed host time; the fault case
-uses one explicit shared input clock plus the native test timer. Neither establishes
+are overwritten. Default nominal/physical/OFF cases use elapsed host time. Faults
+and explicit input_clock cases use a shared 100Hz input clock and native test timer;
+production freshness deadlines are unchanged. Neither mode establishes
 installed-hardware scheduling or timing acceptance.
 """
 
 import json
+import ctypes
 import gc
 import time
 import tempfile
@@ -73,10 +75,10 @@ def deliver(sm, messages):
   sm.update_msgs(time.monotonic(), admitted)
 
 
-def firmware():
+def firmware(candidate=CAR.TOYOTA_RAV4H):
   return [
     structs.CarParams.CarFw(ecu=e, address=a, subAddress=s or 0, fwVersion=v[0], brand='toyota', bus=0)
-    for (e, a, s), v in FW_VERSIONS[CAR.TOYOTA_RAV4H].items()
+    for (e, a, s), v in FW_VERSIONS[candidate].items()
   ]
 
 
@@ -194,7 +196,7 @@ def control_inputs(controls, published, state, sd_events, native, now):
       values.append(sd_events[name])
     elif name == 'carState':
       values.append(state['carState'])
-    elif name == 'aolSafetyWire':
+    elif name in ('aolSafetyWire', 'pandaStates'):
       values.append(next(e for e in native if e.which() == name))
     elif name in published:
       values.append(published[name])
@@ -210,6 +212,8 @@ def control_inputs(controls, published, state, sd_events, native, now):
       v = getattr(e, name)
       if name == 'modelV2':
         v.from_dict(model().to_dict())
+      elif name == 'lateralManeuverPlan':
+        v.desiredCurvature = .00005
       elif name == 'vehicleParameters':
         v.stiffnessFactor, v.steerRatio = 1.0, controls.CP.steerRatio
       elif name == 'longitudinalPlan':
@@ -220,7 +224,7 @@ def control_inputs(controls, published, state, sd_events, native, now):
   return values
 
 
-def run_case(stock, scenario='nominal', *, aol=True):
+def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H, bridge=None, input_clock=False):
   SYNTHETIC_LAST.clear()
   NATIVE_LAST.clear()
   safety = libsafety_py.libsafety
@@ -235,12 +239,12 @@ def run_case(stock, scenario='nominal', *, aol=True):
       ('ToyotaAutoHold', False),
     ):
       params.put_bool(k, v, block=True)
-    fw = firmware()
+    fw = firmware(candidate)
     exact, found = match_fw_to_car(fw, '', log=False)
-    assert exact and found == {CAR.TOYOTA_RAV4H}
+    assert exact and found == {candidate}
     fp = gen_empty_fingerprint()
     fp[0][0x2FF] = 8
-    observed = (CAR.TOYOTA_RAV4H, fp, '0' * 17, fw, structs.CarParams.FingerprintSource.fw, True)
+    observed = (candidate, fp, '0' * 17, fw, structs.CarParams.FingerprintSource.fw, True)
     with (
       patch.object(car_helpers, 'fingerprint', return_value=observed),
       patch.object(card_module, 'can_comm_callbacks', return_value=(lambda *a: [], lambda x: None)),
@@ -256,6 +260,9 @@ def run_case(stock, scenario='nominal', *, aol=True):
     safety.set_alternative_experience(host.CP.alternativeExperience)
     assert safety.set_safety_hooks(host.CP.safetyConfigs[0].safetyModel.raw, host.CP.safetyConfigs[0].safetyParam) == 0
     safety.set_aol_test_heartbeat(True)
+    native_globals = ctypes.CDLL(libsafety_py.libpath)
+    if bridge is not None:
+      bridge.reset_host()
     packer = CANPacker(DBC[host.CP.carFingerprint][Bus.pt])
     published, prev = {}, {}
 
@@ -280,15 +287,17 @@ def run_case(stock, scenario='nominal', *, aol=True):
       )
     )
     rows = {r.key: r for r in wheel.rows()}
-    assert 'Bookmark' in rows['wheel:LKASButtonControl'].choices
-    assert 'Toggle AOL' not in rows['wheel:LKASButtonControl'].choices
+    if candidate == CAR.TOYOTA_RAV4H:
+      assert 'Bookmark' in rows['wheel:LKASButtonControl'].choices
+      assert 'Toggle AOL' not in rows['wheel:LKASButtonControl'].choices
     assert not any('Cancel' in k or 'MainCruise' in k for k in rows)
     assert display_supported(host.CP) and longitudinal_supported(host.CP) == (not stock)
     params.put('CancelButtonControl', 9, block=True)  # Unsupported saved remap cannot steal MAIN/physical Cancel ownership.
-    seen_active = False
+    seen_active = positive_steering = positive_accel = False
     next_cycle = time.monotonic()
     clock = [time.monotonic_ns()]
-    if scenario in ('faults', 'bad_dlc'):
+    deterministic = input_clock or scenario in ('faults', 'bad_dlc')
+    if deterministic:
       # Deterministic input-time vector for the three serially hosted daemon methods.
       # Keep the real-time nominal/physical/OFF receipts separate; no scheduling/road claim here.
       real_clock = time.clock_gettime_ns
@@ -298,8 +307,8 @@ def run_case(stock, scenario='nominal', *, aol=True):
         patch.object(time, 'clock_gettime_ns', side_effect=lambda c: clock[0] if c in (time.CLOCK_MONOTONIC, time.CLOCK_BOOTTIME) else real_clock(c))
       )
     try:
-      for tick in range(1, {'nominal': 251, 'physical': 601, 'faults': 801, 'bad_dlc': 801, 'off': 401}[scenario]):
-        if scenario in ('faults', 'bad_dlc'):
+      for tick in range(1, {'nominal': 251, 'physical': 601, 'faults': 801, 'bad_dlc': 801, 'off': 401, 'cold_low': 251}[scenario]):
+        if deterministic:
           clock[0] += 10_000_000
         else:
           next_cycle += 0.01
@@ -307,6 +316,8 @@ def run_case(stock, scenario='nominal', *, aol=True):
         now = time.monotonic_ns()
         safety.set_timer((now // 1000) & 0xFFFFFFFF)
         fields = {'cruise': tick >= 150}
+        if scenario == 'cold_low':
+          fields.update(cruise=False, stopped=True)
         if scenario == 'physical':
           fields.update(
             gas=250 <= tick < 270,
@@ -350,7 +361,23 @@ def run_case(stock, scenario='nominal', *, aol=True):
         ):
           sd.step()
         wanted = sd.aol_axis_decision
-        safety.aol_set_host_request(int(wanted.desired_lateral) | int(wanted.desired_longitudinal) << 1)
+        if bridge is None:
+          safety.aol_set_host_request(int(wanted.desired_lateral) | int(wanted.desired_longitudinal) << 1)
+        else:
+          axis = sd_events.get('aolAxisState', prev.get('aolAxisState'))
+          intent_wire = state.get('aolIntentWire')
+          axis_bytes = axis.as_builder().to_bytes() if axis is not None else b''
+          intent_bytes = intent_wire.as_builder().to_bytes() if intent_wire is not None else b''
+          capability = int(bool(ctypes.c_void_p.in_dll(native_globals, 'aol_policy').value))
+          capability |= 2 * int(ctypes.c_bool.in_dll(native_globals, 'aol_optional_release_capable').value)
+          model = ctypes.c_uint16.in_dll(native_globals, 'current_safety_mode').value
+          word = ctypes.c_uint16.in_dll(native_globals, 'current_safety_param').value
+          state_event = sd_events.get('selfdriveState', prev.get('selfdriveState'))
+          packed = bridge.plan_host(model, word, safety.aol_get_request_mask(), safety.aol_get_permission_mask(),
+            time.monotonic_ns(), axis_bytes, len(axis_bytes), intent_bytes, len(intent_bytes), bool(state_event.selfdriveState.enabled), capability)
+          safety.aol_set_host_request(packed & 0xFF)
+          safety.set_aol_test_heartbeat(bool(packed & 0x100))
+          bridge.complete_host(safety.aol_get_request_mask(), safety.aol_get_permission_mask())
         native = native_events(host, safety, time.monotonic_ns(), sd.aol_session_id)
         current_sd = dict(prev)
         current_sd.update(sd_events)
@@ -367,6 +394,11 @@ def run_case(stock, scenario='nominal', *, aol=True):
           assert not outgoing.sendcan and not cs.canValid, ('startup must stay neutral until real CAN health', tick, cs.canValid)
         for f in outgoing.sendcan:
           assert safety.safety_tx_hook(libsafety_py.make_CANPacket(f.address, f.src, bytes(f.dat))), (tick, hex(f.address), bytes(f.dat).hex())
+          if f.address == 0x2E4:
+            decoded = decode(host.CP, (f.address, bytes(f.dat), f.src), 'STEERING_LKA')
+            positive_steering |= bool(decoded['STEER_REQUEST'] and decoded['STEER_TORQUE_CMD'])
+          elif f.address == 0x343:
+            positive_accel |= decode(host.CP, (f.address, bytes(f.dat), f.src), 'ACC_CONTROL')['ACCEL_CMD'] > 0
         trace.append(
           {
             'tick': tick,
@@ -390,7 +422,7 @@ def run_case(stock, scenario='nominal', *, aol=True):
           }
         )
         nominal = tick >= 220 and (
-          scenario == 'nominal'
+          scenario in ('nominal', 'cold_low')
           or scenario == 'off'
           and tick < 250
           or scenario == 'physical'
@@ -403,7 +435,7 @@ def run_case(stock, scenario='nominal', *, aol=True):
           assert sd.initialized and host.ci_initialized and params.get_bool('ControlsReady')
           assert sd.sm.all_checks(), ('actual consumer source health failed', trace[-1])
           assert cc.latActive, trace[-1]
-          assert cc.longActive == (not stock), trace[-1]
+          assert cc.longActive == (not stock and scenario != 'cold_low'), trace[-1]
           seen_active = True
         if scenario == 'physical':
           if any(a <= tick < b for a, b in ((260, 266), (350, 366), (445, 456), (530, 536))):
@@ -434,8 +466,12 @@ def run_case(stock, scenario='nominal', *, aol=True):
 
         prev = current_sd
       assert seen_active
+      if scenario != 'cold_low':
+        assert positive_steering
+      assert positive_accel == (not stock and scenario != 'cold_low')
     finally:
-      (OUT / ('actual-' + scenario + ('-stock-trace.json' if stock else '-long-trace.json'))).write_text(json.dumps(trace, indent=2) + '\n')
+      trace_name = ('actual-' + str(candidate) + '-' + scenario + ('-stock-trace.json' if stock else '-long-trace.json'))
+      (OUT / trace_name).write_text(json.dumps(trace, indent=2) + '\n')
       safety.set_alternative_experience(0)
       safety.set_safety_hooks(structs.CarParams.SafetyModel.noOutput, 0)
       host.vehicle_startup.close()

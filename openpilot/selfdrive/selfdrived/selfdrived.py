@@ -1619,6 +1619,7 @@ class SelfdriveD:
     from openpilot.starpilot.car.mazda.aol import physical_cancel_lateral_allowed as mazda_cancel_lateral_allowed
     from openpilot.starpilot.car.subaru.aol import sng_standstill_lateral_inhibit
     from openpilot.starpilot.aol.dm import lateral_event_context
+    from openpilot.starpilot.car.toyota.legacy_lateral import below_engage_lateral_allowed as toyota_below_engage_lateral_allowed
     retained_dm_lateral, lateral_events = lateral_event_context(self, CS, intent, native, now_ns, ordinary_lag)
     reverse_pause = known_reverse_pause(CS, getattr(self, 'car_state_samples', ()))
     if reverse_pause:
@@ -1647,7 +1648,10 @@ class SelfdriveD:
                                                         stock_ascm_independent_lateral(self.CP) or
                                                         cc_independent_lateral_below_engage(self.CP, intent,
                                                           enabled=self.enabled, active=self.active)) and
-                                                       not self.CP.flags & GMFlags.PEDAL_LONG)),
+                                                       not self.CP.flags & GMFlags.PEDAL_LONG) or
+                             toyota_below_engage_lateral_allowed(self.CP, CS, intent, native,
+                               source_ns=getattr(self, 'aol_car_state_log_ns', 0), now_ns=now_ns,
+                               axis_session_id=getattr(self, 'aol_session_id', ''))),
       immediate_disable=self.events.contains(ET.IMMEDIATE_DISABLE),
       dm_lockout=bool(not self.sm.all_checks(['driverMonitoringState']) or
                       not retained_dm_lateral and (self.sm['driverMonitoringState'].lockout or
@@ -2109,4 +2113,3 @@ def main():
 
 if __name__ == "__main__":
   main()
-
