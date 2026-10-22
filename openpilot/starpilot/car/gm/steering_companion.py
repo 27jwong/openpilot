@@ -48,10 +48,12 @@ class SteeringCompanion:
         del self.samples[stamp]
     if not (sm.seen.get(SERVICE, False) and sm.valid.get(SERVICE, False) and sm.alive.get(SERVICE, False)):
       return None
+    # Raw receipts prove the exact selected source independently of when the
+    # conflating cache was polled. Its own validity, age and fault veto remain.
     sm_stamp = int(sm.logMonoTime[SERVICE])
     sm_companion = sm[SERVICE]
     if not (int(sm_companion.sourceCarStateMonoTime) == sm_stamp and
-            0 < source_ns <= sm_stamp <= now_ns and now_ns - sm_stamp <= INTENT_MAX_AGE_NS):
+            0 < sm_stamp <= now_ns and now_ns - sm_stamp <= INTENT_MAX_AGE_NS):
       return None
     latest = self.latest
     pair = self.samples.get(source_ns)
