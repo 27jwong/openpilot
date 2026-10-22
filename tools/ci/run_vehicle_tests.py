@@ -89,6 +89,7 @@ AOL_LIFECYCLE_TARGETS = (
   "openpilot/starpilot/car/subaru/tests/test_avh.py",
   "openpilot/starpilot/car/subaru/tests/test_avh_callers.py",
   "opendbc_repo/opendbc/safety/tests/test_subaru_avh_startup.py",
+  "openpilot/starpilot/car/subaru/tests/test_angle_tune.py",
 )
 
 AOL_LIFECYCLE_SCOPE = {
