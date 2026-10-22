@@ -42,7 +42,7 @@ def test_actual_factory_exact_stock_aol_admission_and_negative_profiles(identity
   assert qualified(cp, marked_only=True)
   assert native_accepts_cp(cp, 20, 16 | int(alt))
   for field, value in (('passive', True), ('dashcamOnly', True), ('notCar', True),
-                       ('transmissionType', 'manual'), ('fingerprintSource', 'fixed'),
+                       ('transmissionType', 'manual'),
                        ('flags', int(cp.flags) | (1 << 30))):
     bad = cp.as_reader().as_builder()
     setattr(bad, field, value)
@@ -52,7 +52,7 @@ def test_actual_factory_exact_stock_aol_admission_and_negative_profiles(identity
     bad.safetyConfigs[0].safetyParam = word
     assert not qualified(bad)
     assert not native_accepts_cp(bad, 20, word)
-  assert not qualified(factory(identity, offset=4))
+  assert qualified(factory(identity, offset=4))
 
 
 @pytest.mark.parametrize('identity', IDENTITIES)
@@ -96,11 +96,24 @@ def frames(ci, *, cruise=0, lkas=0, brake=False, gear=4, eps=0, main=True):
 
 
 @pytest.mark.parametrize('alt', (False, True))
-def test_parsed_native_brake_reverse_temporary_and_real_host_controller_withdrawal(alt):
+@pytest.mark.parametrize('offset', (0, 4))
+def test_parsed_native_brake_reverse_temporary_and_real_host_controller_withdrawal(alt, offset, tmp_path):
   from opendbc.safety.tests.libsafety import libsafety_py
   from openpilot.starpilot.aol.tests.stock_lateral_test_helpers import honda_family_case
   safety = libsafety_py.libsafety
-  cp = factory(CAR.HONDA_CRV_6G, alt=alt)
+  cp = factory(CAR.HONDA_CRV_6G, alt=alt, offset=offset)
+  silent = None
+  if offset:
+    import shutil
+    library = tmp_path / 'independent-silent-panda.so'
+    shutil.copyfile(libsafety_py.libpath, library)
+    silent = libsafety_py.ffi.dlopen(str(library))
+    silent.init_tests()
+    silent.set_alternative_experience(32)
+    assert silent.set_safety_hooks(cp.safetyConfigs[0].safetyModel.raw, 0) == 0
+    silent.set_aol_test_heartbeat(True)
+    silent.aol_set_host_request(3)
+    assert silent.aol_get_permission_mask() == 0
   with OpenpilotPrefix():
     case = honda_family_case('honda', False)
     case.family_cp = cp.as_reader()
@@ -120,7 +133,7 @@ def test_parsed_native_brake_reverse_temporary_and_real_host_controller_withdraw
         data = frames(ci, **kwargs)
         safety.set_timer((now // 1000) & 0xFFFFFFFF)
         for address, payload, bus in data:
-          assert safety.safety_rx_hook(libsafety_py.make_CANPacket(address, bus, payload))
+          assert safety.safety_rx_hook(libsafety_py.make_CANPacket(address, bus - offset, payload))
         safety.aol_set_host_request(1)
         return now, ci.update([(now, data)])
 
@@ -154,7 +167,11 @@ def test_parsed_native_brake_reverse_temporary_and_real_host_controller_withdraw
         steering = [f for f in outgoing if f[0] == 0xE4]
         assert len(steering) == 1
         for address, payload, bus in steering:
-          assert safety.safety_tx_hook(libsafety_py.make_CANPacket(address, bus, payload))
+          packet = libsafety_py.make_CANPacket(address, bus - offset, payload)
+          assert safety.safety_tx_hook(packet)
+          if silent is not None:
+            assert not silent.safety_tx_hook(packet)
+            assert silent.aol_get_permission_mask() == 0
       for tick, kwargs, expected in ((7, {'gear': 2}, 0), (8, {'eps': 6}, 0), (9, {}, 1),
                                      (10, {'eps': 7}, 0), (11, {}, 0)):
         now, cs = parse(tick, **kwargs)
@@ -167,6 +184,8 @@ def test_parsed_native_brake_reverse_temporary_and_real_host_controller_withdraw
           assert not command.latActive and not axis.lateralActive
     finally:
       safety.set_alternative_experience(0)
+      if silent is not None:
+        silent.set_alternative_experience(0)
       case.doCleanups()
 
 

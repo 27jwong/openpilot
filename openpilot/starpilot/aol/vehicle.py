@@ -82,6 +82,10 @@ def native_matches_cp(CP, model: int, param: int) -> bool:
       config = hyundai.aol_safety_config(CP)
       return bool(config is not None and hyundai.native_accepts_cp(CP, model, param) and
                   model == int(config.safetyModel.raw) and param == int(config.safetyParam))
+    if CP.brand == 'honda' and len(CP.safetyConfigs) == 2:
+      config = honda.aol_safety_config(CP)
+      return bool(config is not None and honda.native_accepts_cp(CP, model, param) and
+                  model == int(config.safetyModel.raw) and param == int(config.safetyParam))
     return bool(any(port.native_accepts_cp(CP, model, param) for port in _PORTS.values()) and
                 model == int(CP.safetyConfigs[0].safetyModel.raw) and
                 param == int(CP.safetyConfigs[-1].safetyParam))

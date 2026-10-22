@@ -65,7 +65,8 @@ def native_profile_supported(model: int, param: int) -> bool:
 def native_accepts_cp(CP, model: int, param: int) -> bool:
   # Honda's native receipt checks the safety profile, then the shared exact CP match.
   if qualified_stock(CP, marked_only=True):
-    return native_profile_supported(model, param) and param == CP.safetyConfigs[0].safetyParam
+    return (native_profile_supported(model, param) and model == int(CP.safetyConfigs[-1].safetyModel.raw) and
+            param == CP.safetyConfigs[-1].safetyParam)
   return qualified_honda(CP) and param == CP.safetyConfigs[0].safetyParam and param in (34, 35, 163)
 
 
@@ -94,3 +95,7 @@ def create_intent(CP, settings):
     return HondaStockCardIntent(CP, settings)
   from openpilot.starpilot.aol.intent import AolCardIntent
   return AolCardIntent(settings)
+
+
+def aol_safety_config(CP):
+  return CP.safetyConfigs[-1] if qualified_stock(CP, marked_only=True) else None

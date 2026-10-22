@@ -10,6 +10,8 @@ from opendbc.car.gm.cancel_remap import aol_enabled
 def _diagnostic_mask(cp):
   try:
     if cp.brand == 'honda':
+      if str(cp.fingerprintSource) == 'fixed':
+        return 0  # Explicit selection cannot borrow the recorded diagnostic exception.
       from opendbc.car.honda.stock_aol import qualified, CLASSIC_BOSCH, RADARLESS
       from opendbc.car.honda.values import HondaFlags
       # Only the reported CAN2 interrupt-rate diagnostic is exempt. Qualification

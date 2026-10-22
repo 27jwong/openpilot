@@ -32,6 +32,7 @@ ALT_RADAR_STOCK = frozenset((CAR.ACURA_RDX_3G_MMR, CAR.HONDA_ODYSSEY_5G_MMR,
   CAR.ACURA_TLX_2G, CAR.ACURA_MDX_4G))
 BOSCH_WORDS = frozenset((0, 1, 8, 9, 10, 11, 16, 17, 80, 81, 512, 513, 1058, 1059, 1570, 1571))
 NIDEC_WORDS = frozenset((0, 4, 260, 544, 548, 804))
+MANUAL_SELECTION_PORTS = CLASSIC_BOSCH | NIDEC | RADARLESS | CANFD_STOCK | ALT_RADAR_STOCK | {CAR.HONDA_ACCORD_11G}
 
 # qualified() runs several times per 100 Hz frame in card and selfdrived, so
 # everything that depends only on this module is computed once, and its flag
@@ -49,11 +50,13 @@ _HONDA_NIDEC, _HONDA_BOSCH = structs.CarParams.SafetyModel.hondaNidec, structs.C
 
 
 def qualified(cp, *, marked_only=False):
-  if (cp.brand != 'honda' or cp.passive or cp.notCar or cp.dashcamOnly or len(cp.safetyConfigs) != 1 or
-      cp.fingerprintSource == _FIXED or cp.transmissionType not in _TRANSMISSIONS or
+  if (cp.brand != 'honda' or cp.passive or cp.notCar or cp.dashcamOnly or len(cp.safetyConfigs) not in (1, 2) or
+      (len(cp.safetyConfigs) == 2 and not (cp.carFingerprint in CANFD_STOCK and
+       cp.safetyConfigs[0].safetyModel == structs.CarParams.SafetyModel.noOutput and cp.safetyConfigs[0].safetyParam == 0)) or
+      (cp.fingerprintSource == _FIXED and cp.carFingerprint not in MANUAL_SELECTION_PORTS) or cp.transmissionType not in _TRANSMISSIONS or
       cp.alternativeExperience not in ((32,) if marked_only else (0, 32))):
     return False
-  safety = cp.safetyConfigs[0]
+  safety = cp.safetyConfigs[-1]
   fingerprint = str(cp.carFingerprint)
   allowed = _ALLOWED_FLAGS.get(fingerprint)
   if allowed is None:
