@@ -107,6 +107,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"SteeringLearningPreferences", {PERSISTENT, BYTES}},
     {"AutoSteeringLearningReset", {PERSISTENT, STRING}},
     {"AutomaticSteeringProfiles", {PERSISTENT | DONT_LOG, BYTES}},
+    {"AutomaticSteeringLiveTrials", {PERSISTENT | DONT_LOG, BYTES}},
     {"ForceAutoTuneOff", {PERSISTENT, BOOL, "0"}},
     {"SteerLatAccel", {PERSISTENT, FLOAT}},
     {"SteerLatAccelStock", {PERSISTENT, FLOAT}},

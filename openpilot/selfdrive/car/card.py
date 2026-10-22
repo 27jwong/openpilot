@@ -162,12 +162,13 @@ class Car:
     self.curve_replay = os.getenv('CURVE_REPLAY_RUNTIME') == '1' or feature_requested(self.params, 'curve')
     self.aol_replay = os.getenv('AOL_REPLAY_RUNTIME') == '1' or feature_requested(self.params, 'aol')
     self.conditional_replay = os.getenv('CONDITIONAL_MODE_REPLAY_RUNTIME') == '1' or feature_requested(self.params, 'conditional')
-    subscribed_services = ['pandaStates', 'carControl', 'onroadEvents', 'deviceState']
+    subscribed_services = ['pandaStates', 'carControl', 'onroadEvents', 'deviceState', 'autoSteeringLearning']
     if self.aol_replay:
       subscribed_services.extend(('aolSafetyWire', 'managerState', 'aolAxisState', 'selfdriveState'))
     if self.slc_replay:
       subscribed_services.append('slcState')
-    self.sm = messaging.SubMaster(subscribed_services)
+    self.sm = messaging.SubMaster(subscribed_services, ignore_alive=['autoSteeringLearning'],
+                                  ignore_valid=['autoSteeringLearning'], ignore_avg_freq=['autoSteeringLearning'])
     self.slc_cruise_event_id = 0
     self.slc_producer_session = uuid.uuid4().hex
     self.slc_command_sock = messaging.sub_sock('slcCruiseCommand', conflate=False) if self.slc_replay else None
@@ -941,6 +942,13 @@ class Car:
     co_send = messaging.new_message('carOutput')
     co_send.valid = self.sm.all_checks(['carControl'])
     co_send.carOutput.actuatorsOutput = self.last_actuators_output
+    self.learning_feedback_publication = None
+    capture = self._feedback_capture(int(co_send.logMonoTime))
+    if capture is not None:
+      try:
+        self.learning_feedback_publication = capture.publication(co_send)
+      except Exception:
+        capture.invalidate()  # Optional observation cannot affect the original CO.
     self.pm.send('carOutput', co_send)
 
     # kick off controlsd step while we actuate the latest carControl packet
@@ -1012,6 +1020,16 @@ class Car:
         companion = learning_companion
       except Exception:
         self._clear_learning_evidence()
+    publication = getattr(self, 'learning_feedback_publication', None)
+    if publication is not None:
+      try:
+        from openpilot.starpilot.flm.feedback_wire import write_publication
+        feedback_companion = (companion.as_reader().as_builder() if companion is not None else
+          messaging.new_message('starpilotCarState', valid=bool(cs_send.valid), logMonoTime=int(cs_send.logMonoTime)))
+        write_publication(feedback_companion.starpilotCarState, publication)
+        companion = feedback_companion
+      except Exception:
+        self.learning_feedback_publication = None
     self.car_gps_publisher.update(self.CI.CS, self.pm, companion)
     self.pm.send('carState', cs_send)
     if getattr(self, 'learning_stamp_observer', None) is not None:
@@ -1267,7 +1285,33 @@ class Car:
                     (not ps.safetyRxChecksInvalid or inactive_keepalive and self.volt_startup_keepalive())
                     for ps, cfg in zip(pandas, self.CP.safetyConfigs, strict=True)))
 
+  def _feedback_capture(self, now_ns):
+    # Default OFF performs no feedback-module import, digest or witness allocation.
+    try:
+      source = self.sm['autoSteeringLearning'].learning.sourceReceipt
+      if not source.enabled or source.manual:
+        self.learning_feedback_capture = None
+        return None
+      from openpilot.starpilot.flm.feedback_observation import card_capture_for
+      return card_capture_for(self, now_ns)
+    except Exception:
+      self.learning_feedback_capture = None
+      return None
+
+  def _invalidate_feedback_output(self, *, assignment=False):
+    capture = getattr(self, 'learning_feedback_capture', None)
+    if capture is not None:
+      try:
+        if assignment:
+          capture.begin_assignment()
+        else:
+          capture.invalidate()
+      except Exception:
+        self.learning_feedback_capture = None
+
   def _clear_learning_evidence(self):
+    self._invalidate_feedback_output()
+    self.learning_feedback_publication = None
     self.learning_stamp_observer = None
     self.learning_applied_evidence = self.learning_previous_applied_evidence = None
     self.learning_send_mono_ns = self.learning_send_committed_mono_ns = 0
@@ -1499,6 +1543,7 @@ class Car:
         if (not owner.pending_target and self.startup_panda_configured() and
             owner.sources_current(self.CI, now_boot_ns)):
           inactive = car.CarControl.new_message().as_reader()
+          self._invalidate_feedback_output(assignment=True)
           self.last_actuators_output, can_sends = self.CI.apply(inactive, now_boot_ns)
           self.publish_sendcan(can_sends, valid=CS.canValid)
         return
@@ -1515,8 +1560,10 @@ class Car:
           if not self.vehicle_startup.before_control(configured=True, ci=self.CI, now_ns=now_boot_ns, control_current=current):
             self.publish_sendcan([], valid=False)
             return
+          self._invalidate_feedback_output(assignment=True)
           self.last_actuators_output, can_sends = self.CI.apply(inactive, now_boot_ns)
         else:
+          self._invalidate_feedback_output(assignment=True)
           self.last_actuators_output, can_sends = cast(GMInterface, self.CI).apply(inactive, now_boot_ns, startup_keepalive=True)
         self.publish_sendcan(can_sends, valid=CS.canValid)
       return
@@ -1572,12 +1619,19 @@ class Car:
         learning_snapshot = applied_snapshot
       except Exception:
         self._clear_learning_evidence()
+      self._invalidate_feedback_output(assignment=True)
       self.last_actuators_output, can_sends = self.CI.apply(CC, now_nanos)
       self.publish_sendcan(can_sends, valid=CS.canValid)
       if learning_snapshot is not None and self.learning_send_committed_mono_ns:
         try:
           self.learning_applied_evidence = learning_snapshot(self, CC, CS, self.last_actuators_output,
             apply_ns=self.learning_send_committed_mono_ns, state_ns=self.learning_car_state_source_ns)
+          capture = getattr(self, 'learning_feedback_capture', None)
+          if capture is not None:
+            try:
+              capture.committed(self.last_actuators_output, self.learning_applied_evidence)
+            except Exception:
+              self.learning_feedback_capture = None  # Keep the original applied evidence.
         except Exception:
           self._clear_learning_evidence()
 
