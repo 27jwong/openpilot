@@ -16,6 +16,13 @@ from tools.ci.record_firmware import compile_commands
 
 
 class TestVehicleCollection(unittest.TestCase):
+  def test_palisade_status_ownership_runs_in_debug_release_and_lifecycle(self):
+    target = 'opendbc_repo/opendbc/safety/tests/test_palisade_stock_aol_status.py'
+    for suite in ('safety-debug', 'safety-release', 'aol-lifecycle'):
+      self.assertIn(target, targets_for(suite))
+    self.assertIn('opendbc_repo/opendbc/safety/tests/test_hyundai_blended_alpha.py::TestHyundaiBlendedAlphaAol',
+                  targets_for('safety-release'))
+
   def test_ev9_joined_main_cancel_off_and_vetoes_run_in_lifecycle_ci(self):
     self.assertIn('opendbc_repo/opendbc/safety/tests/test_ev9_set_release_callers.py', targets_for('safety-debug'))
     self.assertIn('opendbc_repo/opendbc/safety/tests/test_ev9_set_release_callers.py', targets_for('aol-lifecycle'))

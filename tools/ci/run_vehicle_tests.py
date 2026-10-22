@@ -24,6 +24,7 @@ from tools.ci import vehicle_pytest
 # Representative production callers plus their source/native refusal cases.
 # The emitted selected_test_ids record exact parametrized configurations.
 AOL_LIFECYCLE_TARGETS = (
+  'opendbc_repo/opendbc/safety/tests/test_palisade_stock_aol_status.py',
   'opendbc_repo/opendbc/safety/tests/test_ev9_set_release_callers.py',
   'openpilot/starpilot/aol/tests/test_ev6_source_deadline.py',
   "openpilot/starpilot/car/rivian/tests/test_aol_policy.py",
@@ -119,6 +120,7 @@ DEBUG_SAFETY_CLASS_TARGETS = {
 
 
 RELEASE_TARGETS = (
+  'opendbc_repo/opendbc/safety/tests/test_palisade_stock_aol_status.py',
   'openpilot/starpilot/aol/tests/test_ev6_source_deadline.py',
   "openpilot/starpilot/aol/tests/test_ev9_main_withdrawal_guards.py",
   "opendbc_repo/opendbc/safety/tests/test_ev9_combined_aol.py::TestEV9CombinedReleaseDenied",
