@@ -93,16 +93,16 @@ def test_galaxy_canonical_toggle_and_save(case):
   params.remove(KEY)
   owner = FeatureSettingsOwner(params, lambda group: True, vehicle_fingerprint=lambda: cp.carFingerprint, vehicle_params=lambda: cp)
   row = next(row for row in owner.snapshot(FeaturePage.TORQUE, parked=True, system_long=False, lateral_context=True, metric=False).rows if row.key == GUIDANCE)
-  assert row.label == 'Turn Signal Guidance' and row.value == 'Off' and row.available
+  assert row.label == 'Turn Signal Guidance' and row.value == 'On' and row.available
   request = row_change(row, 1)
   assert request is not None
   request = replace(request, confirmation=True)
   assert owner.apply(request)
-  assert params.get(KEY)['turnSignalGuidance']
+  assert not params.get(KEY)['turnSignalGuidance']
   assert not owner.apply(request)
 
 
-def test_old_preferences_remain_default_off():
+def test_old_preferences_remain_default_on():
   old = to_value(LaneChangePolicy())
   old['version'] = 4
   del old['turnSignalGuidance']
@@ -147,9 +147,38 @@ def test_actual_helper_turning_and_lane_change_regimes(case, speed, expected):
   assert result == (log.Desire.turnLeft if speed < 20 else log.Desire.none)
 
 
-def test_default_helper_preserves_existing_low_speed_lane_change(case):
+def test_explicit_off_preserves_existing_low_speed_lane_change(case):
   from openpilot.selfdrive.controls.lib.desire_helper import DesireHelper
   _, _, sm = case
-  helper = DesireHelper()
+  helper = DesireHelper(replace(LaneChangePolicy(), turn_signal_guidance=False))
   helper.update(sm['carState'], True, 0.)
   assert helper.lane_change_state == log.LaneChangeState.preLaneChange
+
+
+@pytest.mark.parametrize('version', [1, 2, 3, 4])
+def test_legacy_preferences_enable_guidance_without_writes(case, version):
+  params, cp, sm = case
+  value = to_value(LaneChangePolicy())
+  value['version'] = version
+  del value['turnSignalGuidance']
+  if version < 4:
+    del value['durationS']
+  if version < 3:
+    del value['closeGap']
+    del value['closeGapSeconds']
+  if version < 2:
+    for key in ('autoLaneChange', 'autoDelayS', 'minimumLaneWidthM'):
+      del value[key]
+  params.put(KEY, value, block=True)
+  before = params.get(KEY)
+  assert select(TurnIntent(params, cp), sm) == log.Desire.turnLeft
+  assert params.get(KEY) == before
+
+
+def test_missing_preferences_default_on_but_explicit_off_retained(case):
+  params, cp, sm = case
+  params.remove(KEY)
+  assert select(TurnIntent(params, cp), sm) == log.Desire.turnLeft
+  params.put(KEY, to_value(replace(LaneChangePolicy(), turn_signal_guidance=False)), block=True)
+  assert select(TurnIntent(params, cp), sm) == log.Desire.none
+  assert not params.get(KEY)['turnSignalGuidance']

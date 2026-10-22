@@ -28,7 +28,7 @@ class LaneChangePolicy:
   close_gap: bool = False
   close_gap_seconds: float = 0.75
   duration_s: float = 3.0 + 25.0 / 9.0
-  turn_signal_guidance: bool = False
+  turn_signal_guidance: bool = True
 
 
 @dataclass(frozen=True)
@@ -106,7 +106,7 @@ def decode(raw: bytes) -> LaneChangePolicy | None:
   duration = data.get("durationS", LaneChangePolicy().duration_s)
   if type(duration) not in (int, float) or not math.isfinite(duration) or not 3.0 <= duration <= 8.0:
     return None
-  guidance = data.get("turnSignalGuidance", False)
+  guidance = data.get("turnSignalGuidance", True)
   if type(guidance) is not bool:
     return None
   return LaneChangePolicy(enabled, finite_speed, once, auto, delay, width, close_gap, seconds, float(duration), guidance)

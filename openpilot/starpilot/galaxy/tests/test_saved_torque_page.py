@@ -92,11 +92,11 @@ class TestSavedTorquePage(unittest.TestCase):
     self.assertEqual(self.params.get('TorqueOverrideDocument')['vehicles']['HYUNDAI_IONIQ_6']['friction']['mode'], 'source')
 
 
-  def test_turn_signal_guidance_is_off_and_saves_through_galaxy(self):
+  def test_turn_signal_guidance_is_on_and_saves_off_through_galaxy(self):
     from openpilot.starpilot.lateral.lane_change_preferences import read_saved
     page = self.page()
     index = next(i for i, row in enumerate(page['rows']) if row['label'] == 'Turn Signal Guidance')
-    self.assertEqual(page['rows'][index]['value'], 'Off')
-    preview = self.gateway.preview(page['view'], index, 0, 'session', b'generation', value='On')
+    self.assertEqual(page['rows'][index]['value'], 'On')
+    preview = self.gateway.preview(page['view'], index, 0, 'session', b'generation', value='Off')
     self.assertTrue(self.gateway.confirm(preview['intent'], 'session', b'generation'))
-    self.assertTrue(read_saved(self.params).policy.turn_signal_guidance)
+    self.assertFalse(read_saved(self.params).policy.turn_signal_guidance)

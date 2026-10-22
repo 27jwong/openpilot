@@ -155,7 +155,7 @@ class LaneChangeFeature:
                       source=saved.raw, choices=("Off", "On"),
                       available=saved.valid and saved.readable and self.capability() is not None and self.authority("lane_change"),
                       reason="Use your turn signal to help the model choose a turning path at intersections.",
-                      vehicle_fingerprint=self.fingerprint(), capability=self.capability(), default_value="Off")
+                      vehicle_fingerprint=self.fingerprint(), capability=self.capability(), default_value="On")
 
   def _fresh(self, request: FeatureSettingsRequest) -> SavedLaneChange | None:
     if (not request.vehicle_fingerprint or self.fingerprint() != request.vehicle_fingerprint or
