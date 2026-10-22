@@ -12,6 +12,8 @@ class CarState(CarStateBase):
     super().__init__(CP)
     from opendbc.car.subaru.startup import selected, StartupSources
     self.startup_sources = StartupSources() if selected(CP) else None
+    from opendbc.car.subaru.avh import selected as avh_selected, AvhSources
+    self.avh_sources = AvhSources() if avh_selected(CP) else None
     can_define = CANDefine(DBC[CP.carFingerprint][Bus.pt])
     self.shifter_values = can_define.dv["Transmission"]["Gear"]
 

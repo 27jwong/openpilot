@@ -18,13 +18,13 @@ def supported(cp):
             not cp.notCar and not cp.passive and not cp.dashcamOnly and not cp.openpilotLongitudinalControl and
             cp.pcmCruise and len(cp.safetyConfigs) == 1 and
             cp.safetyConfigs[0].safetyModel == structs.CarParams.SafetyModel.subaru and
-            cp.safetyConfigs[0].safetyParam in (145, 401))
+            cp.safetyConfigs[0].safetyParam in (145, 401, 1169, 1425))
   except (AttributeError, IndexError, TypeError):
     return False
 
 
 def selected(cp):
-  return bool(supported(cp) and cp.flags & SubaruFlags.STOP_START_OFF and cp.safetyConfigs[0].safetyParam == 401)
+  return bool(supported(cp) and cp.flags & SubaruFlags.STOP_START_OFF and cp.safetyConfigs[0].safetyParam in (401, 1425))
 
 
 def prepare(cp, enabled):

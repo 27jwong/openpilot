@@ -5,6 +5,7 @@
 #include "opendbc/safety/modes/subaru_software_cruise.h"
 #include "opendbc/safety/modes/subaru_sng.h"
 #include "opendbc/safety/modes/subaru_stop_start.h"
+#include "opendbc/safety/modes/subaru_avh.h"
 
 #define SUBARU_STEERING_LIMITS_GENERATOR(steer_max, rate_up, rate_down)               \
   {                                                                                   \
@@ -173,6 +174,7 @@ static void subaru_rx_hook(const CANPacket_t *msg) {
   }
   subaru_sng_rx(msg);
   subaru_stop_start_rx(msg);
+  subaru_avh_rx(msg);
 }
 
 static bool subaru_tx_hook(const CANPacket_t *msg) {
@@ -215,6 +217,10 @@ static bool subaru_tx_hook(const CANPacket_t *msg) {
 
     if (msg->addr == 0x390U) {
       violation |= !subaru_stop_start_tx(msg);
+    }
+
+    if (msg->addr == 0x6BBU) {
+      violation |= !subaru_avh_tx(msg);
     }
 
     // steer cmd checks
@@ -272,9 +278,15 @@ static bool subaru_tx_hook(const CANPacket_t *msg) {
 }
 
 static safety_config subaru_init(uint16_t param) {
-  const bool stop_start = (param == 401U) &&
+#ifdef ALLOW_DEBUG
+  const bool avh = ((param == 1169U) || (param == 1425U)) &&
     (((unsigned int)alternative_experience == 0U) || ((unsigned int)alternative_experience == 32U));
-  const uint16_t base_param = stop_start ? 145U : param;
+#else
+  const bool avh = false;
+#endif
+  const bool stop_start = ((param == 401U) || (avh && (param == 1425U))) &&
+    (((unsigned int)alternative_experience == 0U) || ((unsigned int)alternative_experience == 32U));
+  const uint16_t base_param = (stop_start || avh) ? 145U : param;
   static const CanMsg SUBARU_TX_MSGS[] = {
     SUBARU_BASE_TX_MSGS(SUBARU_MAIN_BUS, MSG_SUBARU_ES_LKAS)
     SUBARU_COMMON_TX_MSGS(SUBARU_MAIN_BUS)
@@ -322,6 +334,16 @@ static safety_config subaru_init(uint16_t param) {
     {0x390U, SUBARU_ALT_BUS, 8, .check_relay = false},
   };
 
+  static const CanMsg SUBARU_AVH_TX_MSGS[] = {
+    SUBARU_GEN2_ANGLE_TX_MSGS(SUBARU_ALT_BUS)
+    {0x6BBU, SUBARU_ALT_BUS, 8, .check_relay = false},
+  };
+  static const CanMsg SUBARU_AVH_STOP_START_TX_MSGS[] = {
+    SUBARU_GEN2_ANGLE_TX_MSGS(SUBARU_ALT_BUS)
+    {0x6BBU, SUBARU_ALT_BUS, 8, .check_relay = false},
+    {0x390U, SUBARU_ALT_BUS, 8, .check_relay = false},
+  };
+
   const uint16_t SUBARU_PARAM_ASCENT_ALERT = 2048;
   const bool ascent_alert = param == (1U | 16U | 128U | 32U | SUBARU_PARAM_ASCENT_ALERT);
   const uint16_t SUBARU_PARAM_GEN2 = 1;
@@ -342,6 +364,7 @@ static safety_config subaru_init(uint16_t param) {
   // TODO: re-enable once more work is done on the limits
   // revert this in the PR that re-enables Subaru longitudinal: https://github.com/commaai/opendbc/pull/3689
 
+  subaru_avh_init(avh);
   subaru_stop_start_init(stop_start);
   subaru_sng_reset(((param == 8U) || (param == 520U)) &&
     (((unsigned int)alternative_experience == 0U) || ((unsigned int)alternative_experience == 32U)));
@@ -350,7 +373,7 @@ static safety_config subaru_init(uint16_t param) {
   subaru_aol_reset();
   subaru_aol_enabled = ((unsigned int)alternative_experience == 32U) &&
     ((param == 0U) || (param == 1U) || (param == 17U) || (param == 145U) ||
-     (param == 177U) || (param == 401U) || (param == 8U) || (param == 520U) || (param == 512U) || (param == 2225U));
+     avh || (param == 177U) || (param == 401U) || (param == 8U) || (param == 520U) || (param == 512U) || (param == 2225U));
   if (subaru_aol_enabled) {
     static const AolSafetyPolicy policy = {
       .reset = subaru_aol_reset,
@@ -367,7 +390,9 @@ static safety_config subaru_init(uint16_t param) {
     static RxCheck subaru_gen2_angle_rx_checks[] = {
       SUBARU_GEN2_ANGLE_RX_CHECKS()
     };
-    ret = stop_start ? BUILD_SAFETY_CFG(subaru_gen2_angle_rx_checks, SUBARU_STOP_START_TX_MSGS) :
+    ret = avh ? (stop_start ? BUILD_SAFETY_CFG(subaru_gen2_angle_rx_checks, SUBARU_AVH_STOP_START_TX_MSGS) :
+                              BUILD_SAFETY_CFG(subaru_gen2_angle_rx_checks, SUBARU_AVH_TX_MSGS)) :
+          stop_start ? BUILD_SAFETY_CFG(subaru_gen2_angle_rx_checks, SUBARU_STOP_START_TX_MSGS) :
           ascent_alert ? BUILD_SAFETY_CFG(subaru_gen2_angle_rx_checks, SUBARU_ASCENT_ALERT_TX_MSGS) :
           subaru_angle_main_bus ? BUILD_SAFETY_CFG(subaru_gen2_angle_rx_checks, SUBARU_ASCENT_ANGLE_TX_MSGS_LIST) :
                                   BUILD_SAFETY_CFG(subaru_gen2_angle_rx_checks, SUBARU_GEN2_ANGLE_TX_MSGS_LIST);
@@ -397,6 +422,7 @@ static void subaru_optional_rx(const CANPacket_t *msg) {
   subaru_software_optional_rx(msg);
   subaru_sng_rx(msg);
   subaru_stop_start_rx(msg);
+  subaru_avh_rx(msg);
 }
 
 const safety_hooks subaru_hooks = {

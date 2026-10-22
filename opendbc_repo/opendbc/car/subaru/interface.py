@@ -25,6 +25,15 @@ class CarInterface(CarInterfaceBase):
       else:
         source.frames.clear()
         source.sequential.clear()
+    avh = self.CS.avh_sources
+    if avh is not None and not self.CC.avh_startup.done:
+      can_packets = list(can_packets)
+      mono_ns = time.monotonic_ns()
+      boot_ns = time.clock_gettime_ns(getattr(time, 'CLOCK_BOOTTIME', time.CLOCK_MONOTONIC))
+      if time.monotonic_ns() - mono_ns <= 1_000_000:
+        avh.observe(can_packets, boot_ns=boot_ns, mono_ns=mono_ns)
+      else:
+        avh.blocked = True
     result = super().update(can_packets)
     from opendbc.car.subaru.sng import selected
     if selected(self.CP):

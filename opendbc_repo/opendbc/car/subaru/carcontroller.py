@@ -21,6 +21,8 @@ class CarController(CarControllerBase):
     super().__init__(dbc_names, CP)
     from opendbc.car.subaru.startup import selected, StopStartRequest
     self.stop_start = StopStartRequest() if selected(CP) else None
+    from opendbc.car.subaru.avh import selected as avh_selected, AvhStartup
+    self.avh_startup = AvhStartup() if avh_selected(CP) else None
     self.apply_torque_last = 0
     self.apply_angle_last = 0.
     self.angle_was_active = False
@@ -103,6 +105,16 @@ class CarController(CarControllerBase):
       request = self.stop_start.update(CC, CS, now_nanos / 1e9)
       if request is not None:
         can_sends.append(request)
+
+    if self.avh_startup is not None:
+      now = now_nanos / 1e9
+      source = CS.avh_sources
+      safe = (CS.out.canValid and not CS.out.canTimeout and not source.blocked and source.fresh(now) and
+              CS.out.standstill and not CS.out.gasPressed and not CS.out.steerFaultPermanent and
+              not CS.out.steerFaultTemporary and not CS.out.accFaulted and
+              CS.out.gearShifter == structs.CarState.GearShifter.park)
+      can_sends.extend(self.avh_startup.update(now, source.frames, self.avh_startup.configured(now), safe,
+                                             CC.enabled or CC.latActive or CC.longActive))
 
     # *** steering ***
     if (self.frame % self.p.STEER_STEP) == 0:

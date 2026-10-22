@@ -18,7 +18,9 @@ def qualified(cp, *, marked_only=False):
   allowed = int(SubaruFlags.HAS_BSM | SubaruFlags.SEND_INFOTAINMENT)
   expected = int(SubaruSafetyFlags.GEN2) if static & SubaruFlags.GLOBAL_GEN2 else 0
   if cp.carFingerprint == CAR.SUBARU_LEGACY_2025:
-    allowed |= int(SubaruFlags.STOP_START_OFF)
+    allowed |= int(SubaruFlags.STOP_START_OFF | SubaruFlags.AVH_STARTUP)
+    if cp.flags & SubaruFlags.AVH_STARTUP:
+      expected |= int(SubaruSafetyFlags.AVH_STARTUP)
     if cp.flags & SubaruFlags.STOP_START_OFF:
       expected |= int(SubaruSafetyFlags.STOP_START_BUTTON)
   angle = cp.carFingerprint in ANGLE_CARS

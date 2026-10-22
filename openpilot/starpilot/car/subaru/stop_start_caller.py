@@ -3,7 +3,8 @@
 
 def update(card, now_ns):
   owner = card.CI.CC.stop_start
-  if owner is None or owner.done:
+  avh = card.CI.CC.avh_startup
+  if (owner is None or owner.done) and (avh is None or avh.done):
     return
   sm = card.sm
   try:
@@ -13,4 +14,6 @@ def update(card, now_ns):
     configured = current and card.startup_panda_configured() and not any(ps.faults for ps in sm['pandaStates'])
   except (AttributeError, KeyError, TypeError, ValueError, OverflowError):
     configured = False
-  owner.observe_configured(configured, now_ns / 1e9)
+  for request in (owner, avh):
+    if request is not None:
+      request.observe_configured(configured, now_ns / 1e9)
