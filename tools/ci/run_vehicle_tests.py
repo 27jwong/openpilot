@@ -35,6 +35,7 @@ AOL_LIFECYCLE_TARGETS = (
   "openpilot/starpilot/aol/tests/test_gm_route18e_recovery.py",
   "openpilot/starpilot/aol/tests/test_stock_lateral_honda.py",
   "openpilot/starpilot/aol/tests/test_honda_reverse_join.py",
+  "openpilot/starpilot/aol/tests/test_honda_recovery_lifecycle.py",
   "openpilot/starpilot/aol/tests/test_temporary_lag_intent.py",
   "openpilot/starpilot/aol/tests/test_stock_location_recovery.py",
   "openpilot/starpilot/aol/tests/test_stock_eps_recovery.py",
@@ -54,7 +55,7 @@ AOL_LIFECYCLE_TARGETS = (
 AOL_LIFECYCLE_SCOPE = {
   "volkswagen": "stock MQB auto/manual, gateway/camera factory acquisition, MAIN/engagement/brake/Reverse joins, permanent EPS native rearm",
   "gm": "Volt/Bolt factory profiles, MAIN boot, stock/Alpha, BE/C9, pedal/regen, Cancel mappings, RES, lag withdrawal/recovery",
-  "honda": "stock Civic source/native vetoes and native-first Reverse joins",
+  "honda": "stock Civic source/native vetoes, native-first Reverse joins, and EPS-recovery/Reverse/Drive native TX lifecycle",
   "hyundai": "Ioniq stock/OP host lag plus classic/CAN-FD stock source-gap and EPS/location recovery",
   "ford_chrysler": "stock PCM-off EPS/location joins; Chrysler factory/parser/controller OFF and Cancel behavior",
   "toyota": "stock torque/angle native-ack vetoes, source-gap recovery, Lexus IS DSU actual DEBUG/RELEASE native callers",
