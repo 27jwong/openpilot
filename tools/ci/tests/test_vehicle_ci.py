@@ -1,4 +1,4 @@
-from contextlib import ExitStack, redirect_stdout
+from contextlib import ExitStack, chdir, redirect_stdout
 import io
 import json
 from pathlib import Path
@@ -253,6 +253,49 @@ class TestVehicleCollection(unittest.TestCase):
     self.assertEqual(errors, [])
     self.assertEqual(modules[0]["collected_count"], 2)
     self.assertEqual(modules[0]["uncollected_test_methods"], [])
+
+  def test_module_audit_checks_every_real_parameterized_class_and_method(self):
+    from tools.ci import vehicle_pytest
+
+    with tempfile.TemporaryDirectory() as directory, patch.object(run_vehicle_tests, "ROOT", Path(directory)):
+      path = Path(directory) / "test_parameterized_audit_fixture.py"
+      path.write_text("""import unittest
+from opendbc.testing import parameterized_class
+@parameterized_class('variant', [('A',), ('B',)])
+class TestCar(unittest.TestCase):
+  def test_first(self): pass
+  def test_second(self): pass
+""")
+      try:
+        with chdir(directory), redirect_stdout(io.StringIO()):
+          nodeids, collection_errors = vehicle_pytest.collect([path.name])
+        self.assertEqual(collection_errors, [])
+        ids = [vehicle_pytest.test_id(nodeid).split("test_parameterized_audit_fixture.", 1)[1] for nodeid in nodeids]
+        ids = ["test_parameterized_audit_fixture." + identity for identity in ids]
+        self.assertEqual(len(ids), 4)
+        # A similar name is not evidence that a class came from this template.
+        imported = sys.modules[path.stem]
+        imported.TestCar_Unrelated = type("TestCar_Unrelated", (unittest.TestCase,),
+                                         {"__module__": imported.__name__, "__test__": True})
+        _, errors = audit_interface_modules([path.name], ids)
+        self.assertEqual(errors, [])
+        missing = "test_parameterized_audit_fixture.TestCar_B.test_second"
+        modules, errors = audit_interface_modules([path.name], [identity for identity in ids if identity != missing])
+        self.assertEqual(modules[0]["uncollected_test_methods"], ["TestCar_B.test_second"])
+        self.assertTrue(errors)
+        modules, errors = audit_interface_modules([path.name], [identity for identity in ids if ".TestCar_B." not in identity])
+        self.assertEqual(modules[0]["uncollected_test_methods"], ["TestCar_B.test_first", "TestCar_B.test_second"])
+        self.assertTrue(errors)
+      finally:
+        sys.modules.pop(path.stem, None)
+
+  def test_module_audit_rejects_unrelated_class_prefix(self):
+    with tempfile.TemporaryDirectory() as directory, patch.object(run_vehicle_tests, "ROOT", Path(directory)):
+      path = Path(directory) / "test_fixture.py"
+      path.write_text("class TestCar:\n  def test_method(self): pass\n")
+      modules, errors = audit_interface_modules([path.name], ["test_fixture.TestCar_A.test_method"])
+      self.assertEqual(modules[0]["uncollected_test_methods"], ["TestCar.test_method"])
+      self.assertTrue(errors)
 
   def test_module_audit_rejects_uncollected_pytest_functions_and_methods(self):
     with tempfile.TemporaryDirectory() as directory, patch.object(run_vehicle_tests, "ROOT", Path(directory)):

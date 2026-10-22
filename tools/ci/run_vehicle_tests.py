@@ -382,6 +382,26 @@ def targets_for(suite):
   raise ValueError(f"Unknown vehicle test suite: {suite}")
 
 
+def interface_class_names(path, class_name):
+  """Resolve concrete parameterized classes without accepting unrelated name prefixes."""
+  concrete = set()
+  path = path.resolve()
+  for module in tuple(sys.modules.values()):
+    source = getattr(module, "__file__", None)
+    if not source or Path(source).resolve() != path:
+      continue
+    template = getattr(module, class_name, None)
+    if not isinstance(template, type) or template.__dict__.get("__test__") is not False:
+      continue
+    for name, candidate in vars(module).items():
+      if (isinstance(candidate, type) and candidate.__bases__ == (template,) and
+          candidate.__module__ == module.__name__ and candidate.__name__ == name and
+          name.startswith(class_name + "_") and len(name) > len(class_name) + 1 and
+          candidate.__dict__.get("__test__") is True):
+        concrete.add(name)
+  return sorted(concrete) or [class_name]
+
+
 def audit_interface_modules(targets, test_ids):
   """Expose empty modules and test declarations unsupported by unittest discovery."""
   modules, errors = [], []
@@ -395,11 +415,13 @@ def audit_interface_modules(targets, test_ids):
       if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_"):
         functions.append(node.name)
       elif isinstance(node, ast.ClassDef):
+        class_names = interface_class_names(path, node.name)
         for method in node.body:
           if isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef)) and method.name.startswith("test_"):
-            expected = f"{module}.{node.name}.{method.name}"
-            if not any(test_id == expected or test_id.startswith((expected + "_", expected + "[")) for test_id in selected):
-              missing_methods.append(f"{node.name}.{method.name}")
+            for class_name in class_names:
+              expected = f"{module}.{class_name}.{method.name}"
+              if not any(test_id == expected or test_id.startswith((expected + "_", expected + "[")) for test_id in selected):
+                missing_methods.append(f"{class_name}.{method.name}")
     if not selected:
       errors.append(f"Interface test module collected zero tests: {target}")
     for function in functions:
