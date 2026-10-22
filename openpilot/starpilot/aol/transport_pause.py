@@ -916,7 +916,15 @@ class TransportPauseFeedback:
         matched_lag and not stock_event_first):
       return False
     native = _healthy_transport_native(sm, cp, cs, self.session, now_ns)
-    if (native is None or not native.pandaInventory or not native.requestedLateral or not native.lateralAllowed or
+    # The C++ owner must send request zero when this accepted output expires.
+    # A bounded held proof can retain only its prior intent under the original
+    # source, producer, epoch, CP, inventory and native bounds above. A requested
+    # but denied axis is never this zero-request case, and no output is granted.
+    inactive_native = bool(held and self.source_retention_started_ns and native is not None and
+      not native.requestedLateral and not native.lateralAllowed and
+      not native.requestedLongitudinal and not native.longitudinalAllowed)
+    if (native is None or not native.pandaInventory or
+        (not native.requestedLateral or not native.lateralAllowed) and not inactive_native or
         (axis.desiredLongitudinal or axis.longitudinalActive) and not held and
           not (native.requestedLongitudinal and native.longitudinalAllowed) or
         native.observedMonoTime < self.lateral_native_ns or

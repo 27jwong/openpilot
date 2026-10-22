@@ -16,6 +16,13 @@ from tools.ci.record_firmware import compile_commands
 
 
 class TestVehicleCollection(unittest.TestCase):
+  def test_expired_axis_gaps_keep_real_cpp_and_vetoes_in_release_ci(self):
+    expected = {
+      'openpilot/starpilot/aol/tests/test_sonata_temporary_withdrawals.py',
+      'openpilot/starpilot/aol/tests/test_expired_axis_zero_request.py',
+    }
+    self.assertLessEqual(expected, set(targets_for('safety-release')))
+
   def test_ev6_release_ci_exercises_real_alpha_startup_and_physical_owner(self):
     expected = {
       'openpilot/starpilot/tests/test_ev6_startup.py',
