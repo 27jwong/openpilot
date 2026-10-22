@@ -57,7 +57,7 @@ export function snapshot() {
   metadata.roadColorFields = [{ id: 'path', label: 'Path', default: '#30FF9CFF' },
     { id: 'pathEdge', label: 'Path edges', default: '#00FF40FF' }, { id: 'laneLines', label: 'Lane lines', default: '#FFFFFFFF' }]
   metadata.profiles.compact.widgets.speed_limit_actions.visualInsetTop = 32
-  const document = { version: 8, roadColors: { large: {}, compact: {} }, widgetColors: { large: {}, compact: {} }, palette: Object.fromEntries(metadata.paletteFields.map((field) => [field.id, field.default])),
+  const document = { version: 9, roadColors: { large: {}, compact: {} }, widgetColors: { large: {}, compact: {} }, palette: Object.fromEntries(metadata.paletteFields.map((field) => [field.id, field.default])),
     layouts: Object.fromEntries(Object.entries(metadata.profiles).map(([id, profile]) => [id,
       Object.fromEntries(Object.entries(profile.widgets).map(([key, definition]) => [key,
         { ...definition.default, ...(definition.resizable ? { size: definition.resizable.default } : {}) }]))])) }
@@ -69,6 +69,17 @@ for (const name of ["layoutDocument", "previewDocument", "withDisplay", "ordered
   assert.equal(layoutModule[name], documentHelpers[name], name)
 
 const data = snapshot()
+const restoredCompact = copy(data)
+for (const [id, width, height, x, y] of [["max_speed", 162, 162, 0, 0], ["speed_limit", 118, 132, 330, 20], ["speed_limit_actions", 348, 54, 128, 186]]) {
+  Object.assign(restoredCompact.metadata.profiles.compact.widgets[id], { width, height, default: {x, y, enabled:true} })
+  restoredCompact.document.layouts.compact[id] = {x, y, enabled:true}
+}
+delete restoredCompact.metadata.profiles.compact.widgets.speed_limit_actions.visualInsetTop
+restoredCompact.defaults = copy(restoredCompact.document)
+assert.equal(validSnapshot(restoredCompact), true, "Restored small-UI defaults are editable")
+assert.equal(clampPlacement(restoredCompact.metadata.profiles.compact, "max_speed", 174, 25, restoredCompact.document.layouts.compact), null)
+assert.deepEqual(clampPlacement(restoredCompact.metadata.profiles.compact, "speed_limit", 330, 20, restoredCompact.document.layouts.compact), {x:330, y:20})
+assert.deepEqual(restoredCompact.document.layouts.large, data.document.layouts.large)
 const withMode = copy(data)
 const modeId = "driving_mode_descriptions"
 withMode.metadata.profiles.compact.widgets[modeId] = {

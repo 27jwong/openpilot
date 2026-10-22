@@ -67,6 +67,9 @@ class SpeedLimitWidget:
     self.pulse.update(state, now, visible=bounds is not None)
     if bounds is None:
       return
+    if self.profile == Profile.COMPACT:
+      self._compact_sign(state, bounds, now)
+      return
     shown, obs = resolve_unified_speed(state), state.speed_limit
     pending = shown.pending and not obs.automatic_adoption_pending
     elapsed = max(0., now - obs.pending_since_ns / 1e9)
@@ -101,3 +104,55 @@ class SpeedLimitWidget:
       left, top, right, bottom = x - 4, number_top - 3, x + width + 4, number_top + height + 3
       draw_line(self.profile, rl.Vector2(left, top), rl.Vector2(right, bottom), 3 if large else 2.5, color)
       draw_line(self.profile, rl.Vector2(right, top), rl.Vector2(left, bottom), 3 if large else 2.5, color)
+
+  def _compact_sign(self, state: OnroadState, bounds, now: float) -> None:
+    shown, obs = resolve_unified_speed(state), state.speed_limit
+    x, top = bounds[0] + 12, bounds[1] + 12
+    pending = shown.pending and not obs.automatic_adoption_pending
+    elapsed = max(0., now - obs.pending_since_ns / 1e9)
+    hop = -6 * math.sin(math.pi * (elapsed % 1.5) / 1.5) ** 2 if pending else 0
+    white = self.pulse.color(rl.Color(244, 247, 245, 255), now)
+    secondary = self.pulse.color(rl.Color(223, 232, 227, 255), now)
+
+    def centered(text, role, size, ink_top, color):
+      left, right = self.fonts.horizontal_ink(text, role, size)
+      a, b = self.fonts.vertical_ink(text, role, size)
+      origin = x + 59 - (left + right) / 2
+      self.fonts.draw(text, role, size, origin, ink_top - a, color)
+      return origin + left, ink_top, origin + right, ink_top + b - a
+
+    if state.appearance.use_vienna_sign:
+      cx, cy = x + 59, top + 67 + hop
+      rl.draw_circle(int(cx), int(cy), 59, rl.WHITE)
+      rl.draw_ring(rl.Vector2(cx, cy), 51, 59, 0, 360, 64, self.pulse.color(rl.Color(201, 34, 49, 255), now))
+      color = self.pulse.color(rl.Color(0, 0, 0, 255), now)
+      size = 58 if len(shown.posted_text) <= 2 else 48
+      a, b = self.fonts.vertical_ink(shown.posted_text, FontRole.BOLD, size)
+      number_top = top + 36 + hop if shown.offset_text else cy - (b - a) / 2
+      number = centered(shown.posted_text, FontRole.BOLD, size, number_top, color)
+      if shown.offset_text:
+        centered(shown.offset_text, FontRole.MEDIUM, 36, top + 81 + hop, color)
+    else:
+      rect = rl.Rectangle(x + 2, top + 2, 114, 128)
+      rl.draw_rectangle_rounded(rect, .1, 16, rl.Color(10, 17, 19, 230))
+      rl.draw_rectangle_rounded_lines_ex(rect, .1, 16, 2, white)
+      for label, y in (('SPEED', top + 11), ('LIMIT', top + 27)):
+        centered(label, FontRole.SEMI_BOLD, 20, y, white)
+      number = centered(shown.posted_text, FontRole.BOLD, 58, top + (50 if shown.offset_text else 61) + hop, white)
+      if shown.offset_text:
+        centered(shown.offset_text, FontRole.MEDIUM, 36, top + 98 + hop, secondary)
+    if pending:
+      target = displayed_adjusted_limit_mps(obs)
+      if target is not None and state.speed_mps is not None and target != state.speed_mps:
+        ax, ay = ((x + 105, top + 49 + hop) if state.appearance.use_vienna_sign else (x + 108, top + 23))
+        arrow_color = color if state.appearance.use_vienna_sign else white
+        direction = -1 if target > state.speed_mps else 1
+        tip = rl.Vector2(ax, ay + direction * 6)
+        draw_line(self.profile, rl.Vector2(ax, ay - direction * 6), tip, 2, arrow_color)
+        for dx in (-3, 3):
+          draw_line(self.profile, tip, rl.Vector2(ax + dx, tip.y - direction * 4), 2, arrow_color)
+    if obs.driver_override_active:
+      color = rl.Color(197, 163, 255, 240)
+      left, top, right, bottom = number
+      draw_line(self.profile, rl.Vector2(left - 3, top - 2), rl.Vector2(right + 3, bottom + 2), 2.5, color)
+      draw_line(self.profile, rl.Vector2(right + 3, top - 2), rl.Vector2(left - 3, bottom + 2), 2.5, color)

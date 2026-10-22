@@ -45,9 +45,15 @@ def test_approved_limit_offset_and_action_sizes_fit_actual_fonts():
         large = profile == Profile.LARGE
         limit_size, offset_size = (70, 46) if large else (58, 36)
         for value, offset in (('65', '+5'), ('120', '+10'), ('130', '-10'), ('145', '-137')):
-          width = (fonts.measure(value, FontRole.BOLD, limit_size).width +
-                   fonts.measure(offset, FontRole.MEDIUM, offset_size).width + (40 if large else 31))
+          a, b = fonts.horizontal_ink(value, FontRole.BOLD, limit_size)
+          value_width = b - a
+          a, b = fonts.horizontal_ink(offset, FontRole.MEDIUM, offset_size)
+          offset_width = b - a
+          width = value_width + offset_width + 40 if large else max(value_width, offset_width) + 20
           assert width <= LIMIT_RECTS[profile][2]
+        action_width = 272 if large else 168
+        assert all(fonts.measure(label, FontRole.MEDIUM, ACTION_TEXT[profile][0]).width + 4 <= action_width
+                   for label in ('Accept', 'Decline'))
         ppi = (2160**2 + 1080**2)**.5 / 6 if large else 300
         for text, role, size, minimum in (('65', FontRole.BOLD, limit_size, 2.8),
                                          ('+5', FontRole.MEDIUM, offset_size, 2.0),
@@ -191,13 +197,17 @@ def test_native_captions_offsets_and_bounce_fit_their_touch_targets():
               hud._set_speed_alpha.x = 1.
               hud.render_max_speed(current)
               hud._speed_limit_sign(current)
-          ink = {call[0]: (call[3], call[4]+fonts.vertical_ink(call[0], call[1], call[2])[0],
-                          call[3]+fonts.measure(call[0], call[1], call[2]).width,
+          ink = {call[0]: (call[3]+fonts.horizontal_ink(call[0], call[1], call[2])[0], call[4]+fonts.vertical_ink(call[0], call[1], call[2])[0],
+                          call[3]+fonts.horizontal_ink(call[0], call[1], call[2])[1],
                           call[4]+fonts.vertical_ink(call[0], call[1], call[2])[1])
                  for call in calls if call[-1].a == 255}
-          assert ink['SET'][1] == ink['LIMIT'][1]
-          assert ink['120'][3] == ink['+10'][3]
-          assert ink['120'][2] < ink['+10'][0]
+          if profile == Profile.LARGE:
+            assert ink['SET'][1] == ink['LIMIT'][1]
+            assert ink['120'][3] == ink['+10'][3]
+            assert ink['120'][2] < ink['+10'][0]
+          else:
+            assert 'SET' not in ink and 'SPEED' in ink
+            assert ink['120'][3] < ink['+10'][1]
           bounds = speed_limit_bounds(profile, current)
           assert bounds is not None
           left, top, right, bottom = bounds
@@ -211,7 +221,7 @@ def test_native_captions_offsets_and_bounce_fit_their_touch_targets():
       rl.close_window()
 
 
-def test_compact_preview_sprite_keeps_the_caption_arrow_and_override_cross():
+def test_compact_preview_sprite_keeps_the_sign_offset_arrow_and_override_cross():
   import json
   from unittest.mock import patch
   from openpilot.starpilot.ui.layout_preview_renderer import _Canvas, _straight_rgba, sample_state
@@ -220,7 +230,7 @@ def test_compact_preview_sprite_keeps_the_caption_arrow_and_override_cross():
     rl.init_window(128, 128, 'SLC preview crop fixture')
   canvas = _Canvas(Profile.COMPACT)
   try:
-    for y, scene in product((18, 0), ('slc_pending', 'slc_retained')):
+    for y, scene in product((20, 0), ('slc_pending', 'slc_retained')):
       document = default_document()
       document['layouts']['compact']['speed_limit']['y'] = y
       with patch.dict('openpilot.starpilot.ui.layout_preview_renderer.RUNTIME_PREVIEW_WIDGETS', compact=('speed_limit',)):
@@ -229,7 +239,7 @@ def test_compact_preview_sprite_keeps_the_caption_arrow_and_override_cross():
         slot = json.loads(sheet.info['starpilot-widget-art'])['sprites']['speed_limit']
         sprite = sheet.crop((slot['x'], slot['y'], slot['x']+slot['width'], slot['y']+slot['height']))
         rebuilt = Image.new('RGBA', Profile.COMPACT.size)
-        rebuilt.paste(sprite, (round(158+slot['offsetX']), round(y+slot['offsetY'])))
+        rebuilt.paste(sprite, (round(330+slot['offsetX']), round(y+slot['offsetY'])))
       image = rl.load_image_from_texture(canvas.target.texture)
       try:
         rl.image_flip_vertical(image)
@@ -237,12 +247,56 @@ def test_compact_preview_sprite_keeps_the_caption_arrow_and_override_cross():
       finally:
         rl.unload_image(image)
       assert np.array_equal(direct[..., 3], np.asarray(rebuilt)[..., 3])
-      if y:
-        assert slot['offsetY'] < 0 and np.asarray(sprite)[:round(-slot['offsetY']), :, 3].any()
-      if scene == 'slc_retained':
-        assert slot['offsetX'] < 0 and np.asarray(sprite)[:, :round(-slot['offsetX']), 3].any()
+      assert slot['offsetX'] == slot['offsetY'] == 0
+      assert (slot['width'], slot['height']) == (118, 132)
   finally:
     canvas.close()
+    if owns_context:
+      rl.close_window()
+
+
+def test_compact_balanced_stack_uses_mock_sizes_and_contains_all_ink():
+  from unittest.mock import patch
+  from openpilot.starpilot.ui.speed_limit_widget import SpeedLimitWidget
+  from openpilot.starpilot.ui.tests.test_unified_speed_native import state
+  owns_context = not rl.is_window_ready()
+  if owns_context:
+    rl.init_window(128, 128, 'C4 contained sign fixture')
+  try:
+    with BitmapFonts(Profile.COMPACT, default_font_directory()) as fonts:
+      widget = SpeedLimitWidget(fonts, Profile.COMPACT)
+      for vienna, (posted, offset), elapsed, (x, y) in product(
+          (False, True), ((65, 5), (120, 10), (130, -10), (145, -137), (55, 0)),
+          (0, 750_000_000, 1_500_000_000), ((330, 20), (100, 0), (358, 108))):
+        current = state(observed_ns=10_000_000_000+elapsed)
+        current.customization['layouts']['compact']['speed_limit'].update(x=x, y=y)
+        current = replace(current, appearance=replace(current.appearance, use_vienna_sign=vienna),
+          speed_limit=replace(current.speed_limit, speed_limit_mps=posted/3.6,
+            pending_speed_limit_mps=posted/3.6, presentation_adjusted_limit_mps=(posted+offset)/3.6))
+        calls = []
+        with patch.object(fonts, 'draw', lambda *args, sink=calls: sink.append(args)):
+          widget.render(current)
+        ink = []
+        for text, role, size, left, top, _ in calls:
+          a, b = fonts.horizontal_ink(text, role, size)
+          c, d = fonts.vertical_ink(text, role, size)
+          box = left+a, top+c, left+b, top+d
+          if vienna:
+            hop = -6 if elapsed == 750_000_000 else 0
+            cx, cy = x+59, y+67+hop
+            assert all((px-cx)**2+(py-cy)**2 < 59**2 for px, py in product((box[0], box[2]), (box[1], box[3])))
+          else:
+            assert x+7 <= box[0] < box[2] <= x+111
+            assert y+7 <= box[1] < box[3] <= y+125
+          ink.append((text, box))
+          if role == FontRole.BOLD:
+            assert size == (48 if vienna and len(text) > 2 else 58)
+          elif role == FontRole.MEDIUM:
+            assert size == 36
+        for index, (_, a) in enumerate(ink):
+          for _, b in ink[index+1:]:
+            assert not (a[0] < b[2] and a[2] > b[0] and a[1] < b[3] and a[3] > b[1])
+  finally:
     if owns_context:
       rl.close_window()
 
@@ -254,9 +308,9 @@ def test_v5_geometry_migrates_and_keeps_custom_actions_independent():
   doc['layouts']['large']['cruise_limits'].update(x=1550, y=638)
   doc['layouts']['large']['speed_limit_actions'].update(x=1550, y=954)
   migrated = validate_document(doc)
-  assert migrated['version'] == 8
-  assert migrated['layouts']['large']['cruise_limits'] == {'x': 1342, 'y': 638, 'enabled': True}
-  assert migrated['layouts']['large']['speed_limit_actions'] == {'x': 1254, 'y': 890, 'enabled': True}
+  assert migrated['version'] == 9
+  assert migrated['layouts']['large']['cruise_limits'] == {'x': 1550, 'y': 638, 'enabled': True}
+  assert migrated['layouts']['large']['speed_limit_actions'] == {'x': 1550, 'y': 890, 'enabled': True}
   assert migrated['speedSources'] is True
   assert doc['layouts']['large']['cruise_limits']['x'] == 1550
   assert validate_document(migrated) == migrated

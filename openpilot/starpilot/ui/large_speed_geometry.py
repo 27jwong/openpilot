@@ -12,12 +12,12 @@ GAP = 8
 SOURCE_ROW_HEIGHT = 76
 PADDING = 24
 
-LIMIT_RECTS = {'large': (272, 94, 292, 124), 'compact': (158, 10, 264, 82)}
+LIMIT_RECTS = {'large': (272, 94, 292, 124), 'compact': (330, 20, 118, 132)}
 ACTION_BOUNDS = {
   'large': ((100, 248, 372, 408), (404, 248, 676, 408)),
-  'compact': ((16, 118, 224, 222), (248, 118, 456, 222)),
+  'compact': ((128, 182, 296, 240), (308, 182, 476, 240)),
 }
-ACTION_TEXT = {'large': (64, 320), 'compact': (50, 146)}
+ACTION_TEXT = {'large': (64, 320), 'compact': (48, 213)}
 
 
 def card_height(mode):

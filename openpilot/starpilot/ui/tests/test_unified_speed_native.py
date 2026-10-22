@@ -19,7 +19,7 @@ from openpilot.starpilot.ui.unified_speed_presentation import displayed_limit_mp
 @pytest.fixture(autouse=True)
 def drawing(monkeypatch):
   calls = {}
-  for name in ('draw_rectangle_rounded_lines_ex', 'draw_rectangle_rounded', 'draw_line_ex', 'draw_circle', 'draw_ring'):
+  for name in ('draw_rectangle_rounded_lines_ex', 'draw_rectangle_rounded', 'draw_line_ex', 'draw_circle', 'draw_ring', 'draw_circle_gradient'):
     calls[name] = Mock()
     monkeypatch.setattr(rl, name, calls[name])
   monkeypatch.setattr('openpilot.starpilot.ui.onroad_large_widgets.draw_control_card', Mock())
@@ -38,6 +38,7 @@ def state(**changes):
 
 def fonts(profile=Profile.LARGE):
   return SimpleNamespace(profile=profile, draw=Mock(), vertical_ink=lambda text, role, size: (0, size * .75),
+                         horizontal_ink=lambda text, role, size: (0, len(text) * size * .5),
                          measure=lambda text, role, size: SimpleNamespace(width=len(text) * size * .5, height=size))
 
 
@@ -65,6 +66,21 @@ def test_both_renderers_show_small_latest_sign_and_offset(profile):
     CompactHudRenderer(font, Mock())._speed_limit_sign(current)
   texts = [call.args[0] for call in foreground_calls(font.draw)]
   assert '50' in texts and '+5' in texts and '40' not in texts
+
+
+@pytest.mark.parametrize('metric', [False, True])
+@pytest.mark.parametrize('vienna', [False, True])
+@pytest.mark.parametrize('offset', [None, 0., .01, -.01])
+def test_compact_sign_omits_missing_zero_and_rounded_zero_offsets(metric, vienna, offset):
+  current = state(metric=metric)
+  factor = 3.6 if metric else 2.2369362921
+  current = replace(current, appearance=replace(current.appearance, use_vienna_sign=vienna),
+    speed_limit=SpeedLimitObservation(ObservationKind.VALID, 'map', 65 / factor, offset_mps=offset,
+                                    action_enabled=True))
+  assert resolve_unified_speed(current).offset_text is None
+  font = fonts(Profile.COMPACT)
+  CompactHudRenderer(font, Mock())._speed_limit_sign(current)
+  assert [call.args[0] for call in font.draw.call_args_list] == (['65'] if vienna else ['SPEED', 'LIMIT', '65'])
 
 
 @pytest.mark.parametrize('profile', list(Profile))
@@ -96,17 +112,35 @@ def test_only_set_speed_override_draws_cross(profile, drawing):
   assert len(foreground_calls(drawing['draw_line_ex'])) == 2
 
 
-def test_compact_set_speed_stays_visible_while_cruise_is_active():
+def test_compact_set_speed_fades_after_adjustment_and_reappears_on_change():
   renderer = CompactHudRenderer(fonts(), Mock())
   current = state(drive_frame=1)
   for now in range(10_000_000_000, 20_000_000_000, 100_000_000):
     alpha = renderer._set_speed_opacity(current, now)
-  assert alpha > .99
+  assert alpha < .01
+  changed = replace(current, cruise_kph=current.cruise_kph + 10)
+  assert renderer._set_speed_opacity(changed, 20_000_000_000) < .01
+  assert renderer._set_speed_opacity(changed, 20_020_000_000) > .01
   assert renderer._set_speed_opacity(replace(current, longitudinal_active=False), 20_000_000_000) == 0
 
 
-@pytest.mark.parametrize('profile', list(Profile))
-def test_limit_keeps_a_unit_when_set_speed_is_hidden(profile):
+def test_compact_max_restores_dinish_number_label_and_shadow(drawing):
+  from openpilot.starpilot.ui.presentation import FontRole, font_filename
+  font = fonts(Profile.COMPACT)
+  hud = CompactHudRenderer(font, Mock())
+  current = state(drive_frame=1, cruise_kph=80)
+  hud.render_max_speed(current)
+  hud.render_max_speed(replace(current, observed_ns=current.observed_ns + 20_000_000))
+  assert [(call.args[0], call.args[1]) for call in font.draw.call_args_list] == [
+    ('80', FontRole.SET_SPEED), ('MAX', FontRole.SEMI_BOLD)]
+  assert font_filename(Profile.COMPACT, FontRole.SET_SPEED) == 'DINish-Speed.fnt'
+  assert font.draw.call_args_list[0].args[3:5] == (17, -4)
+  assert font.draw.call_args_list[1].args[2:5] == (36, 25, 109)
+  drawing['draw_circle_gradient'].assert_called_once()
+
+
+def test_large_limit_keeps_a_unit_when_set_speed_is_hidden():
+  profile = Profile.LARGE
   current = state()
   current.customization['showMaxSpeed'] = False
   current.customization['layouts']['compact']['max_speed']['enabled'] = False

@@ -7,7 +7,7 @@ from pathlib import Path
 from openpilot.starpilot.system.android_auto.identity import DATA_DIR
 from openpilot.starpilot.system.android_auto.display_profile import screen_geometry
 from openpilot.starpilot.ui.onroad_customization import (CEM_GAUGE_WIDGET, CLOCK_WIDGET, JETLINK_WIDGET, MODE_WIDGET,
-                                                         STOPPED_TIMER_WIDGET, CEM_GAUGE_FRAME, CEM_GAUGE_INSET, MAP_MIN_SIZE, MAP_OPACITY, NAV_CARD_SIZE,
+                                                         STOPPED_TIMER_WIDGET, CEM_GAUGE_FRAME, CEM_GAUGE_INSET, MAP_MIN_SIZE, NAV_CARD_SIZE,
                                                          SPEED_ALIGNMENTS, customization_metadata, validate_map_box, validate_widget_order)
 from openpilot.starpilot.ui.onroad_stopped_timer import timer_size
 from openpilot.starpilot.ui.onroad_torque_geometry import maximum_footprint
@@ -204,7 +204,7 @@ def validate_layout_for_viewport(value, viewport, *, _legacy_geometry=False):
     result = validate_layout_for_viewport(value, viewport, _legacy_geometry=True)
     card, actions = result['widgets']['cruise_limits'], result['widgets']['speed_limit_actions']
     gap = actions['y'] - card['y']
-    migrate_speed_layout(result['widgets'], 'large', metadata['bounds'], gap if gap in (372, 425) else 232)
+    migrate_speed_layout(result['widgets'], 'large', metadata['bounds'], gap if gap in (372, 425) else 232, widgets=metadata['widgets'])
     result['version'] = 2
     return validate_layout_for_viewport(result, viewport)
   fields = {'version', 'canvas', 'widgets'}
@@ -313,7 +313,7 @@ def validate_layout_for_viewport(value, viewport, *, _legacy_geometry=False):
     if value['version'] < 4:
       card, actions = result['widgets']['cruise_limits'], result['widgets']['speed_limit_actions']
       gap = actions['y'] - card['y']
-      migrate_speed_layout(result['widgets'], 'large', bounds, gap if gap in (232, 492) else 232)
+      migrate_speed_layout(result['widgets'], 'large', bounds, gap if gap in (232, 492) else 232, widgets=metadata['widgets'])
     result['version'] = 4
   if len(json.dumps(result, separators=(',', ':'), allow_nan=False).encode()) > MAX_BYTES:
     raise ValueError('Projection layout too large')
