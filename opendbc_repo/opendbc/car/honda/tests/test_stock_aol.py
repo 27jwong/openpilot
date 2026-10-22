@@ -31,7 +31,7 @@ def final_cp(identity, alpha=False, release=False, *, hybrid=False):
 def test_actual_factory_admission_and_marker(identity, alpha, release, hybrid):
   cp = final_cp(identity, alpha, release, hybrid=hybrid)
   assert bool(cp.flags & HondaFlags.HYBRID) == hybrid
-  expected = not (identity in CLASSIC_BOSCH and cp.openpilotLongitudinalControl)
+  expected = True
   assert qualified(cp) == expected
   if not expected:
     return
@@ -46,7 +46,12 @@ def test_actual_factory_admission_and_marker(identity, alpha, release, hybrid):
   assert qualified(cp, marked_only=True)
   assert policy_for(cp).ordinary_axis_ack_required
   assert cp.alternativeExperience == 32
-  assert cp.safetyConfigs[0].safetyParam == (260 if identity == CAR.HONDA_ODYSSEY_TWN else before["safetyConfigs"][0]["safetyParam"])
+  expected_word = before["safetyConfigs"][0]["safetyParam"]
+  if identity == CAR.HONDA_ODYSSEY_TWN:
+    expected_word |= 256
+  if identity in CLASSIC_BOSCH and cp.openpilotLongitudinalControl:
+    expected_word |= 2080
+  assert cp.safetyConfigs[0].safetyParam == expected_word
   assert cp.openpilotLongitudinalControl == before["openpilotLongitudinalControl"]
   assert cp.pcmCruise == before["pcmCruise"]
   assert native_accepts_cp(cp, cp.safetyConfigs[0].safetyModel.raw, cp.safetyConfigs[0].safetyParam)

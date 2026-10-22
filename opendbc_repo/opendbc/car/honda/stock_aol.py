@@ -30,7 +30,7 @@ CANFD_STOCK = frozenset((CAR.HONDA_CRV_6G, CAR.HONDA_PILOT_4G,
   CAR.HONDA_PASSPORT_4G, CAR.ACURA_MDX_4G_MMR, CAR.ACURA_TLX_2G_MMR))
 ALT_RADAR_STOCK = frozenset((CAR.ACURA_RDX_3G_MMR, CAR.HONDA_ODYSSEY_5G_MMR,
   CAR.ACURA_TLX_2G, CAR.ACURA_MDX_4G))
-BOSCH_WORDS = frozenset((0, 1, 8, 9, 10, 11, 16, 17, 80, 81, 512, 513, 1058, 1059, 1570, 1571))
+BOSCH_WORDS = frozenset((0, 1, 8, 9, 10, 11, 16, 17, 80, 81, 512, 513, 1058, 1059, 1570, 1571, 2082, 2083, 2211))
 NIDEC_WORDS = frozenset((0, 4, 260, 544, 548, 804))
 MANUAL_SELECTION_PORTS = CLASSIC_BOSCH | NIDEC | RADARLESS | CANFD_STOCK | ALT_RADAR_STOCK | {CAR.HONDA_ACCORD_11G}
 
@@ -102,7 +102,13 @@ def qualified(cp, *, marked_only=False):
             safety.safetyModel == _HONDA_NIDEC and safety.safetyParam == expected)
   if fingerprint in CLASSIC_BOSCH and flags & _BOSCH and not flags & _BOSCH_RADARLESS:
     expected = int(bool(flags & _BOSCH_ALT_BRAKE))
-    return (cp.pcmCruise and not cp.openpilotLongitudinalControl and
+    if cp.openpilotLongitudinalControl:
+      expected |= int(HondaSafetyFlags.BOSCH_LONG)
+      if fingerprint == CAR.ACURA_RDX_3G:
+        expected |= int(HondaSafetyFlags.RDX_HIGH_GAS)
+      if cp.alternativeExperience == 32:
+        expected |= int(HondaSafetyFlags.CLASSIC_LONG_AOL | HondaSafetyFlags.AOL_BOSCH_LONG)
+    return (bool(cp.pcmCruise) == (not cp.openpilotLongitudinalControl) and
             safety.safetyModel == _HONDA_BOSCH and safety.safetyParam == expected)
   if fingerprint in RADARLESS and flags & _BOSCH_RADARLESS:
     expected = 8 | int(bool(flags & _BOSCH_ALT_BRAKE)) | (2 if cp.openpilotLongitudinalControl else 0)

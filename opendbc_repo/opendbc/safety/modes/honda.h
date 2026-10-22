@@ -515,7 +515,7 @@ static safety_config honda_bosch_init(uint16_t param) {
 #ifdef ALLOW_DEBUG
   const uint16_t HONDA_PARAM_BOSCH_LONG = 2;
   honda_bosch_long = GET_FLAG(param, HONDA_PARAM_BOSCH_LONG);
-  honda_rdx_high_gas = (param == 131U) || (param == 163U);
+  honda_rdx_high_gas = (param == 131U) || (param == 163U) || (param == 2211U);
   aol_honda_bosch_long = honda_bosch_long && ((param == 34U) || (param == 35U) || (param == 163U));
 #endif
   if (aol_honda_bosch_long) {

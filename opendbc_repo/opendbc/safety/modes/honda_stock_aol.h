@@ -238,7 +238,7 @@ static safety_config honda_stock_aol_configure(uint16_t param, bool nidec, bool 
   bool valid = nidec ? ((param == 0U) || (param == 4U) || (param == 260U) || (param == 544U) || (param == 548U) || (param == 804U)) :
     ((param == 0U) || (param == 1U) || (param == 8U) || (param == 9U) || (param == 16U) || (param == 17U) || (param == 80U) || (param == 81U) || (param == 512U) || (param == 513U));
 #ifdef ALLOW_DEBUG
-  valid = valid || (!nidec && ((param == 10U) || (param == 11U) || (param == 1058U) || (param == 1059U) || (param == 1570U) || (param == 1571U)));
+  valid = valid || (!nidec && ((param == 10U) || (param == 11U) || (param == 1058U) || (param == 1059U) || (param == 1570U) || (param == 1571U) || (param == 2082U) || (param == 2083U) || (param == 2211U)));
 #endif
   honda_stock_aol_set_flag(HONDA_STOCK_ENABLED, valid && ((unsigned int)alternative_experience == 32U) &&
     (ret.rx_checks_len >= 3) && (ret.rx_checks_len <= 6) && (pt_bus <= 1U));

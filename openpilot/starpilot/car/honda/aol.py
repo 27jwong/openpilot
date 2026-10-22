@@ -1,5 +1,5 @@
 from opendbc.car.structs import car
-from opendbc.car.honda.stock_aol import qualified as qualified_stock, BOSCH_WORDS, NIDEC_WORDS, temporary_restriction, ALT_RADAR_STOCK
+from opendbc.car.honda.stock_aol import qualified as qualified_stock, BOSCH_WORDS, NIDEC_WORDS, temporary_restriction, ALT_RADAR_STOCK, CLASSIC_BOSCH
 from openpilot.starpilot.car.honda.stock_intent import HondaStockCardIntent
 from opendbc.car.honda.values import CAR, HondaFlags, HondaSafetyFlags
 from openpilot.starpilot.aol.policy import AolVehiclePolicy
@@ -39,6 +39,8 @@ def policy_for(CP) -> AolVehiclePolicy:
     safety_addition = 256 if CP.carFingerprint == CAR.HONDA_ODYSSEY_TWN else 0
     if CP.flags & HondaFlags.GAS_INTERCEPTOR:
       safety_addition |= int(HondaSafetyFlags.NIDEC_PEDAL_AOL)
+    if CP.carFingerprint in CLASSIC_BOSCH and CP.openpilotLongitudinalControl:
+      safety_addition |= int(HondaSafetyFlags.CLASSIC_LONG_AOL | HondaSafetyFlags.AOL_BOSCH_LONG)
     if CP.carFingerprint in ALT_RADAR_STOCK:
       if CP.carFingerprint == CAR.ACURA_MDX_4G:
         safety_addition |= int(HondaSafetyFlags.STOCK_TJA)
@@ -87,6 +89,8 @@ def create_intent(CP, settings):
     safety_addition = 256 if CP.carFingerprint == CAR.HONDA_ODYSSEY_TWN else 0
     if CP.flags & HondaFlags.GAS_INTERCEPTOR:
       safety_addition |= int(HondaSafetyFlags.NIDEC_PEDAL_AOL)
+    if CP.carFingerprint in CLASSIC_BOSCH and CP.openpilotLongitudinalControl:
+      safety_addition |= int(HondaSafetyFlags.CLASSIC_LONG_AOL | HondaSafetyFlags.AOL_BOSCH_LONG)
     if CP.carFingerprint in ALT_RADAR_STOCK:
       if CP.carFingerprint == CAR.ACURA_MDX_4G:
         safety_addition |= int(HondaSafetyFlags.STOCK_TJA)

@@ -42,6 +42,8 @@ AOL_LIFECYCLE_TARGETS = (
   "openpilot/starpilot/aol/tests/test_stock_lateral_honda.py",
   "openpilot/starpilot/aol/tests/test_honda_reverse_join.py",
   "openpilot/starpilot/aol/tests/test_honda_recovery_lifecycle.py",
+  "openpilot/starpilot/aol/tests/test_honda_classic_alpha_lifecycle.py",
+  "opendbc_repo/opendbc/car/honda/tests/test_classic_alpha_aol_parity.py",
   "opendbc_repo/opendbc/car/honda/tests/test_manual_honda_port_aol.py",
   "opendbc_repo/opendbc/car/honda/tests/test_selected_honda_topology.py",
   "openpilot/starpilot/aol/tests/test_honda_pedal_lifecycle.py",
