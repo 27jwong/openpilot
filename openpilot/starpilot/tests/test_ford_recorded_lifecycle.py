@@ -22,3 +22,17 @@ def test_route24_accelerator_at_engagement_full_brake_stock_off_fault_reverse_an
 @pytest.mark.parametrize('hands_free', [False, True])
 def test_route2a_new_engagement_after_previous_native_session_retains_aol_on_stock_off(ford_joined, monkeypatch):
   run_actual_producer(ford_joined, monkeypatch, scenario='route2a')
+
+
+@pytest.mark.parametrize('identity', [(CAR.FORD_MUSTANG_MACH_E_MK1, 18)])
+@pytest.mark.parametrize('alpha', [False])
+@pytest.mark.parametrize('hands_free', [False, True])
+def test_ford_main_only_rearm_after_previous_session_uses_current_feedback(ford_joined, monkeypatch):
+  run_actual_producer(ford_joined, monkeypatch, scenario='route2a-main')
+
+
+@pytest.mark.parametrize('identity', [(CAR.FORD_MUSTANG_MACH_E_MK1, 18)])
+@pytest.mark.parametrize('alpha', [False])
+@pytest.mark.parametrize('hands_free', [False, True])
+def test_fault_at_main_edge_cannot_replay_after_native_health_recovers(ford_joined, monkeypatch):
+  run_actual_producer(ford_joined, monkeypatch, scenario='route2a-main-fault')

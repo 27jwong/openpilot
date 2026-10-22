@@ -230,7 +230,7 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
 
       local.setattr(sd.sm, 'update_msgs', location_update)
 
-      def step(*, engaged=False, brake=False, reverse=False, warmup=False, fault=None, main_off=False):
+      def step(*, engaged=False, brake=False, reverse=False, warmup=False, fault=None, main_off=False, availability_transition=False):
         nonlocal steps, warmup_waits, qualified_samples, active_lat_frames, active_long_frames
         steps += 1
         now[0] = 10_000_000_000 + steps * 10_000_000
@@ -350,7 +350,7 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
           assert state.canValid and not state.canTimeout
         qualified_samples += 1
         parsed_before_producer = state.to_dict()
-        assert (main_off or state.cruiseState.available) and not state.steeringPressed
+        assert (main_off or state.cruiseState.available or availability_transition and not state.cruiseState.enabled) and not state.steeringPressed
         assert bool(state.gasPressed) == (fault == 'gas')
         axis, sd_state, command = drive(
           steps,
@@ -392,7 +392,7 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
               active = bool(long_parser.vl['ACCDATA']['Cmbb_B_Enbl'])
               assert active == bool(command.longActive)
               active_long_frames += int(active)
-        if scenario in ('display', 'route24', 'route24-mixed-eps'):
+        if scenario in ('display', 'route24', 'route24-mixed-eps', 'route2a', 'route2a-main', 'route2a-main-fault'):
           ui = [f for f in published['sendcan'].sendcan if f.address in (0x3D8, 0x18A)]
           owns = all(safety.safety_fwd_hook(2, address) == -1 for address in (0x3D8, 0x18A))
           assert host.CP.carFingerprint != CAR.FORD_MUSTANG_MACH_E_MK1 or not ui or owns, (
@@ -429,9 +429,9 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
       assert 0 <= warmup_waits < 120 and qualified_samples >= 100
       assert host.ci_initialized  # Read-only witness: real controls_update completed init.
       assert not host.aol_card_intent.allowed_latch
-      assert scenario in ('route24', 'route24-mixed-eps', 'route2a')
-      if scenario in ('route24', 'route24-mixed-eps', 'route2a'):
-        mixed_eps = scenario in ('route24-mixed-eps', 'route2a')
+      assert scenario in ('route24', 'route24-mixed-eps', 'route2a', 'route2a-main', 'route2a-main-fault')
+      if scenario in ('route24', 'route24-mixed-eps', 'route2a', 'route2a-main', 'route2a-main-fault'):
+        mixed_eps = scenario in ('route24-mixed-eps', 'route2a', 'route2a-main', 'route2a-main-fault')
         assert host.CP.flags == 3 and not host.CP.openpilotLongitudinalControl
         for _ in range(30):
           step(fault='gas')
@@ -486,6 +486,19 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
           state, axis, sd_state, command = step(main_off=True)
         assert not state.cruiseState.available
         assert not host.aol_card_intent.allowed_latch and not command.latActive and not command.longActive
+        if scenario in ('route2a-main', 'route2a-main-fault'):
+          failed_edge = scenario == 'route2a-main-fault'
+          for transition_tick in range(30):
+            state, axis, sd_state, command = step(fault='rx-quality' if failed_edge else None, availability_transition=transition_tick < 10)
+          if failed_edge:
+            for _ in range(40):
+              state, axis, sd_state, command = step()
+          assert state.cruiseState.available and not state.cruiseState.enabled
+          assert host.aol_card_intent.allowed_latch == (not failed_edge)
+          assert command.latActive == (not failed_edge) and not command.longActive
+          for _ in range(30):
+            state, axis, sd_state, command = step(main_off=True)
+          assert not host.aol_card_intent.allowed_latch and not command.latActive and not command.longActive
         return
   finally:
     native.safety = safety
