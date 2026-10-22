@@ -1,0 +1,79 @@
+from opendbc.car import structs
+from opendbc.car.volkswagen.stock_aol import qualified, temporary_restriction, AOL_WORD, MANUAL_WORD, AOL_WORDS
+from openpilot.starpilot.aol.intent import AolCardIntent, AOL_TOGGLE, ButtonType
+from openpilot.starpilot.aol.policy import AolVehiclePolicy
+
+
+def policy_for(cp):
+  if not qualified(cp):
+    return AolVehiclePolicy()
+  word = AOL_WORD | (MANUAL_WORD if cp.transmissionType == structs.CarParams.TransmissionType.manual else 0)
+  return AolVehiclePolicy(intent_supported=True, settings_supported=True, runtime_supported=True,
+                         normal_runtime_supported=True, ordinary_axis_ack_required=qualified(cp, marked_only=True),
+                         explicit_latch=True, lkas_button_supported=False, safety_param_addition=word,
+                         alternative_experience_addition=32)
+
+
+def native_profile_supported(model, param):
+  return model == int(structs.CarParams.SafetyModel.volkswagen) and param in AOL_WORDS
+
+
+def native_accepts_cp(cp, model, param):
+  return qualified(cp, marked_only=True) and native_profile_supported(model, param) and param == cp.safetyConfigs[0].safetyParam
+
+
+def native_latch_rejected(cp, native):
+  return qualified(cp, marked_only=True) and native.requestedLateral and not native.lateralAllowed
+
+
+def ordinary_axis_request_allowed(cp, state):
+  return qualified(cp, marked_only=True) and state.canValid and not state.canTimeout and not state.steerFaultPermanent
+
+
+def retain_on_native_denial(cp, native, state):
+  return temporary_restriction(cp, state)
+
+
+class VolkswagenStockCardIntent(AolCardIntent):
+  observe_stock_engagement = True
+
+  def __init__(self, cp, settings):
+    self.main_seen = False
+    self.main_available = False
+    self.main_neutral = False
+    self.main_pulse = False
+    super().__init__(settings, explicit_latch=True, lkas_button_supported=False)
+
+  def update(self, CS, **kwargs):
+    state = structs.CarState(**CS.to_dict())
+    events = []
+    for event in CS.buttonEvents:
+      if event.type == ButtonType.mainCruise and self.settings.main_action != AOL_TOGGLE:
+        if event.pressed:
+          self._perform(self.settings.main_action)
+      else:
+        events.append(structs.CarState.ButtonEvent(**event.to_dict()))
+    available = bool(state.cruiseState.available)
+    if state.canValid and not state.canTimeout:
+      if self.main_pulse:
+        events.append(structs.CarState.ButtonEvent(type=ButtonType.mainCruise, pressed=False))
+        self.main_pulse = False
+      if not available:
+        self.main_neutral = True
+      elif self.main_seen and self.main_neutral and not self.main_available and self.settings.main_action == AOL_TOGGLE:
+        events.append(structs.CarState.ButtonEvent(type=ButtonType.mainCruise, pressed=True))
+        self.main_pulse = True
+        self.main_neutral = False
+      self.main_seen = True
+      self.main_available = available
+    else:
+      self.main_neutral = False
+      self.main_pulse = False
+    state.buttonEvents = events
+    super().update(state.as_reader(), **kwargs)
+    if not available:
+      self.allowed_latch = False
+
+
+def create_intent(cp, settings):
+  return VolkswagenStockCardIntent(cp, settings)

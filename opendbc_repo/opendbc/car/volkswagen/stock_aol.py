@@ -1,0 +1,50 @@
+"""Exact MQB stock-ACC capability; direct drive/system-long remain ordinary."""
+from opendbc.car import Bus, structs
+from opendbc.car.volkswagen.values import CAR, DBC, VolkswagenFlags
+
+AOL_WORD = 8
+MANUAL_WORD = 16
+AOL_WORDS = frozenset((8, 24))
+MQB_CARS = frozenset(car for car in CAR if DBC[car].get(Bus.pt) == "vw_mqb" and
+                     not car.config.flags & (VolkswagenFlags.PQ | VolkswagenFlags.MLB | VolkswagenFlags.MEB))
+KNOWN_FLAGS = int(VolkswagenFlags.STOCK_HCA_PRESENT | VolkswagenFlags.KOMBI_PRESENT | VolkswagenFlags.HAS_BSM)
+
+
+def _qualified(cp, *, marked_only=False):
+  if (cp is None or cp.brand != "volkswagen" or cp.carFingerprint not in MQB_CARS or
+      cp.passive or cp.notCar or cp.dashcamOnly or cp.flags & ~KNOWN_FLAGS or
+      cp.steerControlType != structs.CarParams.SteerControlType.torque or
+      cp.transmissionType not in (structs.CarParams.TransmissionType.automatic, structs.CarParams.TransmissionType.manual) or
+      cp.networkLocation not in (structs.CarParams.NetworkLocation.gateway, structs.CarParams.NetworkLocation.fwdCamera) or
+      cp.fingerprintSource == structs.CarParams.FingerprintSource.fixed or
+      cp.openpilotLongitudinalControl or not cp.pcmCruise or len(cp.safetyConfigs) != 1):
+    return False
+  word = AOL_WORD | (MANUAL_WORD if cp.transmissionType == structs.CarParams.TransmissionType.manual else 0)
+  safety = cp.safetyConfigs[0]
+  return (safety.safetyModel == structs.CarParams.SafetyModel.volkswagen and
+          (cp.alternativeExperience == 32 and safety.safetyParam == word or
+           not marked_only and cp.alternativeExperience == 0 and safety.safetyParam == 0))
+
+
+def temporary_restriction(cp, state):
+  gears = structs.CarState.GearShifter
+  return bool(state is not None and qualified(cp, marked_only=True) and state.canValid and not state.canTimeout and
+              not state.steerFaultPermanent and (state.steerFaultTemporary or state.standstill or
+              state.gearShifter not in (gears.drive, gears.sport, gears.eco, gears.manumatic)))
+
+
+def native_observation(native, *, latched, panda_ready, restricted, now_ns, pending_since_ns):
+  lost = not panda_ready or native is None
+  if not latched or lost or restricted:
+    return 0, lost, False
+  if native.requestedLateral and native.lateralAllowed:
+    return 0, False, False
+  pending_since_ns = pending_since_ns or now_ns
+  return pending_since_ns, False, now_ns - pending_since_ns >= 200_000_000
+
+
+def qualified(cp, *, marked_only=False):
+  try:
+    return bool(_qualified(cp, marked_only=marked_only))
+  except (AttributeError, TypeError, ValueError, OverflowError, IndexError):
+    return False

@@ -3,6 +3,7 @@
 #include "selfdrive/pandad/aol_protocol.h"
 #include "openpilot/starpilot/car/honda/aol_policy.h"
 #include "openpilot/starpilot/car/mazda/aol_policy.h"
+#include "openpilot/starpilot/car/volkswagen/aol_policy.h"
 #include "openpilot/starpilot/car/chrysler/aol_policy.h"
 #include "openpilot/starpilot/car/toyota/aol_policy.h"
 #include "openpilot/starpilot/car/tesla/aol_policy.h"
@@ -26,7 +27,7 @@ constexpr AolSafetyProfile TEST_PROFILES[] = {
   {TEST_MODE, test_param, false}, {TEST_ALT_MODE, test_alt_param, false},
 };
 const AolProfileRegistry TEST_REGISTRY{TEST_PROFILES, std::size(TEST_PROFILES)};
-constexpr AolSafetyProfile VEHICLE_PROFILES[] = {HONDA_AOL_PROFILE, HONDA_STOCK_AOL_PROFILE, HONDA_NIDEC_AOL_PROFILE, HYUNDAI_AOL_PROFILE, HYUNDAI_CLASSIC_AOL_PROFILE, HYUNDAI_LEGACY_AOL_PROFILE, GM_AOL_PROFILE, FORD_AOL_PROFILE, MAZDA_AOL_PROFILE, CHRYSLER_AOL_PROFILE, TESLA_PREAP_AOL_PROFILE, TESLA_SCREEN_AOL_PROFILE, TOYOTA_AOL_PROFILE, NISSAN_AOL_PROFILE};
+constexpr AolSafetyProfile VEHICLE_PROFILES[] = {HONDA_AOL_PROFILE, HONDA_STOCK_AOL_PROFILE, HONDA_NIDEC_AOL_PROFILE, HYUNDAI_AOL_PROFILE, HYUNDAI_CLASSIC_AOL_PROFILE, HYUNDAI_LEGACY_AOL_PROFILE, GM_AOL_PROFILE, FORD_AOL_PROFILE, MAZDA_AOL_PROFILE, CHRYSLER_AOL_PROFILE, TESLA_PREAP_AOL_PROFILE, TESLA_SCREEN_AOL_PROFILE, TOYOTA_AOL_PROFILE, NISSAN_AOL_PROFILE, VOLKSWAGEN_STOCK_AOL_PROFILE};
 const AolProfileRegistry VEHICLE_REGISTRY{VEHICLE_PROFILES, std::size(VEHICLE_PROFILES)};
 
 aol_safety_health_t status(uint8_t request = 0U, uint8_t permission = 0U) {
@@ -87,6 +88,43 @@ void queue(FakeTransport &transport, const aol_safety_health_t &before,
 }  // namespace
 
 int main() {
+  for (uint32_t word = 0U; word <= 65535U; ++word) {
+    const bool expected = (word == 8U) || (word == 24U);
+    auto vw = status();
+    vw.safety_mode = 15U;
+    vw.safety_param = static_cast<uint16_t>(word);
+    assert(volkswagen_stock_aol_param(static_cast<uint16_t>(word)) == expected);
+    assert(aol_capable(vw, 15U, VEHICLE_REGISTRY) == expected);
+    assert(aol_runtime_enabled(false, vw, VEHICLE_REGISTRY) == expected);
+    assert(!aol_capable(vw, 25U, VEHICLE_REGISTRY));
+  }
+  for (const uint16_t word : {8U, 24U}) {
+    AolAxisNegotiator negotiator(VEHICLE_REGISTRY);
+    FakeTransport transport;
+    auto vw = status();
+    vw.safety_mode = 15U;
+    vw.safety_param = word;
+    queue(transport, vw, vw);
+    auto neutral = run(negotiator, transport, axis("vw-current", false, false), NOW, 15U);
+    assert(neutral.plan.capable && neutral.plan.request_mask == 0U && neutral.outcome.compatible);
+    auto accepted = vw;
+    accepted.request_mask = accepted.permission_mask = 1U;
+    queue(transport, vw, accepted);
+    auto active = run(negotiator, transport, axis("vw-current"), NOW, 15U);
+    assert(active.plan.request_mask == 1U && active.outcome.compatible);
+    assert(active.outcome.status && active.outcome.status->permission_mask == 1U);
+    queue(transport, accepted, vw);
+    auto expired = run(negotiator, transport, axis("vw-current"), NOW + 200000000ULL, 15U);
+    assert(expired.plan.request_mask == 0U);
+    queue(transport, vw, vw);
+    auto replaced = run(negotiator, transport, axis("new-vw-session"), NOW, 15U);
+    assert(replaced.plan.request_mask == 0U);
+    transport.write_ok = false;
+    transport.replies.push_back(bytes(vw));
+    auto failed = run(negotiator, transport, axis("new-vw-session"), NOW, 15U);
+    assert(!failed.outcome.compatible);
+  }
+
   // Nissan admits only stock ICE, Altima and the distinct stock Leaf word.
   // Dom's disabled Leaf longitudinal bit and every unknown word stay denied.
   for (uint32_t word = 0U; word <= 65535U; ++word) {

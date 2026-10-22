@@ -40,6 +40,8 @@ from opendbc.car.honda.stock_aol import (
   qualified as qualified_honda_stock_aol, native_observation as honda_native_observation,
   temporary_restriction as honda_temporary_restriction,
 )
+from opendbc.car.volkswagen.stock_aol import (qualified as qualified_volkswagen_aol,
+  native_observation as volkswagen_native_observation, temporary_restriction as volkswagen_temporary_restriction)
 from opendbc.car.mazda.stock_aol import (qualified as qualified_mazda_aol,
                                         native_observation as mazda_native_observation,
                                         temporary_restriction as mazda_temporary_restriction)
@@ -601,9 +603,9 @@ class Car:
           not any(e.immediateDisable or e.softDisable or e.userDisable for e in self.sm['onroadEvents']))
         fault_active = transport_reset or self.aol_disarming_fault(CS, event_ns, now_ns,
           transport_observed_healthy=reuse_transport)
-      angle_aol, ford_aol, honda_aol, mazda_aol, preap_aol = self.aol_permission_owners()
+      angle_aol, ford_aol, honda_aol, mazda_aol, preap_aol, volkswagen_aol = self.aol_permission_owners()
       nissan_aol = qualified_nissan_aol(self.CP, marked_only=True)
-      permission_owner = angle_aol or ford_aol or honda_aol or mazda_aol or preap_aol or nissan_aol
+      permission_owner = angle_aol or ford_aol or honda_aol or mazda_aol or preap_aol or nissan_aol or volkswagen_aol
       angle_panda_ready = not permission_owner or self.startup_panda_configured()
       native = (
         current_native(self.sm, self.CP, now_ns=now_ns, axis_session_id=self.aol_axis_session() if permission_owner else None)
@@ -612,10 +614,10 @@ class Car:
       )
       native_reset = False
       if permission_owner:
-        observe = (nissan_native_observation if nissan_aol else
+        observe = (volkswagen_native_observation if volkswagen_aol else nissan_native_observation if nissan_aol else
                    preap_native_observation if preap_aol else mazda_native_observation if mazda_aol else self.aol_honda_native_observation if honda_aol else
                    ford_native_observation if ford_aol else native_observation)
-        restrict = (nissan_temporary_restriction if nissan_aol else
+        restrict = (volkswagen_temporary_restriction if volkswagen_aol else nissan_temporary_restriction if nissan_aol else
                     preap_temporary_restriction if preap_aol else mazda_temporary_restriction if mazda_aol else honda_temporary_restriction if honda_aol else
                     ford_temporary_restriction if ford_aol else temporary_restriction)
         preap_observation = {}
@@ -629,8 +631,11 @@ class Car:
           native,
           latched=self.aol_card_intent.allowed_latch,
           panda_ready=angle_panda_ready,
-          restricted=restrict(self.CP, CS) or ((angle_aol or mazda_aol or preap_aol) and self.aol_card_intent.pause_lateral) or
-            (angle_aol and CS.brakePressed and not CS.standstill and CS.vEgo < self.aol_settings.pause_brake_mps),
+          restricted=(restrict(self.CP, CS) or
+            ((angle_aol or mazda_aol or preap_aol) and self.aol_card_intent.pause_lateral) or
+            (angle_aol and CS.brakePressed and (not CS.standstill) and (CS.vEgo < self.aol_settings.pause_brake_mps)) or
+            (volkswagen_aol and (self.aol_card_intent.pause_lateral or
+            (CS.brakePressed and (not CS.standstill) and (CS.vEgo < self.aol_card_intent.settings.pause_brake_mps))))),
           now_ns=now_ns,
           pending_since_ns=getattr(self, '_angle_aol_pending_since_ns', 0),
           **preap_observation,
@@ -871,13 +876,13 @@ class Car:
       temporary_selfdrive_lagging=(qualified_gm(self.CP) or aol_policy_for(self.CP).intent_supported),
       temporary_source_pause=(self.aol_transport_feedback.qualified or self.aol_transport_feedback.awaiting))
 
-  def aol_permission_owners(self) -> tuple[bool, bool, bool, bool, bool]:
+  def aol_permission_owners(self) -> tuple[bool, bool, bool, bool, bool, bool]:
     # CP is fixed once the drive starts; these checks ran five times per 100 Hz frame.
     cached = getattr(self, '_aol_owner_cache', None)
     if cached is None or cached[0] is not self.CP:
       owners = (bool(qualified_angle_aol(self.CP, marked_only=True)), bool(qualified_ford_aol(self.CP, marked_only=True)),
                 bool(qualified_honda_stock_aol(self.CP, marked_only=True)), bool(qualified_mazda_aol(self.CP, marked_only=True)),
-                bool(qualified_tesla_preap(self.CP, marked_only=True)))
+                bool(qualified_tesla_preap(self.CP, marked_only=True)), bool(qualified_volkswagen_aol(self.CP, marked_only=True)))
       cached = self._aol_owner_cache = (self.CP, owners)
     return cached[1]
 
