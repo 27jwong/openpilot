@@ -506,7 +506,17 @@ class TransportPauseFeedback:
         all(event.name == log.OnroadEvent.EventName.pedalPressed and event.noEntry and
             not event.softDisable and not event.immediateDisable for event in users))
       stock_user = stock_lateral_user_event(cp)
-      if not gm_pedal and (not getattr(self, 'lateral_only_baseline', False) or stock_user is None or
+      # Stock GM keeps publishing PCM-off/USER while isolated host lag has
+      # correctly withdrawn native LAT. Retain only the existing intent from
+      # an exact fresh OFF receipt; this creates no permission or output.
+      gm_stock_withdrawal = bool(cp.brand == 'gm' and cp.pcmCruise and self.lateral_only_baseline and
+        (withdrawn or recovering) and cs.cruiseState.available and not cs.cruiseState.enabled and
+        not cs.brakePressed and not cs.regenBraking and not cs.gasPressed and
+        not cs.doorOpen and not cs.seatbeltUnlatched and not cs.steeringDisengage and
+        not physical_cancel(cs, cp) and not native.requestedLateral and not native.lateralAllowed and
+        not native.requestedLongitudinal and not native.longitudinalAllowed and
+        all(event.name == stock_user and not event.softDisable and not event.immediateDisable for event in users))
+      if not gm_pedal and not gm_stock_withdrawal and (not getattr(self, 'lateral_only_baseline', False) or stock_user is None or
           any(event.name != stock_user or event.softDisable or event.immediateDisable for event in users) or
           not stock_lateral_off(cp, cs, native)):
         return False
@@ -517,7 +527,10 @@ class TransportPauseFeedback:
     elif joining:
       self.pending_event = 0
     if matched and cp.brand == 'gm':
-      self.lag_withdrawal_ns = event_ns
+      # Track the latest verified inactive proof, not the fault event's
+      # age. Fresh withdrawals during a long lag episode renew no output,
+      # native permission, source lease, or healthy baseline.
+      self.lag_withdrawal_ns = stamp
     return True
 
   def _temporary_steering_intent_current(self, sm, cp, cs, axis, stamp, now_ns, *, latched, producer, signature):
