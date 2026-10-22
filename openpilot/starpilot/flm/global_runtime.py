@@ -86,6 +86,7 @@ class GlobalRuntime:
     self.snapshot_sequence = 0
     self.frame_sequence = 0
     self.snapshot_ns = 0
+    self.last_capture_frame = 0
     self.replay_inputs = ()
     self.observation = None
     self.prior_policy_output = self.prior_policy_ff = 0.0
@@ -555,7 +556,8 @@ class GlobalRuntime:
       from openpilot.starpilot.flm.controller_replay import capture_snapshot, frame_input
 
       self.snapshot = ()
-      if self.identity and self.descriptor.domain != 'ford_curvature' and (not self.snapshot_ns or self.now_ns - self.snapshot_ns >= 1_000_000_000):
+      if self.identity and self.descriptor.domain != 'ford_curvature' and (not self.snapshot_ns or self.frame_sequence != self.last_capture_frame + 1 or
+          self.now_ns - self.snapshot_ns >= 1_000_000_000):
         if self.descriptor.domain in ('torque', 'torque_pid'):
           self.snapshot = capture_snapshot(self.controller, vm).values
         else:
@@ -923,6 +925,7 @@ class GlobalRuntime:
     if live_owner is not None and self.controller.automatic_flm_effects is live_owner and not live_values:
       # A consumed but unqualified live map is unknown, never legacy neutral.
       return None
+    self.last_capture_frame = self.frame_sequence
     return ControlEvidence(
       self.identity,
       self.generation,
