@@ -504,9 +504,11 @@ class SelfdriveD:
         self.events.add(EventName.radarFault)
     hardware_events_added = len(self.events) - num_events
 
+    from opendbc.car.hyundai.ev6_aol import qualified as ev6_deadline_qualified
     input_proof = getattr(self, 'aol_step_input_proof', None)
     reconcile_input = bool(input_proof is not None and not REPLAY and self.aol_replay and self.axis_transport_required and
-                           self.CP.openpilotLongitudinalControl and qualified_ioniq6(self.CP) and
+                           self.CP.openpilotLongitudinalControl and
+                           (qualified_ioniq6(self.CP) or ev6_deadline_qualified(self.CP, marked_only=True)) and
                            input_proof[0] == self.aol_session_id and
                            (input_proof[8] or input_proof[9]))
     self.aol_event_input_reconcile = reconcile_input
@@ -806,6 +808,10 @@ class SelfdriveD:
 
     return CS
 
+  def source_deadline_deferral_supported(self):
+    from opendbc.car.hyundai.ev6_aol import qualified as ev6_qualified
+    return qualified_ioniq6(self.CP) or qualified_gm(self.CP) or ev6_qualified(self.CP, marked_only=True)
+
   def held_axis_override_wait(self, CS, proof, now_ns, *, fresh_successor=False):
     """Recognize an already applied override; never admit a new physical edge."""
     if (proof is None or not (qualified_ioniq6(self.CP) or qualified_gm(self.CP)) or not self.sm.seen['carControl'] or
@@ -968,14 +974,24 @@ class SelfdriveD:
 
   def defer_expired_axis_publication(self, CS, initial_state, *, now_ns=None):
     """Keep an existing unexpired proof for one normal tick; issue no new lease."""
-    if REPLAY or not self.aol_replay or not self.axis_transport_required or not (qualified_ioniq6(self.CP) or qualified_gm(self.CP)):
+    if REPLAY or not self.aol_replay or not self.axis_transport_required or not self.source_deadline_deferral_supported():
       return False
     proof = getattr(self, 'aol_step_input_proof', None)
     if now_ns is None:
       now_ns = time.monotonic_ns()
     source = self.aol_car_state_log_ns
+    source_valid = self.conditional_car_state_valid
+    from opendbc.car.hyundai.ev6_aol import qualified as ev6_qualified
+    if (ev6_qualified(self.CP, marked_only=True) and source == 0 and not source_valid and
+        getattr(self, 'aol_expired_healthy_source', False) and
+        not getattr(self, 'car_state_samples', ()) and not getattr(self, 'car_state_queue_invalid', False) and
+        getattr(self, 'car_state_retained_valid', False)):
+      # A socket timeout cleared the selected source. Validate only the old
+      # publication's receipt; keep the source invalid and its clocks unchanged.
+      source = getattr(self, 'car_state_retained_source_ns', 0)
+      source_valid = True
     if (getattr(self, 'aol_step_deferral_checked', False) or proof is None or proof != getattr(self, 'aol_published_input_proof', None) or
-        not self.conditional_car_state_valid or not 0 < source <= now_ns or
+        not source_valid or not 0 < source <= now_ns or
         now_ns - source <= INTENT_MAX_AGE_NS or source != proof[1] or
         now_ns >= proof[3] or self.aol_authority_lost or
         getattr(self, 'aol_fault_reason', 'none') != 'none' or
@@ -1443,7 +1459,7 @@ class SelfdriveD:
         final_ns = time.monotonic_ns()
         if ((axis.lateralActive or axis.longitudinalActive) and
             (not 0 < self.aol_car_state_log_ns <= final_ns or final_ns - self.aol_car_state_log_ns > INTENT_MAX_AGE_NS) and
-            (qualified_ioniq6(self.CP) or qualified_gm(self.CP))):
+            self.source_deadline_deferral_supported()):
           if (source_context is not None and source_context[1] and
               self.defer_expired_axis_publication(CS, source_context[0])):
             # Serialization crossed the same source boundary. Retain only the
