@@ -1,3 +1,5 @@
+import time
+
 from opendbc.car import get_safety_config, structs, uds
 from opendbc.car.disable_ecu import disable_ecu
 from opendbc.car.interfaces import CarInterfaceBase
@@ -13,6 +15,16 @@ class CarInterface(CarInterfaceBase):
   CarController = CarController
 
   def update(self, can_packets):
+    source = self.CS.startup_sources
+    if source is not None and self.CC.stop_start is not None and not self.CC.stop_start.done:
+      can_packets = list(can_packets)
+      mono_ns = time.monotonic_ns()
+      boot_ns = time.clock_gettime_ns(getattr(time, 'CLOCK_BOOTTIME', time.CLOCK_MONOTONIC))
+      if time.monotonic_ns() - mono_ns <= 1_000_000:
+        source.observe(can_packets, boot_ns=boot_ns, mono_ns=mono_ns)
+      else:
+        source.frames.clear()
+        source.sequential.clear()
     result = super().update(can_packets)
     from opendbc.car.subaru.sng import selected
     if selected(self.CP):

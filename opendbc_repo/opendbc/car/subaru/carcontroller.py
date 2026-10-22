@@ -19,6 +19,8 @@ GEN2_ANGLE_PORTS = frozenset((CAR.SUBARU_CROSSTREK_2025, CAR.SUBARU_LEGACY_2025,
 class CarController(CarControllerBase):
   def __init__(self, dbc_names, CP):
     super().__init__(dbc_names, CP)
+    from opendbc.car.subaru.startup import selected, StopStartRequest
+    self.stop_start = StopStartRequest() if selected(CP) else None
     self.apply_torque_last = 0
     self.apply_angle_last = 0.
     self.angle_was_active = False
@@ -97,6 +99,10 @@ class CarController(CarControllerBase):
     pcm_cancel_cmd = CC.cruiseControl.cancel
 
     can_sends = []
+    if self.stop_start is not None:
+      request = self.stop_start.update(CC, CS, now_nanos / 1e9)
+      if request is not None:
+        can_sends.append(request)
 
     # *** steering ***
     if (self.frame % self.p.STEER_STEP) == 0:

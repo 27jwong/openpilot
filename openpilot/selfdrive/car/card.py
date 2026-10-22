@@ -1679,6 +1679,8 @@ class Car:
         update_subaru_software_cruise(self, CS, CC, now_nanos)
         from openpilot.starpilot.car.subaru.sng_caller import update as update_subaru_sng
         update_subaru_sng(self, CS, CC, now_nanos)
+        from openpilot.starpilot.car.subaru.stop_start_caller import update as update_subaru_startup
+        update_subaru_startup(self, now_nanos)
       self.last_actuators_output, can_sends = self.CI.apply(CC, now_nanos)
       self.publish_sendcan(can_sends, valid=CS.canValid)
       if learning_snapshot is not None and self.learning_send_committed_mono_ns:

@@ -4,6 +4,7 @@
 #include "opendbc/safety/modes/subaru_stock_aol.h"
 #include "opendbc/safety/modes/subaru_software_cruise.h"
 #include "opendbc/safety/modes/subaru_sng.h"
+#include "opendbc/safety/modes/subaru_stop_start.h"
 
 #define SUBARU_STEERING_LIMITS_GENERATOR(steer_max, rate_up, rate_down)               \
   {                                                                                   \
@@ -171,6 +172,7 @@ static void subaru_rx_hook(const CANPacket_t *msg) {
     gas_pressed = msg->data[4] != 0U;
   }
   subaru_sng_rx(msg);
+  subaru_stop_start_rx(msg);
 }
 
 static bool subaru_tx_hook(const CANPacket_t *msg) {
@@ -210,6 +212,10 @@ static bool subaru_tx_hook(const CANPacket_t *msg) {
   if (!subaru_angle_invalid) {
     tx = true;
     bool violation = false;
+
+    if (msg->addr == 0x390U) {
+      violation |= !subaru_stop_start_tx(msg);
+    }
 
     // steer cmd checks
     if (msg->addr == MSG_SUBARU_ES_LKAS) {
@@ -266,6 +272,9 @@ static bool subaru_tx_hook(const CANPacket_t *msg) {
 }
 
 static safety_config subaru_init(uint16_t param) {
+  const bool stop_start = (param == 401U) &&
+    (((unsigned int)alternative_experience == 0U) || ((unsigned int)alternative_experience == 32U));
+  const uint16_t base_param = stop_start ? 145U : param;
   static const CanMsg SUBARU_TX_MSGS[] = {
     SUBARU_BASE_TX_MSGS(SUBARU_MAIN_BUS, MSG_SUBARU_ES_LKAS)
     SUBARU_COMMON_TX_MSGS(SUBARU_MAIN_BUS)
@@ -308,6 +317,11 @@ static safety_config subaru_init(uint16_t param) {
     {MSG_SUBARU_ES_LKAS_Alert, SUBARU_MAIN_BUS, 8, .check_relay = true},
   };
 
+  static const CanMsg SUBARU_STOP_START_TX_MSGS[] = {
+    SUBARU_GEN2_ANGLE_TX_MSGS(SUBARU_ALT_BUS)
+    {0x390U, SUBARU_ALT_BUS, 8, .check_relay = false},
+  };
+
   const uint16_t SUBARU_PARAM_ASCENT_ALERT = 2048;
   const bool ascent_alert = param == (1U | 16U | 128U | 32U | SUBARU_PARAM_ASCENT_ALERT);
   const uint16_t SUBARU_PARAM_GEN2 = 1;
@@ -320,14 +334,15 @@ static safety_config subaru_init(uint16_t param) {
   subaru_gen2 = GET_FLAG(param, SUBARU_PARAM_GEN2);
   subaru_lkas_angle = GET_FLAG(param, SUBARU_PARAM_LKAS_ANGLE);
   subaru_fixed_angle_limits = GET_FLAG(param, SUBARU_PARAM_FIXED_ANGLE);
-  subaru_angle_invalid = (subaru_lkas_angle && (param != (SUBARU_PARAM_GEN2 | SUBARU_PARAM_LKAS_ANGLE)) &&
-                          (param != (SUBARU_PARAM_GEN2 | SUBARU_PARAM_LKAS_ANGLE | SUBARU_PARAM_FIXED_ANGLE)) &&
-                          (param != (SUBARU_PARAM_GEN2 | SUBARU_PARAM_LKAS_ANGLE | SUBARU_PARAM_FIXED_ANGLE | SUBARU_PARAM_ANGLE_MAIN_BUS)) && !ascent_alert) ||
+  subaru_angle_invalid = (subaru_lkas_angle && (base_param != (SUBARU_PARAM_GEN2 | SUBARU_PARAM_LKAS_ANGLE)) &&
+                          (base_param != (SUBARU_PARAM_GEN2 | SUBARU_PARAM_LKAS_ANGLE | SUBARU_PARAM_FIXED_ANGLE)) &&
+                          (base_param != (SUBARU_PARAM_GEN2 | SUBARU_PARAM_LKAS_ANGLE | SUBARU_PARAM_FIXED_ANGLE | SUBARU_PARAM_ANGLE_MAIN_BUS)) && !ascent_alert) ||
                          ((subaru_fixed_angle_limits || subaru_angle_main_bus) && !subaru_lkas_angle);
 
   // TODO: re-enable once more work is done on the limits
   // revert this in the PR that re-enables Subaru longitudinal: https://github.com/commaai/opendbc/pull/3689
 
+  subaru_stop_start_init(stop_start);
   subaru_sng_reset(((param == 8U) || (param == 520U)) &&
     (((unsigned int)alternative_experience == 0U) || ((unsigned int)alternative_experience == 32U)));
   subaru_software_reset(((param == 512U) || (param == 520U)) && (((unsigned int)alternative_experience == 0U) ||
@@ -335,7 +350,7 @@ static safety_config subaru_init(uint16_t param) {
   subaru_aol_reset();
   subaru_aol_enabled = ((unsigned int)alternative_experience == 32U) &&
     ((param == 0U) || (param == 1U) || (param == 17U) || (param == 145U) ||
-     (param == 177U) || (param == 8U) || (param == 520U) || (param == 512U) || (param == 2225U));
+     (param == 177U) || (param == 401U) || (param == 8U) || (param == 520U) || (param == 512U) || (param == 2225U));
   if (subaru_aol_enabled) {
     static const AolSafetyPolicy policy = {
       .reset = subaru_aol_reset,
@@ -352,7 +367,8 @@ static safety_config subaru_init(uint16_t param) {
     static RxCheck subaru_gen2_angle_rx_checks[] = {
       SUBARU_GEN2_ANGLE_RX_CHECKS()
     };
-    ret = ascent_alert ? BUILD_SAFETY_CFG(subaru_gen2_angle_rx_checks, SUBARU_ASCENT_ALERT_TX_MSGS) :
+    ret = stop_start ? BUILD_SAFETY_CFG(subaru_gen2_angle_rx_checks, SUBARU_STOP_START_TX_MSGS) :
+          ascent_alert ? BUILD_SAFETY_CFG(subaru_gen2_angle_rx_checks, SUBARU_ASCENT_ALERT_TX_MSGS) :
           subaru_angle_main_bus ? BUILD_SAFETY_CFG(subaru_gen2_angle_rx_checks, SUBARU_ASCENT_ANGLE_TX_MSGS_LIST) :
                                   BUILD_SAFETY_CFG(subaru_gen2_angle_rx_checks, SUBARU_GEN2_ANGLE_TX_MSGS_LIST);
   } else if (subaru_gen2) {
@@ -380,6 +396,7 @@ static void subaru_optional_rx(const CANPacket_t *msg) {
   subaru_aol_optional_rx(msg);
   subaru_software_optional_rx(msg);
   subaru_sng_rx(msg);
+  subaru_stop_start_rx(msg);
 }
 
 const safety_hooks subaru_hooks = {

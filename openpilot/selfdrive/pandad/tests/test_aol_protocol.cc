@@ -95,7 +95,7 @@ int main() {
     subaru.safety_param = static_cast<uint16_t>(word);
     subaru.capability_flags = 1U;
     const bool expected = (word == 0U) || (word == 1U) || (word == 17U) ||
-                          (word == 145U) || (word == 177U) || (word == 8U) || (word == 520U) || (word == 512U) || (word == 2225U);
+                          (word == 145U) || (word == 401U) || (word == 177U) || (word == 8U) || (word == 520U) || (word == 512U) || (word == 2225U);
     assert(aol_capable(subaru, 11U, VEHICLE_REGISTRY) == expected);
     subaru.capability_flags = 0U;
     assert(!aol_capable(subaru, 11U, VEHICLE_REGISTRY));
@@ -167,7 +167,7 @@ int main() {
   }
 
   for (uint32_t word = 0U; word <= 65535U; ++word) {
-    const bool expected = (word == 73U) || (word == 585U) || (word == 4169U) || (word == 4681U) || (word == 2121U) || (word == 0x9049U) || (word == 0x9249U) || (word == 0x2049U) || (word == 0x2249U) || (word == 0x424DU);
+    const bool expected = (word == 73U) || (word == 585U) || (word == 4169U) || (word == 4681U) || (word == 2121U) || (word == 0x9049U) || (word == 0x9249U) || (word == 0x2049U) || (word == 0x2249U) || (word == 0x424DU) || (word == 0x449U) || (word == 0x649U) || (word == 0x1449U) || (word == 0x1649U);
     auto toyota = status();
     toyota.safety_mode = 2U;
     toyota.safety_param = static_cast<uint16_t>(word);

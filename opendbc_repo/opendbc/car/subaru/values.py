@@ -74,6 +74,7 @@ class SubaruSafetyFlags(IntFlag):
   LKAS_ANGLE = 16
   FIXED_ANGLE_LIMITS = 128
   ANGLE_MAIN_BUS = 32
+  STOP_START_BUTTON = 256
   ASCENT_LKAS_ALERT = 2048
 
 
@@ -92,6 +93,7 @@ class SubaruFlags(IntFlag):
   PREGLOBAL = 16
   HYBRID = 32
   LKAS_ANGLE = 64
+  STOP_START_OFF = 2048
   ASCENT_LKAS_ALERT = 512
 
 
