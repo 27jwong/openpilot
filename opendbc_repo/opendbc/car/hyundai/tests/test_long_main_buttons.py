@@ -146,7 +146,7 @@ def test_enable_release_without_main_matches_original_profile_scope(name):
                                    else log.SelfdriveState.OpenpilotState.disabled)
 
 
-@pytest.mark.parametrize('name,experience', [('pe', 0), ('elantra', 0), ('ev9', 0), ('ev9', 32)])
+@pytest.mark.parametrize('name,experience', [('pe', 0), ('pe', 32), ('elantra', 0), ('ev9', 0), ('ev9', 32)])
 @pytest.mark.parametrize('field,value', [('brand', 'other'), ('carFingerprint', 'foreign'),
                                        ('passive', True), ('notCar', True), ('dashcamOnly', True),
                                        ('openpilotLongitudinalControl', False), ('pcmCruise', True),
@@ -159,7 +159,7 @@ def test_main_state_helper_rejects_changed_authority_contract(name, experience, 
   assert not qualified(cp)
 
 
-@pytest.mark.parametrize('name,experience', [('pe', 0), ('elantra', 0), ('ev9', 0), ('ev9', 32)])
+@pytest.mark.parametrize('name,experience', [('pe', 0), ('pe', 32), ('elantra', 0), ('ev9', 0), ('ev9', 32)])
 def test_main_state_helper_rejects_neighbor_native_word(name, experience):
   cp = profile(name)
   cp.alternativeExperience = experience
@@ -173,4 +173,4 @@ def test_main_state_helper_rejects_neighbor_native_word(name, experience):
 def test_main_state_helper_requires_exact_profile_experience(name, experience):
   cp = profile(name)
   cp.alternativeExperience = experience
-  assert qualified(cp) == (experience == 0 or (name == 'ev9' and experience == 32))
+  assert qualified(cp) == (experience == 0 or (name in ('pe', 'ev9') and experience == 32))

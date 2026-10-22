@@ -1,4 +1,3 @@
-import os
 import pytest
 from opendbc.car import structs
 from opendbc.car.subaru.avh import avh_request, checksum
@@ -35,8 +34,10 @@ def ready(param, ae):
 @pytest.mark.parametrize('param', [1169, 1425])
 @pytest.mark.parametrize('ae', [0, 32])
 def test_exact_pair_debug_only_and_status_never_tx(param, ae):
+  # Probe the loaded build, not the Subaru authority under test. ready() resets
+  # native state and selects Subaru before any RX or TX checks.
+  debug = libsafety_py.libsafety.set_safety_hooks(structs.CarParams.SafetyModel.allOutput, 0) == 0
   safety, last = ready(param, ae)
-  debug = os.environ['SUBARU_NATIVE_VARIANT'] == 'debug'
   for step in (1, 2):
     if step == 2:
       safety.set_timer(11_060_000)
