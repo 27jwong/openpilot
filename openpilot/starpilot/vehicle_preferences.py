@@ -27,6 +27,7 @@ class VehicleStartupPreferences:
   tesla_preap_stock: bool = True
   tesla_preap_radar: RadarSettings | None = None
   tesla_preap_pedal: PedalSettings | None = None
+  subaru_software_cruise: bool = False
   volt_sng: bool = False
   gm_auto_hold: bool = False
   volt_one_pedal: bool = False
@@ -92,7 +93,8 @@ class VehicleStartupPreferences:
                   read_saved(params, 'AlwaysOnLateral', 8) == (b'1', True) and
                   read_saved(params, 'TeslaAOLScreenTap', 8) == (b'1', True))
     screen_brake = read_saved(params, 'TeslaAOLDisengageOnBrake', 8) == (b'1', True)
-    return cls(toyota_radar_mode=toyota_radar_mode(params, enabled=enabled),
+    return cls(subaru_software_cruise=bool(enabled and readable and safe in (None, b"0") and
+                   read_saved(params, "SubaruRedneckCruise", 8) == (b"1", True)), toyota_radar_mode=toyota_radar_mode(params, enabled=enabled),
                ford_lateral_mode=ford_mode(params, enabled=enabled), tesla_screen=screen,
                tesla_screen_brake=screen_brake, toyota_auto_hold=toyota, jeep_brake_hold=jeep_hold,
                gm_longitudinal_tune=selected_tune(params, enabled=enabled),
@@ -156,6 +158,8 @@ class VehicleStartupPreferences:
       prepare_disable_longitudinal(cp, True)
 
   def prepare(self, cp, *, fingerprints=None):
+    from opendbc.car.subaru.software_cruise import prepare
+    cp = prepare(cp, self.subaru_software_cruise)
     from opendbc.car.gm.values import apply_gm_auto_hold, apply_volt_one_pedal
     from openpilot.starpilot.car.tesla.preap_preferences import prepare_stock
     prepare_stock(cp, self.tesla_preap_stock, self.tesla_preap_radar, self.tesla_preap_pedal)

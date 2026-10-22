@@ -30,6 +30,11 @@ class CarController(CarControllerBase):
     self.angle_handoff_active = False
     self.VM = VehicleModel(CP) if CP.carFingerprint in GEN2_ANGLE_PORTS else None
 
+    self.software_cruise_command = 0
+    self.software_cruise_command_ns = 0
+    self.software_cruise_sent_source = 0
+    self.software_cruise_last_frame = -10
+    self.software_cruise_last_send_ns = 0
     self.cruise_button_prev = 0
     self.steer_rate_counter = 0
 
@@ -163,6 +168,9 @@ class CarController(CarControllerBase):
       cruise_throttle = CarControllerParams.THROTTLE_INACTIVE
       cruise_rpm = CarControllerParams.RPM_MIN
       cruise_brake = CarControllerParams.BRAKE_MIN
+
+    from opendbc.car.subaru.software_cruise_sender import send as send_software_cruise
+    can_sends.extend(send_software_cruise(self, CC, CS, now_nanos))
 
     # *** alerts and pcm cancel ***
     lkas_alert_msg = self._ascent_lkas_alert(CC, CS)

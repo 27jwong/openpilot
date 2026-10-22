@@ -95,7 +95,7 @@ int main() {
     subaru.safety_param = static_cast<uint16_t>(word);
     subaru.capability_flags = 1U;
     const bool expected = (word == 0U) || (word == 1U) || (word == 17U) ||
-                          (word == 145U) || (word == 177U) || (word == 2225U);
+                          (word == 145U) || (word == 177U) || (word == 512U) || (word == 2225U);
     assert(aol_capable(subaru, 11U, VEHICLE_REGISTRY) == expected);
     subaru.capability_flags = 0U;
     assert(!aol_capable(subaru, 11U, VEHICLE_REGISTRY));

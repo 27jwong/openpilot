@@ -30,6 +30,8 @@ def qualified(cp, *, marked_only=False):
   if (int(cp.flags) & ~allowed != static or
       cp.steerControlType != (structs.CarParams.SteerControlType.angle if angle else structs.CarParams.SteerControlType.torque)):
     return False
+  if cp.carFingerprint == CAR.SUBARU_IMPREZA_2020 and cp.safetyConfigs[0].safetyParam == 512:
+    expected |= 512
   config = cp.safetyConfigs[0]
   return config.safetyModel == structs.CarParams.SafetyModel.subaru and config.safetyParam == expected
 

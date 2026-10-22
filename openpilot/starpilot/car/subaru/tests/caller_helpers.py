@@ -49,7 +49,7 @@ def firmware_records(candidate, versions, brand):
 
 
 @contextmanager
-def actual_factory(candidate, fingerprint, fw, vin, *, manual, alpha=False, release=False, aol=True):
+def actual_factory(candidate, fingerprint, fw, vin, *, manual, alpha=False, release=False, aol=True, preferences=None):
   with (
     OpenpilotPrefix(),
     patch.object(selfdrived_module, 'SIMULATION', True),
@@ -68,6 +68,8 @@ def actual_factory(candidate, fingerprint, fw, vin, *, manual, alpha=False, rele
       ('IsOffroad', False),
       ('ControlsReady', False),
     ]:
+      params.put_bool(key, value, block=True)
+    for key, value in (preferences or {}).items():
       params.put_bool(key, value, block=True)
     params.put('VehicleSelection', json.loads(encode(str(candidate) if manual else None)), block=True)
     _, matches = match_fw_to_car(fw, vin, log=False)
@@ -90,8 +92,9 @@ def actual_factory(candidate, fingerprint, fw, vin, *, manual, alpha=False, rele
     assert cp.fingerprintSource == (structs.CarParams.FingerprintSource.fixed if manual else structs.CarParams.FingerprintSource.fw)
     with structs.CarParams.from_bytes(params.get('CarParams')) as published:
       assert published.to_dict() == cp.to_dict()
-    assert card.aol_qualified and card.aol_card_intent is not None
-    assert cp.alternativeExperience == 32
+    if aol:
+      assert card.aol_qualified and card.aol_card_intent is not None
+    assert cp.alternativeExperience == (32 if aol else 0)
     yield card, params, matches
 
 

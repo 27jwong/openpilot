@@ -28,6 +28,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"HKGRemoteStartBootsComma", {PERSISTENT, BOOL, "0"}},
     {"IgnoreIgnitionLine", {PERSISTENT, BOOL, "0"}},
     {"TeslaWakeOnCAN", {PERSISTENT, BOOL, "0"}},
+    {"SubaruRedneckCruise", {PERSISTENT, BOOL, "0"}},
     {"VoltSNG", {PERSISTENT, BOOL, "0"}},
     {"GMAutoHold", {PERSISTENT, BOOL, "0"}},
     {"VoltOnePedalMode", {PERSISTENT, BOOL, "0"}},

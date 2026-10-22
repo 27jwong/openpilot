@@ -1,6 +1,6 @@
 import copy
 from opendbc.can import CANDefine, CANParser
-from opendbc.car import Bus, structs
+from opendbc.car import Bus, structs, create_button_events
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.interfaces import CarStateBase
 from opendbc.car.subaru.values import CAR, DBC, CanBus, SubaruFlags
@@ -13,6 +13,11 @@ class CarState(CarStateBase):
     can_define = CANDefine(DBC[CP.carFingerprint][Bus.pt])
     self.shifter_values = can_define.dv["Transmission"]["Gear"]
 
+    self.software_buttons = dict.fromkeys(("Main", "Set", "Resume"), 0)
+    self.software_button_source_ns = 0
+    self.software_button_counter = None
+    self.software_button_consumed_ns = 0
+    self.software_buttons_msg = {}
     self.es_lkas_alert_dat = b""
     self.angle_rate_calulator = CanSignalRateCalculator(50)
 
@@ -136,6 +141,25 @@ class CarState(CarStateBase):
 
     if not (self.CP.flags & SubaruFlags.HYBRID):
       self.es_distance_msg = copy.copy(cp_es_distance.vl["ES_Distance"])
+
+    from opendbc.car.subaru.software_cruise import selected
+    if selected(self.CP):
+      buttons = cp.vl["Cruise_Buttons"]
+      source_ns = int(cp.ts_nanos["Cruise_Buttons"]["COUNTER"])
+      counter = int(buttons["COUNTER"])
+      if source_ns > self.software_button_source_ns and counter != self.software_button_counter:
+        self.software_button_source_ns = source_ns
+        self.software_button_counter = counter
+        self.software_buttons_msg = dict(buttons)
+      button_events = []
+      for name, kind in (("Main", structs.CarState.ButtonEvent.Type.mainCruise),
+                         ("Set", structs.CarState.ButtonEvent.Type.decelCruise),
+                         ("Resume", structs.CarState.ButtonEvent.Type.accelCruise)):
+        pressed = int(bool(buttons[name]))
+        button_events.extend(create_button_events(pressed, self.software_buttons[name], {1: kind}))
+        self.software_buttons[name] = pressed
+      ret.buttonEvents = button_events
+      ret.cruiseState.speedCluster = ret.cruiseState.speed
 
     self.es_dashstatus_msg = copy.copy(cp_cam.vl["ES_DashStatus"])
     if self.CP.flags & SubaruFlags.ASCENT_LKAS_ALERT:

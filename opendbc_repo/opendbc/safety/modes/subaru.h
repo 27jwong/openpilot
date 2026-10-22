@@ -2,6 +2,7 @@
 
 #include "opendbc/safety/declarations.h"
 #include "opendbc/safety/modes/subaru_stock_aol.h"
+#include "opendbc/safety/modes/subaru_software_cruise.h"
 
 #define SUBARU_STEERING_LIMITS_GENERATOR(steer_max, rate_up, rate_down)               \
   {                                                                                   \
@@ -99,6 +100,7 @@ static void subaru_rx_hook(const CANPacket_t *msg) {
   const unsigned int alt_main_bus = subaru_gen2 ? SUBARU_ALT_BUS : SUBARU_MAIN_BUS;
 
   if (msg_matches(msg, MSG_SUBARU_Steering_Torque, SUBARU_MAIN_BUS)) {
+    subaru_software_fault = GET_BIT(msg, 12U) || GET_BIT(msg, 29U);
     int torque_driver_new;
     torque_driver_new = ((GET_BYTES_LE(msg, 0, 4) >> 16) & 0x7FFU);
     torque_driver_new = -1 * to_signed(torque_driver_new, 11);
@@ -136,6 +138,7 @@ static void subaru_rx_hook(const CANPacket_t *msg) {
   if (!subaru_lkas_angle && msg_matches(msg, MSG_SUBARU_CruiseControl, alt_main_bus)) {
     bool cruise_engaged = (msg->data[5] >> 1) & 1U;
     pcm_cruise_check(cruise_engaged);
+    subaru_software_main = GET_BIT(msg, 40U);
     if (subaru_aol_enabled) {
       subaru_aol_grant(cruise_engaged);
       subaru_aol_main = GET_BIT(msg, 40U);
@@ -251,6 +254,9 @@ static bool subaru_tx_hook(const CANPacket_t *msg) {
     }
   }
 
+  if (msg->addr == 0x146U) {
+    tx = subaru_software_tx(msg);
+  }
   return tx;
 }
 
@@ -258,6 +264,12 @@ static safety_config subaru_init(uint16_t param) {
   static const CanMsg SUBARU_TX_MSGS[] = {
     SUBARU_BASE_TX_MSGS(SUBARU_MAIN_BUS, MSG_SUBARU_ES_LKAS)
     SUBARU_COMMON_TX_MSGS(SUBARU_MAIN_BUS)
+  };
+
+  static const CanMsg SUBARU_SOFTWARE_TX_MSGS[] = {
+    SUBARU_BASE_TX_MSGS(SUBARU_MAIN_BUS, MSG_SUBARU_ES_LKAS)
+    SUBARU_COMMON_TX_MSGS(SUBARU_MAIN_BUS)
+    {0x146U, SUBARU_MAIN_BUS, 8, .check_relay = false},
   };
 
   static const CanMsg SUBARU_GEN2_TX_MSGS[] = {
@@ -297,10 +309,12 @@ static safety_config subaru_init(uint16_t param) {
   // TODO: re-enable once more work is done on the limits
   // revert this in the PR that re-enables Subaru longitudinal: https://github.com/commaai/opendbc/pull/3689
 
+  subaru_software_reset((param == 512U) && (((unsigned int)alternative_experience == 0U) ||
+    ((unsigned int)alternative_experience == 32U)));
   subaru_aol_reset();
   subaru_aol_enabled = ((unsigned int)alternative_experience == 32U) &&
     ((param == 0U) || (param == 1U) || (param == 17U) || (param == 145U) ||
-     (param == 177U) || (param == 2225U));
+     (param == 177U) || (param == 512U) || (param == 2225U));
   if (subaru_aol_enabled) {
     static const AolSafetyPolicy policy = {
       .reset = subaru_aol_reset,
@@ -329,7 +343,8 @@ static safety_config subaru_init(uint16_t param) {
     static RxCheck subaru_rx_checks[] = {
       SUBARU_COMMON_RX_CHECKS(SUBARU_MAIN_BUS)
     };
-    ret = BUILD_SAFETY_CFG(subaru_rx_checks, SUBARU_TX_MSGS);
+    ret = subaru_software_enabled ? BUILD_SAFETY_CFG(subaru_rx_checks, SUBARU_SOFTWARE_TX_MSGS) :
+                                   BUILD_SAFETY_CFG(subaru_rx_checks, SUBARU_TX_MSGS);
   }
   if (((unsigned int)alternative_experience == 32U) && !subaru_aol_enabled) {
     ret.tx_msgs = NULL;
@@ -338,10 +353,15 @@ static safety_config subaru_init(uint16_t param) {
   return ret;
 }
 
+static void subaru_optional_rx(const CANPacket_t *msg) {
+  subaru_aol_optional_rx(msg);
+  subaru_software_optional_rx(msg);
+}
+
 const safety_hooks subaru_hooks = {
   .init = subaru_init,
   .rx = subaru_rx_hook,
-  .optional_rx = subaru_aol_optional_rx,
+  .optional_rx = subaru_optional_rx,
   .tx = subaru_tx_hook,
   .get_counter = subaru_get_counter,
   .get_checksum = subaru_get_checksum,

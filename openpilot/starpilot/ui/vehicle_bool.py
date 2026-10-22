@@ -1,6 +1,7 @@
 """Confirmation text for parked vehicle preferences."""
 
-VEHICLE_BOOL_KEYS = frozenset(("GMPedalLongitudinal", "DisableOpenpilotLongitudinal", "LongPitch", "VoltSNG", "GMAutoHold", "VoltOnePedalMode",
+VEHICLE_BOOL_KEYS = frozenset(("SubaruRedneckCruise",
+                              "GMPedalLongitudinal", "DisableOpenpilotLongitudinal", "LongPitch", "VoltSNG", "GMAutoHold", "VoltOnePedalMode",
                               "TeslaAOLScreenTap", "TeslaAOLDisengageOnBrake",
                               "RemoteStartBootsComma", "HKGRemoteStartBootsComma", "IgnoreIgnitionLine", "TeslaWakeOnCAN"))
 
@@ -18,6 +19,8 @@ def confirmation_question(request):
   if request.key == "DisableOpenpilotLongitudinal":
     verb = "Turn off" if request.value == "On" else "Turn on"
     return f"{verb} StarPilot speed control after the next startup? Steering stays unchanged."
+  if request.key == "SubaruRedneckCruise":
+    return f"{verb} software cruise after the next startup? Stock ACC keeps pedal control."
   if request.key == "VoltSNG":
     return f"{verb} Volt stop-and-go assistance after the next startup?"
   if request.key == "GMAutoHold":
