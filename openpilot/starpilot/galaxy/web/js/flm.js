@@ -93,9 +93,9 @@ export const FlmPage = {
       <section class="gx-card gx-flm__panel"><div class="gx-section__header"><i class="bi bi-activity" aria-hidden="true"></i><span class="gx-section__title" role="status">{{ tracking?.label || summary }}</span></div>
         <GxState v-if="loading && !report" loading>Reading learning results…</GxState>
         <GxNotice v-if="error" tone="danger">{{ error }}</GxNotice>
-        <template v-if="current"><p>{{ readable(current.reason) }}</p>
+        <template v-if="current"><p v-if="!tracking">{{ readable(current.reason) }}</p>
           <dl class="gx-flm__facts"><div><dt>Auto Learn</dt><dd>{{ !live ? 'Last reported: ' : '' }}{{ current.enabled === null ? 'Unknown' : current.enabled ? 'On' : 'Off' }}</dd></div>
-            <div><dt>Collection</dt><dd>{{ amount(current.progress.samples) }} samples · {{ amount(current.progress.blocks) }} retained blocks</dd></div>
+            <div v-if="!tracking"><dt>Collection</dt><dd>{{ amount(current.progress.samples) }} samples · {{ amount(current.progress.blocks) }} retained blocks</dd></div>
             <div><dt>Current application</dt><dd>{{ currentApplied ? 'Correction reported applied' : live && current.application ? 'No correction reported applied' : 'Unknown — waiting for a current report' }}</dd></div>
           </dl><p class="gx-note">Last controller report: {{ current.ageSeconds.toFixed(1) }} seconds old when read.</p>
           <p v-if="live && current.application">{{ readable(current.application.reason) }}</p>
@@ -133,7 +133,7 @@ export const FlmPage = {
         </table></div>
         <p class="gx-note">All 30 parameters have torque stages; 26 have torque-actuated PID stages. The four friction thresholds have no PID friction measurement stage. Support describes controller capability; it does not establish a validated fit. Missing values remain “Not reported”.</p>
       </section>
-      <div class="gx-plots__grid">
+      <div v-if="!tracking" class="gx-plots__grid">
         <section class="gx-card gx-flm__panel"><div class="gx-section__header"><i class="bi bi-collection" aria-hidden="true"></i><span class="gx-section__title">Collection &amp; fitting</span></div>
           <p v-if="!current">Collection begins when the device reports eligible steering examples.</p>
           <template v-if="readiness"><p>{{ readable(readiness.reason) }}</p>
