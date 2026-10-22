@@ -971,9 +971,10 @@ class TransportPauseFeedback:
   def _angle_stop_intent_current(self, sm, cp, cs, axis, stamp, now_ns, *, latched, producer):
     from opendbc.car.structs import car
     from opendbc.car.hyundai.canfd_angle_aol import qualified, temporary_restriction
+    from opendbc.car.mazda.stock_aol import qualified as mazda_qualified, temporary_restriction as mazda_restriction
 
-    if (not qualified(cp, marked_only=True) or cs.gearShifter != car.CarState.GearShifter.drive or
-        not temporary_restriction(cp, cs) or cs.steerFaultTemporary or cs.steerFaultPermanent or
+    if (not (qualified(cp, marked_only=True) or mazda_qualified(cp, marked_only=True)) or cs.gearShifter != car.CarState.GearShifter.drive or
+        not (temporary_restriction(cp, cs) or mazda_restriction(cp, cs)) or cs.steerFaultTemporary or cs.steerFaultPermanent or
         not latched or self.failed or self.paused or self.pending_event or self.retention_started_ns or
         not self.lateral_only_baseline or not self.lateral_inventory or not self.lateral_baseline_ns or
         not self.session or axis.sessionId != self.session or str(axis.faultReason) != 'none' or

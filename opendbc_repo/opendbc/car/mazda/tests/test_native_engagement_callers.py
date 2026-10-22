@@ -65,6 +65,16 @@ def test_reverse_return_retains_lateral_actual_callers(identity, monkeypatch, ar
   _exercise_actual_family_callers(identity, monkeypatch, scenario='reverse', armed_intent=armed_intent_decoder)
 
 
+@pytest.mark.parametrize('identity', (CAR.MAZDA_CX5_2022, CAR.MAZDA_CX9_2021))
+def test_standstill_return_retains_lateral_actual_callers(identity, monkeypatch, armed_intent_decoder):
+  _exercise_actual_family_callers(identity, monkeypatch, scenario='standstill', armed_intent=armed_intent_decoder)
+
+
+@pytest.mark.parametrize('identity', (CAR.MAZDA_CX5_2022, CAR.MAZDA_CX9_2021))
+def test_permanent_fault_while_stopped_disarms_actual_callers(identity, monkeypatch, armed_intent_decoder):
+  _exercise_actual_family_callers(identity, monkeypatch, scenario='stop_fault', armed_intent=armed_intent_decoder)
+
+
 def _exercise_actual_family_callers(identity, monkeypatch, *, scenario='brake', cancel_action=3, armed_intent=None):
   from openpilot.cereal import messaging
   from openpilot.selfdrive.car import card as card_module
@@ -113,11 +123,12 @@ def _exercise_actual_family_callers(identity, monkeypatch, *, scenario='brake', 
       local_patch.setattr(card.pm, 'send', capture)
       packer = CANPacker(DBC[identity][Bus.pt])
 
-      def step(*, engaged=False, brake=False, cancel=False, main=True, reverse=False):
+      def step(*, engaged=False, brake=False, cancel=False, main=True, reverse=False, speed_kph=80., permanent=False):
         nonlocal tick, first_engagement_ns
         tick += 1
         now[0] = 10_000_000_000 + tick * 10_000_000
-        frames = complete_frames(packer, card.CP, tick, main=main, engaged=engaged, brake=brake, cancel=cancel, reverse=reverse)
+        frames = complete_frames(packer, card.CP, tick, main=main, engaged=engaged, brake=brake, cancel=cancel, reverse=reverse,
+                                 speed_kph=speed_kph, permanent=permanent)
         frames.append(packer.make_can_msg('STEER', 0, {'STEER_ANGLE': 1.0}))
         safety.set_timer(now[0] // 1000)
         prior_state = previous_sd.get('selfdriveState')
@@ -240,17 +251,27 @@ def _exercise_actual_family_callers(identity, monkeypatch, *, scenario='brake', 
           assert not axis.lateralActive and not command.latActive and not command.longActive
           assert safety.aol_get_permission_mask() == 0
         return
-      if scenario == 'reverse':
+      if scenario in ('reverse', 'standstill', 'stop_fault'):
         for _ in range(30):
           step(brake=True)
         for _ in range(30):
           state, axis, host_state, command = step()
         assert card.aol_card_intent.allowed_latch and axis.lateralActive and not axis.longitudinalActive
+        restricted = {'reverse': True} if scenario == 'reverse' else {'speed_kph': 0.}
         for _ in range(30):
-          state, axis, host_state, command = step(reverse=True)
-          assert card.aol_card_intent.allowed_latch, 'Reverse erased established Mazda lateral intent'
+          state, axis, host_state, command = step(**restricted)
+          assert card.aol_card_intent.allowed_latch, 'Physical restriction erased established Mazda lateral intent'
           assert not axis.lateralActive and not axis.longitudinalActive
           assert not command.latActive and not command.longActive and safety.aol_get_permission_mask() == 0
+        if scenario == 'stop_fault':
+          for _ in range(10):
+            state, axis, host_state, command = step(speed_kph=0., permanent=True)
+            assert not axis.lateralActive and not command.latActive and safety.aol_get_permission_mask() == 0
+          assert not card.aol_card_intent.allowed_latch
+          for _ in range(30):
+            state, axis, host_state, command = step()
+            assert not card.aol_card_intent.allowed_latch and not command.latActive
+          return
         for _ in range(30):
           state, axis, host_state, command = step()
         assert card.aol_card_intent.allowed_latch and axis.lateralActive and command.latActive
