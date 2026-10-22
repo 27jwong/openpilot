@@ -12,22 +12,36 @@ from opendbc.car.chrysler.interface import CarInterface as ChryslerInterface
 from opendbc.car.chrysler.values import CAR as Chrysler
 from opendbc.car.ford.interface import CarInterface as FordInterface
 from opendbc.car.ford.values import CAR as Ford
+from opendbc.car.hyundai.interface import CarInterface as HyundaiInterface
+from opendbc.car.hyundai.radar_interface import RADAR_START_ADDR
+from opendbc.car.hyundai.values import CAR as Hyundai
 from openpilot.cereal import log
 from openpilot.common.prefix import OpenpilotPrefix
 from openpilot.starpilot.aol.runtime import current_native
+from openpilot.starpilot.aol.vehicle import policy_for
 from openpilot.starpilot.aol.transport_pause import TransportPauseFeedback
 from openpilot.starpilot.tests.test_ford_reverse_intent import NOW, PRODUCER, change, native_change, sample
 
 
 @pytest.fixture(params=(Chrysler.CHRYSLER_PACIFICA_2018, Chrysler.RAM_1500_5TH_GEN,
-                        Ford.FORD_MUSTANG_MACH_E_MK1, Ford.FORD_ESCAPE_MK4))
+                        Ford.FORD_MUSTANG_MACH_E_MK1, Ford.FORD_ESCAPE_MK4, Hyundai.HYUNDAI_SONATA_HYBRID))
 def established_stock(request):
   interface = FordInterface if request.param in (Ford.FORD_MUSTANG_MACH_E_MK1, Ford.FORD_ESCAPE_MK4) else ChryslerInterface
   fp = gen_empty_fingerprint()
   fp[0][0x5A] = 8
+  if request.param == Hyundai.HYUNDAI_SONATA_HYBRID:
+    interface = HyundaiInterface
+    fp[0].update({0x391: 8, 0x38D: 8})
+    fp[2][0x485] = 4
+    fp[1][RADAR_START_ADDR] = 8
   with OpenpilotPrefix():
     cp = interface.get_params(request.param, fp, [], False, False, False)
-  cp.alternativeExperience = 32
+  # Use the same admitted factory policy additions as Card. Wire vectors
+  # remain controlled; the separate actual CAN caller qualifies the native owner.
+  policy = policy_for(cp)
+  cp.safetyConfigs[0].safetyParam |= policy.safety_param_addition
+  cp.alternativeExperience |= policy.alternative_experience_addition
+  assert cp.alternativeExperience == 32
   assert cp.pcmCruise and not cp.openpilotLongitudinalControl
   state = structs.CarState(canValid=True, gearShifter=structs.CarState.GearShifter.drive, vEgo=15.)
   state.cruiseState.available = True

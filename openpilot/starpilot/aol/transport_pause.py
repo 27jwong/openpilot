@@ -364,12 +364,12 @@ class TransportPauseFeedback:
     gears = structs.CarState.GearShifter
 
     # Stock PCM off is not the driver's independent AOL toggle. Retain only
-    # previously established intent while the exact location input fault has
+    # previously established intent through a location fault or its matched EPS recovery, after it has
     # withdrawn output; the native/session/source checks below still apply.
     stock_angle = angle_qualified(cp, marked_only=True)
     stock_hkg = stock_angle or stock_canfd_qualified(cp, marked_only=True) or stock_classic_qualified(cp, marked_only=True)
     stock_user = stock_lateral_user_event(cp)
-    stock_location_user = bool(location_fault and (stock_hkg or chrysler_qualified(cp, marked_only=True) or
+    stock_temporary_user = bool((location_fault or eps_recovery) and (stock_hkg or chrysler_qualified(cp, marked_only=True) or
       ford_qualified(cp, marked_only=True)) and users and
       not axis.desiredLongitudinal and not axis.longitudinalActive and
       cs.cruiseState.available and not cs.cruiseState.enabled and
@@ -389,7 +389,7 @@ class TransportPauseFeedback:
         int(getattr(axis, 'intentIntegrityEpoch', 0)) != self.availability_epoch or
         not self.lateral_inventory or not self.lateral_baseline_ns or
         not cs.canValid or cs.canTimeout or cs.steerFaultPermanent or cs.accFaulted or cs.steerFaultTemporary or
-        users and not (pedal or stock_location_user) or str(axis.faultReason) not in ('none', 'critical') or
+        users and not (pedal or stock_temporary_user) or str(axis.faultReason) not in ('none', 'critical') or
         not 0 < self.lateral_source_ns <= axis.sourceCarStateMonoTime <= stamp <= now_ns or
         now_ns - axis.sourceCarStateMonoTime > AXIS_MAX_AGE_NS or
         not sm.seen['onroadEvents'] or not sm.valid['onroadEvents'] or not sm.alive['onroadEvents']):
