@@ -137,7 +137,7 @@ def ford_joined(identity, alpha, hands_free, monkeypatch, record_property):
 
         with patch.object(native, 'rx', side_effect=pre_rx):
           native.pump(1, main=3, mask=0, heartbeat=False, speed=15.0)
-        extras = [
+        extras: list[tuple[str, int, dict[str, float]]] = [
           ('SteeringPinion_Data', 0, {'StePinCompAnEst_D_Qf': 3}),
           ('Cluster_Info1_FD1', 0, {'AccEnbl_B_RqDrv': 1}),
           ('BodyInfo_3_FD1', 0, {}),

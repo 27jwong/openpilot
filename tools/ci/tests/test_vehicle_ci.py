@@ -16,8 +16,14 @@ from tools.ci.record_firmware import compile_commands
 
 
 class TestVehicleCollection(unittest.TestCase):
-  def test_classic_initialization_neutral_replacement_runs_in_release_ci(self):
-    self.assertIn('openpilot/starpilot/aol/tests/test_classic_startup_neutral_replacement.py', targets_for('safety-release'))
+  def test_classic_initialization_preserves_debug_acceptance_and_release_denial(self):
+    path = 'openpilot/starpilot/aol/tests/test_classic_startup_neutral_replacement.py'
+    release = 'tools/ci/test_classic_startup_release.py'
+    self.assertIn(path, targets_for('safety-debug'))
+    self.assertIn(release, targets_for('safety-release'))
+    self.assertIn(path + '::test_classic_initializing_never_bypasses_current_health', targets_for('safety-release'))
+    self.assertNotIn(path, targets_for('safety-release'))
+    self.assertNotIn(release, targets_for('safety-debug'))
 
   def test_independent_lateral_soft_takeover_runs_in_release_ci(self):
     self.assertIn('openpilot/starpilot/aol/tests/test_independent_lateral_soft_takeover.py', targets_for('safety-release'))
@@ -168,7 +174,8 @@ class TestVehicleCollection(unittest.TestCase):
 
   def test_native_safety_targets_are_top_level_and_complete(self):
     root = Path(__file__).resolve().parents[3] / "opendbc_repo/opendbc/safety/tests"
-    self.assertEqual({Path(target.split("::", 1)[0]).name for target in targets_for("safety-debug")}, {path.name for path in root.glob("test_*.py")})
+    expected = {path.name for path in root.glob("test_*.py")} | {"test_classic_startup_neutral_replacement.py"}
+    self.assertEqual({Path(target.split("::", 1)[0]).name for target in targets_for("safety-debug")}, expected)
     self.assertTrue(all(Path(target.split("::", 1)[0]).parent.name == "tests" for target in targets_for("safety-debug")))
 
   def test_pe_native_variants_select_healthy_acceptance_and_denial_classes_separately(self):

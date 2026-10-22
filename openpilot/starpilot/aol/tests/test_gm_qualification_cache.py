@@ -1,5 +1,7 @@
 """Static GM qualification reuses exact immutable CP values, never live authority."""
 from types import SimpleNamespace
+from collections.abc import Callable
+from typing import NoReturn, cast
 from unittest.mock import patch
 import warnings
 
@@ -71,7 +73,7 @@ def test_original_builder_write_state_and_large_cp_fallback():
 
 
 def test_ducktype_does_not_attempt_serialization():
-  cp = SimpleNamespace(brand='gm', copy=lambda: pytest.fail('Unknown type serialized'))
+  cp = SimpleNamespace(brand='gm', copy=lambda: cast(Callable[[str], NoReturn], pytest.fail)('Unknown type serialized'))
   with patch.object(aol, '_qualified_gm_uncached', return_value=False) as original:
     assert not aol.qualified_gm(cp)
     original.assert_called_once_with(cp)

@@ -133,7 +133,8 @@ RELEASE_TARGETS = (
   "openpilot/starpilot/aol/tests/test_sonata_temporary_withdrawals.py",
   "openpilot/starpilot/aol/tests/test_expired_axis_zero_request.py",
   "openpilot/starpilot/aol/tests/test_independent_lateral_soft_takeover.py",
-  "openpilot/starpilot/aol/tests/test_classic_startup_neutral_replacement.py",
+  "tools/ci/test_classic_startup_release.py",
+  "openpilot/starpilot/aol/tests/test_classic_startup_neutral_replacement.py::test_classic_initializing_never_bypasses_current_health",
   "openpilot/starpilot/tests/test_ev6_startup.py",
   "openpilot/starpilot/aol/tests/test_ev6_stock_parity.py",
   "openpilot/starpilot/aol/tests/test_ev6_physical_authorization.py",
@@ -356,7 +357,9 @@ def targets_for(suite):
             if path != car_root / "tests/test_models.py"]
   if suite == "safety-debug":
     paths = [str(path.relative_to(ROOT)) for path in sorted((ROOT / "opendbc_repo/opendbc/safety/tests").glob("test_*.py"))]
-    return [selected for path in paths for selected in DEBUG_SAFETY_CLASS_TARGETS.get(path, (path,))]
+    return [selected for path in paths for selected in DEBUG_SAFETY_CLASS_TARGETS.get(path, (path,))] + [
+      "openpilot/starpilot/aol/tests/test_classic_startup_neutral_replacement.py",
+    ]
   if suite == "safety-release":
     return list(RELEASE_TARGETS)
   raise ValueError(f"Unknown vehicle test suite: {suite}")
