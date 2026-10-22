@@ -39,8 +39,17 @@ static uint32_t rivian_compute_checksum(const CANPacket_t *msg) {
   if (msg->addr == 0x100U) {
     chksum = _rivian_compute_checksum(msg, 0x1D, 0x5F);
   }
+  if (msg->addr == 0x390U) {
+    chksum = crc8_update(0U, 0x90U, 0x1DU);
+    chksum = crc8_update(chksum, 0x03U, 0x1DU);
+    for (int i = 1; i < GET_LEN(msg); i++) {
+      chksum = crc8_update(chksum, msg->data[i], 0x1DU);
+    }
+  }
   return chksum;
 }
+
+#include "opendbc/safety/modes/rivian_stock_aol.h"
 
 static bool rivian_get_quality_flag_valid(const CANPacket_t *msg) {
   bool valid = false;
@@ -89,6 +98,7 @@ static void rivian_rx_hook(const CANPacket_t *msg) {
     const int feature_status = msg->data[2] >> 5U;
     pcm_cruise_check(feature_status == 1);
   }
+  rivian_aol_observe(msg);
 }
 
 static bool rivian_tx_hook(const CANPacket_t *msg) {
@@ -159,6 +169,7 @@ static safety_config rivian_init(uint16_t param) {
     {.msg = {{0x38f, 0, 6, 50U, .max_counter = 14U}, { 0 }, { 0 }}},   // iBESP2 (brakes)
     {.msg = {{0x380, 0, 5, 100U, .max_counter = 14U, .ignore_quality_flag = true}, { 0 }, { 0 }}},  // EPAS_SystemStatus (driver torque)
     {.msg = {{0x100, 2, 8, 100U, .max_counter = 14U, .ignore_quality_flag = true}, { 0 }, { 0 }}},  // ACM_Status (cruise state)
+    {.msg = {{0x390, 0, 7, 100U, .max_counter = 14U, .ignore_quality_flag = true}, { 0 }, { 0 }}},  // EPAS angle fault/status
   };
 
   bool rivian_longitudinal = false;
@@ -169,11 +180,30 @@ static safety_config rivian_init(uint16_t param) {
     rivian_longitudinal = GET_FLAG(param, FLAG_RIVIAN_LONG_CONTROL);
   #endif
 
-  // FIXME: cppcheck thinks that rivian_longitudinal is always false. This is not true
-  // if ALLOW_DEBUG is defined but cppcheck is run without ALLOW_DEBUG
-  // cppcheck-suppress knownConditionTrueFalse
-  return rivian_longitudinal ? BUILD_SAFETY_CFG(rivian_rx_checks, RIVIAN_LONG_TX_MSGS) : \
-                               BUILD_SAFETY_CFG(rivian_rx_checks, RIVIAN_TX_MSGS);
+  rivian_aol_reset();
+  rivian_aol_longitudinal = rivian_longitudinal;
+  rivian_aol_enabled = ((unsigned int)alternative_experience == 32U) &&
+    ((param == 0U) || ((param == 1U) && rivian_longitudinal));
+  if (rivian_aol_enabled) {
+    static const AolSafetyPolicy policy = {
+      .reset = rivian_aol_reset,
+      .host_request = rivian_aol_request,
+      .request_mask = rivian_aol_request_mask,
+      .permission_mask = rivian_aol_permission,
+      .rx_invalid = rivian_aol_clear,
+    };
+    aol_policy = &policy;
+  }
+  safety_config ret = rivian_longitudinal ? BUILD_SAFETY_CFG(rivian_rx_checks, RIVIAN_LONG_TX_MSGS) :
+                                          BUILD_SAFETY_CFG(rivian_rx_checks, RIVIAN_TX_MSGS);
+  if (!rivian_aol_enabled) {
+    ret.rx_checks_len -= 1;  // Ordinary upstream RX catalog remains exactly five rows.
+  }
+  if (((unsigned int)alternative_experience == 32U) && !rivian_aol_enabled) {
+    ret.tx_msgs = NULL;
+    ret.tx_msgs_len = 0;
+  }
+  return ret;
 }
 
 const safety_hooks rivian_hooks = {

@@ -43,6 +43,10 @@ from opendbc.car.honda.stock_aol import (
 from opendbc.car.volkswagen.stock_aol import native_observation as volkswagen_native_observation
 from openpilot.starpilot.car.volkswagen.aol import (qualified as qualified_volkswagen_aol,
   temporary_restriction as volkswagen_temporary_restriction)
+from openpilot.starpilot.car.rivian.aol import retained_brake_lateral_intent as rivian_brake_intent_retained
+from opendbc.car.rivian.stock_aol import (qualified as qualified_rivian_aol,
+                                         native_observation as rivian_native_observation,
+                                         temporary_restriction as rivian_temporary_restriction)
 from opendbc.car.mazda.stock_aol import (qualified as qualified_mazda_aol,
                                         native_observation as mazda_native_observation,
                                         temporary_restriction as mazda_temporary_restriction)
@@ -588,7 +592,9 @@ class Car:
         if cancel_source_ns > cancel_feedback.last_cancel_source_ns:
           cancel_feedback.longitudinal_cancel_ns = cancel_source_ns
           cancel_feedback.last_cancel_source_ns = cancel_source_ns
-      transport_reset = not hkg_cancel_retained and self.aol_transport_feedback.observe(self.sm, self.CP, CS, now_ns,
+      rivian_brake_retained = rivian_brake_intent_retained(self.CP, CS, self.sm, self.aol_transport_feedback,
+        self.aol_card_intent, now_ns=now_ns, producer=self.slc_producer_session)
+      transport_reset = not (hkg_cancel_retained or rivian_brake_retained) and self.aol_transport_feedback.observe(self.sm, self.CP, CS, now_ns,
         latched=self.aol_card_intent.allowed_latch, cancel_source_ns=cancel_source_ns,
         brake_source_ns=brake_source_ns,
         gm_withdrawal_source_ns=gm_withdrawal_source_ns,
@@ -603,7 +609,7 @@ class Car:
           self.sm.valid['onroadEvents'] and 0 < event_ns <= now_ns and now_ns - event_ns <= 1_500_000_000):
         feedback = self.aol_transport_feedback
         # Reuse only this call's healthy observation; fault/physical paths reobserve.
-        reuse_transport = bool(not transport_reset and not cancel_source_ns and not brake_source_ns and
+        reuse_transport = rivian_brake_retained or bool(not transport_reset and not cancel_source_ns and not brake_source_ns and
           not gm_withdrawal_source_ns and CS.canValid and not CS.canTimeout and
           not CS.steerFaultTemporary and not CS.steerFaultPermanent and not CS.accFaulted and
           feedback.signature is not None and feedback.signature[5] == 'none' and
@@ -616,7 +622,8 @@ class Car:
           transport_observed_healthy=reuse_transport)
       angle_aol, ford_aol, honda_aol, mazda_aol, preap_aol, volkswagen_aol = self.aol_permission_owners()
       nissan_aol = qualified_nissan_aol(self.CP, marked_only=True)
-      permission_owner = angle_aol or ford_aol or honda_aol or mazda_aol or preap_aol or nissan_aol or volkswagen_aol
+      rivian_aol = qualified_rivian_aol(self.CP, marked_only=True)
+      permission_owner = angle_aol or ford_aol or honda_aol or mazda_aol or preap_aol or nissan_aol or volkswagen_aol or rivian_aol
       angle_panda_ready = not permission_owner or self.startup_panda_configured()
       native = (
         current_native(self.sm, self.CP, now_ns=now_ns, axis_session_id=self.aol_axis_session() if permission_owner else None)
@@ -625,10 +632,12 @@ class Car:
       )
       native_reset = False
       if permission_owner:
-        observe = (volkswagen_native_observation if volkswagen_aol else nissan_native_observation if nissan_aol else
+        observe = (rivian_native_observation if rivian_aol else
+                   volkswagen_native_observation if volkswagen_aol else nissan_native_observation if nissan_aol else
                    preap_native_observation if preap_aol else mazda_native_observation if mazda_aol else self.aol_honda_native_observation if honda_aol else
                    ford_native_observation if ford_aol else native_observation)
-        restrict = (volkswagen_temporary_restriction if volkswagen_aol else nissan_temporary_restriction if nissan_aol else
+        restrict = (rivian_temporary_restriction if rivian_aol else
+                    volkswagen_temporary_restriction if volkswagen_aol else nissan_temporary_restriction if nissan_aol else
                     preap_temporary_restriction if preap_aol else mazda_temporary_restriction if mazda_aol else honda_temporary_restriction if honda_aol else
                     ford_temporary_restriction if ford_aol else temporary_restriction)
         preap_observation = {}
@@ -643,7 +652,7 @@ class Car:
           latched=self.aol_card_intent.allowed_latch,
           panda_ready=angle_panda_ready,
           restricted=(restrict(self.CP, CS) or
-            ((angle_aol or mazda_aol or preap_aol) and self.aol_card_intent.pause_lateral) or
+            ((angle_aol or mazda_aol or preap_aol or rivian_aol) and self.aol_card_intent.pause_lateral) or
             (angle_aol and CS.brakePressed and (not CS.standstill) and (CS.vEgo < self.aol_settings.pause_brake_mps)) or
             (volkswagen_aol and (self.aol_card_intent.pause_lateral or
             (CS.brakePressed and (not CS.standstill) and (CS.vEgo < self.aol_card_intent.settings.pause_brake_mps))))),

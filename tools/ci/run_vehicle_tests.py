@@ -24,6 +24,9 @@ from tools.ci import vehicle_pytest
 # Representative production callers plus their source/native refusal cases.
 # The emitted selected_test_ids record exact parametrized configurations.
 AOL_LIFECYCLE_TARGETS = (
+  "openpilot/starpilot/car/rivian/tests/test_aol_policy.py",
+  "openpilot/starpilot/car/rivian/tests/test_aol_native.py",
+  "openpilot/starpilot/car/rivian/tests/test_aol_lifecycle.py",
   "opendbc_repo/opendbc/safety/tests/test_ev9_combined_callers.py",
   "openpilot/starpilot/aol/tests/test_ev9_main_withdrawal_guards.py",
   "openpilot/starpilot/aol/tests/test_native_inventory_control_cadence.py",
@@ -69,6 +72,8 @@ AOL_LIFECYCLE_TARGETS = (
 )
 
 AOL_LIFECYCLE_SCOPE = {
+  "rivian": ("GEN1 base stock/DEBUG Alpha: actual factory/Card/SD/Controls/native engagement, brake LAT-only, gas, standstill zero output, " +
+             "Reverse/Drive, temporary ToI recovery and physical UP_1 cancel; GEN2/unknown profiles refused"),
   "mazda": ("CX5 2022/CX9 2021 GEN1 stock AE32: engagement/brake/Cancel pause/toggle/Reverse/standstill/EPS recovery; " +
             "native permanent-fault rearm vetoes"),
   "subaru": "nine stock global identities; five actual factory-to-native lifecycles, brake, Reverse/Drive, EPS recovery, MAIN-off and refusal guards",
