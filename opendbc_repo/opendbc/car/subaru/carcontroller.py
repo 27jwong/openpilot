@@ -121,8 +121,6 @@ class CarController(CarControllerBase):
           apply_angle = apply_steer_angle_limits_vm(actuators.steeringAngleDeg, self.apply_angle_last,
                                                     CS.out.vEgoRaw, CS.out.steeringAngleDeg, angle_active,
                                                     self.p, self.VM)
-        if not angle_active and self.CP.carFingerprint != CAR.SUBARU_ASCENT_2023:
-          apply_angle = CS.out.steeringAngleDeg
         self.apply_angle_last = apply_angle
         self.angle_was_active = angle_active
         angle_bus = CanBus.main if self.CP.carFingerprint == CAR.SUBARU_ASCENT_2023 else CanBus.alt
@@ -208,9 +206,11 @@ class CarController(CarControllerBase):
         can_sends.append(subarucan.create_es_dashstatus(self.packer, self.frame // 10, CS.es_dashstatus_msg, CC.enabled,
                                                         self.CP.openpilotLongitudinalControl, CC.longActive, hud_control.leadVisible))
 
-        lkas_active = self.angle_was_active if self.CP.carFingerprint == CAR.SUBARU_ASCENT_2023 else CC.enabled
+        lkas_active = self.angle_was_active if self.CP.carFingerprint in GEN2_ANGLE_PORTS else CC.enabled
         lkas_state_msg = CS.es_lkas_state_msg
-        if self.CP.carFingerprint == CAR.SUBARU_ASCENT_2023:
+        if self.CP.carFingerprint in GEN2_ANGLE_PORTS or subaru_aol_qualified(self.CP, marked_only=True):
+          if self.CP.carFingerprint not in GEN2_ANGLE_PORTS:
+            lkas_active = CC.latActive
           lkas_state_msg = dict(lkas_state_msg, LKAS_ACTIVE=int(lkas_active))
         can_sends.append(subarucan.create_es_lkas_state(self.packer, self.frame // 10, lkas_state_msg, lkas_active, hud_control.visualAlert,
                                                         hud_control.leftLaneVisible, hud_control.rightLaneVisible,

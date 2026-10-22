@@ -49,6 +49,8 @@ def test_actual_full_engage_brake_reverse_temporary_recovery_mainoff(candidate, 
     steering_address = ci.CC.packer.dbc.name_to_msg[steering_name].address
     steering_bus = 0 if candidate in (CAR.SUBARU_ASCENT_2023, CAR.SUBARU_FORESTER, CAR.SUBARU_OUTBACK) else 1
     decoder = CANParser(DBC[candidate][Bus.pt], [(steering_name, 0)], steering_bus)
+    dash_decoder = CANParser(DBC[candidate][Bus.pt], [('ES_LKAS_State', 0)], 0)
+    dash_emissions = 0
     active_emissions = []
     base = time.monotonic_ns() + 100_000_000
     try:
@@ -154,6 +156,14 @@ def test_actual_full_engage_brake_reverse_temporary_recovery_mainoff(candidate, 
         outgoing = can_capnp_to_list([published['sendcan'].as_builder().to_bytes()], msgtype='sendcan')[0][1] if 'sendcan' in published else []
         tx = [(a, d.hex(), b, bool(safety.safety_tx_hook(libsafety_py.make_CANPacket(a, b, d)))) for a, d, b in outgoing]
         decoder.update([(now, outgoing)])
+        dash_decoder.update([(now, outgoing)])
+        if any(address == 0x322 for address, _, _ in outgoing):
+          dash = dash_decoder.vl['ES_LKAS_State']
+          expected = ci.CC.angle_was_active if steering_name == 'ES_LKAS_ANGLE' else card.sm['carControl'].latActive
+          assert bool(dash['LKAS_ACTIVE']) == expected, (candidate, tick, expected, dash)
+          assert dash['LKAS_Dash_State'] == (2 if expected else 0), (candidate, tick, expected, dash)
+          assert all(accepted for address, _, _, accepted in tx if address == 0x322)
+          dash_emissions += 1
         decoded_steering = []
         for address, _data, _bus, accepted in tx:
           if address == steering_address:
@@ -204,6 +214,7 @@ def test_actual_full_engage_brake_reverse_temporary_recovery_mainoff(candidate, 
         if tick >= 440:
           assert command.latActive and intent.allowedLatch == aol and row['permission'] == 1, row
       assert len(active_emissions) >= 4, rows[65:90]
+      assert dash_emissions >= 40
     finally:
       pandad.close()
       (tmp_path / (str(candidate) + '-' + str(aol) + '-actual.json')).write_text(json.dumps(rows, indent=2) + '\n')
