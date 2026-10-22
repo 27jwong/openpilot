@@ -31,12 +31,13 @@ CANFD_STOCK = frozenset((CAR.HONDA_CRV_6G, CAR.HONDA_PILOT_4G,
 ALT_RADAR_STOCK = frozenset((CAR.ACURA_RDX_3G_MMR, CAR.HONDA_ODYSSEY_5G_MMR,
   CAR.ACURA_TLX_2G, CAR.ACURA_MDX_4G))
 BOSCH_WORDS = frozenset((0, 1, 8, 9, 10, 11, 16, 17, 80, 81, 512, 513, 1058, 1059, 1570, 1571))
-NIDEC_WORDS = frozenset((0, 4, 260))
+NIDEC_WORDS = frozenset((0, 4, 260, 544, 548, 804))
 
 # qualified() runs several times per 100 Hz frame in card and selfdrived, so
 # everything that depends only on this module is computed once, and its flag
 # tests use plain ints: IntFlag operators cost microseconds each in Python.
-_DETECTED = int(HondaFlags.BOSCH_EXT_HUD | HondaFlags.BOSCH_ALT_BRAKE | HondaFlags.HAS_BSM | HondaFlags.EPS_MODIFIED | HondaFlags.HYBRID)
+_DETECTED = int(HondaFlags.BOSCH_EXT_HUD | HondaFlags.BOSCH_ALT_BRAKE | HondaFlags.HAS_BSM |
+                HondaFlags.EPS_MODIFIED | HondaFlags.HYBRID | HondaFlags.GAS_INTERCEPTOR)
 _ALLOWED_FLAGS = {str(car): int(car.config.flags) | _DETECTED
                   for car in CLASSIC_BOSCH | NIDEC | RADARLESS | CANFD_STOCK | ALT_RADAR_STOCK | {CAR.HONDA_ACCORD_11G}}
 _BOSCH, _BOSCH_RADARLESS, _BOSCH_ALT_BRAKE = int(HondaFlags.BOSCH), int(HondaFlags.BOSCH_RADARLESS), int(HondaFlags.BOSCH_ALT_BRAKE)
@@ -59,6 +60,8 @@ def qualified(cp, *, marked_only=False):
     return False
   flags = int(cp.flags)
   if flags & ~allowed:
+    return False
+  if flags & int(HondaFlags.GAS_INTERCEPTOR) and fingerprint not in NIDEC:
     return False
   if fingerprint in ALT_RADAR_STOCK:
     expected = int(bool(flags & _BOSCH_ALT_BRAKE))
@@ -85,9 +88,14 @@ def qualified(cp, *, marked_only=False):
     return False
   if fingerprint in NIDEC and flags & _NIDEC and not flags & _BOSCH:
     expected = 4 if flags & _NIDEC_ALT_SCM_MESSAGES else 0
+    pedal = bool(flags & int(HondaFlags.GAS_INTERCEPTOR))
+    if pedal:
+      expected |= int(HondaSafetyFlags.GAS_INTERCEPTOR)
+      if cp.alternativeExperience == 32:
+        expected |= int(HondaSafetyFlags.NIDEC_PEDAL_AOL)
     if fingerprint == CAR.HONDA_ODYSSEY_TWN and cp.alternativeExperience == 32:
       expected |= 256
-    return (cp.pcmCruise and cp.openpilotLongitudinalControl and
+    return (bool(cp.pcmCruise) == (not pedal) and cp.openpilotLongitudinalControl and
             safety.safetyModel == _HONDA_NIDEC and safety.safetyParam == expected)
   if fingerprint in CLASSIC_BOSCH and flags & _BOSCH and not flags & _BOSCH_RADARLESS:
     expected = int(bool(flags & _BOSCH_ALT_BRAKE))

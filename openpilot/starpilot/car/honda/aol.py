@@ -37,6 +37,8 @@ def qualified_honda(CP) -> bool:
 def policy_for(CP) -> AolVehiclePolicy:
   if qualified_stock(CP):
     safety_addition = 256 if CP.carFingerprint == CAR.HONDA_ODYSSEY_TWN else 0
+    if CP.flags & HondaFlags.GAS_INTERCEPTOR:
+      safety_addition |= int(HondaSafetyFlags.NIDEC_PEDAL_AOL)
     if CP.carFingerprint in ALT_RADAR_STOCK:
       if CP.carFingerprint == CAR.ACURA_MDX_4G:
         safety_addition |= int(HondaSafetyFlags.STOCK_TJA)
@@ -82,6 +84,8 @@ def retain_on_native_denial(CP, native, state):
 def create_intent(CP, settings):
   if qualified_stock(CP):
     safety_addition = 256 if CP.carFingerprint == CAR.HONDA_ODYSSEY_TWN else 0
+    if CP.flags & HondaFlags.GAS_INTERCEPTOR:
+      safety_addition |= int(HondaSafetyFlags.NIDEC_PEDAL_AOL)
     if CP.carFingerprint in ALT_RADAR_STOCK:
       if CP.carFingerprint == CAR.ACURA_MDX_4G:
         safety_addition |= int(HondaSafetyFlags.STOCK_TJA)

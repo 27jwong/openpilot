@@ -93,6 +93,7 @@ class HondaSafetyFlags(IntFlag):
   BOSCH_CANFD = 16
   BOSCH_CANFD_MVL = 64
   ALT_RADAR_AOL = 1024  # Exact marked DEBUG alpha owner; physical EPS/gear token.
+  NIDEC_PEDAL_AOL = 512  # Model1 only; distinct from model20 STOCK_TJA.
   STOCK_TJA = 512  # Marked MDX4G AOL; EPS status1 is healthy TJA lockout.
 
 

@@ -15,7 +15,7 @@ inline bool honda_stock_aol_param(uint16_t param) {
 }
 
 inline bool honda_nidec_aol_param(uint16_t param) {
-  return (param == 0U) || (param == 4U) || (param == 260U);
+  return (param == 0U) || (param == 4U) || (param == 260U) || (param == 544U) || (param == 548U) || (param == 804U);
 }
 
 inline constexpr AolSafetyProfile HONDA_STOCK_AOL_PROFILE{20U, honda_stock_aol_param, true};

@@ -56,7 +56,7 @@ class TestHondaCurrentCaller(unittest.TestCase):
   def test_relay_fault_during_recovered_reverse(self):
     self.run_current_caller(candidate=CAR.HONDA_CIVIC_BOSCH, word=0, fault='relay')
 
-  def run_current_caller(self, *, candidate, word, fault=None, alternate_brake=False, alpha=False, speed_mps=12.5):
+  def run_current_caller(self, *, candidate, word, fault=None, alternate_brake=False, alpha=False, speed_mps=12.5, pedal=False):
     safety = libsafety_py.libsafety
     with (
       OpenpilotPrefix(),
@@ -81,6 +81,8 @@ class TestHondaCurrentCaller(unittest.TestCase):
       pt_bus = 0 if nidec or candidate.config.flags & (HondaFlags.BOSCH_RADARLESS | HondaFlags.BOSCH_CANFD) else 1
       gear_msg = CANDBC(DBC[candidate][Bus.pt]).name_to_msg['GEARBOX_AUTO']
       fp[pt_bus][gear_msg.address] = gear_msg.size
+      if pedal:
+        fp[pt_bus][0x201] = 6
       if alternate_brake:
         fp[pt_bus][0x1BE] = 3
       fw = [
@@ -108,7 +110,7 @@ class TestHondaCurrentCaller(unittest.TestCase):
       self.assertEqual([record.to_dict() for record in cp.carFw], [record.to_dict() for record in fw])
       self.assertEqual(cp.carFingerprint, candidate)
       self.assertEqual((cp.safetyConfigs[0].safetyParam, cp.alternativeExperience), (word, 32))
-      self.assertEqual(cp.pcmCruise, not alpha)
+      self.assertEqual(cp.pcmCruise, not (alpha or pedal))
       self.assertEqual(cp.openpilotLongitudinalControl, nidec or alpha)
       self.assertEqual((ci.CC.CAN.pt, ci.CC.CAN.lkas), (pt_bus, pt_bus if alpha else 0))
       alt_brake = bool(cp.flags & HondaFlags.BOSCH_ALT_BRAKE)
@@ -344,7 +346,7 @@ class TestHondaCurrentCaller(unittest.TestCase):
               if not previous.latActive:
                 self.assertEqual((tx['torque'], tx['request']), (0, False), row)
             else:
-              if alpha and address == 0x1DF and tick == 50:
+              if (alpha and address == 0x1DF or pedal and address == 0x200) and tick == 50:
                 # Card applies the prior Controls envelope. Physical brake has
                 # already revoked LONG; the native hook must reject this one
                 # in-flight positive command before the new envelope arrives.
