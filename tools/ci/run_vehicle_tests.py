@@ -50,6 +50,7 @@ AOL_LIFECYCLE_TARGETS = (
   "opendbc_repo/opendbc/car/volkswagen/tests/test_mqb_aol_discovery.py",
   "opendbc_repo/opendbc/safety/tests/test_volkswagen_stock_aol.py",
   "opendbc_repo/opendbc/safety/tests/test_volkswagen_engagement_arm.py",
+  "opendbc_repo/opendbc/safety/tests/test_volkswagen_long_aol.py",
 )
 
 AOL_LIFECYCLE_SCOPE = {
@@ -235,6 +236,7 @@ RELEASE_TARGETS = (
   "opendbc_repo/opendbc/safety/tests/test_volvo_cma.py",
   "opendbc_repo/opendbc/safety/tests/test_volkswagen_stock_aol.py",
   "opendbc_repo/opendbc/safety/tests/test_volkswagen_engagement_arm.py",
+  "opendbc_repo/opendbc/safety/tests/test_volkswagen_long_aol.py",
   "opendbc_repo/opendbc/safety/tests/test_mazda.py::TestMazdaSafety",
   "opendbc_repo/opendbc/safety/tests/test_toyota.py::TestToyotaStockLongitudinalTorque",
   "opendbc_repo/opendbc/safety/tests/test_toyota_auto_hold.py",
