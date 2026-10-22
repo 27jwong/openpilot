@@ -343,8 +343,8 @@ def speed_limit_bounds(profile: Profile, state: OnroadState) -> tuple[float, flo
   x, y, width, height = LIMIT_RECTS[profile]
   if profile == Profile.COMPACT and not state.appearance.use_vienna_sign:
     from openpilot.starpilot.ui.unified_speed_presentation import resolve_unified_speed
-    if not resolve_unified_speed(state).offset_text:
-      height -= 16
+    if resolve_unified_speed(state).offset_text:
+      height += 44
   dx, dy = offset(state.customization, profile, widget)
   return x + dx - 12, y + dy - 12, x + dx + width + 12, y + dy + height + 8
 
