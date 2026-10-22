@@ -43,7 +43,7 @@ from openpilot.starpilot.ui.pip_owner import FORMAT_PREFIX as PIP_FORMAT_PREFIX,
 from openpilot.starpilot.ui.pip_preferences import read_pip
 from openpilot.starpilot.ui.pip_render import PiPRenderer
 from openpilot.starpilot.ui.pip_sidecam import Signals, Rect
-from openpilot.starpilot.ui.onroad_customization import CAMERA_WIDGETS, placement, widget_size
+from openpilot.starpilot.ui.onroad_customization import CAMERA_WIDGETS, fit_to_road, placement, widget_size
 from openpilot.starpilot.ui.layout_preview_sidebar import SIDEBAR_WIDTH
 from openpilot.starpilot.ui.pip_warning import PiPWarningSource
 from openpilot.starpilot.spot_monitor.preferences import read_preferences as read_vasm_preferences
@@ -295,6 +295,14 @@ class StarShellSession:
         self._projection_slc = SlcActionReceiver()
       except OSError:
         pass  # Car-screen speed-limit taps stay unavailable without affecting the native UI.
+    self.onroad_map = self.onroad_jetlink = None
+    if profile == Profile.LARGE:
+      from openpilot.starpilot.ui.onroad_map_layer import NativeMapLayer
+      self.onroad_map = NativeMapLayer(self.fonts, ui_state)
+      self.view.onroad.map_layer = self.onroad_map.render
+      from openpilot.starpilot.ui.onroad_jetlink_layer import NativeJetlinkLayer
+      self.onroad_jetlink = NativeJetlinkLayer(self.view.onroad.jetlink_status, ui_state)
+      self.view.onroad.jetlink_status = self.onroad_jetlink
 
   def _favorite_authority(self, *, allow_personality_notice: bool = False) -> bool:
     if getattr(ui_state, "replay_clock", None) is not None:
@@ -1280,11 +1288,12 @@ class StarShellSession:
     snapshot = self.adapter.build(mode, self.selected, compact_y=self.compact_y,
                                   compact_scroll_x=self.compact_scroll_x, sidebar_expanded=self.sidebar_expanded,
                                   menu_only=self.profile == Profile.COMPACT and mode == ShellMode.SETTINGS,
-                                  onroad_view_only=mode == ShellMode.ONROAD)
+                                  onroad_view_only=mode == ShellMode.ONROAD, stopped_timer_profile=str(self.profile))
     if mode == ShellMode.ONROAD and self.profile == Profile.LARGE:
       width = getattr(self, '_onroad_page_width', 2160.0) - (SIDEBAR_WIDTH if snapshot.onroad.appearance.show_developer_sidebar else 0)
-      if snapshot.onroad.viewport_width != width:
-        snapshot = replace(snapshot, onroad=replace(snapshot.onroad, viewport_width=width))
+      fitted = fit_to_road(snapshot.onroad.customization, width)
+      if snapshot.onroad.viewport_width != width or fitted is not snapshot.onroad.customization:
+        snapshot = replace(snapshot, onroad=replace(snapshot.onroad, viewport_width=width, customization=fitted))
     if mode == ShellMode.HOME:
       now = time.monotonic()
       previous = getattr(self, "_home_model", None)
@@ -1689,6 +1698,12 @@ class StarShellSession:
     self._favorite_claimed = False
 
   def close(self) -> None:
+    if layer := getattr(self, 'onroad_jetlink', None):
+      layer.close()
+      self.onroad_jetlink = None
+    if layer := getattr(self, 'onroad_map', None):
+      layer.close()
+      self.onroad_map = None
     if receiver := getattr(self, '_projection_bookmarks', None):
       receiver.close()
       self._projection_bookmarks = None

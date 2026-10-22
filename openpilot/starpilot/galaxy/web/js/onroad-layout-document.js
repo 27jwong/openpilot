@@ -201,18 +201,18 @@ export function validSnapshot(data) {
       if (widget.visualInsetTop != null && (!Number.isFinite(widget.visualInsetTop) || widget.visualInsetTop < 0 || widget.visualInsetTop > area.height)) return false
       if (!object(widget.colors) || !Object.entries(widget.colors).every(([key, value]) =>
         COLORS.includes(key) && (value === null || (typeof value === "string" && HEX.test(value))))) return false
-      if (!Number.isFinite(area.x) || !Number.isFinite(area.y) || area.x < 0 || area.y < 0 ||
+      if (!Number.isFinite(area.x) || !Number.isFinite(area.y) || area.x < (widget.expandable ? -300 : 0) || area.y < 0 ||
         !positive(area.width) || !positive(area.height) || area.x + area.width > profile.width ||
         area.y + area.height > profile.height || typeof widget.label !== "string" || typeof widget.kind !== "string" ||
         !positive(widget.width) || !positive(widget.height) || widget.width > area.width || widget.height > area.height) return false
-      if (widget.box && (data.metadata.projection !== true || widget.kind !== "nav_map" || !object(widget.opacity) ||
+      if (widget.box && (widget.kind !== "nav_map" || !object(widget.opacity) ||
         ![widget.box.minWidth, widget.box.maxWidth, widget.box.minHeight, widget.box.maxHeight].every(Number.isInteger) ||
         widget.box.minWidth < 24 || widget.box.minHeight < 24 || widget.box.minWidth > widget.box.maxWidth ||
         widget.box.minHeight > widget.box.maxHeight || widget.box.maxWidth > area.width || widget.box.maxHeight > area.height ||
         ![widget.opacity.min, widget.opacity.max, widget.opacity.default].every(Number.isInteger) ||
         widget.opacity.min < 0 || widget.opacity.max > 100 || widget.opacity.min > widget.opacity.default ||
         widget.opacity.default > widget.opacity.max)) return false
-      if (widget.opacity && (!projection || !["nav_map", "nav_home", "nav_work", "bookmark", "car_exit", "cruise_limits"].includes(widget.kind) ||
+      if (widget.opacity && (!(["nav_map", "jetlink_status"].includes(widget.kind) || projection && ["nav_home", "nav_work", "bookmark", "car_exit", "cruise_limits"].includes(widget.kind)) ||
         !object(widget.opacity) || ![widget.opacity.min, widget.opacity.max, widget.opacity.default].every(Number.isInteger) ||
         widget.opacity.min < 0 || widget.opacity.max > 100 || widget.opacity.min > widget.opacity.default ||
         widget.opacity.default > widget.opacity.max)) return false

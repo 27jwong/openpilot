@@ -791,7 +791,7 @@ def test_stopped_timer_widget_is_optional_off_and_protected_when_on():
   upgraded = validate_document(older)
   assert upgraded["layouts"]["compact"][STOPPED_TIMER_WIDGET] == {"x": 18, "y": 48, "enabled": False}
   assert upgraded["widgetOrder"]["compact"][-1] == STOPPED_TIMER_WIDGET
-  assert STOPPED_TIMER_WIDGET not in upgraded["layouts"]["large"]
+  assert upgraded["layouts"]["large"][STOPPED_TIMER_WIDGET]["enabled"] is False
   # Off, it may sit anywhere; on, it must clear the speed-limit buttons like other widgets.
   parked = default_document()
   parked["layouts"]["compact"][STOPPED_TIMER_WIDGET].update(y=120)
@@ -849,3 +849,108 @@ def test_projection_timer_renders_at_saved_coordinates_without_native_timer_enab
   document['layouts']['large'][STOPPED_TIMER_WIDGET]['enabled'] = False
   view._stopped_timer(road(document), 134)
   view.fonts.draw.assert_not_called()
+
+
+def test_large_navigation_widgets_migrate_without_changing_existing_layout_or_order():
+  import copy
+  keys = ("nav_card", "nav_map", STOPPED_TIMER_WIDGET)
+  older = default_document()
+  older["layouts"]["large"]["current_speed"].update(x=700, enabled=False)
+  older["widgetOrder"] = {"large": [key for key in reversed(DEFAULT_WIDGET_ORDER["large"]) if key not in keys]}
+  for key in keys:
+    del older["layouts"]["large"][key]
+  original = copy.deepcopy(older)
+  upgraded = validate_document(older)
+  assert older == original
+  assert upgraded["layouts"]["large"]["current_speed"] == older["layouts"]["large"]["current_speed"]
+  assert upgraded["widgetOrder"]["large"][:len(older["widgetOrder"]["large"])] == older["widgetOrder"]["large"]
+  assert set(upgraded["widgetOrder"]["large"]) == set(upgraded["layouts"]["large"])
+  for key in keys:
+    assert upgraded["layouts"]["large"][key] == default_document()["layouts"]["large"][key]
+    assert upgraded["layouts"]["large"][key]["enabled"] is (key == "nav_card")
+  upgraded["layouts"]["large"]["nav_map"].update(x=100, y=300, width=900, height=500, opacity=35, enabled=True)
+  upgraded["layouts"]["large"]["nav_card"].update(x=800, y=500, enabled=True)
+  assert decode_document(json.dumps(upgraded)) == upgraded
+  assert widget_size(upgraded, "large", "nav_map") == (900, 500)
+
+
+@pytest.mark.parametrize("change", [{"width": 279}, {"height": 199}, {"opacity": 14}, {"opacity": 101},
+                                   {"opacity": True}, {"width": 560.5}, {"width": 900}, {"x": float("nan")}])
+def test_native_map_rejects_invalid_size_opacity_and_offscreen_placements(change):
+  document = default_document()
+  document["layouts"]["large"]["nav_map"].update(change)
+  with pytest.raises(ValueError):
+    validate_document(document)
+
+
+def test_big_widgets_can_use_the_space_a_hidden_sidebar_adds():
+  from openpilot.starpilot.ui.onroad_customization import ANCHOR_SHIFT, PROFILES
+  widgets = PROFILES["large"]["widgets"]
+  document = default_document()
+  speed = document["layouts"]["large"]["current_speed"]
+  assert widgets["current_speed"]["bounds"]["x"] == 30 - 150 and widgets["steering_wheel"]["bounds"]["x"] == 30 - 300
+  assert all(widget["expandable"] for widget in widgets.values())
+  speed["x"] = 30 - 150
+  assert validate_document(document)["layouts"]["large"]["current_speed"]["x"] == -120
+  speed["x"] = 30 - 151
+  with pytest.raises(ValueError):
+    validate_document(document)
+  # Every widget reaches the right edge of the full screen, and not past it.
+  for key in widgets:
+    document = default_document()
+    placed, width = document["layouts"]["large"][key], widget_size(document, "large", key)[0]
+    placed["x"] = 2130 - width - ANCHOR_SHIFT.get(key, 0) * 300
+    validate_document(document)
+    placed["x"] += 1
+    with pytest.raises(ValueError):
+      validate_document(document)
+
+
+@pytest.mark.parametrize("right,bottom", [(False, False), (False, True), (True, False), (True, True)])
+def test_every_large_widget_reaches_each_corner_and_fits_when_sidebar_returns(right, bottom):
+  from openpilot.starpilot.ui.onroad_customization import ANCHOR_SHIFT, PROFILES, fit_to_road
+  for key in PROFILES["large"]["widgets"]:
+    document = default_document()
+    width, height = widget_size(document, "large", key)
+    shift = ANCHOR_SHIFT.get(key, 0) * 300
+    x, y = (2130 - width if right else 30) - shift, 1050 - height if bottom else 30
+    document["layouts"]["large"][key].update(x=x, y=y)
+    assert validate_document(document)["layouts"]["large"][key]["x"] == x
+    assert fit_to_road(document, 2160) is document
+    fitted = fit_to_road(document, 1860)["layouts"]["large"][key]
+    assert 30 <= fitted["x"] <= 1830 - width
+    assert fitted["y"] == y
+    assert document["layouts"]["large"][key]["x"] == x
+
+
+def test_fit_to_road_pulls_widgets_in_only_where_the_road_is_narrower():
+  from openpilot.starpilot.ui.onroad_customization import fit_to_road
+  document = default_document()
+  large = document["layouts"]["large"]
+  large["stopped_timer"]["x"] = 2130 - 660
+  large["steering_wheel"]["x"] = -270
+  large["current_speed"]["x"] = -120
+  assert fit_to_road(document, 2160) is document
+  fitted = fit_to_road(document, 1860)["layouts"]["large"]
+  assert fitted["stopped_timer"]["x"] == 1830 - 660
+  assert fitted["steering_wheel"]["x"] == 30
+  assert fitted["current_speed"]["x"] == 30
+  assert fitted["cruise_limits"] is large["cruise_limits"]
+  assert large["stopped_timer"]["x"] == 2130 - 660
+  assert fit_to_road(default_document(), 1860)["layouts"]["large"] == default_document()["layouts"]["large"]
+
+
+def test_jetlink_status_is_an_opt_in_big_widget_with_background_opacity():
+  document = default_document()
+  placed = document["layouts"]["large"]["jetlink_status"]
+  assert placed["enabled"] is False and placed["opacity"] == 85
+  assert "jetlink_status" not in document["layouts"]["compact"]
+  placed.update(enabled=True, x=100, y=300, opacity=40)
+  assert validate_document(document)["layouts"]["large"]["jetlink_status"]["opacity"] == 40
+  older = default_document()
+  del older["layouts"]["large"]["jetlink_status"]
+  assert validate_document(older)["layouts"]["large"]["jetlink_status"]["enabled"] is False
+  for bad in (101, -1, 50.5, True, None):
+    document["layouts"]["large"]["jetlink_status"]["opacity"] = bad
+    with pytest.raises(ValueError):
+      validate_document(document)
