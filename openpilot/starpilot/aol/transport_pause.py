@@ -307,15 +307,17 @@ class TransportPauseFeedback:
     """
     from openpilot.starpilot.nostalgia import physical_cancel
     from openpilot.starpilot.car.gm.aol import native_accepts_cp
+    from openpilot.starpilot.car.hyundai.aol import qualified_ioniq6
     gm = native_accepts_cp(cp, int(cp.safetyConfigs[0].safetyModel.raw), int(cp.safetyConfigs[0].safetyParam))
+    early_long = gm or cp.openpilotLongitudinalControl and qualified_ioniq6(cp)
     if (not latched or self.failed or self.paused or self.pending_event or self.retention_started_ns or
         not self.session or str(axis.sessionId) != self.session or
         not producer or producer != self.availability_producer or
         str(getattr(axis, 'intentProducerSessionId', '')) != producer or
         int(getattr(axis, 'intentIntegrityEpoch', 0)) != self.availability_epoch or
         not self.lateral_inventory or not self.lateral_baseline_ns or
-        str(axis.faultReason) != 'none' or not gm and str(axis.mode) != 'lateralOnly' or not axis.nativeAcknowledged or
-        not axis.desiredLateral or not axis.lateralActive or axis.longitudinalActive and not gm or
+        str(axis.faultReason) != 'none' or not early_long and str(axis.mode) != 'lateralOnly' or not axis.nativeAcknowledged or
+        not axis.desiredLateral or not axis.lateralActive or axis.longitudinalActive and not early_long or
         not 0 < self.lateral_source_ns <= axis.sourceCarStateMonoTime <= axis.observedMonoTime <= now_ns or
         now_ns - axis.sourceCarStateMonoTime > AXIS_MAX_AGE_NS or
         not cs.canValid or cs.canTimeout or cs.steerFaultTemporary or cs.steerFaultPermanent or cs.accFaulted or
@@ -332,7 +334,7 @@ class TransportPauseFeedback:
       return None
     owners = [index for index, config in enumerate(cp.safetyConfigs)
               if str(config.safetyModel) not in ('silent', 'noOutput')]
-    return native if (len(owners) == 1 and (gm or not native.pandaInventory[owners[0]].controlsAllowed and
+    return native if (len(owners) == 1 and (early_long or not native.pandaInventory[owners[0]].controlsAllowed and
                       not sm['pandaStates'][owners[0]].controlsAllowed)) else None
 
   def _temporary_host_intent_current(self, sm, cp, cs, axis, stamp, now_ns, *, latched, producer):

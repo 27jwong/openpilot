@@ -1714,8 +1714,11 @@ class SelfdriveD:
     # Toyota's native LONG mask also checks gas, brake and belt independently
     # of controls_allowed. Health and that mask may precede the parsed pedal
     # edge: honor LONG withdrawal while the existing native LAT grant stands.
-    # The exact Toyota policy and all proof/health checks above remain required.
+    # Ioniq6 also checks the physical brake before its separately published host sample.
+    # Retain only its already granted LAT; all proof, health and LONG withdrawal gates remain.
+    # The exact vehicle policies and all proof/health checks above remain required.
     return bool(gm_native_accepts_cp(self.CP, native.safetyModel, native.safetyParam) or
+                qualified_ioniq6(self.CP) or
                 toyota_aol_qualified(self.CP, marked_only=True) or
                 not native.pandaInventory[owners[0]].controlsAllowed and
                 not self.sm['pandaStates'][owners[0]].controlsAllowed)
