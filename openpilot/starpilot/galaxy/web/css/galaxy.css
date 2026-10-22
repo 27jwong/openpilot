@@ -1403,6 +1403,8 @@ input[type="checkbox"]:disabled { opacity: .4; cursor: not-allowed; }
 
 .gx-boot { position: fixed; inset: 0; z-index: 1000; isolation: isolate; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-4); padding: var(--panel-padding); text-align: center; background: url("../assets/restart-background.webp") center 42% / cover no-repeat #0c0a14; color: #f5edff; transition: opacity 460ms cubic-bezier(0.16, 1, 0.3, 1); }
 .gx-boot::before { content: ""; position: absolute; inset: 0; z-index: -1; background: radial-gradient(ellipse at center, #38205499 0%, #151020c7 65%, #0c0a14f2 100%); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+.gx-boot--arriving { animation: gx-boot-arrive 460ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes gx-boot-arrive { from { opacity: 0; } to { opacity: 1; } }
 .gx-boot--done { opacity: 0; }
 .gx-boot[hidden] { display: none; }
 .gx-boot h1, .gx-boot p { margin: 0; }
@@ -1412,7 +1414,7 @@ input[type="checkbox"]:disabled { opacity: .4; cursor: not-allowed; }
 .gx-boot__orbit { width: 36px; height: 36px; border: 2px solid #cba3ff33; border-top-color: #cba3ff; border-radius: 50%; animation: gx-spin 1.2s linear infinite; }
 .gx-boot--failed .gx-boot__orbit { display: none; }
 .gx-boot [hidden] { display: none; }
-@media (prefers-reduced-motion: reduce) { .gx-boot__orbit { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .gx-boot__orbit, .gx-boot--arriving { animation: none; } }
 @keyframes gx-spin { to { transform: rotate(360deg); } }
 
 .gx-device-state__icon { color: var(--secondary); flex: none; }
