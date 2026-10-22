@@ -125,6 +125,9 @@ class CarInterface(CarInterfaceBase):
       ret.flags |= ToyotaFlags.HAS_BSM.value
 
     ret.radarUnavailable = Bus.radar not in DBC[candidate]
+    if candidate == CAR.TOYOTA_CAMRY:
+      ret.radarUnavailable = False
+      ret.deprecated.radarTimeStep = 0.1
 
     from opendbc.car.toyota.radar_filter import hardware_supported as radar_filter_supported
     radar_filter = radar_filter_supported(candidate, fingerprint)
