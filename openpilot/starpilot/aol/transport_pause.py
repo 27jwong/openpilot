@@ -379,6 +379,11 @@ class TransportPauseFeedback:
       (not cs.gasPressed or stock_angle) and
       all(event.name == stock_user and not event.softDisable and
           not event.immediateDisable for event in users))
+    from openpilot.starpilot.car.ford.aol import temporary_eps_brake_recovery
+    stock_temporary_user |= bool(eps_recovery and temporary_eps_brake_recovery(cp, cs) and users and
+      not axis.desiredLongitudinal and not axis.longitudinalActive and
+      all(event.name in (stock_user, log.OnroadEvent.EventName.pedalPressed) and
+          not event.softDisable and not event.immediateDisable for event in users))
     pedal = bool(cs.brakePressed and users and all(event.name == log.OnroadEvent.EventName.pedalPressed and
       not event.softDisable and not event.immediateDisable for event in users) and not faults)
     if axis.longitudinalActive and not location_fault or not (temporary or eps_recovery or pedal):
@@ -590,8 +595,8 @@ class TransportPauseFeedback:
     from openpilot.starpilot.car.nissan.aol import temporary_eps_restriction
     from openpilot.starpilot.car.ford.aol import temporary_eps_restriction as ford_temporary_eps_restriction
     stock_ford_eps = bool(ford_temporary_eps_restriction(cp, cs) and
-      all(not event.userDisable or event.name == log.OnroadEvent.EventName.pcmDisable and not event.softDisable and
-          not event.immediateDisable for event in events))
+      all(not event.userDisable or event.name in (log.OnroadEvent.EventName.pcmDisable,
+          log.OnroadEvent.EventName.pedalPressed) and not event.softDisable and not event.immediateDisable for event in events))
     restricted_eps = bool((temporary_eps_restriction(cp, cs) or stock_ford_eps) and self.lateral_only_baseline and
       not axis.desiredLongitudinal and not axis.longitudinalActive)
     native = _configured_transport_native(sm, cp, self.session, now_ns, allow_restricted_lateral=restricted_eps)

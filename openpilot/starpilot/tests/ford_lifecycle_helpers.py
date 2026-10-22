@@ -392,7 +392,7 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
               active = bool(long_parser.vl['ACCDATA']['Cmbb_B_Enbl'])
               assert active == bool(command.longActive)
               active_long_frames += int(active)
-        if scenario in ('display', 'route24'):
+        if scenario in ('display', 'route24', 'route24-mixed-eps'):
           ui = [f for f in published['sendcan'].sendcan if f.address in (0x3D8, 0x18A)]
           owns = all(safety.safety_fwd_hook(2, address) == -1 for address in (0x3D8, 0x18A))
           assert host.CP.carFingerprint != CAR.FORD_MUSTANG_MACH_E_MK1 or not ui or owns, (
@@ -429,8 +429,9 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
       assert 0 <= warmup_waits < 120 and qualified_samples >= 100
       assert host.ci_initialized  # Read-only witness: real controls_update completed init.
       assert not host.aol_card_intent.allowed_latch
-      assert scenario == 'route24'
-      if scenario == 'route24':
+      assert scenario in ('route24', 'route24-mixed-eps')
+      if scenario in ('route24', 'route24-mixed-eps'):
+        mixed_eps = scenario == 'route24-mixed-eps'
         assert host.CP.flags == 3 and not host.CP.openpilotLongitudinalControl
         for _ in range(30):
           step(fault='gas')
@@ -447,16 +448,19 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
           state, axis, sd_state, command = step(brake=True)
         assert host.aol_card_intent.allowed_latch and command.latActive and not command.longActive
         for _ in range(20):
-          state, axis, sd_state, command = step()
-        assert not state.brakePressed and command.latActive and host.aol_card_intent.allowed_latch
+          state, axis, sd_state, command = step(brake=mixed_eps)
+        assert state.brakePressed == mixed_eps and command.latActive and host.aol_card_intent.allowed_latch
         for _ in range(60):
-          state, axis, sd_state, command = step(fault='temporary-eps')
+          state, axis, sd_state, command = step(brake=mixed_eps, fault='temporary-eps')
           assert host.aol_card_intent.allowed_latch
           if state.steerFaultTemporary:
             assert not command.latActive and not command.longActive
         for _ in range(40):
+          state, axis, sd_state, command = step(brake=mixed_eps)
+        assert state.brakePressed == mixed_eps and command.latActive and host.aol_card_intent.allowed_latch and not command.longActive
+        for _ in range(20):
           state, axis, sd_state, command = step()
-        assert command.latActive and host.aol_card_intent.allowed_latch and not command.longActive
+        assert not state.brakePressed and command.latActive and host.aol_card_intent.allowed_latch
         for _ in range(30):
           state, axis, sd_state, command = step(reverse=True)
         assert host.aol_card_intent.allowed_latch and not command.latActive and not command.longActive

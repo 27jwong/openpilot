@@ -1,4 +1,5 @@
 """Stock Ford's native temporary EPS denial withdraws output, not existing intent."""
+
 from dataclasses import replace
 
 import pytest
@@ -16,46 +17,110 @@ def case(identity=IDENTITIES[0]):
 
 
 @pytest.mark.parametrize('identity', IDENTITIES)
-def test_stock_temporary_eps_join_preserves_only_original_intent_and_recovers(identity):
+@pytest.mark.parametrize('brake', [False, True])
+def test_stock_temporary_eps_join_preserves_only_original_intent_and_recovers(identity, brake):
   cp, cs, feedback, peers, _, stamp = case(identity)
-  baseline = (feedback.lateral_baseline_ns, feedback.lateral_source_ns, feedback.lateral_native_ns,
-              feedback.healthy_feedback_ns, feedback.healthy_native_ns)
+  cs.brakePressed = brake
+  if brake:
+    event = messaging.new_message('onroadEvents', 2, valid=True, logMonoTime=NOW)
+    event.onroadEvents = [{'name': 'pcmDisable', 'userDisable': True}, {'name': 'pedalPressed', 'userDisable': True}]
+    peers.messages['onroadEvents'] = event.as_reader()
+  baseline = (feedback.lateral_baseline_ns, feedback.lateral_source_ns, feedback.lateral_native_ns, feedback.healthy_feedback_ns, feedback.healthy_native_ns)
   stamps = dict(peers.logMonoTime)
   assert not feedback.observe(peers, cp, cs, stamp, latched=True, intent_producer_session=PRODUCER)
   assert not feedback.failed
-  assert baseline == (feedback.lateral_baseline_ns, feedback.lateral_source_ns, feedback.lateral_native_ns,
-                      feedback.healthy_feedback_ns, feedback.healthy_native_ns)
+  assert baseline == (
+    feedback.lateral_baseline_ns,
+    feedback.lateral_source_ns,
+    feedback.lateral_native_ns,
+    feedback.healthy_feedback_ns,
+    feedback.healthy_native_ns,
+  )
   assert peers.logMonoTime == stamps
   next_stamp = stamp + 10_000_000
   withdrawn, _ = sample(cp, next_stamp, next_stamp, 3, active=False, requested=False, allowed=False, event_stamp=next_stamp)
   change(withdrawn, 'aolAxisState', lambda axis: setattr(axis, 'nativeAcknowledged', False))
-  event = messaging.new_message('onroadEvents', 2, valid=True, logMonoTime=next_stamp)
-  event.onroadEvents = [{'name': 'pcmDisable', 'userDisable': True}, {'name': 'steerTempUnavailableSilent', 'warning': True}]
+  event = messaging.new_message('onroadEvents', 3 if brake else 2, valid=True, logMonoTime=next_stamp)
+  event.onroadEvents = [{'name': 'pcmDisable', 'userDisable': True}, {'name': 'steerTempUnavailableSilent', 'warning': True}] + (
+    [{'name': 'pedalPressed', 'userDisable': True}] if brake else []
+  )
   withdrawn.messages['onroadEvents'] = event.as_reader()
   withdrawn.logMonoTime['onroadEvents'] = next_stamp
   assert not feedback.observe(withdrawn, cp, cs, next_stamp, latched=True, intent_producer_session=PRODUCER)
   assert feedback.temporary_eps_event_ns == next_stamp
-  assert baseline == (feedback.lateral_baseline_ns, feedback.lateral_source_ns, feedback.lateral_native_ns,
-                      feedback.healthy_feedback_ns, feedback.healthy_native_ns)
+  assert baseline == (
+    feedback.lateral_baseline_ns,
+    feedback.lateral_source_ns,
+    feedback.lateral_native_ns,
+    feedback.healthy_feedback_ns,
+    feedback.healthy_native_ns,
+  )
   cs.steerFaultTemporary = False
-  recovered, _ = sample(cp, next_stamp + 10_000_000, next_stamp + 10_000_000, 4, event_stamp=next_stamp + 10_000_000)
-  assert not feedback.observe(recovered, cp, cs, next_stamp + 10_000_000, latched=True, intent_producer_session=PRODUCER)
-  assert not feedback.failed and feedback.lateral_source_ns == next_stamp + 10_000_000
+  recovery_stamp = next_stamp + 10_000_000
+  if brake:
+    recovering, _ = sample(cp, recovery_stamp, recovery_stamp, 4, active=False, requested=False,
+                           allowed=False, event_stamp=next_stamp)
+    change(recovering, 'aolAxisState', lambda axis: setattr(axis, 'nativeAcknowledged', False))
+    recovering.messages['onroadEvents'] = event.as_reader()
+    recovering.logMonoTime['onroadEvents'] = next_stamp
+    assert not feedback.observe(recovering, cp, cs, recovery_stamp, latched=True, intent_producer_session=PRODUCER)
+    assert baseline == (feedback.lateral_baseline_ns, feedback.lateral_source_ns, feedback.lateral_native_ns,
+                        feedback.healthy_feedback_ns, feedback.healthy_native_ns)
+    recovery_stamp += 10_000_000
+  recovered, _ = sample(cp, recovery_stamp, recovery_stamp, 5, event_stamp=recovery_stamp)
+  assert not feedback.observe(recovered, cp, cs, recovery_stamp, latched=True, intent_producer_session=PRODUCER)
+  assert not feedback.failed and feedback.lateral_source_ns == recovery_stamp
 
 
-@pytest.mark.parametrize('fault', [
-  'no-eps', 'permanent-eps', 'can-invalid', 'timeout', 'brake', 'gas', 'regen', 'door', 'seatbelt',
-  'reverse', 'main-off', 'not-latched', 'producer', 'epoch', 'session', 'expired', 'stale-source',
-  'no-baseline', 'native-rx', 'native-heartbeat', 'native-fault', 'native-config', 'native-long',
-  'axis-long', 'hard-event', 'cancel',
-])
+@pytest.mark.parametrize(
+  'fault',
+  [
+    'no-eps',
+    'permanent-eps',
+    'can-invalid',
+    'timeout',
+    'brake-without-eps',
+    'gas',
+    'regen',
+    'door',
+    'seatbelt',
+    'reverse',
+    'main-off',
+    'not-latched',
+    'producer',
+    'epoch',
+    'session',
+    'expired',
+    'stale-source',
+    'no-baseline',
+    'native-rx',
+    'native-heartbeat',
+    'native-fault',
+    'native-config',
+    'native-long',
+    'axis-long',
+    'hard-event',
+    'cancel',
+  ],
+)
 def test_stock_eps_cannot_hide_independent_fault_or_borrow_another_owner(fault):
   cp, cs, feedback, peers, native, stamp = case()
   latched, producer = True, PRODUCER
-  if fault in ('no-eps', 'permanent-eps', 'can-invalid', 'timeout', 'brake', 'gas', 'regen', 'door', 'seatbelt'):
-    field = {'no-eps': 'steerFaultTemporary', 'permanent-eps': 'steerFaultPermanent', 'can-invalid': 'canValid',
-             'timeout': 'canTimeout', 'brake': 'brakePressed', 'gas': 'gasPressed', 'regen': 'regenBraking',
-             'door': 'doorOpen', 'seatbelt': 'seatbeltUnlatched'}[fault]
+  if fault == 'brake-without-eps':
+    cs.brakePressed = True
+    cs.steerFaultTemporary = False
+  elif fault in ('no-eps', 'permanent-eps', 'can-invalid', 'timeout', 'brake-without-eps', 'gas', 'regen', 'door', 'seatbelt'):
+    field = {
+      'no-eps': 'steerFaultTemporary',
+      'permanent-eps': 'steerFaultPermanent',
+      'can-invalid': 'canValid',
+      'timeout': 'canTimeout',
+      'brake': 'brakePressed',
+      'gas': 'gasPressed',
+      'regen': 'regenBraking',
+      'door': 'doorOpen',
+      'seatbelt': 'seatbeltUnlatched',
+    }[fault]
     setattr(cs, field, fault not in ('no-eps', 'can-invalid'))
   elif fault == 'reverse':
     cs.gearShifter = 'reverse'
@@ -64,15 +129,19 @@ def test_stock_eps_cannot_hide_independent_fault_or_borrow_another_owner(fault):
   elif fault == 'not-latched':
     before = dict(vars(feedback))
     assert not feedback._temporary_steering_intent_current(
-      peers, cp, cs, peers['aolAxisState'], stamp, stamp, latched=False, producer=producer, signature=feedback.signature)
+      peers, cp, cs, peers['aolAxisState'], stamp, stamp, latched=False, producer=producer, signature=feedback.signature
+    )
     assert vars(feedback) == before
     return
   elif fault == 'producer':
     producer = 'other-card'
   elif fault in ('epoch', 'session', 'stale-source', 'axis-long'):
-    field, value = {'epoch': ('intentIntegrityEpoch', 2), 'session': ('sessionId', 'other-axis'),
-                    'stale-source': ('sourceCarStateMonoTime', stamp - 30_000_001),
-                    'axis-long': ('desiredLongitudinal', True)}[fault]
+    field, value = {
+      'epoch': ('intentIntegrityEpoch', 2),
+      'session': ('sessionId', 'other-axis'),
+      'stale-source': ('sourceCarStateMonoTime', stamp - 30_000_001),
+      'axis-long': ('desiredLongitudinal', True),
+    }[fault]
     change(peers, 'aolAxisState', lambda axis: setattr(axis, field, value))
   elif fault == 'expired':
     stamp += 200_000_001
@@ -83,8 +152,7 @@ def test_stock_eps_cannot_hide_independent_fault_or_borrow_another_owner(fault):
   elif fault == 'native-long':
     native_change(peers, native, requestedLongitudinal=True)
   elif fault in ('native-rx', 'native-heartbeat', 'native-fault'):
-    updates = {'native-rx': {'safetyRxChecksInvalid': True}, 'native-heartbeat': {'heartbeatLost': True},
-               'native-fault': {'faults': 8}}[fault]
+    updates = {'native-rx': {'safetyRxChecksInvalid': True}, 'native-heartbeat': {'heartbeatLost': True}, 'native-fault': {'faults': 8}}[fault]
     native_change(peers, native, pandaInventory=(replace(native.pandaInventory[0], **updates),))
   elif fault == 'hard-event':
     change(peers, 'onroadEvents', lambda events: setattr(events[0], 'immediateDisable', True))
