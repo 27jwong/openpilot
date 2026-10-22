@@ -44,7 +44,7 @@ def draw_caption(fonts, label, x, top, color=MUTED, *, unit=None):
   large = fonts.profile == Profile.LARGE
   width, height = draw_ink(fonts, label, FontRole.MEDIUM, 32 if large else 24, x, top, color)
   if unit:
-    size = 24 if large else 20
+    size = 28 if large else 20
     unit_top, _ = fonts.vertical_ink(unit, FontRole.NORMAL, size)
     # Exclude the p descender when aligning mph to the caption baseline.
     _, baseline = fonts.vertical_ink('mh' if unit == 'mph' else unit, FontRole.NORMAL, size)

@@ -57,8 +57,8 @@ def test_approved_limit_offset_and_action_sizes_fit_actual_fonts():
         assert all(fonts.measure(label, FontRole.MEDIUM, ACTION_TEXT[profile][0]).width + 4 <= action_width
                    for label in ('Accept', 'Decline'))
         ppi = (2160**2 + 1080**2)**.5 / 6 if large else 300
-        for text, role, size, minimum in (('65', FontRole.BOLD, limit_size, 2.8),
-                                         ('+5', FontRole.MEDIUM, offset_size, 2.0),
+        for text, role, size, minimum in (('65', FontRole.BOLD, limit_size, 2.5 if large else 2.8),
+                                         ('+5', FontRole.MEDIUM, offset_size, 1.5 if large else 2.0),
                                          ('H', FontRole.MEDIUM, ACTION_TEXT[profile][0], 2.8)):
           top, bottom = fonts.vertical_ink(text, role, size)
           assert (bottom - top) * 25.4 / ppi >= minimum
@@ -67,7 +67,7 @@ def test_approved_limit_offset_and_action_sizes_fit_actual_fonts():
       rl.close_window()
 
 
-def test_large_sign_scales_beside_the_unchanged_set_speed():
+def test_large_sign_is_secondary_to_set_speed_at_the_saved_position():
   from unittest.mock import patch
   from openpilot.starpilot.ui.onroad_large_widgets import UnifiedSpeedWidget
   from openpilot.starpilot.ui.layout_preview_renderer import sample_state
@@ -91,16 +91,22 @@ def test_large_sign_scales_beside_the_unchanged_set_speed():
           UnifiedSpeedWidget(fonts).render(rl.Rectangle(30, 30, 1800, 1020), current)
         calls = [call for call in calls if call[-1].a == 255]
         posted = next(call for call in calls if call[0] == '120' and call[1] == FontRole.BOLD)
-        assert posted[2] == 58 * 1.25 * Profile.COMPACT.font_scale / Profile.LARGE.font_scale
+        assert abs(posted[2] - 58 * .95 * Profile.COMPACT.font_scale / Profile.LARGE.font_scale) < 1e-6
         left, right = fonts.horizontal_ink('120', FontRole.BOLD, posted[2])
-        assert abs(posted[3] + (left + right) / 2 - 445.75) < 1e-6
-        assert posted[4] + fonts.vertical_ink('120', FontRole.BOLD, posted[2])[0] == 157.5
+        assert abs(posted[3] + (left + right) / 2 - 428.05) < 1e-6
+        assert posted[4] + fonts.vertical_ink('120', FontRole.BOLD, posted[2])[0] == 142.5
         set_calls = [call for call in calls if call[1] == FontRole.SET_SPEED]
         assert bool(set_calls) == show_set
         if set_calls:
           text, role, size, x, y, _ = set_calls[0]
-          assert x == 212 and fonts.measure(text, role, size).width <= 126
+          assert x == 212 and fonts.measure(text, role, size).width <= 148
           assert y + fonts.vertical_ink(text, role, size)[0] == 146
+          assert size == (120 if value in (60, None) else 87)
+          left, right = fonts.horizontal_ink(text, role, size)
+          assert x + right + 16 <= 372
+          unit = next(call for call in calls if call[0] == ('km/h' if metric else 'mph'))
+          assert unit[2] == 28
+          assert unit[4] + fonts.vertical_ink(unit[0], unit[1], unit[2])[1] < 146
   finally:
     if owns_context:
       rl.close_window()

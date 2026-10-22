@@ -106,7 +106,7 @@ def test_pending_sign_pulses_in_place_and_arrow_follows_vehicle_speed(profile, v
   assert all(after[text][3:5] == args[3:5] for text, args in before.items())
   if vienna:
     assert rgba_tuple(after['50'][-1]) == (0, 0, 0, 255)
-    assert drawing['circle'].call_args.args[:2] == ((389, 87) if profile == Profile.COMPACT else (345.75, 158.75))
+    assert drawing['circle'].call_args.args[:2] == ((389, 87) if profile == Profile.COMPACT else (328.05, 138.65))
     assert rgba_tuple(drawing['circle'].call_args.args[-1]) == (170, 115, 235, 255)
   else:
     assert rgba_tuple(after['50'][-1]) == (170, 115, 235, 255)

@@ -80,8 +80,8 @@ class UnifiedSpeedWidget:
     if shown.mode != 'limit_only':
       x = rect.x + PADDING
       draw_caption(self.fonts, 'SET', x, rect.y + 19, unit=shown.unit)
-      size = 104
-      while size > 72 and self.fonts.measure(shown.max_text, FontRole.SET_SPEED, size).width > 126:
+      size = 120
+      while size > 72 and self.fonts.measure(shown.max_text, FontRole.SET_SPEED, size).width > 148:
         size -= 1
       draw_ink(self.fonts, shown.max_text, FontRole.SET_SPEED, size, x, rect.y + 51, text)
     self.sign.render(state)
