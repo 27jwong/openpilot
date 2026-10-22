@@ -63,7 +63,7 @@ def retain_reverse_intent(feedback, sm, cp, cs, axis, now_ns, *, latched, produc
       or producer != feedback.availability_producer
       or str(axis.intentProducerSessionId) != producer
       or int(axis.intentIntegrityEpoch) != feedback.availability_epoch
-      or not feedback.availability_epoch
+      or feedback.availability_epoch is None
       or not feedback.lateral_only_baseline
       or not feedback.lateral_inventory
       or previous is None
