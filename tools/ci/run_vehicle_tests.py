@@ -33,6 +33,7 @@ DEBUG_SAFETY_CLASS_TARGETS = {
 
 
 RELEASE_TARGETS = (
+  "opendbc_repo/opendbc/car/hyundai/tests/test_gv60_paired_startup.py",
   "opendbc_repo/opendbc/car/hyundai/tests/test_ev9_pending_protocol.py",
   "opendbc_repo/opendbc/car/hyundai/tests/test_ev9_pending_startup.py::TestEV9NormalSelection",
   "opendbc_repo/opendbc/car/hyundai/tests/test_batched_ready_observations.py",

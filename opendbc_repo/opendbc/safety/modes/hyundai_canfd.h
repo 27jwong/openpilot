@@ -204,6 +204,15 @@ static bool aol_ioniq6_enable_release = false;
 static uint32_t aol_ioniq6_enable_release_ts = 0U;
 static bool hyundai_canfd_ioniq6_lfa_unpaired = false;
 static uint32_t hyundai_canfd_ioniq6_lfa_ts = 0U;
+#ifdef ALLOW_DEBUG
+static bool hyundai_canfd_gv60_long_param(uint16_t param) {
+  return ((param == 0x9015U) || (param == 0x9095U)) && ((unsigned int)alternative_experience == 0U);
+}
+#endif
+
+static bool hyundai_canfd_gv60_long = false;
+static bool hyundai_canfd_gv60_heartbeat_seen = false;
+static uint8_t hyundai_canfd_gv60_heartbeat_counter = 0U;
 static bool hyundai_canfd_ioniq6_heartbeat_seen = false;
 static uint8_t hyundai_canfd_ioniq6_heartbeat_counter = 0U;
 static bool hyundai_canfd_ioniq6_corner_valid = false;
@@ -695,6 +704,26 @@ static void hyundai_canfd_rx_hook(const CANPacket_t *msg) {
   }
 }
 
+static bool hyundai_canfd_gv60_heartbeat_valid(const CANPacket_t *msg) {
+  static const uint8_t body[24] = {
+    0, 0, 0, 2, 0, 0, 0xfc, 0xff, 0, 0, 0, 0, 0, 0x20, 0, 0,
+    0x55, 0xff, 0, 0, 0x68, 0, 0, 0,
+  };
+  bool valid = hyundai_canfd_ioniq6_rx_healthy() &&
+               (hyundai_canfd_get_checksum(msg) == hyundai_common_canfd_compute_checksum(msg)) &&
+               ((!hyundai_canfd_gv60_heartbeat_seen) || (msg->data[2] != hyundai_canfd_gv60_heartbeat_counter)) &&
+               (GET_BIT(msg, 32U) == brake_pressed) && (GET_BIT(msg, 176U) == gas_pressed);
+  for (int i = 3; i < 24; i++) {
+    const uint8_t mask = ((i == 4) || (i == 22)) ? 0xfeU : 0xffU;
+    valid &= (msg->data[i] & mask) == body[i];
+  }
+  if (valid) {
+    hyundai_canfd_gv60_heartbeat_seen = true;
+    hyundai_canfd_gv60_heartbeat_counter = msg->data[2];
+  }
+  return valid;
+}
+
 static bool hyundai_canfd_tx_hook_valid(const CANPacket_t *msg) {
   static uint8_t hyundai_canfd_ioniq6_lfa_mirror[4] = {0};
   const TorqueSteeringLimits HYUNDAI_CANFD_STEERING_LIMITS = {
@@ -862,6 +891,10 @@ static bool hyundai_canfd_tx_hook_valid(const CANPacket_t *msg) {
     }
     uint16_t crc_xor = (GET_LEN(msg) == 8U) ? 0x5F29U : ((GET_LEN(msg) == 16U) ? 0x041DU : 0U);
     tx &= hyundai_canfd_get_checksum(msg) == (hyundai_common_canfd_compute_checksum(msg) ^ crc_xor);
+  }
+
+  if (hyundai_canfd_gv60_long && (msg->addr == 0x100U)) {
+    tx &= hyundai_canfd_gv60_heartbeat_valid(msg);
   }
 
   if (hyundai_canfd_ioniq6_long && (msg->addr == 0x100U)) {
@@ -1158,6 +1191,9 @@ static void hyundai_canfd_reset_ioniq6_state(void) {
   hyundai_canfd_torque_ev_long = false;
   hyundai_canfd_ioniq6_lfa_unpaired = false;
   hyundai_canfd_ioniq6_lfa_ts = 0U;
+  hyundai_canfd_gv60_long = false;
+  hyundai_canfd_gv60_heartbeat_seen = false;
+  hyundai_canfd_gv60_heartbeat_counter = 0U;
   hyundai_canfd_ioniq6_heartbeat_seen = false;
   hyundai_canfd_ioniq6_heartbeat_counter = 0U;
   hyundai_canfd_ioniq6_corner_valid = false;
@@ -1219,7 +1255,8 @@ static safety_config hyundai_canfd_init_validated(uint16_t param) {
   const uint16_t angle_strip_mask = HYUNDAI_PARAM_CANFD_ANGLE | HYUNDAI_PARAM_ANGLE_CCNC_MODEL_BANK | HYUNDAI_PARAM_ANGLE_MODEL_MASK |
                                     HYUNDAI_PARAM_ANGLE_OBSERVED_ADAS;
 #ifdef ALLOW_DEBUG
-  const bool ioniq6_long_requested = GET_FLAG(param, 32768U);
+  const bool gv60_long_requested = hyundai_canfd_gv60_long_param(param);
+  const bool ioniq6_long_requested = GET_FLAG(param, 32768U) && !gv60_long_requested;
 #endif
   // Model selector bits are shared with ordinary-mode metadata, but never passed
   // to common init as those meanings when the angle discriminator is present.
@@ -1227,6 +1264,8 @@ static safety_config hyundai_canfd_init_validated(uint16_t param) {
   uint16_t common_param = (ioniq6_stock_aol_requested || torque_long_aol_requested) ? (param & (uint16_t)~2048U) : param;
   if (angle_requested) {
     common_param = param & (uint16_t)~angle_strip_mask;
+  } else if (gv60_long_requested) {
+    common_param = param & (uint16_t)~0x9000U;
   } else if (ioniq6_long_requested) {
     const uint16_t ioniq6_strip_mask = 32768U | 2048U;
     common_param = param & (uint16_t)~ioniq6_strip_mask;
@@ -1308,29 +1347,33 @@ static safety_config hyundai_canfd_init_validated(uint16_t param) {
     {0x1AA, 1, 16, .check_relay = false},
   };
 
+#define HYUNDAI_CANFD_LKA_STEER_MSG_LONG_TX_MSGS_BODY \
+    HYUNDAI_CANFD_LKA_STEER_MSG_COMMON_TX_MSGS(0, 1) \
+    HYUNDAI_CANFD_LFA_STEERING_COMMON_TX_MSGS(1) \
+    HYUNDAI_CANFD_SCC_CONTROL_COMMON_TX_MSGS(1, true) \
+    {0x51,  0, 32, .check_relay = false}, /* ADRV_0x51 */ \
+    {0x730, 1,  8, .check_relay = false}, /* tester present for ADAS ECU disable */ \
+    {0x160, 1, 16, .check_relay = false}, /* ADRV_0x160 */ \
+    {0x1EA, 1, 32, .check_relay = false}, /* ADRV_0x1ea */ \
+    {0x200, 1,  8, .check_relay = false}, /* ADRV_0x200 */ \
+    {0x345, 1,  8, .check_relay = false}, /* ADRV_0x345 */ \
+    {0x1DA, 1, 32, .check_relay = false}, /* ADRV_0x1da */
   static const CanMsg HYUNDAI_CANFD_LKA_STEER_MSG_LONG_TX_MSGS[] = {
-    HYUNDAI_CANFD_LKA_STEER_MSG_COMMON_TX_MSGS(0, 1)
-    HYUNDAI_CANFD_LFA_STEERING_COMMON_TX_MSGS(1)
-    HYUNDAI_CANFD_SCC_CONTROL_COMMON_TX_MSGS(1, true)
-    {0x51,  0, 32, .check_relay = false},  // ADRV_0x51
-    {0x730, 1,  8, .check_relay = false},  // tester present for ADAS ECU disable
-    {0x160, 1, 16, .check_relay = false},  // ADRV_0x160
-    {0x1EA, 1, 32, .check_relay = false},  // ADRV_0x1ea
-    {0x200, 1,  8, .check_relay = false},  // ADRV_0x200
-    {0x345, 1,  8, .check_relay = false},  // ADRV_0x345
-    {0x1DA, 1, 32, .check_relay = false},  // ADRV_0x1da
+    HYUNDAI_CANFD_LKA_STEER_MSG_LONG_TX_MSGS_BODY
   };
+#define HYUNDAI_CANFD_LKA_STEER_MSG_ALT_LONG_TX_MSGS_BODY \
+    HYUNDAI_CANFD_LKA_STEER_MSG_ALT_COMMON_TX_MSGS(0, 1) \
+    HYUNDAI_CANFD_LFA_STEERING_COMMON_TX_MSGS(1) \
+    HYUNDAI_CANFD_SCC_CONTROL_COMMON_TX_MSGS(1, true) \
+    {0x51,  0, 32, .check_relay = false}, /* ADRV_0x51 */ \
+    {0x730, 1,  8, .check_relay = false}, /* tester present for ADAS ECU disable */ \
+    {0x160, 1, 16, .check_relay = false}, /* ADRV_0x160 */ \
+    {0x1EA, 1, 32, .check_relay = false}, /* ADRV_0x1ea */ \
+    {0x200, 1,  8, .check_relay = false}, /* ADRV_0x200 */ \
+    {0x345, 1,  8, .check_relay = false}, /* ADRV_0x345 */ \
+    {0x1DA, 1, 32, .check_relay = false}, /* ADRV_0x1da */
   static const CanMsg HYUNDAI_CANFD_LKA_STEER_MSG_ALT_LONG_TX_MSGS[] = {
-    HYUNDAI_CANFD_LKA_STEER_MSG_ALT_COMMON_TX_MSGS(0, 1)
-    HYUNDAI_CANFD_LFA_STEERING_COMMON_TX_MSGS(1)
-    HYUNDAI_CANFD_SCC_CONTROL_COMMON_TX_MSGS(1, true)
-    {0x51,  0, 32, .check_relay = false},  // ADRV_0x51
-    {0x730, 1,  8, .check_relay = false},  // tester present for ADAS ECU disable
-    {0x160, 1, 16, .check_relay = false},  // ADRV_0x160
-    {0x1EA, 1, 32, .check_relay = false},  // ADRV_0x1ea
-    {0x200, 1,  8, .check_relay = false},  // ADRV_0x200
-    {0x345, 1,  8, .check_relay = false},  // ADRV_0x345
-    {0x1DA, 1, 32, .check_relay = false},  // ADRV_0x1da
+    HYUNDAI_CANFD_LKA_STEER_MSG_ALT_LONG_TX_MSGS_BODY
   };
 
   static const CanMsg HYUNDAI_CANFD_LFA_STEERING_TX_MSGS[] = {
@@ -1380,7 +1423,7 @@ static safety_config hyundai_canfd_init_validated(uint16_t param) {
   hyundai_canfd_angle_model = 0U;
 #ifdef ALLOW_DEBUG
   hyundai_canfd_ioniq6_long = ioniq6_long_requested;
-  hyundai_canfd_torque_ev_long = (param == 0x0015U) || (param == 0x0095U) || torque_long_aol_requested;
+  hyundai_canfd_torque_ev_long = (param == 0x0015U) || (param == 0x0095U) || torque_long_aol_requested || gv60_long_requested;
 #endif
   hyundai_torque_aol_cancel_preserves_lateral = ioniq6_stock_aol_requested || torque_long_aol_requested ||
                                                (param == 0x8815U) || (param == 0x8895U);
@@ -1962,6 +2005,35 @@ static safety_config hyundai_canfd_init_validated(uint16_t param) {
       aol_policy = &independent_policy;
     }
   }
+#ifdef ALLOW_DEBUG
+  if (gv60_long_requested) {
+    // Keep the exact ordinary catalog plus GV60 heartbeat in flash, without
+    // duplicating a 64-entry mutable table in the firmware RAM region.
+    static const CanMsg gv60_standard_long_tx_msgs[] = {
+      HYUNDAI_CANFD_LKA_STEER_MSG_LONG_TX_MSGS_BODY
+      {0x100, 0, 24, .check_relay = true, .check_relay_immediately = true},
+    };
+    static const CanMsg gv60_alternate_long_tx_msgs[] = {
+      HYUNDAI_CANFD_LKA_STEER_MSG_ALT_LONG_TX_MSGS_BODY
+      {0x100, 0, 24, .check_relay = true, .check_relay_immediately = true},
+    };
+    const CanMsg *expected = hyundai_canfd_lka_steer_msg_alt ? HYUNDAI_CANFD_LKA_STEER_MSG_ALT_LONG_TX_MSGS :
+                                                                      HYUNDAI_CANFD_LKA_STEER_MSG_LONG_TX_MSGS;
+    const int expected_len = hyundai_canfd_lka_steer_msg_alt ? (int)(sizeof(HYUNDAI_CANFD_LKA_STEER_MSG_ALT_LONG_TX_MSGS) / sizeof(CanMsg)) :
+                                                            (int)(sizeof(HYUNDAI_CANFD_LKA_STEER_MSG_LONG_TX_MSGS) / sizeof(CanMsg));
+    if ((ret.tx_msgs == expected) && (ret.tx_msgs_len == expected_len)) {
+      if (hyundai_canfd_lka_steer_msg_alt) {
+        SET_TX_MSGS(gv60_alternate_long_tx_msgs, ret);
+      } else {
+        SET_TX_MSGS(gv60_standard_long_tx_msgs, ret);
+      }
+      hyundai_canfd_gv60_long = true;
+    } else {
+      ret.rx_checks_len = 0;
+      ret.tx_msgs_len = 0;
+    }
+  }
+#endif
   return ret;
 }
 
@@ -1970,7 +2042,8 @@ static safety_config hyundai_canfd_init(uint16_t param) {
   hyundai_ordinary_angle_reset();
 #ifdef ALLOW_DEBUG
   const bool valid = !GET_FLAG(param, 32768U) || (param == 0x8015U) || (param == 0x8095U) ||
-                     (param == 0x8815U) || (param == 0x8895U);
+                     (param == 0x8815U) || (param == 0x8895U) ||
+                     hyundai_canfd_gv60_long_param(param);
 #else
   const bool valid = !GET_FLAG(param, 32768U);
 #endif

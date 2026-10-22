@@ -99,6 +99,8 @@ def process_hud_alert(enabled, fingerprint, hud_control):
 class CarController(CarControllerBase):
   def __init__(self, dbc_names, CP):
     super().__init__(dbc_names, CP)
+    from opendbc.car.hyundai.gv60_startup import qualified as gv60_long_qualified
+    self.gv60_longitudinal = gv60_long_qualified(CP)
     self.CAN = CanBus(CP)
     self.params = CarControllerParams(CP)
     self.packer = CANPacker(dbc_names[Bus.pt])
@@ -552,6 +554,8 @@ class CarController(CarControllerBase):
           self.packer, self.CAN, self.frame, template=self.adrv_template,
           drive_gear=CS.out.gearShifter == structs.CarState.GearShifter.drive,
           speed=CS.out.vEgoRaw if self.CP.carFingerprint == CAR.GENESIS_GV70_ELECTRIFIED_1ST_GEN else None))
+        if self.gv60_longitudinal and self.frame % 4 == 0:
+          can_sends.append(hyundaicanfd.create_gv60_radar_heartbeat(self.frame // 4, CS.out.brakePressed, CS.out.gasPressed))
         if self.ioniq6_longitudinal is not None and self.frame % 4 == 0:
           can_sends.append(hyundaicanfd.create_ioniq6_radar_heartbeat(self.frame // 4, CS.out.brakePressed, CS.out.gasPressed))
         if self.ioniq6_bsm_enabled and self.frame % 5 == 0:
