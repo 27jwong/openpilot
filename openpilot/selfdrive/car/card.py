@@ -174,7 +174,7 @@ class Car:
     self.aol_replay = os.getenv('AOL_REPLAY_RUNTIME') == '1' or feature_requested(self.params, 'aol')
     self.conditional_replay = os.getenv('CONDITIONAL_MODE_REPLAY_RUNTIME') == '1' or feature_requested(self.params, 'conditional')
     subscribed_services = ['pandaStates', 'carControl', 'onroadEvents', 'deviceState', 'autoSteeringLearning']
-    if self.params.get_bool('SubaruRedneckCruise'):
+    if self.params.get_bool('SubaruRedneckCruise') or self.params.get_bool('SubaruSNG'):
       subscribed_services.extend(('longitudinalPlan', 'selfdriveState'))
     if self.aol_replay:
       subscribed_services.extend(service for service in ('aolSafetyWire', 'managerState', 'aolAxisState', 'selfdriveState')
@@ -1677,6 +1677,8 @@ class Car:
       if self.CP.brand == "subaru":
         from openpilot.starpilot.car.subaru.software_cruise_caller import update as update_subaru_software_cruise
         update_subaru_software_cruise(self, CS, CC, now_nanos)
+        from openpilot.starpilot.car.subaru.sng_caller import update as update_subaru_sng
+        update_subaru_sng(self, CS, CC, now_nanos)
       self.last_actuators_output, can_sends = self.CI.apply(CC, now_nanos)
       self.publish_sendcan(can_sends, valid=CS.canValid)
       if learning_snapshot is not None and self.learning_send_committed_mono_ns:

@@ -74,6 +74,7 @@ from openpilot.starpilot.controllers.toyota_cruise import capability as toyota_c
 
 BOOL_DEFAULTS = {
   "GMPedalLongitudinal": False, "ForceStops": False, "AlwaysAllowUploads": False, "TurnAssist": True,
+  "SubaruSNG": False,
   "SubaruRedneckCruise": False,
   "ReverseCruise": False, "ToyotaAutoHold": False, "JeepBrakeHold": False, "VoltSNG": False, "GMAutoHold": False, "VoltOnePedalMode": False,
   "RemapCancelToDistance": False, "LongPitch": True, "DisableOpenpilotLongitudinal": False,
@@ -291,6 +292,10 @@ class FeatureSettingsOwner:
               self.authority("preferences") and request.expected in (None, b"0", b"1"))
     return commit_exact(self.params, key="LongPitch", max_bytes=128, raw=b"1" if request.value == "On" else b"0",
                         expected=request.expected, authorized=authorized, temp_prefix=".gm-long-pitch-").verified
+
+  def _subaru_sng_capability(self):
+    from openpilot.starpilot.car.subaru.sng_settings import capability
+    return capability(self)
 
   def _subaru_software_capability(self):
     from openpilot.starpilot.car.subaru.software_cruise_settings import capability
@@ -742,7 +747,7 @@ class FeatureSettingsOwner:
       if (self._long_pitch_capability() is not None or self._bolt_disable_capability() is not None or
           self._auto_hold_capability() is not None or self._jeep_hold_capability() is not None or
           self._toyota_radar_capability() is not None or self._pedal_setup_capability() is not None or
-          self._subaru_software_capability() is not None or self._gm_stop_capability("VoltSNG") is not None or
+          self._subaru_sng_capability() is not None or self._subaru_software_capability() is not None or self._gm_stop_capability("VoltSNG") is not None or
           self._gm_stop_capability("GMAutoHold") is not None or self.tesla_screen.capability() is not None or
           self.gm_tune.capability() is not None or self.gm_truck.capability() is not None or
           self.gm_ev_preset.capability() is not None or self.volt_radar.capability() is not None or
@@ -803,6 +808,11 @@ class FeatureSettingsOwner:
           row = replace(row, reason="Factory camera not detected. Turn this setting off and restart to restore StarPilot speed control.")
         rows.append(replace(row, available=row.available and self._readable("DisableOpenpilotLongitudinal"),
                             capability=bolt_capability))
+      subaru_sng_capability = self._subaru_sng_capability()
+      if subaru_sng_capability is not None:
+        row = self._bool_row("SubaruSNG", "Stop-and-Go Assistance", parked and self.authority("parked_preferences"),
+                             "Assists lead departure and standstill hold with factory ACC. Applies after the next startup.")
+        rows.append(replace(row, available=row.available and self._readable("SubaruSNG"), capability=subaru_sng_capability))
       software_capability = self._subaru_software_capability()
       if software_capability is not None:
         row = self._bool_row("SubaruRedneckCruise", "Software Cruise Control", parked and self.authority("parked_preferences"),
@@ -1241,6 +1251,9 @@ class FeatureSettingsOwner:
       return self.gm_truck.apply(request)
     if key == "DisableOpenpilotLongitudinal":
       return self._apply_bolt_disable(request)
+    if key == "SubaruSNG":
+      from openpilot.starpilot.car.subaru.sng_settings import apply
+      return apply(self, request)
     if key == "SubaruRedneckCruise":
       from openpilot.starpilot.car.subaru.software_cruise_settings import apply
       return apply(self, request)

@@ -12,6 +12,14 @@ class CarInterface(CarInterfaceBase):
   CarState = CarState
   CarController = CarController
 
+  def update(self, can_packets):
+    result = super().update(can_packets)
+    from opendbc.car.subaru.sng import selected
+    if selected(self.CP):
+      from opendbc.car.subaru.sng_source import capture
+      capture(self, can_packets)
+    return result
+
   @staticmethod
   def _get_params(ret: structs.CarParams, candidate: CAR, fingerprint, car_fw, alpha_long, is_release, docs) -> structs.CarParams:
     ret.brand = "subaru"

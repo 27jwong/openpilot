@@ -32,6 +32,10 @@ def qualified(cp, *, marked_only=False):
     return False
   if cp.carFingerprint == CAR.SUBARU_IMPREZA_2020 and cp.safetyConfigs[0].safetyParam == 512:
     expected |= 512
+  if cp.carFingerprint in (CAR.SUBARU_ASCENT, CAR.SUBARU_IMPREZA, CAR.SUBARU_IMPREZA_2020, CAR.SUBARU_FORESTER) and cp.safetyConfigs[0].safetyParam in (8, 520):
+    expected |= 8
+    if cp.carFingerprint == CAR.SUBARU_IMPREZA_2020:
+      expected |= cp.safetyConfigs[0].safetyParam & 512
   config = cp.safetyConfigs[0]
   return config.safetyModel == structs.CarParams.SafetyModel.subaru and config.safetyParam == expected
 

@@ -22,17 +22,17 @@ def eligible(cp):
       and int(cp.flags) & ~int(SubaruFlags.HAS_BSM | SubaruFlags.SEND_INFOTAINMENT) == int(CAR.SUBARU_IMPREZA_2020.config.flags)
       and len(cp.safetyConfigs) == 1
       and cp.safetyConfigs[0].safetyModel == structs.CarParams.SafetyModel.subaru
-      and cp.safetyConfigs[0].safetyParam in (0, SOFTWARE_CRUISE)
+      and cp.safetyConfigs[0].safetyParam in (0, 8, SOFTWARE_CRUISE, SOFTWARE_CRUISE | 8)
     )
   except (AttributeError, TypeError, ValueError, IndexError):
     return False
 
 
 def selected(cp):
-  return eligible(cp) and cp.safetyConfigs[0].safetyParam == SOFTWARE_CRUISE
+  return eligible(cp) and bool(cp.safetyConfigs[0].safetyParam & SOFTWARE_CRUISE)
 
 
 def prepare(cp, enabled):
   if enabled and eligible(cp):
-    cp.safetyConfigs[0].safetyParam = SOFTWARE_CRUISE
+    cp.safetyConfigs[0].safetyParam |= SOFTWARE_CRUISE
   return cp

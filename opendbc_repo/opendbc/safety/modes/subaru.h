@@ -3,6 +3,7 @@
 #include "opendbc/safety/declarations.h"
 #include "opendbc/safety/modes/subaru_stock_aol.h"
 #include "opendbc/safety/modes/subaru_software_cruise.h"
+#include "opendbc/safety/modes/subaru_sng.h"
 
 #define SUBARU_STEERING_LIMITS_GENERATOR(steer_max, rate_up, rate_down)               \
   {                                                                                   \
@@ -169,6 +170,7 @@ static void subaru_rx_hook(const CANPacket_t *msg) {
   if (msg_matches(msg, MSG_SUBARU_Throttle, SUBARU_MAIN_BUS)) {
     gas_pressed = msg->data[4] != 0U;
   }
+  subaru_sng_rx(msg);
 }
 
 static bool subaru_tx_hook(const CANPacket_t *msg) {
@@ -254,6 +256,9 @@ static bool subaru_tx_hook(const CANPacket_t *msg) {
     }
   }
 
+  if ((msg->addr == 0x40U) || (msg->addr == 0x139U)) {
+    tx = subaru_sng_tx(msg);
+  }
   if (msg->addr == 0x146U) {
     tx = subaru_software_tx(msg);
   }
@@ -270,6 +275,20 @@ static safety_config subaru_init(uint16_t param) {
     SUBARU_BASE_TX_MSGS(SUBARU_MAIN_BUS, MSG_SUBARU_ES_LKAS)
     SUBARU_COMMON_TX_MSGS(SUBARU_MAIN_BUS)
     {0x146U, SUBARU_MAIN_BUS, 8, .check_relay = false},
+  };
+
+  static const CanMsg SUBARU_SNG_TX_MSGS[] = {
+    SUBARU_BASE_TX_MSGS(SUBARU_MAIN_BUS, MSG_SUBARU_ES_LKAS)
+    SUBARU_COMMON_TX_MSGS(SUBARU_MAIN_BUS)
+    {0x40U, SUBARU_CAM_BUS, 8, .check_relay = true, .disable_static_blocking = true},
+    {0x139U, SUBARU_CAM_BUS, 8, .check_relay = true, .disable_static_blocking = true},
+  };
+  static const CanMsg SUBARU_SNG_SOFTWARE_TX_MSGS[] = {
+    SUBARU_BASE_TX_MSGS(SUBARU_MAIN_BUS, MSG_SUBARU_ES_LKAS)
+    SUBARU_COMMON_TX_MSGS(SUBARU_MAIN_BUS)
+    {0x146U, SUBARU_MAIN_BUS, 8, .check_relay = false},
+    {0x40U, SUBARU_CAM_BUS, 8, .check_relay = true, .disable_static_blocking = true},
+    {0x139U, SUBARU_CAM_BUS, 8, .check_relay = true, .disable_static_blocking = true},
   };
 
   static const CanMsg SUBARU_GEN2_TX_MSGS[] = {
@@ -309,12 +328,14 @@ static safety_config subaru_init(uint16_t param) {
   // TODO: re-enable once more work is done on the limits
   // revert this in the PR that re-enables Subaru longitudinal: https://github.com/commaai/opendbc/pull/3689
 
-  subaru_software_reset((param == 512U) && (((unsigned int)alternative_experience == 0U) ||
+  subaru_sng_reset(((param == 8U) || (param == 520U)) &&
+    (((unsigned int)alternative_experience == 0U) || ((unsigned int)alternative_experience == 32U)));
+  subaru_software_reset(((param == 512U) || (param == 520U)) && (((unsigned int)alternative_experience == 0U) ||
     ((unsigned int)alternative_experience == 32U)));
   subaru_aol_reset();
   subaru_aol_enabled = ((unsigned int)alternative_experience == 32U) &&
     ((param == 0U) || (param == 1U) || (param == 17U) || (param == 145U) ||
-     (param == 177U) || (param == 512U) || (param == 2225U));
+     (param == 177U) || (param == 8U) || (param == 520U) || (param == 512U) || (param == 2225U));
   if (subaru_aol_enabled) {
     static const AolSafetyPolicy policy = {
       .reset = subaru_aol_reset,
@@ -343,7 +364,9 @@ static safety_config subaru_init(uint16_t param) {
     static RxCheck subaru_rx_checks[] = {
       SUBARU_COMMON_RX_CHECKS(SUBARU_MAIN_BUS)
     };
-    ret = subaru_software_enabled ? BUILD_SAFETY_CFG(subaru_rx_checks, SUBARU_SOFTWARE_TX_MSGS) :
+    ret = subaru_sng_enabled ? (subaru_software_enabled ?
+      BUILD_SAFETY_CFG(subaru_rx_checks, SUBARU_SNG_SOFTWARE_TX_MSGS) : BUILD_SAFETY_CFG(subaru_rx_checks, SUBARU_SNG_TX_MSGS)) :
+      subaru_software_enabled ? BUILD_SAFETY_CFG(subaru_rx_checks, SUBARU_SOFTWARE_TX_MSGS) :
                                    BUILD_SAFETY_CFG(subaru_rx_checks, SUBARU_TX_MSGS);
   }
   if (((unsigned int)alternative_experience == 32U) && !subaru_aol_enabled) {
@@ -356,12 +379,14 @@ static safety_config subaru_init(uint16_t param) {
 static void subaru_optional_rx(const CANPacket_t *msg) {
   subaru_aol_optional_rx(msg);
   subaru_software_optional_rx(msg);
+  subaru_sng_rx(msg);
 }
 
 const safety_hooks subaru_hooks = {
   .init = subaru_init,
   .rx = subaru_rx_hook,
   .optional_rx = subaru_optional_rx,
+  .fwd = subaru_sng_fwd,
   .tx = subaru_tx_hook,
   .get_counter = subaru_get_counter,
   .get_checksum = subaru_get_checksum,

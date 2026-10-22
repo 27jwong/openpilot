@@ -78,6 +78,9 @@ AOL_LIFECYCLE_TARGETS = (
   "openpilot/starpilot/car/subaru/tests/test_software_cruise.py",
   "openpilot/starpilot/car/subaru/tests/test_software_cruise_callers.py",
   "opendbc_repo/opendbc/safety/tests/test_subaru_software_cruise.py",
+  "openpilot/starpilot/car/subaru/tests/test_sng.py",
+  "openpilot/starpilot/car/subaru/tests/test_sng_callers.py",
+  "opendbc_repo/opendbc/safety/tests/test_subaru_sng.py",
 )
 
 AOL_LIFECYCLE_SCOPE = {
@@ -346,6 +349,7 @@ RELEASE_TARGETS = (
   "opendbc_repo/opendbc/safety/tests/test_hyundai_canfd_carnival.py",
   "opendbc_repo/opendbc/safety/tests/test_subaru_stock_aol.py",
   "opendbc_repo/opendbc/safety/tests/test_subaru_software_cruise.py",
+  "opendbc_repo/opendbc/safety/tests/test_subaru_sng.py",
 )
 
 # Vehicle tests import both the vendored car code and these host control owners.

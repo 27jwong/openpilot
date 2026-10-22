@@ -30,6 +30,12 @@ class CarController(CarControllerBase):
     self.angle_handoff_active = False
     self.VM = VehicleModel(CP) if CP.carFingerprint in GEN2_ANGLE_PORTS else None
 
+    from opendbc.car.subaru.sng import StopAndGo
+    self.sng_owner = StopAndGo()
+    self.sng_command_ns = 0
+    self.sng_sent_sources = {}
+    self.sng_pulse_ns = 0
+    self.sng_stationary_since_ns = 0
     self.software_cruise_command = 0
     self.software_cruise_command_ns = 0
     self.software_cruise_sent_source = 0
@@ -171,6 +177,8 @@ class CarController(CarControllerBase):
 
     from opendbc.car.subaru.software_cruise_sender import send as send_software_cruise
     can_sends.extend(send_software_cruise(self, CC, CS, now_nanos))
+    from opendbc.car.subaru.sng_sender import send as send_sng
+    can_sends.extend(send_sng(self, CC, CS, now_nanos))
 
     # *** alerts and pcm cancel ***
     lkas_alert_msg = self._ascent_lkas_alert(CC, CS)

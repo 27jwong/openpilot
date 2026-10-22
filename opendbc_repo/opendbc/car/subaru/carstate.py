@@ -13,6 +13,12 @@ class CarState(CarStateBase):
     can_define = CANDefine(DBC[CP.carFingerprint][Bus.pt])
     self.shifter_values = can_define.dv["Transmission"]["Gear"]
 
+    self.sng_sources = {}
+    self.sng_source_valid = {}
+    self.sng_lead_source_ns = 0
+    self.sng_lead_present = False
+    self.sng_lead_ready = False
+    self.close_distance = 0.0
     self.software_buttons = dict.fromkeys(("Main", "Set", "Resume"), 0)
     self.software_button_source_ns = 0
     self.software_button_counter = None
@@ -160,6 +166,14 @@ class CarState(CarStateBase):
         self.software_buttons[name] = pressed
       ret.buttonEvents = button_events
       ret.cruiseState.speedCluster = ret.cruiseState.speed
+
+    from opendbc.car.subaru.sng import selected as sng_selected
+    if sng_selected(self.CP):
+      cp.vl["Brake_Pedal"]
+      lead = cp_es_distance.vl["ES_Distance"]
+      self.close_distance = float(lead["Close_Distance"])
+      self.sng_lead_present = bool(lead["Car_Follow"]) and not bool(lead["Cruise_Fault"])
+      self.sng_lead_source_ns = int(cp_es_distance.ts_nanos["ES_Distance"]["COUNTER"])
 
     self.es_dashstatus_msg = copy.copy(cp_cam.vl["ES_DashStatus"])
     if self.CP.flags & SubaruFlags.ASCENT_LKAS_ALERT:

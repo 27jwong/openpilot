@@ -30,8 +30,8 @@ class TestSubaruSoftwareCruise(unittest.TestCase):
     return self.base.frame('Cruise_Buttons', values)
 
   def test_exact_stock_pair_and_no_direct_pedal_permission(self):
-    for experience in (0, 32):
-      self.setup(experience)
+    for experience, word in ((0, 512), (32, 512), (0, 520), (32, 520)):
+      self.setup(experience, word=word)
       first, second = self.button(1), self.button(2)
       self.assertTrue(self.safety.safety_tx_hook(first))
       self.assertTrue(self.safety.safety_tx_hook(second))
@@ -58,7 +58,7 @@ class TestSubaruSoftwareCruise(unittest.TestCase):
       self.setup()
       self.base.feed(**change)
       self.assertFalse(self.safety.safety_tx_hook(self.button()))
-    for word in (0, 1, 17, 145, 177, 2, 513, 514, 520):
+    for word in (0, 1, 17, 145, 177, 2, 513, 514, 521, 522):
       self.setup(word=word)
       self.assertFalse(self.safety.safety_tx_hook(self.button()))
 

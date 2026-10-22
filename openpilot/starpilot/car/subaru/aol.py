@@ -29,7 +29,7 @@ def policy_for(cp):
 
 
 def native_profile_supported(model, param):
-  return model == int(structs.CarParams.SafetyModel.subaru) and param in (0, 1, 17, 145, 177, 512, 2225)
+  return model == int(structs.CarParams.SafetyModel.subaru) and param in (0, 1, 8, 17, 145, 177, 512, 520, 2225)
 
 
 def native_accepts_cp(cp, model, param):
@@ -51,3 +51,9 @@ def ordinary_axis_request_allowed(cp, state):
 
 def create_intent(cp, settings):
   return SubaruStockCardIntent(settings)
+
+
+def sng_standstill_lateral_inhibit(cp, state):
+  # Native still requires movement. Withdraw the request before its expected denial,
+  # preserving ordinary stock ACC without granting either active axis.
+  return bool(qualified(cp, marked_only=True) and cp.safetyConfigs[0].safetyParam in (8, 520) and state.standstill)
