@@ -77,7 +77,7 @@ class Frames:
     for logical, p in self.ci.can_parsers.items():
       for address in sorted(p.addresses):
         name = p.dbc.addr_to_msg[address].name
-        values = {}
+        values: dict[str, float] = {}
         if name == 'STEER_TORQUE_SENSOR':
           values = {'STEER_ANGLE': 0.0, 'STEER_TORQUE_DRIVER': 0.0, 'LKAS_STATUS': status}
         elif name == 'WHEEL_SPEEDS_REAR':
