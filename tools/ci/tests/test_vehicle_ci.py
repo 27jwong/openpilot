@@ -149,6 +149,36 @@ class TestVehicleCollection(unittest.TestCase):
     self.assertNotIn(path + "::TestPELongDebug", release)
     self.assertNotIn(path, debug)
 
+  def test_mixed_native_variants_have_explicit_nonoverlapping_selection(self):
+    import ast
+    root = Path(__file__).resolve().parents[3]
+    directory = root / "opendbc_repo/opendbc/safety/tests"
+    debug, release = targets_for("safety-debug"), targets_for("safety-release")
+    mixed = []
+    for path in sorted(directory.glob("test_*.py")):
+      classes = [node.name for node in ast.parse(path.read_text()).body
+                 if isinstance(node, ast.ClassDef) and node.name.startswith("Test")]
+      if not (any("Debug" in name for name in classes) and any("Release" in name for name in classes)):
+        continue
+      relative = str(path.relative_to(root))
+      mixed.append(relative)
+      self.assertIn(relative, run_vehicle_tests.DEBUG_SAFETY_CLASS_TARGETS)
+      self.assertNotIn(relative, debug)
+      self.assertNotIn(relative, release)
+      for name in classes:
+        target = relative + "::" + name
+        if "Release" in name:
+          self.assertNotIn(target, debug)
+          self.assertIn(target, release)
+        elif "Debug" in name:
+          self.assertIn(target, debug)
+          self.assertNotIn(target, release)
+        else:
+          self.assertIn(target, debug)
+          self.assertIn(target, release)
+    self.assertIn("opendbc_repo/opendbc/safety/tests/test_hyundai_ev9_long.py", mixed)
+    self.assertIn("opendbc_repo/opendbc/safety/tests/test_ford_mach_e_extended.py", mixed)
+
   def test_interfaces_do_not_mislabel_historical_route_test_base(self):
     root = Path(__file__).resolve().parents[3]
     car = root / "opendbc_repo/opendbc/car"
