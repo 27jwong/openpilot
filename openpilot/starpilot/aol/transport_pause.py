@@ -361,6 +361,7 @@ class TransportPauseFeedback:
     from opendbc.car.chrysler.aol_contract import qualified as chrysler_qualified
     from openpilot.starpilot.car.nissan.aol import qualified as nissan_qualified
     from opendbc.car.ford.aol import qualified as ford_qualified
+    from opendbc.car.subaru.stock_aol import qualified as subaru_qualified
     from opendbc.car.hyundai.canfd_angle_aol import qualified as angle_qualified
     from opendbc.car.hyundai.canfd_stock_aol import qualified as stock_canfd_qualified
     from opendbc.car.hyundai.classic_scc_aol import qualified as stock_classic_qualified
@@ -374,7 +375,8 @@ class TransportPauseFeedback:
     stock_hkg = stock_angle or stock_canfd_qualified(cp, marked_only=True) or stock_classic_qualified(cp, marked_only=True)
     stock_user = stock_lateral_user_event(cp)
     stock_temporary_user = bool((location_fault or eps_recovery) and (stock_hkg or chrysler_qualified(cp, marked_only=True) or
-      ford_qualified(cp, marked_only=True) or nissan_qualified(cp, marked_only=True)) and users and
+      ford_qualified(cp, marked_only=True) or nissan_qualified(cp, marked_only=True)
+      or subaru_qualified(cp, marked_only=True)) and users and
       not axis.desiredLongitudinal and not axis.longitudinalActive and
       cs.cruiseState.available and not cs.cruiseState.enabled and
       cs.gearShifter in (gears.drive, gears.low, gears.sport, gears.brake) and
@@ -1174,6 +1176,14 @@ class TransportPauseFeedback:
 
         if retain_reverse_intent(self, sm, cp, cs, axis, now_ns, latched=latched, producer=intent_producer_session,
             qualified_cp=nissan_qualified(cp, marked_only=True),
+            informational_events=(log.OnroadEvent.EventName.userBookmarkNotPaired,), allow_withdrawal_join=True):
+          return False
+      if cp.brand == 'subaru' and current and continuity:
+        from opendbc.car.subaru.stock_aol import qualified as subaru_qualified
+        from openpilot.starpilot.aol.reverse_intent import retain_reverse_intent
+
+        if retain_reverse_intent(self, sm, cp, cs, axis, now_ns, latched=latched, producer=intent_producer_session,
+            qualified_cp=subaru_qualified(cp, marked_only=True),
             informational_events=(log.OnroadEvent.EventName.userBookmarkNotPaired,), allow_withdrawal_join=True):
           return False
       if cp.brand == 'ford' and current and continuity:

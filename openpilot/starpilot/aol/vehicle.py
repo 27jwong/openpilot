@@ -13,13 +13,14 @@ from openpilot.starpilot.car.gm import aol as gm
 from openpilot.starpilot.car.ford import aol as ford
 from openpilot.starpilot.car.mazda import aol as mazda
 from openpilot.starpilot.car.chrysler import aol as chrysler
+from openpilot.starpilot.car.subaru import aol as subaru
 from openpilot.starpilot.car.tesla import aol as tesla
 from openpilot.starpilot.car.toyota import aol as toyota
 from openpilot.starpilot.car.volkswagen import aol as volkswagen
 from openpilot.starpilot.car.nissan import aol as nissan
 
 _PORTS = {'honda': honda, 'hyundai': hyundai, 'gm': gm, 'ford': ford, 'mazda': mazda,
-          'tesla': tesla, 'toyota': toyota, 'chrysler': chrysler, 'nissan': nissan, 'volkswagen': volkswagen}
+          'tesla': tesla, 'toyota': toyota, 'chrysler': chrysler, 'nissan': nissan, 'volkswagen': volkswagen, 'subaru': subaru}
 _POLICY_CACHE_SIZE = 8
 _POLICY_CACHE_MAX_BYTES = 64 * 1024
 

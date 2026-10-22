@@ -1,6 +1,7 @@
 #pragma once
 
 #include "opendbc/safety/declarations.h"
+#include "opendbc/safety/modes/subaru_stock_aol.h"
 
 #define SUBARU_STEERING_LIMITS_GENERATOR(steer_max, rate_up, rate_down)               \
   {                                                                                   \
@@ -102,6 +103,13 @@ static void subaru_rx_hook(const CANPacket_t *msg) {
     torque_driver_new = ((GET_BYTES_LE(msg, 0, 4) >> 16) & 0x7FFU);
     torque_driver_new = -1 * to_signed(torque_driver_new, 11);
     update_sample(&torque_driver, torque_driver_new);
+    if (subaru_aol_enabled) {
+      subaru_aol_permanent = GET_BIT(msg, 12U);
+      subaru_aol_temporary = GET_BIT(msg, 29U);
+      if (subaru_aol_permanent) {
+        subaru_aol_clear();
+      }
+    }
   }
 
   if (subaru_lkas_angle && (msg->addr == MSG_SUBARU_Steering_2) && (msg->bus == SUBARU_MAIN_BUS)) {
@@ -112,15 +120,31 @@ static void subaru_rx_hook(const CANPacket_t *msg) {
 
   if (subaru_lkas_angle && (msg->addr == MSG_SUBARU_ES_Status) && (msg->bus == SUBARU_ALT_BUS)) {
     pcm_cruise_check(GET_BIT(msg, 29U));
+    subaru_aol_grant(GET_BIT(msg, 29U));
   }
   if (subaru_lkas_angle && (msg->addr == MSG_SUBARU_ES_DashStatus) && (msg->bus == SUBARU_CAM_BUS)) {
     acc_main_on = GET_BIT(msg, 49U);
+    subaru_aol_main = acc_main_on;
+    subaru_aol_main_seen = true;
+    subaru_aol_main_ts = microsecond_timer_get();
+    if (!acc_main_on) {
+      subaru_aol_clear();
+    }
   }
 
   // enter controls on rising edge of ACC, exit controls on ACC off
   if (!subaru_lkas_angle && msg_matches(msg, MSG_SUBARU_CruiseControl, alt_main_bus)) {
     bool cruise_engaged = (msg->data[5] >> 1) & 1U;
     pcm_cruise_check(cruise_engaged);
+    if (subaru_aol_enabled) {
+      subaru_aol_grant(cruise_engaged);
+      subaru_aol_main = GET_BIT(msg, 40U);
+      subaru_aol_main_seen = true;
+      subaru_aol_main_ts = microsecond_timer_get();
+      if (!subaru_aol_main) {
+        subaru_aol_clear();
+      }
+    }
   }
 
   // update vehicle moving with any non-zero wheel speed
@@ -273,6 +297,21 @@ static safety_config subaru_init(uint16_t param) {
   // TODO: re-enable once more work is done on the limits
   // revert this in the PR that re-enables Subaru longitudinal: https://github.com/commaai/opendbc/pull/3689
 
+  subaru_aol_reset();
+  subaru_aol_enabled = ((unsigned int)alternative_experience == 32U) &&
+    ((param == 0U) || (param == 1U) || (param == 17U) || (param == 145U) ||
+     (param == 177U) || (param == 2225U));
+  if (subaru_aol_enabled) {
+    static const AolSafetyPolicy policy = {
+      .reset = subaru_aol_reset,
+      .host_request = subaru_aol_host_request,
+      .request_mask = subaru_aol_request,
+      .permission_mask = subaru_aol_permission,
+      .rx_invalid = subaru_aol_clear,
+    };
+    aol_policy = &policy;
+  }
+
   safety_config ret;
   if (subaru_lkas_angle) {
     static RxCheck subaru_gen2_angle_rx_checks[] = {
@@ -292,12 +331,17 @@ static safety_config subaru_init(uint16_t param) {
     };
     ret = BUILD_SAFETY_CFG(subaru_rx_checks, SUBARU_TX_MSGS);
   }
+  if (((unsigned int)alternative_experience == 32U) && !subaru_aol_enabled) {
+    ret.tx_msgs = NULL;
+    ret.tx_msgs_len = 0;
+  }
   return ret;
 }
 
 const safety_hooks subaru_hooks = {
   .init = subaru_init,
   .rx = subaru_rx_hook,
+  .optional_rx = subaru_aol_optional_rx,
   .tx = subaru_tx_hook,
   .get_counter = subaru_get_counter,
   .get_checksum = subaru_get_checksum,

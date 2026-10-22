@@ -5,6 +5,7 @@
 #include "openpilot/starpilot/car/mazda/aol_policy.h"
 #include "openpilot/starpilot/car/volkswagen/aol_policy.h"
 #include "openpilot/starpilot/car/chrysler/aol_policy.h"
+#include "openpilot/starpilot/car/subaru/aol_policy.h"
 #include "openpilot/starpilot/car/toyota/aol_policy.h"
 #include "openpilot/starpilot/car/tesla/aol_policy.h"
 #include "openpilot/starpilot/car/hyundai/aol_policy.h"
@@ -27,7 +28,7 @@ constexpr AolSafetyProfile TEST_PROFILES[] = {
   {TEST_MODE, test_param, false}, {TEST_ALT_MODE, test_alt_param, false},
 };
 const AolProfileRegistry TEST_REGISTRY{TEST_PROFILES, std::size(TEST_PROFILES)};
-constexpr AolSafetyProfile VEHICLE_PROFILES[] = {HONDA_AOL_PROFILE, HONDA_STOCK_AOL_PROFILE, HONDA_NIDEC_AOL_PROFILE, HYUNDAI_AOL_PROFILE, HYUNDAI_CLASSIC_AOL_PROFILE, HYUNDAI_LEGACY_AOL_PROFILE, GM_AOL_PROFILE, FORD_AOL_PROFILE, MAZDA_AOL_PROFILE, CHRYSLER_AOL_PROFILE, TESLA_PREAP_AOL_PROFILE, TESLA_SCREEN_AOL_PROFILE, TOYOTA_AOL_PROFILE, NISSAN_AOL_PROFILE, VOLKSWAGEN_STOCK_AOL_PROFILE, VOLKSWAGEN_LONG_AOL_PROFILE};
+constexpr AolSafetyProfile VEHICLE_PROFILES[] = {HONDA_AOL_PROFILE, HONDA_STOCK_AOL_PROFILE, HONDA_NIDEC_AOL_PROFILE, HYUNDAI_AOL_PROFILE, HYUNDAI_CLASSIC_AOL_PROFILE, HYUNDAI_LEGACY_AOL_PROFILE, GM_AOL_PROFILE, FORD_AOL_PROFILE, MAZDA_AOL_PROFILE, CHRYSLER_AOL_PROFILE, TESLA_PREAP_AOL_PROFILE, TESLA_SCREEN_AOL_PROFILE, TOYOTA_AOL_PROFILE, NISSAN_AOL_PROFILE, VOLKSWAGEN_STOCK_AOL_PROFILE, VOLKSWAGEN_LONG_AOL_PROFILE, SUBARU_AOL_PROFILE};
 const AolProfileRegistry VEHICLE_REGISTRY{VEHICLE_PROFILES, std::size(VEHICLE_PROFILES)};
 
 aol_safety_health_t status(uint8_t request = 0U, uint8_t permission = 0U) {
@@ -88,6 +89,18 @@ void queue(FakeTransport &transport, const aol_safety_health_t &before,
 }  // namespace
 
 int main() {
+  for (uint32_t word = 0U; word <= 65535U; word++) {
+    auto subaru = status();
+    subaru.safety_mode = 11U;
+    subaru.safety_param = static_cast<uint16_t>(word);
+    subaru.capability_flags = 1U;
+    const bool expected = (word == 0U) || (word == 1U) || (word == 17U) ||
+                          (word == 145U) || (word == 177U) || (word == 2225U);
+    assert(aol_capable(subaru, 11U, VEHICLE_REGISTRY) == expected);
+    subaru.capability_flags = 0U;
+    assert(!aol_capable(subaru, 11U, VEHICLE_REGISTRY));
+  }
+
   for (uint32_t word = 0U; word <= 65535U; ++word) {
     const bool stock = (word == 8U) || (word == 24U);
     const bool longitudinal = (word == 9U) || (word == 25U);

@@ -51,9 +51,14 @@ AOL_LIFECYCLE_TARGETS = (
   "opendbc_repo/opendbc/safety/tests/test_volkswagen_stock_aol.py",
   "opendbc_repo/opendbc/safety/tests/test_volkswagen_engagement_arm.py",
   "opendbc_repo/opendbc/safety/tests/test_volkswagen_long_aol.py",
+  "openpilot/starpilot/car/subaru/tests/test_aol.py",
+  "openpilot/starpilot/car/subaru/tests/test_reverse_join.py",
+  "openpilot/starpilot/car/subaru/tests/test_stock_aol_callers.py",
+  "opendbc_repo/opendbc/safety/tests/test_subaru_stock_aol.py",
 )
 
 AOL_LIFECYCLE_SCOPE = {
+  "subaru": "nine stock global identities; five actual factory-to-native lifecycles, brake, Reverse/Drive, EPS recovery, MAIN-off and refusal guards",
   "volkswagen": "stock MQB auto/manual, gateway/camera factory acquisition, MAIN/engagement/brake/Reverse joins, permanent EPS native rearm",
   "gm": "Volt/Bolt factory profiles, MAIN boot, stock/Alpha, BE/C9, pedal/regen, Cancel mappings, RES, lag withdrawal/recovery",
   "honda": "stock Civic source/native vetoes, native-first Reverse joins, and EPS-recovery/Reverse/Drive native TX lifecycle",
@@ -305,6 +310,7 @@ RELEASE_TARGETS = (
   "opendbc_repo/opendbc/safety/tests/test_subaru_ascent_angle.py",
   "opendbc_repo/opendbc/safety/tests/test_ford_three.py",
   "opendbc_repo/opendbc/safety/tests/test_hyundai_canfd_carnival.py",
+  "opendbc_repo/opendbc/safety/tests/test_subaru_stock_aol.py",
 )
 
 # Vehicle tests import both the vendored car code and these host control owners.

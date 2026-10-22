@@ -5,6 +5,7 @@ from opendbc.car.lateral import (apply_driver_steer_torque_limits, apply_std_ste
                                 apply_steer_angle_limits_vm, common_fault_avoidance)
 from opendbc.car.interfaces import CarControllerBase
 from opendbc.car.subaru import subarucan
+from opendbc.car.subaru.stock_aol import qualified as subaru_aol_qualified
 from opendbc.car.subaru.values import CAR, DBC, GLOBAL_ES_ADDR, CanBus, CarControllerParams, SubaruFlags
 from opendbc.car.vehicle_model import VehicleModel
 
@@ -69,7 +70,8 @@ class CarController(CarControllerBase):
     if self.CP.carFingerprint != CAR.SUBARU_ASCENT_2023 or not self.CP.flags & SubaruFlags.ASCENT_LKAS_ALERT:
       return None
     dat = CS.es_lkas_alert_dat
-    msg = subarucan.create_ascent_lkas_alert(dat, self.angle_was_active and CC.enabled and CC.latActive, CC.hudControl.visualAlert)
+    lateral_active = self.angle_was_active and CC.latActive and (CC.enabled or subaru_aol_qualified(self.CP, marked_only=True))
+    msg = subarucan.create_ascent_lkas_alert(dat, lateral_active, CC.hudControl.visualAlert)
     if msg is None or (dat[1] & 0xf) == self.ascent_lkas_alert_counter_last:
       return None
     self.ascent_lkas_alert_counter_last = dat[1] & 0xf
@@ -88,9 +90,11 @@ class CarController(CarControllerBase):
     # *** steering ***
     if (self.frame % self.p.STEER_STEP) == 0:
       if self.CP.carFingerprint in GEN2_ANGLE_PORTS:
-        angle_available = (CC.enabled and CC.latActive and CS.out.cruiseState.available and CS.out.cruiseState.enabled and
+        independent_lateral = subaru_aol_qualified(self.CP, marked_only=True)
+        angle_available = (CC.latActive and CS.out.cruiseState.available and
+                           (independent_lateral or CC.enabled and CS.out.cruiseState.enabled and not CS.out.brakePressed) and
                            CS.out.gearShifter == structs.CarState.GearShifter.drive and
-                           not CS.out.standstill and not CS.out.brakePressed)
+                           not CS.out.standstill and not CS.out.steerFaultTemporary and not CS.out.steerFaultPermanent)
         angle_active = self.angle_active(CS, angle_available)
         if self.CP.carFingerprint == CAR.SUBARU_ASCENT_2023 and not self.ascent_angle_initialized:
           self.apply_angle_last = CS.out.steeringAngleDeg

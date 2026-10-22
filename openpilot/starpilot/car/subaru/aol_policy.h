@@ -1,0 +1,10 @@
+#pragma once
+
+#include "selfdrive/pandad/aol_protocol.h"
+
+inline bool subaru_aol_param(uint16_t param) {
+  return (param == 0U) || (param == 1U) || (param == 17U) || (param == 145U) ||
+         (param == 177U) || (param == 2225U);
+}
+
+inline constexpr AolSafetyProfile SUBARU_AOL_PROFILE{11U, subaru_aol_param, true};
