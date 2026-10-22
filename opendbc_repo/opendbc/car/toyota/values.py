@@ -82,6 +82,7 @@ class ToyotaFlags(IntFlag):
   RAISED_ACCEL_LIMIT = 1024
   SECOC = 2048
   AUTO_BRAKE_HOLD = 4096
+  RADAR_CAN_FILTER = 1 << 18  # Bus-0 0x2AA radar adapter; distinct from smartDSU
   GAS_INTERCEPTOR = 1 << 17  # Exact paired pedal owner
   ZSS = 1 << 16  # Detected Prius secondary steering sensor; host-only, no safetyParam allocation
 

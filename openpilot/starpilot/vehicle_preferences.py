@@ -171,6 +171,8 @@ class VehicleStartupPreferences:
       prepare_rav4h_stock(cp)
       from opendbc.car.toyota.pedal import prepare_stock as prepare_pedal_stock
       prepare_pedal_stock(cp)
+      from opendbc.car.toyota.radar_filter import prepare_stock as prepare_radar_filter_stock
+      prepare_radar_filter_stock(cp)
     self._prepare_bolt(cp, fingerprints)
     prepare_disable_longitudinal(cp, self.disable_bolt_long)
     self._prepare_camera_pedal(cp)
@@ -204,6 +206,8 @@ class VehicleStartupPreferences:
       prepare_rav4h_stock(cp)
       from opendbc.car.toyota.pedal import prepare_stock as prepare_pedal_stock
       prepare_pedal_stock(cp)
+      from opendbc.car.toyota.radar_filter import prepare_stock as prepare_radar_filter_stock
+      prepare_radar_filter_stock(cp)
     self._prepare_bolt(cp)
     prepare_disable_longitudinal(cp, self.disable_bolt_long)
     self._prepare_camera_pedal(cp)
