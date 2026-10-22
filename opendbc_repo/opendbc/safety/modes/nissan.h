@@ -105,7 +105,7 @@ static safety_config nissan_init(uint16_t param) {
   };
 
   // Signals duplicated below due to the fact that these messages can come in on either CAN bus, depending on car model.
-  static RxCheck nissan_rx_checks[] = {
+  static const RxCheck nissan_rx_defaults[] = {
     {.msg = {{0x185, 0, 8, 100U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},  // STEER_TORQUE_SENSOR
     {.msg = {{0x285, 0, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true},
              {0x285, 1, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }}},  // WHEEL_SPEEDS_REAR
@@ -118,6 +118,13 @@ static safety_config nissan_init(uint16_t param) {
              {0x454, 1, 8, 10U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true},
              {0x1cc, 0, 4, 100U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}}},  // DOORS_LIGHTS / BRAKE
   };
+
+  // Reuse one mutable RX table across ordinary and optional configurations.
+  // Restore the stock defaults on every init, including after an AOL profile.
+  static RxCheck nissan_rx_checks[5];
+  for (unsigned int i = 0U; i < 5U; i++) {
+    nissan_rx_checks[i] = nissan_rx_defaults[i];
+  }
 
   // EPS Location. false = V-CAN, true = C-CAN
   const uint16_t NISSAN_PARAM_ALT_EPS_BUS = 1;
@@ -138,21 +145,17 @@ static safety_config nissan_init(uint16_t param) {
   }
   // Exact optional source ownership. Leaf uses 0x239 for BOTH gas and brake,
   // not the unrelated mixed-table 0x1cc/4-byte brake alternative.
-  static RxCheck nissan_aol_rx_checks[] = {
-    {.msg = {{0x185, 0, 8, 100U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
-    {.msg = {{0x285, 0, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
-    {.msg = {{0x30f, 2, 3, 10U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
-    {.msg = {{0x239, 0, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
-    {.msg = {{0x454, 0, 8, 10U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
-  };
-  nissan_aol_rx_checks[1].msg[0].bus = nissan_aol_alt ? 1U : 0U;
-  nissan_aol_rx_checks[2].msg[0].bus = nissan_aol_alt ? 1U : 2U;
-  nissan_aol_rx_checks[3].msg[0].addr = nissan_aol_leaf ? 0x239U : 0x15CU;
-  nissan_aol_rx_checks[3].msg[0].bus = nissan_aol_alt ? 1U : 0U;
-  nissan_aol_rx_checks[4].msg[0].bus = nissan_aol_alt ? 1U : 0U;
   safety_config ret = BUILD_SAFETY_CFG(nissan_rx_checks, NISSAN_TX_MSGS);
   if (nissan_aol_enabled) {
-    ret.rx_checks = nissan_aol_rx_checks;
+    for (unsigned int i = 0U; i < 5U; i++) {
+      nissan_rx_checks[i].msg[1] = (CanMsgCheck){0};
+      nissan_rx_checks[i].msg[2] = (CanMsgCheck){0};
+    }
+    nissan_rx_checks[1].msg[0].bus = nissan_aol_alt ? 1U : 0U;
+    nissan_rx_checks[2].msg[0].bus = nissan_aol_alt ? 1U : 2U;
+    nissan_rx_checks[3].msg[0].addr = nissan_aol_leaf ? 0x239U : 0x15CU;
+    nissan_rx_checks[3].msg[0].bus = nissan_aol_alt ? 1U : 0U;
+    nissan_rx_checks[4].msg[0].bus = nissan_aol_alt ? 1U : 0U;
     ret.rx_checks_len = nissan_aol_leaf ? 4 : 5;
   }
   if (((unsigned int)alternative_experience == 32U) && !nissan_aol_enabled) {
