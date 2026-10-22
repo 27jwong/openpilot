@@ -1,7 +1,7 @@
 """Parked software-cruise preference for Dom's Impreza 2020 port."""
 
 from opendbc.car.subaru.software_cruise import eligible
-from openpilot.starpilot.saved_source import commit_exact
+from openpilot.starpilot.saved_document import commit_exact
 from openpilot.starpilot.vehicle_selection import read_selection
 
 KEY = 'SubaruRedneckCruise'
