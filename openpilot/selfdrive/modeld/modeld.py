@@ -461,7 +461,7 @@ def main(demo=False):
   initial_mono_ns, initial_boot_ns, initial_skew_ns = paired_clocks_ns()
   lane_clock_guard = ClockEpochGuard(initial_mono_ns, initial_boot_ns, initial_skew_ns)
   DH = DesireHelper(runtime_lane_policy)
-  navigation_turn = TurnIntent()
+  navigation_turn = TurnIntent(params, CP)
   lane_status_session = uuid.uuid4().hex
   lane_status_sequence = 0
 

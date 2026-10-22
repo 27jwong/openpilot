@@ -893,6 +893,7 @@ class FeatureSettingsOwner:
                              vehicle_fingerprint=self.vehicle_fingerprint(), dependencies=learning.sources))
     elif page == FeaturePage.TORQUE:
       title = "Steering and Torque"
+      rows.append(self.lane_changes.guidance_row(parked))
       rows.extend(FordLateralFeature(self).rows(parked))
       rows.extend(FordClusterFeature(self).rows(parked))
       controller_row = self.controller.row()
