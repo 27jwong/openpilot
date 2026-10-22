@@ -429,9 +429,9 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
       assert 0 <= warmup_waits < 120 and qualified_samples >= 100
       assert host.ci_initialized  # Read-only witness: real controls_update completed init.
       assert not host.aol_card_intent.allowed_latch
-      assert scenario in ('route24', 'route24-mixed-eps')
-      if scenario in ('route24', 'route24-mixed-eps'):
-        mixed_eps = scenario == 'route24-mixed-eps'
+      assert scenario in ('route24', 'route24-mixed-eps', 'route2a')
+      if scenario in ('route24', 'route24-mixed-eps', 'route2a'):
+        mixed_eps = scenario in ('route24-mixed-eps', 'route2a')
         assert host.CP.flags == 3 and not host.CP.openpilotLongitudinalControl
         for _ in range(30):
           step(fault='gas')
@@ -467,6 +467,21 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
         for _ in range(40):
           state, axis, sd_state, command = step()
         assert command.latActive and not command.longActive and host.aol_card_intent.allowed_latch
+        if scenario == 'route2a':
+          # The previous native session has been withdrawn with MAIN still on,
+          # matching the route's new engagement after its earlier host failure.
+          for _ in range(30):
+            state, axis, sd_state, command = step(fault='heartbeat')
+          assert not host.aol_card_intent.allowed_latch and not command.latActive and not command.longActive
+          for _ in range(30):
+            step()
+          for _ in range(40):
+            state, axis, sd_state, command = step(engaged=True, fault='gas')
+          assert state.cruiseState.enabled and command.latActive and host.aol_card_intent.allowed_latch
+          for _ in range(40):
+            state, axis, sd_state, command = step()
+            assert host.aol_card_intent.allowed_latch, 'Route2a new ordinary engagement lost retained native token'
+          assert command.latActive and axis.lateralActive and not command.longActive and not sd_state.enabled
         for _ in range(30):
           state, axis, sd_state, command = step(main_off=True)
         assert not state.cruiseState.available
