@@ -312,7 +312,14 @@ class TransportPauseFeedback:
     from openpilot.starpilot.car.gm.aol import native_accepts_cp
     from openpilot.starpilot.car.hyundai.aol import qualified_ioniq6
     gm = native_accepts_cp(cp, int(cp.safetyConfigs[0].safetyModel.raw), int(cp.safetyConfigs[0].safetyParam))
-    early_long = gm or cp.openpilotLongitudinalControl and qualified_ioniq6(cp)
+    from opendbc.car.hyundai.ev9_long_aol import qualified as ev9_qualified
+    from opendbc.car import structs
+    ev9 = ev9_qualified(cp, marked_only=True)
+    early_long = gm or cp.openpilotLongitudinalControl and qualified_ioniq6(cp) or ev9
+    ev9_main_off = bool(ev9 and not cs.cruiseState.available and
+      not cs.brakePressed and not cs.gasPressed and not cs.doorOpen and not cs.seatbeltUnlatched and
+      cs.gearShifter in (structs.CarState.GearShifter.drive, structs.CarState.GearShifter.sport,
+                        structs.CarState.GearShifter.low, structs.CarState.GearShifter.brake))
     if (not latched or self.failed or self.paused or self.pending_event or self.retention_started_ns or
         not self.session or str(axis.sessionId) != self.session or
         not producer or producer != self.availability_producer or
@@ -328,7 +335,9 @@ class TransportPauseFeedback:
         not sm.seen['onroadEvents'] or not sm.valid['onroadEvents'] or not sm.alive['onroadEvents'] or
         not 0 < int(sm.logMonoTime['onroadEvents']) <= now_ns or
         now_ns - int(sm.logMonoTime['onroadEvents']) > 1_500_000_000 or
-        any(event.immediateDisable or event.softDisable or event.userDisable for event in sm['onroadEvents'])):
+        any(event.immediateDisable or event.softDisable or
+            event.userDisable and not (ev9_main_off and event.name == log.OnroadEvent.EventName.wrongCarMode)
+            for event in sm['onroadEvents'])):
       return None
     native = independent_lateral_health(sm, cp, cs, self.session, now_ns)
     if (native is None or not native.pandaInventory or not native.requestedLongitudinal or native.longitudinalAllowed or
@@ -683,10 +692,12 @@ class TransportPauseFeedback:
   def _longitudinal_cancel_current(self, sm, cp, cs, axis, now_ns, *, latched, cancel_source_ns, withdrawal_required=True) -> SafetyState | None:
     """Retain existing intent during Cancel's bounded LONG withdrawal handshake."""
     from opendbc.car.hyundai.ev6_aol import qualified
+    from opendbc.car.hyundai.ev9_long_aol import qualified as ev9_qualified
     from opendbc.car.structs import car
 
     if (not latched or self.failed or self.paused or self.pending_event or
-        not self.session or str(axis.sessionId) != self.session or not qualified(cp, marked_only=True) or
+        not self.session or str(axis.sessionId) != self.session or
+        not (qualified(cp, marked_only=True) or ev9_qualified(cp, marked_only=True)) or
         not self.lateral_baseline_ns or not 0 <= now_ns - self.lateral_baseline_ns <= AXIS_MAX_AGE_NS or
         str(axis.faultReason) != 'none' or not axis.nativeAcknowledged or
         not axis.desiredLateral or not axis.lateralActive or cs.accFaulted or

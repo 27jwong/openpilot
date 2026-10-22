@@ -579,6 +579,15 @@ class Car:
       hkg_cancel_retained = hkg_cancel_intent_retained(self.CP, CS, self.sm, self.aol_transport_feedback,
         self.aol_card_intent, cancel_source_ns=cancel_source_ns, now_ns=now_ns,
         producer=getattr(self, 'slc_producer_session', ''))
+      cancel_feedback = self.aol_transport_feedback
+      if (hkg_cancel_retained and self.CP.carFingerprint == HYUNDAI_CAR.KIA_EV9 and
+          cancel_feedback is not None and not cancel_feedback.longitudinal_cancel_ns):
+        # The pure guard proved this exact EV9 raw CANCEL/FULL join. Bind
+        # its first local receipt for the existing bounded withdrawal handshake;
+        # held samples never renew it or any source/native/output deadline.
+        if cancel_source_ns > cancel_feedback.last_cancel_source_ns:
+          cancel_feedback.longitudinal_cancel_ns = cancel_source_ns
+          cancel_feedback.last_cancel_source_ns = cancel_source_ns
       transport_reset = not hkg_cancel_retained and self.aol_transport_feedback.observe(self.sm, self.CP, CS, now_ns,
         latched=self.aol_card_intent.allowed_latch, cancel_source_ns=cancel_source_ns,
         brake_source_ns=brake_source_ns,

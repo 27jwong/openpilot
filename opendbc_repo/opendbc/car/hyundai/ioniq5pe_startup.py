@@ -186,7 +186,7 @@ class PEPendingStartup:
             0 < receipt <= now and now - receipt <= 300_000_000 and
             panda.safetyModel == self.owner.cp.safetyConfigs[0].safetyModel and
             panda.safetyParam == self.owner.cp.safetyConfigs[0].safetyParam and
-            panda.alternativeExperience == 0 and (panda.ignitionLine or panda.ignitionCan))
+            panda.alternativeExperience == self.owner.cp.alternativeExperience and (panda.ignitionLine or panda.ignitionCan))
 
   def _restore(self):
     if not (self.session_attempted or self.takeover_attempted) or self.restored:
@@ -303,7 +303,7 @@ class PEPendingStartup:
       panda = pandas[0]
       cfg = self.owner.cp.safetyConfigs[0]
       matched = (panda.safetyModel == cfg.safetyModel and panda.safetyParam == cfg.safetyParam and
-                 panda.alternativeExperience == 0 and not panda.faults and not panda.safetyRxChecksInvalid and
+                 panda.alternativeExperience == self.owner.cp.alternativeExperience and not panda.faults and not panda.safetyRxChecksInvalid and
                  (panda.ignitionLine or panda.ignitionCan) and
                  self.source_floor_ns < panda_log_ns <= now_ns and now_ns - panda_log_ns <= 300_000_000 and
                  self.source_floor_ns < panda_recv_ns <= now_ns and now_ns - panda_recv_ns <= 300_000_000)

@@ -16,6 +16,17 @@ from tools.ci.record_firmware import compile_commands
 
 
 class TestVehicleCollection(unittest.TestCase):
+  def test_ev9_joined_main_cancel_off_and_vetoes_run_in_lifecycle_ci(self):
+    self.assertLessEqual({
+      'opendbc_repo/opendbc/safety/tests/test_ev9_combined_callers.py',
+      'openpilot/starpilot/aol/tests/test_ev9_main_withdrawal_guards.py',
+      'openpilot/starpilot/aol/tests/test_native_inventory_control_cadence.py',
+    }, set(targets_for('aol-lifecycle')))
+    self.assertIn('opendbc_repo/opendbc/safety/tests/test_ev9_combined_callers.py', targets_for('safety-debug'))
+    self.assertIn('opendbc_repo/opendbc/safety/tests/test_ev9_combined_aol.py::TestEV9CombinedReleaseDenied', targets_for('safety-release'))
+    self.assertIn('openpilot/starpilot/aol/tests/test_ev9_main_withdrawal_guards.py', targets_for('safety-release'))
+
+
   def test_classic_initialization_preserves_debug_acceptance_and_release_denial(self):
     path = 'openpilot/starpilot/aol/tests/test_classic_startup_neutral_replacement.py'
     release = 'tools/ci/test_classic_startup_release.py'

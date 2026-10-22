@@ -112,6 +112,11 @@ def stock_word(cp):
 
 
 def qualified(cp, *, marked_only=False):
+  # The paired EV9 LONG owner uses its own RX/TX and native policy; share only
+  # the established host permission/temporary-restriction handling.
+  if cp.carFingerprint == CAR.KIA_EV9 and cp.openpilotLongitudinalControl:
+    from opendbc.car.hyundai.ev9_long_aol import qualified as ev9_qualified
+    return ev9_qualified(cp, marked_only=True)
   identity = str(cp.carFingerprint)
   if identity not in MODELS or cp.brand != 'hyundai':
     return False
@@ -183,6 +188,9 @@ def command_allowed(cp, state):
 
 
 def temporary_restriction(cp, state):
+  from opendbc.car.hyundai.ev9_long_aol import qualified as ev9_qualified, temporary_restriction as ev9_restricted
+  if ev9_qualified(cp, marked_only=True):
+    return ev9_restricted(cp, state)
   gears = structs.CarState.GearShifter
   return bool(
     state is not None

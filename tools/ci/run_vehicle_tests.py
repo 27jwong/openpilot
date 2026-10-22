@@ -24,6 +24,9 @@ from tools.ci import vehicle_pytest
 # Representative production callers plus their source/native refusal cases.
 # The emitted selected_test_ids record exact parametrized configurations.
 AOL_LIFECYCLE_TARGETS = (
+  "opendbc_repo/opendbc/safety/tests/test_ev9_combined_callers.py",
+  "openpilot/starpilot/aol/tests/test_ev9_main_withdrawal_guards.py",
+  "openpilot/starpilot/aol/tests/test_native_inventory_control_cadence.py",
   "openpilot/starpilot/aol/tests/test_gm.py",
   "openpilot/starpilot/aol/tests/test_gm_startup_main.py",
   "openpilot/starpilot/aol/tests/test_gm_pedal_order.py",
@@ -74,6 +77,7 @@ AOL_LIFECYCLE_SCOPE = {
 }
 
 DEBUG_SAFETY_CLASS_TARGETS = {
+  "opendbc_repo/opendbc/safety/tests/test_ev9_combined_aol.py": ("opendbc_repo/opendbc/safety/tests/test_ev9_combined_aol.py::TestEV9CombinedDebug",),
   "opendbc_repo/opendbc/safety/tests/test_hyundai_ev9_long.py": (
     "opendbc_repo/opendbc/safety/tests/test_hyundai_ev9_long.py::TestEv9LongDebugContract",
   ),
@@ -92,6 +96,9 @@ DEBUG_SAFETY_CLASS_TARGETS = {
 
 
 RELEASE_TARGETS = (
+  "openpilot/starpilot/aol/tests/test_ev9_main_withdrawal_guards.py",
+  "opendbc_repo/opendbc/safety/tests/test_ev9_combined_aol.py::TestEV9CombinedReleaseDenied",
+  "opendbc_repo/opendbc/car/hyundai/tests/test_ev9_combined_aol.py::TestEV9CombinedProfile",
   "opendbc_repo/opendbc/car/hyundai/tests/test_gv60_paired_startup.py",
   "opendbc_repo/opendbc/car/hyundai/tests/test_ev9_pending_protocol.py",
   "opendbc_repo/opendbc/car/hyundai/tests/test_ev9_pending_startup.py::TestEV9NormalSelection",
