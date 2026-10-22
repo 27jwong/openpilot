@@ -1228,6 +1228,7 @@ class Car:
                        panda_current=panda_current)
 
   def startup_diagnostic_admission(self):
+    from openpilot.starpilot.aol.panda_faults import blocking_fault_list
     self.sm.update(0)
     now, boot = time.monotonic_ns(), time.clock_gettime_ns(time.CLOCK_BOOTTIME)
     sm = self.sm
@@ -1247,7 +1248,8 @@ class Car:
                 0 < stamp <= boot and boot - stamp <= 300_000_000 and
                 0 < receipt <= now and now - receipt <= 300_000_000 and len(pandas) == count and
                 all(ps.safetyModel == structs.CarParams.SafetyModel.elm327 and ps.safetyParam == 1 and
-                    not ps.controlsAllowed and not ps.safetyRxChecksInvalid for ps in pandas) and
+                    not ps.controlsAllowed and not ps.safetyRxChecksInvalid and
+                    not blocking_fault_list(getattr(ps, 'faults', None), getattr(owner, 'cp', None)) for ps in pandas) and
                 all(ps.ignitionLine or ps.ignitionCan for ps in ignition_pandas))
 
   def startup_panda_configured(self, *, inactive_keepalive=False):
