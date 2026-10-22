@@ -356,6 +356,7 @@ class TransportPauseFeedback:
           (not event.softDisable or event.name == log.OnroadEvent.EventName.steerTempUnavailable) for event in events))
     users = [event for event in events if event.userDisable]
     from opendbc.car.chrysler.aol_contract import qualified as chrysler_qualified
+    from openpilot.starpilot.car.nissan.aol import qualified as nissan_qualified
     from opendbc.car.ford.aol import qualified as ford_qualified
     from opendbc.car.hyundai.canfd_angle_aol import qualified as angle_qualified
     from opendbc.car.hyundai.canfd_stock_aol import qualified as stock_canfd_qualified
@@ -370,7 +371,7 @@ class TransportPauseFeedback:
     stock_hkg = stock_angle or stock_canfd_qualified(cp, marked_only=True) or stock_classic_qualified(cp, marked_only=True)
     stock_user = stock_lateral_user_event(cp)
     stock_temporary_user = bool((location_fault or eps_recovery) and (stock_hkg or chrysler_qualified(cp, marked_only=True) or
-      ford_qualified(cp, marked_only=True)) and users and
+      ford_qualified(cp, marked_only=True) or nissan_qualified(cp, marked_only=True)) and users and
       not axis.desiredLongitudinal and not axis.longitudinalActive and
       cs.cruiseState.available and not cs.cruiseState.enabled and
       cs.gearShifter in (gears.drive, gears.low, gears.sport, gears.brake) and
@@ -586,9 +587,13 @@ class TransportPauseFeedback:
       return False
     # This exception validates intent only. The normal vehicle-health helper
     # continues to reject temporary EPS for transport and availability proofs.
-    native = _configured_transport_native(sm, cp, self.session, now_ns)
+    from openpilot.starpilot.car.nissan.aol import temporary_eps_restriction
+    nissan_eps = bool(temporary_eps_restriction(cp, cs) and self.lateral_only_baseline and
+      not axis.desiredLongitudinal and not axis.longitudinalActive)
+    native = _configured_transport_native(sm, cp, self.session, now_ns, allow_restricted_lateral=nissan_eps)
     if (native is None or not native.pandaInventory or
-        held_original and not (native.requestedLateral and native.lateralAllowed) or
+        held_original and not (native.requestedLateral and (native.lateralAllowed or
+          nissan_eps and not native.requestedLongitudinal and not native.longitudinalAllowed)) or
         axis.longitudinalActive and not native.longitudinalAllowed or
         native.observedMonoTime < self.lateral_native_ns or
         (native.pandaSerial, tuple(p.hardwareSerial for p in native.pandaInventory)) != self.lateral_inventory):
@@ -1119,6 +1124,14 @@ class TransportPauseFeedback:
         if retain_reverse_intent(self, sm, cp, cs, axis, now_ns, latched=latched, producer=intent_producer_session,
             qualified_cp=honda_stock_qualified(cp, marked_only=True),
             extra_user_events=(log.OnroadEvent.EventName.cruiseDisabled,),
+            informational_events=(log.OnroadEvent.EventName.userBookmarkNotPaired,), allow_withdrawal_join=True):
+          return False
+      if cp.brand == 'nissan' and current and continuity:
+        from openpilot.starpilot.car.nissan.aol import qualified as nissan_qualified
+        from openpilot.starpilot.aol.reverse_intent import retain_reverse_intent
+
+        if retain_reverse_intent(self, sm, cp, cs, axis, now_ns, latched=latched, producer=intent_producer_session,
+            qualified_cp=nissan_qualified(cp, marked_only=True),
             informational_events=(log.OnroadEvent.EventName.userBookmarkNotPaired,), allow_withdrawal_join=True):
           return False
       if cp.brand == 'ford' and current and continuity:

@@ -54,6 +54,10 @@ from opendbc.car.ford.aol import (
 from opendbc.car.hyundai.canfd_angle_aol import native_observation, temporary_restriction, qualified as qualified_angle_aol
 from opendbc.car.hyundai.canfd_owner import config_index as hyundai_canfd_config_index
 from opendbc.car.hyundai.captured_adrv_startup import CapturedADRVStartup
+from openpilot.starpilot.car.nissan.aol import (
+  qualified as qualified_nissan_aol, native_observation as nissan_native_observation,
+  temporary_restriction as nissan_temporary_restriction,
+)
 from openpilot.starpilot.car.hyundai.aol import aol_safety_config as hyundai_aol_safety_config
 from openpilot.starpilot.car.hyundai.aol import retained_shared_long_cancel_intent as hkg_cancel_intent_retained
 from openpilot.starpilot.aol.runtime import AXIS_MAX_AGE_NS, current_axis, current_native
@@ -598,7 +602,8 @@ class Car:
         fault_active = transport_reset or self.aol_disarming_fault(CS, event_ns, now_ns,
           transport_observed_healthy=reuse_transport)
       angle_aol, ford_aol, honda_aol, mazda_aol, preap_aol = self.aol_permission_owners()
-      permission_owner = angle_aol or ford_aol or honda_aol or mazda_aol or preap_aol
+      nissan_aol = qualified_nissan_aol(self.CP, marked_only=True)
+      permission_owner = angle_aol or ford_aol or honda_aol or mazda_aol or preap_aol or nissan_aol
       angle_panda_ready = not permission_owner or self.startup_panda_configured()
       native = (
         current_native(self.sm, self.CP, now_ns=now_ns, axis_session_id=self.aol_axis_session() if permission_owner else None)
@@ -607,9 +612,11 @@ class Car:
       )
       native_reset = False
       if permission_owner:
-        observe = (preap_native_observation if preap_aol else mazda_native_observation if mazda_aol else self.aol_honda_native_observation if honda_aol else
+        observe = (nissan_native_observation if nissan_aol else
+                   preap_native_observation if preap_aol else mazda_native_observation if mazda_aol else self.aol_honda_native_observation if honda_aol else
                    ford_native_observation if ford_aol else native_observation)
-        restrict = (preap_temporary_restriction if preap_aol else mazda_temporary_restriction if mazda_aol else honda_temporary_restriction if honda_aol else
+        restrict = (nissan_temporary_restriction if nissan_aol else
+                    preap_temporary_restriction if preap_aol else mazda_temporary_restriction if mazda_aol else honda_temporary_restriction if honda_aol else
                     ford_temporary_restriction if ford_aol else temporary_restriction)
         preap_observation = {}
         if preap_aol:

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "opendbc/safety/declarations.h"
+#include "opendbc/safety/modes/nissan_aol.h"
 
 static bool nissan_alt_eps = false;
 
@@ -18,6 +19,7 @@ static const AngleSteeringLimits NISSAN_STEERING_LIMITS = {
 };
 
 static void nissan_rx_hook(const CANPacket_t *msg) {
+  nissan_aol_observe(msg);
   // Altima: on camera bus, others: on pt bus
   if (msg_matches(msg, 0x185U, 0U)) {
     // Current steering angle
@@ -121,11 +123,48 @@ static safety_config nissan_init(uint16_t param) {
   const uint16_t NISSAN_PARAM_ALT_EPS_BUS = 1;
 
   nissan_alt_eps = GET_FLAG(param, NISSAN_PARAM_ALT_EPS_BUS);
-  return BUILD_SAFETY_CFG(nissan_rx_checks, NISSAN_TX_MSGS);
+  nissan_aol_reset();
+  nissan_aol_enabled = ((unsigned int)alternative_experience == 32U) && ((param == 0U) || (param == 1U) || (param == 4U));
+  nissan_aol_alt = param == 1U;
+  nissan_aol_leaf = param == 4U;
+  if (nissan_aol_enabled) {
+    static const AolSafetyPolicy policy = {
+      .reset = nissan_aol_reset,
+      .request_mask = nissan_aol_request,
+      .permission_mask = nissan_aol_permission,
+      .rx_invalid = nissan_aol_reset,
+    };
+    aol_policy = &policy;
+  }
+  // Exact optional source ownership. Leaf uses 0x239 for BOTH gas and brake,
+  // not the unrelated mixed-table 0x1cc/4-byte brake alternative.
+  static RxCheck nissan_aol_rx_checks[] = {
+    {.msg = {{0x185, 0, 8, 100U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
+    {.msg = {{0x285, 0, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
+    {.msg = {{0x30f, 2, 3, 10U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
+    {.msg = {{0x239, 0, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
+    {.msg = {{0x454, 0, 8, 10U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
+  };
+  nissan_aol_rx_checks[1].msg[0].bus = nissan_aol_alt ? 1U : 0U;
+  nissan_aol_rx_checks[2].msg[0].bus = nissan_aol_alt ? 1U : 2U;
+  nissan_aol_rx_checks[3].msg[0].addr = nissan_aol_leaf ? 0x239U : 0x15CU;
+  nissan_aol_rx_checks[3].msg[0].bus = nissan_aol_alt ? 1U : 0U;
+  nissan_aol_rx_checks[4].msg[0].bus = nissan_aol_alt ? 1U : 0U;
+  safety_config ret = BUILD_SAFETY_CFG(nissan_rx_checks, NISSAN_TX_MSGS);
+  if (nissan_aol_enabled) {
+    ret.rx_checks = nissan_aol_rx_checks;
+    ret.rx_checks_len = nissan_aol_leaf ? 4 : 5;
+  }
+  if (((unsigned int)alternative_experience == 32U) && !nissan_aol_enabled) {
+    ret.tx_msgs = NULL;
+    ret.tx_msgs_len = 0;
+  }
+  return ret;
 }
 
 const safety_hooks nissan_hooks = {
   .init = nissan_init,
   .rx = nissan_rx_hook,
   .tx = nissan_tx_hook,
+  .optional_rx = nissan_aol_observe,
 };
