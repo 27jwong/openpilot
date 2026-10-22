@@ -7,6 +7,18 @@ from opendbc.safety.tests.libsafety import libsafety_py
 
 
 CASES = (
+  ("accord-mvl-stock", 20, 80, 0, "honda_common_canfd_generated", False, "GEARBOX_AUTO", 4),
+  ("accord-mvl-stock-alt-brake", 20, 81, 0, "honda_common_canfd_generated", False, "GEARBOX_AUTO", 4),
+  ("alt-radar-alpha", 20, 1058, 1, "honda_civic_hatchback_ex_2017_can_generated", False, "GEARBOX_AUTO", 4),
+  ("alt-radar-alpha-alt-brake", 20, 1059, 1, "acura_rdx_2020_can_generated", False, "GEARBOX_AUTO", 4),
+  ("mdx-tja-alpha", 20, 1570, 1, "honda_common_canfd_generated", False, "GEARBOX_AUTO", 4),
+  ("mdx-tja-alpha-alt-brake", 20, 1571, 1, "honda_common_canfd_generated", False, "GEARBOX_AUTO", 4),
+  ("alt-radar-stock", 20, 0, 1, "honda_civic_hatchback_ex_2017_can_generated", False, "GEARBOX_AUTO", 4),
+  ("alt-radar-stock-alt-brake", 20, 1, 1, "acura_rdx_2020_can_generated", False, "GEARBOX_AUTO", 4),
+  ("mdx-tja-stock", 20, 512, 1, "honda_common_canfd_generated", False, "GEARBOX_AUTO", 4),
+  ("mdx-tja-stock-alt-brake", 20, 513, 1, "honda_common_canfd_generated", False, "GEARBOX_AUTO", 4),
+  ("canfd-stock", 20, 16, 0, "honda_common_canfd_generated", False, "GEARBOX_AUTO", 4),
+  ("canfd-stock-alt-brake", 20, 17, 0, "honda_common_canfd_generated", False, "GEARBOX_AUTO", 4),
   ("classic", 20, 0, 1, "honda_civic_hatchback_ex_2017_can_generated", False, "GEARBOX_AUTO", 4),
   ("classic-alt-brake", 20, 1, 1, "acura_rdx_2020_can_generated", False, "GEARBOX_AUTO", 4),
   ("nidec", 1, 0, 0, "honda_civic_touring_2016_can_generated", False, "GEARBOX_CVT", 4),
@@ -38,7 +50,7 @@ class TestHondaStockAol(unittest.TestCase):
     self.safety.set_aol_test_heartbeat(True)
     self.packer = CANPackerSafety(dbc)
     self.dbc = DBC(dbc)
-    self.scoped = experience == 32 and (word not in (10, 11) or self.debug)
+    self.scoped = experience == 32 and (word not in (10, 11, 1058, 1059, 1570, 1571) or self.debug)
 
   def packet(self, name, values, bus=None):
     expected = self.dbc.name_to_msg[name].sigs
@@ -69,7 +81,7 @@ class TestHondaStockAol(unittest.TestCase):
       self.safety.aol_set_host_request(1)
 
   def normal_engage(self, *, button=3, gas=0, brake=0):
-    if self.debug and self.case[2] in (10, 11):
+    if self.debug and self.case[2] in (10, 11, 1058, 1059, 1570, 1571):
       for value in (button, 0):
         scm = {"CRUISE_BUTTONS": value, "CRUISE_SETTING": 0}
         self.assertTrue(self.safety.safety_rx_hook(self.packet("SCM_BUTTONS", scm)))
@@ -88,7 +100,7 @@ class TestHondaStockAol(unittest.TestCase):
 
   def test_normal_engagement_then_brake_without_main_or_lkas_gesture(self):
     for case in CASES:
-      for button in ((3, 4) if case[2] in (10, 11) else (3,)):
+      for button in ((3, 4) if case[2] in (10, 11, 1058, 1059, 1570, 1571) else (3,)):
         for gas in (0, 1):
           with self.subTest(case=case[0], button=button, gas=gas):
             self.configure(case)
@@ -268,7 +280,7 @@ class TestHondaStockAol(unittest.TestCase):
 
   def test_cold_valid_normal_grant_precedes_engaged_heartbeat(self):
     for case in CASES:
-      for button in ((3, 4) if case[2] in (10, 11) else (3,)):
+      for button in ((3, 4) if case[2] in (10, 11, 1058, 1059, 1570, 1571) else (3,)):
         with self.subTest(case=case[0], button=button):
           self.configure(case)
           self.safety.set_aol_test_heartbeat(False)

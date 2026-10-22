@@ -531,7 +531,7 @@ int main() {
     stock_honda.safety_mode = 20U;
     stock_honda.safety_param = word;
     const bool classic = word == 34U || word == 35U || word == 163U;
-    const bool stock = word == 0U || word == 1U || word == 8U || word == 9U || word == 10U || word == 11U;
+    const bool stock = word == 0U || word == 1U || word == 8U || word == 9U || word == 10U || word == 11U || word == 16U || word == 17U || word == 80U || word == 81U || word == 512U || word == 513U;
     assert(aol_capable(stock_honda, 20U, VEHICLE_REGISTRY) == (classic || stock));
     assert(aol_runtime_enabled(false, stock_honda, VEHICLE_REGISTRY) == stock);
     stock_honda.safety_mode = 1U;
@@ -542,6 +542,15 @@ int main() {
     assert(!aol_capable(stock_honda, 1U, VEHICLE_REGISTRY));
   }
 
+  for (const uint16_t word : {1058U, 1059U, 1570U, 1571U}) {
+    auto marked_alt_honda = status();
+    marked_alt_honda.safety_mode = 20U;
+    marked_alt_honda.safety_param = word;
+    assert(aol_capable(marked_alt_honda, 20U, VEHICLE_REGISTRY));
+    assert(aol_runtime_enabled(false, marked_alt_honda, VEHICLE_REGISTRY));
+    marked_alt_honda.capability_flags = 0U;
+    assert(!aol_capable(marked_alt_honda, 20U, VEHICLE_REGISTRY));
+  }
   auto honda = status();
   honda.safety_mode = HONDA_AOL_PROFILE.mode;
   honda.safety_param = 0x22U;

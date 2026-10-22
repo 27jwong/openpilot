@@ -419,7 +419,7 @@ static safety_config honda_nidec_init(uint16_t param) {
 }
 
 static safety_config honda_bosch_init(uint16_t param) {
-  honda_mvl_stock = ((param == 80U) || (param == 81U)) && (alternative_experience == 0);
+  honda_mvl_stock = ((param == 80U) || (param == 81U)) && ((alternative_experience == 0) || (alternative_experience == 32));
   honda_mvl_buttons_fresh = 0U;
   honda_interceptor_reset(false);
   // Bosch

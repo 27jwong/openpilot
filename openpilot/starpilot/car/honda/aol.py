@@ -1,5 +1,5 @@
 from opendbc.car.structs import car
-from opendbc.car.honda.stock_aol import qualified as qualified_stock, BOSCH_WORDS, NIDEC_WORDS, temporary_restriction
+from opendbc.car.honda.stock_aol import qualified as qualified_stock, BOSCH_WORDS, NIDEC_WORDS, temporary_restriction, ALT_RADAR_STOCK
 from openpilot.starpilot.car.honda.stock_intent import HondaStockCardIntent
 from opendbc.car.honda.values import CAR, HondaFlags, HondaSafetyFlags
 from openpilot.starpilot.aol.policy import AolVehiclePolicy
@@ -36,10 +36,16 @@ def qualified_honda(CP) -> bool:
 
 def policy_for(CP) -> AolVehiclePolicy:
   if qualified_stock(CP):
+    safety_addition = 256 if CP.carFingerprint == CAR.HONDA_ODYSSEY_TWN else 0
+    if CP.carFingerprint in ALT_RADAR_STOCK:
+      if CP.carFingerprint == CAR.ACURA_MDX_4G:
+        safety_addition |= int(HondaSafetyFlags.STOCK_TJA)
+      if CP.openpilotLongitudinalControl:
+        safety_addition |= int(HondaSafetyFlags.ALT_RADAR_AOL | HondaSafetyFlags.AOL_BOSCH_LONG)
     return AolVehiclePolicy(intent_supported=True, settings_supported=True, runtime_supported=True,
                             normal_runtime_supported=True, ordinary_axis_ack_required=qualified_stock(CP, marked_only=True), explicit_latch=True,
                             alternative_experience_addition=32,
-                            safety_param_addition=256 if CP.carFingerprint == CAR.HONDA_ODYSSEY_TWN else 0)
+                            safety_param_addition=safety_addition)
   qualified = qualified_honda(CP)
   return AolVehiclePolicy(
     intent_supported=qualified, settings_supported=qualified,
@@ -75,6 +81,12 @@ def retain_on_native_denial(CP, native, state):
 
 def create_intent(CP, settings):
   if qualified_stock(CP):
+    safety_addition = 256 if CP.carFingerprint == CAR.HONDA_ODYSSEY_TWN else 0
+    if CP.carFingerprint in ALT_RADAR_STOCK:
+      if CP.carFingerprint == CAR.ACURA_MDX_4G:
+        safety_addition |= int(HondaSafetyFlags.STOCK_TJA)
+      if CP.openpilotLongitudinalControl:
+        safety_addition |= int(HondaSafetyFlags.ALT_RADAR_AOL | HondaSafetyFlags.AOL_BOSCH_LONG)
     return HondaStockCardIntent(CP, settings)
   from openpilot.starpilot.aol.intent import AolCardIntent
   return AolCardIntent(settings)

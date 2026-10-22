@@ -12,6 +12,8 @@ static bool honda_stock_aol_request_seen = false;
 static bool honda_stock_aol_alt_main = false;
 static bool honda_stock_aol_drive = false;
 static bool honda_stock_aol_twn = false;
+static bool honda_stock_aol_tja = false;
+static bool honda_stock_aol_alt_long = false;
 static uint8_t honda_stock_aol_eps = 0U;
 static uint32_t honda_stock_aol_main_ts = 0U;
 static RxCheck *honda_stock_aol_eps_check = NULL;
@@ -43,6 +45,8 @@ static void honda_stock_aol_reset(void) {
   honda_stock_aol_lkas_previous = false;
   honda_stock_aol_drive = false;
   honda_stock_aol_twn = false;
+  honda_stock_aol_tja = false;
+  honda_stock_aol_alt_long = false;
   honda_stock_aol_eps = 0U;
   honda_stock_aol_main_ts = 0U;
   honda_stock_aol_eps_check = NULL;
@@ -96,7 +100,8 @@ static uint8_t honda_stock_aol_permission_mask(void) {
   uint8_t permission = 0U;
   // A temporary EPS fault (2/6, e.g. a hard driver override) withdraws lateral only;
   // longitudinal stays with controls_allowed as in stock openpilot.
-  const bool eps_lateral = (honda_stock_aol_eps == 0U) || (honda_stock_aol_eps == 3U) || (honda_stock_aol_eps == 4U);
+  const bool eps_lateral = (honda_stock_aol_eps == 0U) || (honda_stock_aol_eps == 3U) || (honda_stock_aol_eps == 4U) ||
+    (honda_stock_aol_tja && (honda_stock_aol_eps == 1U));
   const bool eps_known = eps_lateral || (honda_stock_aol_eps == 2U) || (honda_stock_aol_eps == 6U);
   if (acc_main_on && honda_stock_aol_drive && eps_known) {
     if (eps_lateral && (controls_allowed || honda_stock_aol_token)) {
@@ -160,7 +165,8 @@ static void honda_stock_aol_rx(const CANPacket_t *msg, unsigned int pt_bus, bool
          ((GET_LEN(msg) == 6U) ? (msg->data[4] & 15U) : ((msg->data[4] >> 4U) & 15U))) :
         ((msg->data[1] >> 4U) & 15U);
       if ((honda_stock_aol_eps != 0U) && (honda_stock_aol_eps != 2U) && (honda_stock_aol_eps != 3U) &&
-          (honda_stock_aol_eps != 4U) && (honda_stock_aol_eps != 6U)) {
+          (honda_stock_aol_eps != 4U) && (honda_stock_aol_eps != 6U) &&
+          !(honda_stock_aol_tja && (honda_stock_aol_eps == 1U))) {
         honda_stock_aol_clear();
       }
     }
@@ -182,7 +188,8 @@ static void honda_stock_aol_rx(const CANPacket_t *msg, unsigned int pt_bus, bool
     const bool request_current = !honda_stock_aol_request_seen ||
       (safety_get_ts_elapsed(microsecond_timer_get(), aol_host_request_ts) <= AOL_HOST_REQUEST_TIMEOUT_US);
     const bool eps_known = (honda_stock_aol_eps == 0U) || (honda_stock_aol_eps == 2U) ||
-      (honda_stock_aol_eps == 3U) || (honda_stock_aol_eps == 4U) || (honda_stock_aol_eps == 6U);
+      (honda_stock_aol_eps == 3U) || (honda_stock_aol_eps == 4U) || (honda_stock_aol_eps == 6U) ||
+      (honda_stock_aol_tja && (honda_stock_aol_eps == 1U));
     if (normal_engagement && engagement_source && controls_allowed && acc_main_on && honda_stock_aol_drive &&
         eps_known && !brake_pressed && !regen_braking && !steering_disengage &&
         !relay_malfunction && !safety_rx_checks_invalid && request_current &&
@@ -205,14 +212,16 @@ static safety_config honda_copy_rx(const RxCheck *source, unsigned int count, sa
 static safety_config honda_stock_aol_configure(uint16_t param, bool nidec, bool alt_main, unsigned int pt_bus, safety_config ret) {
   honda_stock_aol_reset();
   bool valid = nidec ? ((param == 0U) || (param == 4U) || (param == 260U)) :
-    ((param == 0U) || (param == 1U) || (param == 8U) || (param == 9U));
+    ((param == 0U) || (param == 1U) || (param == 8U) || (param == 9U) || (param == 16U) || (param == 17U) || (param == 80U) || (param == 81U) || (param == 512U) || (param == 513U));
 #ifdef ALLOW_DEBUG
-  valid = valid || (!nidec && ((param == 10U) || (param == 11U)));
+  valid = valid || (!nidec && ((param == 10U) || (param == 11U) || (param == 1058U) || (param == 1059U) || (param == 1570U) || (param == 1571U)));
 #endif
   honda_stock_aol_enabled = valid && ((unsigned int)alternative_experience == 32U) &&
     (ret.rx_checks_len >= 3) && (ret.rx_checks_len <= 5) && (pt_bus <= 1U);
   honda_stock_aol_alt_main = alt_main;
   honda_stock_aol_twn = nidec && (param == 260U);
+  honda_stock_aol_tja = !nidec && ((param == 512U) || (param == 513U) || (param == 1570U) || (param == 1571U));
+  honda_stock_aol_alt_long = !nidec && ((param == 1058U) || (param == 1059U) || (param == 1570U) || (param == 1571U));
   if (honda_stock_aol_enabled && (ret.rx_checks_len <= 5) && (pt_bus <= 1U)) {
     const unsigned int count = ret.rx_checks_len;
     static const RxCheck eps[] = {
@@ -238,11 +247,14 @@ static safety_config honda_stock_aol_configure(uint16_t param, bool nidec, bool 
     };
     honda_rx_workspace[0] = buttons[alt_main ? 2U : pt_bus];
     honda_rx_workspace[count] = eps[pt_bus];
-    if (honda_stock_aol_twn) {
+    if (honda_stock_aol_twn || honda_stock_aol_tja || honda_stock_aol_alt_long || (!nidec && ((param == 16U) || (param == 17U) || (param == 80U) || (param == 81U)))) {
       honda_rx_workspace[count].msg[1] = (CanMsgCheck){0};
       honda_rx_workspace[count].msg[2] = (CanMsgCheck){0};
     }
     honda_rx_workspace[count + 1U] = gear[pt_bus];
+    if (honda_stock_aol_tja || honda_stock_aol_alt_long || (!nidec && ((param == 16U) || (param == 17U) || (param == 80U) || (param == 81U)))) {
+      honda_rx_workspace[count + 1U].msg[2] = (CanMsgCheck){0};
+    }
     honda_stock_aol_eps_check = &honda_rx_workspace[count];
     honda_stock_aol_gear_check = &honda_rx_workspace[count + 1U];
     ret.rx_checks_len = count + 2U;

@@ -56,16 +56,17 @@ class TestHondaCurrentCaller(unittest.TestCase):
   def test_relay_fault_during_recovered_reverse(self):
     self.run_current_caller(candidate=CAR.HONDA_CIVIC_BOSCH, word=0, fault='relay')
 
-  def run_current_caller(self, *, candidate, word, fault=None):
+  def run_current_caller(self, *, candidate, word, fault=None, alternate_brake=False, alpha=False, speed_mps=12.5):
     safety = libsafety_py.libsafety
     with (
       OpenpilotPrefix(),
+      patch('opendbc.car.honda.interface.disable_ecu', return_value=True),
       patch.dict(os.environ, {'SIMULATION': '1', 'AOL_REPLAY_RUNTIME': '0', 'FINGERPRINT': '', 'SKIP_FW_QUERY': '', 'DISABLE_FW_CACHE': '1'}),
     ):
       saved = Params()
       for name, value in [
         ('OpenpilotEnabledToggle', True),
-        ('AlphaLongitudinalEnabled', False),
+        ('AlphaLongitudinalEnabled', alpha),
         ('AlwaysOnLateral', True),
         ('SafeMode', False),
         ('IsOffroad', False),
@@ -77,9 +78,11 @@ class TestHondaCurrentCaller(unittest.TestCase):
         saved.put(name, value, block=True)
       fp = gen_empty_fingerprint()
       nidec = bool(candidate.config.flags & HondaFlags.NIDEC)
-      pt_bus = 0 if nidec or candidate.config.flags & HondaFlags.BOSCH_RADARLESS else 1
+      pt_bus = 0 if nidec or candidate.config.flags & (HondaFlags.BOSCH_RADARLESS | HondaFlags.BOSCH_CANFD) else 1
       gear_msg = CANDBC(DBC[candidate][Bus.pt]).name_to_msg['GEARBOX_AUTO']
       fp[pt_bus][gear_msg.address] = gear_msg.size
+      if alternate_brake:
+        fp[pt_bus][0x1BE] = 3
       fw = [
         structs.CarParams.CarFw(ecu=ecu, address=address, subAddress=0 if sub is None else sub, fwVersion=versions[0], brand='honda')
         for (ecu, address, sub), versions in FW_VERSIONS[candidate].items()
@@ -105,11 +108,11 @@ class TestHondaCurrentCaller(unittest.TestCase):
       self.assertEqual([record.to_dict() for record in cp.carFw], [record.to_dict() for record in fw])
       self.assertEqual(cp.carFingerprint, candidate)
       self.assertEqual((cp.safetyConfigs[0].safetyParam, cp.alternativeExperience), (word, 32))
-      self.assertTrue(cp.pcmCruise)
-      self.assertEqual(cp.openpilotLongitudinalControl, nidec)
-      self.assertEqual((ci.CC.CAN.pt, ci.CC.CAN.lkas), (pt_bus, 0))
+      self.assertEqual(cp.pcmCruise, not alpha)
+      self.assertEqual(cp.openpilotLongitudinalControl, nidec or alpha)
+      self.assertEqual((ci.CC.CAN.pt, ci.CC.CAN.lkas), (pt_bus, pt_bus if alpha else 0))
       alt_brake = bool(cp.flags & HondaFlags.BOSCH_ALT_BRAKE)
-      self.assertEqual(alt_brake, candidate == CAR.HONDA_CRV_5G)
+      self.assertEqual(alt_brake, alternate_brake or bool(candidate.config.flags & HondaFlags.BOSCH_ALT_BRAKE))
       with structs.CarParams.from_bytes(saved.get('CarParams')) as published:
         self.assertEqual(published.to_dict(), cp.to_dict())
       sd, controls = SelfdriveD(CP=cp), Controls()
@@ -145,7 +148,7 @@ class TestHondaCurrentCaller(unittest.TestCase):
             brake=50 <= tick < 55,
             eps=6 if 80 <= tick < 95 else 0,
             gear=2 if 110 <= tick < 125 else None,
-            lkas=0,
+            lkas=0, speed_kph=speed_mps * 3.6,
           )
           safety.set_timer((now // 1000) & 0xFFFF_FFFF)
           if tick == 110 and fault == 'relay':
@@ -233,7 +236,7 @@ class TestHondaCurrentCaller(unittest.TestCase):
           }
           self.assertTrue(cs.canValid, (tick, parser_observation))
           self.assertFalse(cs.canTimeout)
-          self.assertAlmostEqual(cs.vEgoRaw, 12.5, places=5)
+          self.assertAlmostEqual(cs.vEgoRaw, speed_mps, places=5)
           self.assertFalse(cs.standstill or cs.seatbeltUnlatched)
           self.assertFalse(cs.steerFaultPermanent)
           self.assertEqual(cs.steerFaultTemporary, 80 <= tick < 95)
@@ -341,7 +344,20 @@ class TestHondaCurrentCaller(unittest.TestCase):
               if not previous.latActive:
                 self.assertEqual((tx['torque'], tx['request']), (0, False), row)
             else:
-              self.assertTrue(accepted or fault == "relay" and tick >= 110, row)
+              if alpha and address == 0x1DF and tick == 50:
+                # Card applies the prior Controls envelope. Physical brake has
+                # already revoked LONG; the native hook must reject this one
+                # in-flight positive command before the new envelope arrives.
+                self.assertFalse(accepted, row)
+                self.assertTrue(previous.longActive, row)
+                self.assertFalse(command.longActive or row['controls'] or row['permission'] & 2, row)
+              else:
+                self.assertTrue(accepted or fault == "relay" and tick >= 110, row)
+              if alpha and address == 0x1DF and tick >= 52:
+                gas = int.from_bytes(data[:2], 'big', signed=True)
+                accel = (data[3] << 3) | (data[4] >> 5)
+                accel = accel - 0x800 if accel & 0x400 else accel
+                self.assertEqual((gas, accel), (-30000, 0), row)
             row['TX'].append(tx)
           row['events'] = [str(e.name) for e in driven['onroadEvents'].onroadEvents]
           row['fault_reason'] = str(driven['aolAxisState'].aolAxisState.faultReason)

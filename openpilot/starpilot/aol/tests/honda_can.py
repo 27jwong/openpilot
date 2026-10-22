@@ -36,15 +36,15 @@ class HondaCan:
     self.alt_brake = bool(ci.CP.flags & HondaFlags.BOSCH_ALT_BRAKE)
     if self.alt_brake:
       brake_msg = pt.dbc.name_to_msg['BRAKE_MODULE']
-      assert (brake_msg.address, brake_msg.size) == (0x1BE, 8)
+      assert (brake_msg.address, brake_msg.size) == (0x1BE, 3)
       assert 'BRAKE_PRESSED' in brake_msg.sigs
       assert brake_msg.address in pt.addresses
 
-  def frames(self, *, cruise_button=0, lkas=0, cruise=0, brake=False, main=True, eps=0, gear=None, gas=0, omit=()):
+  def frames(self, *, cruise_button=0, lkas=0, cruise=0, brake=False, main=True, eps=0, gear=None, gas=0, omit=(), speed_kph=45.):
     intended = {
       'SCM_BUTTONS': {'CRUISE_BUTTONS': cruise_button, 'CRUISE_SETTING': lkas},
-      'ENGINE_DATA': {'XMISSION_SPEED': 45.0},
-      'WHEEL_SPEEDS': {f'WHEEL_SPEED_{wheel}': 45.0 for wheel in ('FL', 'FR', 'RL', 'RR')},
+      'ENGINE_DATA': {'XMISSION_SPEED': speed_kph},
+      'WHEEL_SPEEDS': {f'WHEEL_SPEED_{wheel}': speed_kph for wheel in ('FL', 'FR', 'RL', 'RR')},
       'POWERTRAIN_DATA': {
         'ACC_STATUS': cruise,
         'BRAKE_PRESSED': 0 if self.alt_brake else int(brake),
