@@ -1,7 +1,19 @@
 from opendbc.car import structs
-from opendbc.car.volkswagen.stock_aol import qualified, temporary_restriction, AOL_WORD, MANUAL_WORD, AOL_WORDS
+from opendbc.car.volkswagen.stock_aol import qualified as stock_qualified, AOL_WORD, MANUAL_WORD, AOL_WORDS
+from opendbc.car.volkswagen.long_aol import qualified as long_qualified, WORDS as LONG_WORDS
 from openpilot.starpilot.aol.intent import AolCardIntent, AOL_TOGGLE, ButtonType
 from openpilot.starpilot.aol.policy import AolVehiclePolicy
+
+
+def qualified(cp, *, marked_only=False):
+  return stock_qualified(cp, marked_only=marked_only) or long_qualified(cp, marked_only=marked_only)
+
+
+def temporary_restriction(cp, state):
+  gears = structs.CarState.GearShifter
+  return bool(state is not None and qualified(cp, marked_only=True) and state.canValid and not state.canTimeout and
+              not state.steerFaultPermanent and (state.steerFaultTemporary or state.standstill or
+              state.gearShifter not in (gears.drive, gears.sport, gears.eco, gears.manumatic)))
 
 
 def policy_for(cp):
@@ -15,7 +27,7 @@ def policy_for(cp):
 
 
 def native_profile_supported(model, param):
-  return model == int(structs.CarParams.SafetyModel.volkswagen) and param in AOL_WORDS
+  return model == int(structs.CarParams.SafetyModel.volkswagen) and param in AOL_WORDS | LONG_WORDS
 
 
 def native_accepts_cp(cp, model, param):

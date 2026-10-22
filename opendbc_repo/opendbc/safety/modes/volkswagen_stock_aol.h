@@ -1,6 +1,9 @@
 #pragma once
 
 static bool vw_aol_enabled = false;
+static bool vw_aol_longitudinal = false;
+static bool vw_aol_long_armed = false;
+static uint8_t vw_aol_buttons = 0U;
 static bool vw_aol_manual = false;
 static bool vw_aol_token = false;
 static bool vw_aol_cruise_engaged = false;
@@ -18,6 +21,8 @@ static bool vw_aol_accepted[3] = {false, false, false};
 
 static void vw_aol_clear(void) {
   vw_aol_token = false;
+  vw_aol_long_armed = false;
+  vw_aol_buttons = 0U;
   vw_aol_main_neutral = false;
   vw_aol_owned = false;
   for (unsigned int i = 0U; i < 3U; i++) {
@@ -28,6 +33,7 @@ static void vw_aol_clear(void) {
 static void vw_aol_reset(void) {
   vw_aol_clear();
   vw_aol_enabled = false;
+  vw_aol_longitudinal = false;
   vw_aol_cruise_engaged = false;
   vw_aol_manual = false;
   vw_aol_requested = false;
@@ -80,7 +86,11 @@ static uint8_t vw_aol_permission(void) {
       vw_aol_token) {
     permission = request & 1U;
   }
-  // Stock ACC remains the sole longitudinal owner. Never grant axis 2.
+  // Stock ACC never grants LONG. DEBUG OP-long requires its ordinary native grant,
+  // fresh host request and current physical sources; lateral token cannot enable speed control.
+  if (vw_aol_longitudinal && vw_aol_long_armed && acc_main_on && vw_aol_gear_drive && controls_allowed && !brake_pressed) {
+    permission |= request & 2U;
+  }
   return permission;
 }
 
@@ -97,10 +107,16 @@ static void vw_aol_optional_rx(const CANPacket_t *msg) {
       vw_aol_gear_drive = !GET_BIT(msg, 25U);
     } else {
     }
+    if (!vw_aol_gear_drive) {
+      vw_aol_long_armed = false;
+    }
   }
 }
 
 static void vw_aol_rx(const CANPacket_t *msg) {
+  if (vw_aol_longitudinal && brake_pressed) {
+    vw_aol_long_armed = false;
+  }
   if (vw_aol_enabled) {
     if (msg_matches(msg, MSG_LH_EPS_03, 0U, 8U)) {
       const unsigned int eps = msg->data[4] & 15U;
@@ -123,7 +139,7 @@ static void vw_aol_rx(const CANPacket_t *msg) {
         vw_aol_clear();
         // Only a valid OFF observation may prepare a subsequent main-ON edge.
         vw_aol_main_neutral = ((msg->data[3] & 7U) < 2U);
-      } else if (engage_edge && controls_allowed && vw_aol_gear_drive && vw_aol_eps_ready && !brake_pressed) {
+      } else if (!vw_aol_longitudinal && engage_edge && controls_allowed && vw_aol_gear_drive && vw_aol_eps_ready && !brake_pressed) {
         // A fresh stock engagement supplies native arm; host still requires its own current intent.
         vw_aol_token = true;
         vw_aol_main_neutral = false;
@@ -132,8 +148,27 @@ static void vw_aol_rx(const CANPacket_t *msg) {
         vw_aol_main_neutral = false;
       } else {
       }
-    } else if (msg_matches(msg, MSG_GRA_ACC_01, 0U, 8U) && GET_BIT(msg, 13U)) {
-      vw_aol_clear();
+    } else if (msg_matches(msg, MSG_GRA_ACC_01, 0U, 8U)) {
+      if (GET_BIT(msg, 13U)) {
+        vw_aol_clear();
+      } else if (vw_aol_longitudinal) {
+        const bool healthy = heartbeat_engaged && aol_rx_healthy() && vw_aol_current() && !safety_rx_checks_invalid;
+        const uint8_t buttons = (GET_BIT(msg, 16U) ? 1U : 0U) | (GET_BIT(msg, 19U) ? 2U : 0U);
+        if (!healthy) {
+          vw_aol_clear();
+        } else if (buttons == 0U) {
+          if (((vw_aol_buttons & 3U) != 0U) && controls_allowed && acc_main_on &&
+              vw_aol_gear_drive && vw_aol_eps_ready && !brake_pressed) {
+            vw_aol_token = true;
+            vw_aol_long_armed = true;
+          }
+          vw_aol_buttons = 4U;
+        } else if ((vw_aol_buttons & 4U) != 0U) {
+          vw_aol_buttons = 4U | buttons;
+        } else {
+        }
+      } else {
+      }
     } else {
     }
   }

@@ -27,7 +27,7 @@ constexpr AolSafetyProfile TEST_PROFILES[] = {
   {TEST_MODE, test_param, false}, {TEST_ALT_MODE, test_alt_param, false},
 };
 const AolProfileRegistry TEST_REGISTRY{TEST_PROFILES, std::size(TEST_PROFILES)};
-constexpr AolSafetyProfile VEHICLE_PROFILES[] = {HONDA_AOL_PROFILE, HONDA_STOCK_AOL_PROFILE, HONDA_NIDEC_AOL_PROFILE, HYUNDAI_AOL_PROFILE, HYUNDAI_CLASSIC_AOL_PROFILE, HYUNDAI_LEGACY_AOL_PROFILE, GM_AOL_PROFILE, FORD_AOL_PROFILE, MAZDA_AOL_PROFILE, CHRYSLER_AOL_PROFILE, TESLA_PREAP_AOL_PROFILE, TESLA_SCREEN_AOL_PROFILE, TOYOTA_AOL_PROFILE, NISSAN_AOL_PROFILE, VOLKSWAGEN_STOCK_AOL_PROFILE};
+constexpr AolSafetyProfile VEHICLE_PROFILES[] = {HONDA_AOL_PROFILE, HONDA_STOCK_AOL_PROFILE, HONDA_NIDEC_AOL_PROFILE, HYUNDAI_AOL_PROFILE, HYUNDAI_CLASSIC_AOL_PROFILE, HYUNDAI_LEGACY_AOL_PROFILE, GM_AOL_PROFILE, FORD_AOL_PROFILE, MAZDA_AOL_PROFILE, CHRYSLER_AOL_PROFILE, TESLA_PREAP_AOL_PROFILE, TESLA_SCREEN_AOL_PROFILE, TOYOTA_AOL_PROFILE, NISSAN_AOL_PROFILE, VOLKSWAGEN_STOCK_AOL_PROFILE, VOLKSWAGEN_LONG_AOL_PROFILE};
 const AolProfileRegistry VEHICLE_REGISTRY{VEHICLE_PROFILES, std::size(VEHICLE_PROFILES)};
 
 aol_safety_health_t status(uint8_t request = 0U, uint8_t permission = 0U) {
@@ -89,11 +89,14 @@ void queue(FakeTransport &transport, const aol_safety_health_t &before,
 
 int main() {
   for (uint32_t word = 0U; word <= 65535U; ++word) {
-    const bool expected = (word == 8U) || (word == 24U);
+    const bool stock = (word == 8U) || (word == 24U);
+    const bool longitudinal = (word == 9U) || (word == 25U);
+    const bool expected = stock || longitudinal;
     auto vw = status();
     vw.safety_mode = 15U;
     vw.safety_param = static_cast<uint16_t>(word);
-    assert(volkswagen_stock_aol_param(static_cast<uint16_t>(word)) == expected);
+    assert(volkswagen_stock_aol_param(static_cast<uint16_t>(word)) == stock);
+    assert(volkswagen_long_aol_param(static_cast<uint16_t>(word)) == longitudinal);
     assert(aol_capable(vw, 15U, VEHICLE_REGISTRY) == expected);
     assert(aol_runtime_enabled(false, vw, VEHICLE_REGISTRY) == expected);
     assert(!aol_capable(vw, 25U, VEHICLE_REGISTRY));

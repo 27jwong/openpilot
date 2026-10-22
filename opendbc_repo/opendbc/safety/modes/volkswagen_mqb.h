@@ -24,6 +24,18 @@ static safety_config volkswagen_mqb_init(uint16_t param) {
     {MSG_ACC_07, 0, 8, .check_relay = true},
   };
 
+#ifdef ALLOW_DEBUG
+  static const CanMsg VOLKSWAGEN_MQB_AOL_LONG_TX_MSGS[] = {
+    {MSG_HCA_01, 0, 8, .check_relay = true, .disable_static_blocking = true},
+    {MSG_LDW_02, 0, 8, .check_relay = true, .disable_static_blocking = true},
+    {MSG_LH_EPS_03, 2, 8, .check_relay = true, .disable_static_blocking = true},
+    {MSG_ACC_02, 0, 8, .check_relay = true},
+    {MSG_ACC_06, 0, 8, .check_relay = true},
+    {MSG_ACC_07, 0, 8, .check_relay = true},
+  };
+
+#endif
+
   static RxCheck volkswagen_mqb_rx_checks[] = {
     {.msg = {{MSG_ESP_19, 0, 8, 100U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
     {.msg = {{MSG_LH_EPS_03, 0, 8, 100U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},
@@ -37,7 +49,13 @@ static safety_config volkswagen_mqb_init(uint16_t param) {
   volkswagen_common_init();
   vw_aol_reset();
   vw_aol_enabled = ((unsigned int)alternative_experience == 32U) && ((param == 8U) || (param == 24U));
-  vw_aol_manual = param == 24U;
+#ifdef ALLOW_DEBUG
+  if (((unsigned int)alternative_experience == 32U) && ((param == 9U) || (param == 25U))) {
+    vw_aol_enabled = true;
+    vw_aol_longitudinal = true;
+  }
+#endif
+  vw_aol_manual = (param == 24U) || (param == 25U);
   // Keep relay checks. Only replace unconditional forwarding blocks with accepted ownership.
   VOLKSWAGEN_MQB_STOCK_TX_MSGS[0].disable_static_blocking = vw_aol_enabled;
   VOLKSWAGEN_MQB_STOCK_TX_MSGS[3].disable_static_blocking = vw_aol_enabled;
@@ -61,6 +79,11 @@ static safety_config volkswagen_mqb_init(uint16_t param) {
 
   safety_config ret = volkswagen_longitudinal ? BUILD_SAFETY_CFG(volkswagen_mqb_rx_checks, VOLKSWAGEN_MQB_LONG_TX_MSGS) :
                                                 BUILD_SAFETY_CFG(volkswagen_mqb_rx_checks, VOLKSWAGEN_MQB_STOCK_TX_MSGS);
+#ifdef ALLOW_DEBUG
+  if (vw_aol_longitudinal) {
+    ret = BUILD_SAFETY_CFG(volkswagen_mqb_rx_checks, VOLKSWAGEN_MQB_AOL_LONG_TX_MSGS);
+  }
+#endif
   if ((((unsigned int)alternative_experience == 32U) && !vw_aol_enabled) ||
       (((param & 8U) != 0U) && !vw_aol_enabled)) {
     ret.tx_msgs = NULL;

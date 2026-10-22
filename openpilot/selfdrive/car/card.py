@@ -40,8 +40,9 @@ from opendbc.car.honda.stock_aol import (
   qualified as qualified_honda_stock_aol, native_observation as honda_native_observation,
   temporary_restriction as honda_temporary_restriction,
 )
-from opendbc.car.volkswagen.stock_aol import (qualified as qualified_volkswagen_aol,
-  native_observation as volkswagen_native_observation, temporary_restriction as volkswagen_temporary_restriction)
+from opendbc.car.volkswagen.stock_aol import native_observation as volkswagen_native_observation
+from openpilot.starpilot.car.volkswagen.aol import (qualified as qualified_volkswagen_aol,
+  temporary_restriction as volkswagen_temporary_restriction)
 from opendbc.car.mazda.stock_aol import (qualified as qualified_mazda_aol,
                                         native_observation as mazda_native_observation,
                                         temporary_restriction as mazda_temporary_restriction)

@@ -10,20 +10,22 @@ MQB_CARS = frozenset(car for car in CAR if DBC[car].get(Bus.pt) == "vw_mqb" and
 KNOWN_FLAGS = int(VolkswagenFlags.STOCK_HCA_PRESENT | VolkswagenFlags.KOMBI_PRESENT | VolkswagenFlags.HAS_BSM)
 
 
-def _qualified(cp, *, marked_only=False):
+def _qualified(cp, *, marked_only=False, longitudinal=False):
   if (cp is None or cp.brand != "volkswagen" or cp.carFingerprint not in MQB_CARS or
       cp.passive or cp.notCar or cp.dashcamOnly or cp.flags & ~KNOWN_FLAGS or
       cp.steerControlType != structs.CarParams.SteerControlType.torque or
       cp.transmissionType not in (structs.CarParams.TransmissionType.automatic, structs.CarParams.TransmissionType.manual) or
       cp.networkLocation not in (structs.CarParams.NetworkLocation.gateway, structs.CarParams.NetworkLocation.fwdCamera) or
       cp.fingerprintSource == structs.CarParams.FingerprintSource.fixed or
-      cp.openpilotLongitudinalControl or not cp.pcmCruise or len(cp.safetyConfigs) != 1):
+      bool(cp.openpilotLongitudinalControl) != longitudinal or bool(cp.pcmCruise) == longitudinal or len(cp.safetyConfigs) != 1 or
+      (longitudinal and (cp.networkLocation != structs.CarParams.NetworkLocation.gateway or not cp.alphaLongitudinalAvailable))):
     return False
   word = AOL_WORD | (MANUAL_WORD if cp.transmissionType == structs.CarParams.TransmissionType.manual else 0)
+  word |= int(longitudinal)
   safety = cp.safetyConfigs[0]
   return (safety.safetyModel == structs.CarParams.SafetyModel.volkswagen and
           (cp.alternativeExperience == 32 and safety.safetyParam == word or
-           not marked_only and cp.alternativeExperience == 0 and safety.safetyParam == 0))
+           not marked_only and cp.alternativeExperience == 0 and safety.safetyParam == int(longitudinal)))
 
 
 def temporary_restriction(cp, state):

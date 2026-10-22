@@ -19,8 +19,8 @@ from openpilot.starpilot.aol.vehicle import policy_for
 
 
 @pytest.mark.parametrize('manual', (False, True))
-@pytest.mark.parametrize('gateway', (False, True))
-def test_normal_golf_discovery_and_card_stock_aol_owner(manual, gateway):
+@pytest.mark.parametrize('gateway,alpha', ((False, False), (True, False), (True, True)))
+def test_normal_golf_discovery_and_card_stock_aol_owner(manual, gateway, alpha):
   fixture = {'kind': 'EXPLICIT_SYNTHETIC_FULL_ECU_DISCOVERY_INPUT_FROM_REUSED_INVENTORY_NOT_ROUTE_OR_PHYSICAL',
    'identity': 'VOLKSWAGEN_GOLF_MK7',
    'vin': 'WVWZZZAUZGW000000',
@@ -65,6 +65,7 @@ def test_normal_golf_discovery_and_card_stock_aol_owner(manual, gateway):
     params = Params()
     params.put_bool('OpenpilotEnabledToggle', True, block=True)
     params.put_bool('AlwaysOnLateral', True, block=True)
+    params.put_bool('AlphaLongitudinalEnabled', alpha, block=True)
     params.put_bool('SafeMode', False, block=True)
     params.put('MainCruiseButtonControl', 0, block=True)
     params.put('LKASButtonControl', 0, block=True)
@@ -76,7 +77,7 @@ def test_normal_golf_discovery_and_card_stock_aol_owner(manual, gateway):
           mock.patch.object(car_helpers, 'get_present_ecus', return_value=set()),
           mock.patch.object(car_helpers, 'get_fw_versions_ordered', return_value=fw)):
       # Normal public get_car: do NOT stub fingerprint, match_fw_to_car or candidate selection.
-      ci = car_helpers.get_car(receive, lambda *args, **kwargs: None, lambda _: None, False, False)
+      ci = car_helpers.get_car(receive, lambda *args, **kwargs: None, lambda _: None, alpha, False)
     cp = ci.CP
     assert cp.carFingerprint == CAR.VOLKSWAGEN_GOLF_MK7
     assert cp.fingerprintSource == structs.CarParams.FingerprintSource.fw and not cp.fuzzyFingerprint
@@ -85,13 +86,13 @@ def test_normal_golf_discovery_and_card_stock_aol_owner(manual, gateway):
                                   structs.CarParams.TransmissionType.automatic)
     assert cp.networkLocation == (structs.CarParams.NetworkLocation.gateway if gateway else
                                  structs.CarParams.NetworkLocation.fwdCamera)
-    assert cp.pcmCruise and not cp.openpilotLongitudinalControl
+    assert cp.pcmCruise == (not alpha) and cp.openpilotLongitudinalControl == alpha
     policy = policy_for(cp)
     assert policy.intent_supported and policy.runtime_supported
     card = Car(CI=ci, RI=ci.RadarInterface(cp))
     try:
       assert card.aol_qualified and card.aol_card_intent is not None
-      assert card.CP.safetyConfigs[0].safetyParam == (24 if manual else 8)
+      assert card.CP.safetyConfigs[0].safetyParam == ((24 if manual else 8) | int(alpha))
       assert card.CP.alternativeExperience == 32
       with structs.CarParams.from_bytes(params.get('CarParams')) as published:
         assert published.to_dict() == card.CP.to_dict()

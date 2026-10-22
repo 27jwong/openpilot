@@ -33,7 +33,15 @@ def test_factory_exact_marked_words_and_stock_long_separation(identity, manual, 
   assert qualified(cp, marked_only=True)
   assert native_matches_cp(cp, 15, 24 if manual else 8)
   assert not cp.openpilotLongitudinalControl and cp.pcmCruise
-  assert not policy_for(params(identity, manual, alpha=True, gateway=gateway)).intent_supported
+  long_cp = params(identity, manual, alpha=True, gateway=gateway)
+  long_policy = policy_for(long_cp)
+  assert long_policy.intent_supported == gateway
+  if gateway:
+    long_cp.alternativeExperience |= long_policy.alternative_experience_addition
+    long_cp.safetyConfigs[0].safetyParam |= long_policy.safety_param_addition
+    assert long_cp.safetyConfigs[0].safetyParam == (25 if manual else 9)
+    assert native_matches_cp(long_cp, 15, 25 if manual else 9)
+    assert long_cp.openpilotLongitudinalControl and not long_cp.pcmCruise
   for field, bad in (("passive", True), ("dashcamOnly", True), ("notCar", True), ("flags", 1 << 20),
                      ("alternativeExperience", 33), ("transmissionType", structs.CarParams.TransmissionType.direct)):
     altered = structs.CarParams(**cp.to_dict())
@@ -88,3 +96,38 @@ def test_intent_main_brake_temporary_fault_and_current_serialized_native_receipt
   cs.buttonEvents = [structs.CarState.ButtonEvent(type=structs.CarState.ButtonEvent.Type.cancel, pressed=True)]
   owner.update(cs, now_ns=now + 50_000_000)
   assert not owner.allowed_latch
+
+
+@pytest.mark.parametrize('manual', (False, True))
+def test_gateway_long_profile_rejects_changed_identity_bus_and_safety_context(manual):
+  from opendbc.car.volkswagen.long_aol import qualified as long_qualified
+  cp = params(sorted(MQB_CARS)[0], manual, alpha=True, gateway=True)
+  policy = policy_for(cp)
+  assert policy.intent_supported
+  cp.alternativeExperience = 32
+  cp.safetyConfigs[0].safetyParam |= policy.safety_param_addition
+  assert long_qualified(cp, marked_only=True)
+  changes = (
+    ('passive', True), ('notCar', True), ('dashcamOnly', True), ('flags', 1 << 20),
+    ('networkLocation', structs.CarParams.NetworkLocation.fwdCamera),
+    ('fingerprintSource', structs.CarParams.FingerprintSource.fixed),
+    ('transmissionType', structs.CarParams.TransmissionType.direct),
+    ('steerControlType', structs.CarParams.SteerControlType.angle),
+    ('openpilotLongitudinalControl', False), ('pcmCruise', True),
+    ('alphaLongitudinalAvailable', False), ('alternativeExperience', 33),
+  )
+  for field, value in changes:
+    altered = structs.CarParams(**cp.to_dict())
+    setattr(altered, field, value)
+    assert not long_qualified(altered), field
+    assert not policy_for(altered).intent_supported, field
+  for word in (0, 1, 8, 24, 25 if not manual else 9, 0x8009):
+    altered = structs.CarParams(**cp.to_dict())
+    altered.safetyConfigs[0].safetyParam = word
+    assert not long_qualified(altered)
+  altered = structs.CarParams(**cp.to_dict())
+  altered.safetyConfigs = [structs.CarParams.SafetyConfig(safetyModel=structs.CarParams.SafetyModel.noOutput), *altered.safetyConfigs]
+  assert not long_qualified(altered)
+  altered = structs.CarParams(**cp.to_dict())
+  altered.safetyConfigs[0].safetyModel = structs.CarParams.SafetyModel.volkswagenMeb
+  assert not long_qualified(altered)
