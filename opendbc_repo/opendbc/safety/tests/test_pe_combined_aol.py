@@ -1,6 +1,7 @@
 """PE independent LONG/LAT retains the existing Alpha release gate."""
 import unittest
 from opendbc.car.structs import CarParams
+from opendbc.car.hyundai import ioniq5pe_long_sender as sender
 from opendbc.safety.tests.test_ioniq5pe_paired_native import PEFixture
 from opendbc.safety.tests import test_ev9_combined_aol as ev9_combined
 from opendbc.safety.tests.test_hyundai_ev9_long import Ev9LongFixture
@@ -10,10 +11,36 @@ class TestPECombinedReleaseDenied(PEFixture, unittest.TestCase):
   def test_combined_pe_profile_has_no_transmit_authority_in_release(self):
     self.safety.set_alternative_experience(32)
     self.assertEqual(self.safety.set_safety_hooks(CarParams.SafetyModel.hyundaiCanfd, 0x5495), 0)
+    self.safety.set_aol_test_heartbeat(False)
+    rx = []
+
+    def feed(*, lkas=0, button=0):
+      self.safety.set_timer(self.now)
+      values = [('ACCELERATOR', {'GEAR': 5, 'ACCELERATOR_PEDAL': 0}),
+                ('TCS', {'DriverBraking': 0}),
+                ('WHEEL_SPEEDS', dict.fromkeys(('WHL_SpdFLVal', 'WHL_SpdFRVal', 'WHL_SpdRLVal', 'WHL_SpdRRVal'), 40.)),
+                ('MDPS', {'MDPS_EstStrAnglVal': 0., 'MDPS_ADAS_AciFltSig_Lv2': 0}),
+                ('CRUISE_BUTTONS', {'LDA_BTN': lkas, 'CRUISE_BUTTONS': button})]
+      for name, fields in values:
+        rx.append(bool(self.safety.safety_rx_hook(self.packet(name, 1, fields))))
+      self.now += 10_000
+
+    for _ in range(6):
+      feed()
+    feed(lkas=1)
+    feed()
+    self.safety.set_aol_test_heartbeat(True)
+    self.safety.aol_set_host_request(1)
+    feed(button=2)
+    feed()
     self.safety.set_aol_test_heartbeat(True)
     self.safety.aol_set_host_request(3)
     self.safety.set_controls_allowed(True)
-    self.assertFalse(self.safety.safety_tx_hook(self.angle()))
+    print(f'PE_RELEASE_BOUNDARY_PROOF rxAccepted={all(rx)} permission={self.safety.aol_get_permission_mask()}', flush=True)
+    self.assertFalse(self.safety.safety_tx_hook(self.angle(value=.1)))
+    self.assertFalse(self.safety.safety_tx_hook(self.packet('SCC_CONTROL', 1, {'ACCMode': 1, 'aReqRaw': 1., 'aReqValue': 1.})))
+    self.assertFalse(self.safety.safety_tx_hook(self.can_packet(sender.create_radar_heartbeat(1, False, False))))
+    self.assertFalse(self.safety.safety_tx_hook(self.packet('CAM_0x362', 0, {})))
     self.assertEqual(self.safety.aol_get_permission_mask(), 0)
 
 

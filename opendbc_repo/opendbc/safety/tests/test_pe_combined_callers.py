@@ -125,6 +125,8 @@ def test_pending_pe_to_real_card_callers_cpp_native_lateral_and_pedal_recovery(m
       card.slc_producer_session = 'authority-card'
       sd, controls, drive = callers._authority_callers(False, cp=card.CP.as_reader().as_builder(), genuine_events=True)
       sd.aol_settings = read_settings(saved)
+      sd.disengage_on_accelerator = saved.get_bool('DisengageOnAccelerator')
+      assert sd.disengage_on_accelerator is gas_disengage
       # The common caller fixture controls its own clock; restore this test's shared time source afterward.
       patcher.setattr(card_module.time, 'monotonic_ns', lambda: case.boot)
       patcher.setattr(card_module.time, 'clock_gettime_ns', lambda clock: case.boot)
