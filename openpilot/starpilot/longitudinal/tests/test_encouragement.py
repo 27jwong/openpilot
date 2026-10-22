@@ -1,3 +1,4 @@
+from typing import TypedDict
 from unittest.mock import patch
 
 import pytest
@@ -13,6 +14,12 @@ from openpilot.starpilot.longitudinal.cruise_ceiling import CruiseCeiling, Curve
 from openpilot.starpilot.longitudinal.encouragement import Encouragement, MAX_BOOST, SOURCES
 from openpilot.starpilot.longitudinal.tests.test_conditional_handoff import Frame, NOW
 from openpilot.starpilot.longitudinal.tests.test_cruise_ceiling import ACTIVE
+
+
+class PlannerOptions(TypedDict, total=False):
+  curve_ceiling: CurveCeiling
+  cruise_ceiling: CruiseCeiling
+  traffic_mode: bool
 
 
 def frame(tick):
@@ -145,7 +152,7 @@ def test_native_planner_limits_and_immediate_withdrawal(case):
   original, current = (LongitudinalPlanner(cp(), init_v=20.) for _ in range(2))
   for tick in range(100):
     sm, now = frame(tick)
-    options = {}
+    options: PlannerOptions = {}
     if tick == 90:
       original.output_a_target = current.output_a_target
       original.a_cruise = current.a_cruise
