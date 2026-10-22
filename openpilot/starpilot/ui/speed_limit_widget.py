@@ -120,13 +120,14 @@ class SpeedLimitWidget:
           size -= 2
         centered(shown.offset_text, FontRole.MEDIUM, size, offset_top, color)
     else:
-      rect = rl.Rectangle(x + 2 * scale, top + 2 * scale, 114 * scale, 128 * scale)
+      compact_without_offset = self.profile == Profile.COMPACT and not shown.offset_text
+      rect = rl.Rectangle(x + 2 * scale, top + 2 * scale, 114 * scale, (112 if compact_without_offset else 128) * scale)
       if self.profile == Profile.LARGE:
         rl.draw_rectangle_rounded(rect, .1, 16, rl.Color(10, 17, 19, 230))
       rl.draw_rectangle_rounded_lines_ex(rect, .1, 16, 2 * scale, white)
       for label, y in (('SPEED', top + 11 * scale), ('LIMIT', top + 27 * scale)):
         centered(label, FontRole.SEMI_BOLD, 20, y, white, x + (53 if arrow_direction else 59) * scale)
-      number = centered(shown.posted_text, FontRole.BOLD, 58, top + (50 if shown.offset_text else 61) * scale, white)
+      number = centered(shown.posted_text, FontRole.BOLD, 58, top + (50 if shown.offset_text or compact_without_offset else 61) * scale, white)
       if shown.offset_text:
         centered(shown.offset_text, FontRole.MEDIUM, 36, top + 98 * scale, secondary)
     if arrow_direction:
