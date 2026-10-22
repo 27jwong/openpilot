@@ -281,6 +281,7 @@ class TransportPauseFeedback:
     self.ever_lateral_active = False
     self.lag_withdrawal_ns = 0
     self.cold_main_wait_ns = 0
+    self.ccnc_main_off_source_ns = 0
     self.cold_park_waiting = False
     self.lateral_only_baseline = False
     self.lateral_source_ns = 0
@@ -312,11 +313,14 @@ class TransportPauseFeedback:
     from openpilot.starpilot.car.gm.aol import native_accepts_cp
     from openpilot.starpilot.car.hyundai.aol import qualified_ioniq6
     gm = native_accepts_cp(cp, int(cp.safetyConfigs[0].safetyModel.raw), int(cp.safetyConfigs[0].safetyParam))
-    from opendbc.car.hyundai.ev9_long_aol import qualified as ev9_qualified
+    from openpilot.starpilot.car.hyundai.aol import qualified_ccnc_long_aol as ev9_qualified
     from opendbc.car import structs
     ev9 = ev9_qualified(cp, marked_only=True)
     early_long = gm or cp.openpilotLongitudinalControl and qualified_ioniq6(cp) or ev9
-    ev9_main_off = bool(ev9 and not cs.cruiseState.available and
+    event_ns = int(sm.logMonoTime['onroadEvents'])
+    main_off_recovery = bool(0 < event_ns <= self.ccnc_main_off_source_ns <= now_ns and
+      now_ns - self.ccnc_main_off_source_ns <= AXIS_MAX_AGE_NS)
+    ev9_main_off = bool(ev9 and (not cs.cruiseState.available or main_off_recovery) and
       not cs.brakePressed and not cs.gasPressed and not cs.doorOpen and not cs.seatbeltUnlatched and
       cs.gearShifter in (structs.CarState.GearShifter.drive, structs.CarState.GearShifter.sport,
                         structs.CarState.GearShifter.low, structs.CarState.GearShifter.brake))
@@ -346,8 +350,10 @@ class TransportPauseFeedback:
       return None
     owners = [index for index, config in enumerate(cp.safetyConfigs)
               if str(config.safetyModel) not in ('silent', 'noOutput')]
-    return native if (len(owners) == 1 and (early_long or not native.pandaInventory[owners[0]].controlsAllowed and
-                      not sm['pandaStates'][owners[0]].controlsAllowed)) else None
+    if not (len(owners) == 1 and (early_long or not native.pandaInventory[owners[0]].controlsAllowed and
+                               not sm['pandaStates'][owners[0]].controlsAllowed)):
+      return None
+    return native
 
   def _temporary_host_intent_current(self, sm, cp, cs, axis, stamp, now_ns, *, latched, producer):
     """A fresh inactive proof may retain intent, never native/output authority."""
@@ -707,7 +713,7 @@ class TransportPauseFeedback:
   def _longitudinal_cancel_current(self, sm, cp, cs, axis, now_ns, *, latched, cancel_source_ns, withdrawal_required=True) -> SafetyState | None:
     """Retain existing intent during Cancel's bounded LONG withdrawal handshake."""
     from opendbc.car.hyundai.ev6_aol import qualified
-    from opendbc.car.hyundai.ev9_long_aol import qualified as ev9_qualified
+    from openpilot.starpilot.car.hyundai.aol import qualified_ccnc_long_aol as ev9_qualified
     from opendbc.car.structs import car
 
     if (not latched or self.failed or self.paused or self.pending_event or
@@ -1081,6 +1087,7 @@ class TransportPauseFeedback:
       axis = sm['aolAxisState']
       if not latched or cp_identity(cp) != self.cp or self.session and str(axis.sessionId) != self.session:
         self.temporary_eps_event_ns = 0
+        self.ccnc_main_off_source_ns = 0
         self.cold_park_waiting = False
       stamp = int(sm.logMonoTime['aolAxisState'])
       reason = str(axis.faultReason)
@@ -1336,6 +1343,11 @@ class TransportPauseFeedback:
         latched=latched, producer=intent_producer_session)
         if native is None and current and continuity and baseline else None)
       if lateral_native is not None:
+        from openpilot.starpilot.car.hyundai.aol import qualified_ccnc_long_aol
+        if not cs.cruiseState.available and qualified_ccnc_long_aol(cp, marked_only=True):
+          # Bind the actual healthy MAIN-off observation, after the pure guard.
+          # Recovery may reuse its receipt, never renew it or any output lease.
+          self.ccnc_main_off_source_ns = now_ns
         # Record only the genuinely current LAT proof. Do not renew a combined
         # healthy baseline, change a lease or manufacture a LONG permission.
         self.lateral_baseline_ns = stamp

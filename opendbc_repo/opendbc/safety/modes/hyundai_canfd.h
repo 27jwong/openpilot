@@ -1268,7 +1268,8 @@ static safety_config hyundai_canfd_init_validated(uint16_t param) {
 #ifdef ALLOW_DEBUG
   const bool ev9_long_requested = (param == HYUNDAI_EV9_LONG_PARAM) &&
                                   (((unsigned int)alternative_experience == 0U) || ((unsigned int)alternative_experience == 32U));
-  const bool pe_long_requested = (param == HYUNDAI_IONIQ5_PE_LONG_PARAM) && ((unsigned int)alternative_experience == 0U);
+  const bool pe_long_requested = (param == HYUNDAI_IONIQ5_PE_LONG_PARAM) &&
+    (((unsigned int)alternative_experience == 0U) || ((unsigned int)alternative_experience == 32U));
 #else
   const bool ev9_long_requested = false;
   const bool pe_long_requested = false;
@@ -2055,11 +2056,11 @@ static safety_config hyundai_canfd_init_validated(uint16_t param) {
     }
   }
 #endif
-  if (ev9_long_requested && ((unsigned int)alternative_experience == 32U)) {
+  if ((ev9_long_requested || pe_long_requested) && ((unsigned int)alternative_experience == 32U)) {
     // Keep the LONG RX/TX catalogs. Stock-SCC RX and lateral-only policy cannot own this ECU.
     hyundai_ev9_long_aol = true;
     hyundai_angle_aol_enabled = true;
-    hyundai_angle_aol_fault_mask = 2U;
+    hyundai_angle_aol_fault_mask = pe_long_requested ? 7U : 2U;
     aol_ioniq6_long = true;
     static const AolSafetyPolicy ev9_combined_policy = {
       .reset = aol_ioniq6_reset,

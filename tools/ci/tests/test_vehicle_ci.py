@@ -16,6 +16,21 @@ from tools.ci.record_firmware import compile_commands
 
 
 class TestVehicleCollection(unittest.TestCase):
+  def test_pe_combined_native_callers_and_refusals_keep_debug_release_separate(self):
+    for target in (
+      'opendbc_repo/opendbc/safety/tests/test_pe_combined_callers.py',
+      'opendbc_repo/opendbc/safety/tests/test_pe_set_release_callers.py',
+      'openpilot/starpilot/aol/tests/test_pe_combined_profile_contract.py',
+    ):
+      self.assertIn(target, targets_for('aol-lifecycle'))
+    for target in (
+      'opendbc_repo/opendbc/safety/tests/test_pe_combined_aol.py::TestPECombinedReleaseDenied',
+      'openpilot/starpilot/aol/tests/test_pe_combined_profile_contract.py',
+    ):
+      self.assertIn(target, targets_for('safety-release'))
+    self.assertIn('opendbc_repo/opendbc/safety/tests/test_pe_combined_aol.py::TestPECombinedDebug', targets_for('safety-debug'))
+    self.assertNotIn('opendbc_repo/opendbc/safety/tests/test_pe_combined_aol.py::TestPECombinedDebug', targets_for('safety-release'))
+
   def test_palisade_status_ownership_runs_in_debug_release_and_lifecycle(self):
     target = 'opendbc_repo/opendbc/safety/tests/test_palisade_stock_aol_status.py'
     for suite in ('safety-debug', 'safety-release', 'aol-lifecycle'):

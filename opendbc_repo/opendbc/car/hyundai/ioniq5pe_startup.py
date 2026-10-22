@@ -120,7 +120,7 @@ class PEPendingStartup:
 
   def finalize_aol_configuration(self, ci):
 
-    if self.owner.published or ci is not self.configured_ci:
+    if self.owner.published or ci is not self.configured_ci or self.snapshot is None:
       raise RuntimeError('PE finalization requires configured unpublished CP')
     if self.owner.phase is Phase.STOCK:
       if ci.CP.to_dict() != self.snapshot:
@@ -132,6 +132,14 @@ class PEPendingStartup:
         self.owner.cp = copy_cp(ci.CP)
         self.snapshot = expected
       return
+    if (self.pending_target and ci.CP.to_dict() != self.snapshot):
+      from opendbc.car.hyundai.pe_long_aol import qualified as pe_aol_qualified
+      expected = deepcopy(self.snapshot)
+      expected['alternativeExperience'] = 32
+      if not pe_aol_qualified(ci.CP, marked_only=True) or ci.CP.to_dict() != expected:
+        raise RuntimeError('PE LONG finalization changed outside its exact AOL marker')
+      self.owner.cp = copy_cp(ci.CP)
+      self.snapshot = expected
     if ci is not self.configured_ci or not self.prepared_for(ci.CP):
       raise RuntimeError('PE LONG finalization changed the frozen prepared configuration')
 

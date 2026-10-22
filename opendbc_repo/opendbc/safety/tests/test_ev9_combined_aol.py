@@ -5,6 +5,8 @@ from opendbc.safety.tests.test_hyundai_ev9_long import Ev9LongFixture
 
 
 class CombinedFixture(Ev9LongFixture, unittest.TestCase):
+  NONZERO_ANGLE = 1.1
+
   def setUp(self):
     super().setUp()
     self.safety.set_aol_test_heartbeat(False)
@@ -56,7 +58,7 @@ class TestEV9CombinedDebug(CombinedFixture, unittest.TestCase):
     self.arm()
     self.assertFalse(self.safety.get_controls_allowed())
     self.assertEqual(self.safety.aol_get_permission_mask(), 1)
-    self.assertTrue(self.safety.safety_tx_hook(self.angle(value=1.1)))
+    self.assertTrue(self.safety.safety_tx_hook(self.angle(value=self.NONZERO_ANGLE)))
     self.assertFalse(self.safety.safety_tx_hook(self.scc(1.)))
     self.assertTrue(self.safety.safety_tx_hook(self.packet('CAM_0x362', 0, {})))
     self.assertTrue(self.safety.safety_test_selected_fwd(2, 0x362))
@@ -70,7 +72,7 @@ class TestEV9CombinedDebug(CombinedFixture, unittest.TestCase):
     self.arm()
     self.engage()
     self.assertEqual(self.safety.aol_get_permission_mask(), 3)
-    self.assertTrue(self.safety.safety_tx_hook(self.angle(value=1.1)))
+    self.assertTrue(self.safety.safety_tx_hook(self.angle(value=self.NONZERO_ANGLE)))
     for value in (2.2, -3.5):
       self.assertTrue(self.safety.safety_tx_hook(self.scc(value)), value)
     for value in (2.21, -3.51):
@@ -79,7 +81,7 @@ class TestEV9CombinedDebug(CombinedFixture, unittest.TestCase):
     self.assertFalse(self.safety.get_controls_allowed())
     self.assertEqual(self.safety.aol_get_permission_mask(), 1)
     self.assertFalse(self.safety.safety_tx_hook(self.scc(1.)))
-    self.assertTrue(self.safety.safety_tx_hook(self.angle(value=1.1)))
+    self.assertTrue(self.safety.safety_tx_hook(self.angle(value=self.NONZERO_ANGLE)))
 
   def test_pedals_and_temporary_restrictions_withhold_then_resume_lateral_without_a_new_button(self):
     for restriction in ({'brake': True}, {'gas': True}, {'gear': 6}, {'fault': 2}):
@@ -88,7 +90,7 @@ class TestEV9CombinedDebug(CombinedFixture, unittest.TestCase):
         self.warm()
         self.arm()
         self.assertEqual(self.safety.aol_get_permission_mask(), 1)
-        self.assertTrue(self.safety.safety_tx_hook(self.angle(value=1.1)))
+        self.assertTrue(self.safety.safety_tx_hook(self.angle(value=self.NONZERO_ANGLE)))
         self.tick(**restriction)
         self.assertEqual(self.safety.aol_get_permission_mask(), 0)
         self.assertFalse(self.safety.safety_tx_hook(self.angle()))
