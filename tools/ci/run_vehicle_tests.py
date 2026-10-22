@@ -43,9 +43,16 @@ AOL_LIFECYCLE_TARGETS = (
   "openpilot/starpilot/aol/tests/test_toyota.py",
   "openpilot/starpilot/car/toyota/tests/test_lexus_is_caller_native.py",
   "openpilot/starpilot/car/nissan/tests/test_aol.py",
+  "openpilot/starpilot/aol/tests/test_volkswagen.py",
+  "openpilot/starpilot/aol/tests/test_volkswagen_saved_intent.py",
+  "openpilot/starpilot/aol/tests/test_mqb_actual_callers.py",
+  "opendbc_repo/opendbc/car/volkswagen/tests/test_mqb_aol_discovery.py",
+  "opendbc_repo/opendbc/safety/tests/test_volkswagen_stock_aol.py",
+  "opendbc_repo/opendbc/safety/tests/test_volkswagen_engagement_arm.py",
 )
 
 AOL_LIFECYCLE_SCOPE = {
+  "volkswagen": "stock MQB auto/manual, gateway/camera factory acquisition, MAIN/engagement/brake/Reverse joins, permanent EPS native rearm",
   "gm": "Volt/Bolt factory profiles, MAIN boot, stock/Alpha, BE/C9, pedal/regen, Cancel mappings, RES, lag withdrawal/recovery",
   "honda": "stock Civic source/native vetoes and native-first Reverse joins",
   "hyundai": "Ioniq stock/OP host lag plus classic/CAN-FD stock source-gap and EPS/location recovery",
@@ -225,6 +232,8 @@ RELEASE_TARGETS = (
   "opendbc_repo/opendbc/safety/tests/test_tesla_hw1.py",
   "opendbc_repo/opendbc/safety/tests/test_volvo_c1.py",
   "opendbc_repo/opendbc/safety/tests/test_volvo_cma.py",
+  "opendbc_repo/opendbc/safety/tests/test_volkswagen_stock_aol.py",
+  "opendbc_repo/opendbc/safety/tests/test_volkswagen_engagement_arm.py",
   "opendbc_repo/opendbc/safety/tests/test_mazda.py::TestMazdaSafety",
   "opendbc_repo/opendbc/safety/tests/test_toyota.py::TestToyotaStockLongitudinalTorque",
   "opendbc_repo/opendbc/safety/tests/test_toyota_auto_hold.py",
