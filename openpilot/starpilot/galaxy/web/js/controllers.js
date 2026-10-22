@@ -183,6 +183,7 @@ export const ControllersPage = {
         <template v-if="state.status?.available">
           <GxNotice v-if="!state.status.editable" tone="warn">Turn off the vehicle to change controller buttons.</GxNotice>
           <GxNotice v-if="changed" tone="warn">Controller settings changed. Reload before saving.</GxNotice>
+          <GxNotice v-if="dirty" tone="warn">Save these changes before learning or removing buttons.</GxNotice>
           <div class="gx-driving__actions gx-actions"><button class="gx-btn gx-btn--tonal" type="button" @click="reload">Reload</button></div>
           <div class="gx-controllers__switch-row"><span class="gx-row__label">Enable assigned controller buttons</span>
             <label class="gx-switch"><input type="checkbox" role="switch" aria-label="Enable assigned controller buttons" v-model="state.draft.enabled" :disabled="!canEdit" @change="save"><span class="gx-switch__track"></span><span class="gx-switch__thumb"></span></label></div>

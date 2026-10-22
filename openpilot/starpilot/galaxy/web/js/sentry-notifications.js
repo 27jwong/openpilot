@@ -117,8 +117,11 @@ export const SentryNotifications = {
         <template v-if="notifications">
           <p class="gx-note">{{ notifications.deliverySemantics }}</p>
           <section v-for="name in channels" :key="name" class="gx-card gx-sentry-channel">
-            <h3>{{ labels[name] }}</h3>
-            <p>{{ notifications.channels[name].enabled ? 'Enabled' : 'Disabled' }} · {{ notifications.channels[name].configured ? 'Configured' : 'Not configured' }}</p>
+            <div class="gx-row"><div class="gx-row__info"><h3 class="gx-row__label">{{ labels[name] }}</h3>
+              <span class="gx-row__desc">{{ notifications.channels[name].configured ? 'Configured' : 'Not configured' }}</span></div>
+              <label class="gx-switch"><input type="checkbox" role="switch" :aria-label="labels[name] + ' notifications'" :checked="notifications.channels[name].enabled"
+                :disabled="!notifications.channels[name].configured || notificationBusy"
+                @change="$event.target.checked=notifications.channels[name].enabled; save(name, !notifications.channels[name].enabled)"><span class="gx-switch__track"></span><span class="gx-switch__thumb"></span></label></div>
             <p role="status">Delivery: {{ notifications.channels[name].lastState }} · Pending: {{ notifications.channels[name].pending }}</p>
             <GxNotice tone="danger" v-if="notifications.channels[name].lastError">Delivery status: {{ notifications.channels[name].lastError.replaceAll('_', ' ') }}</GxNotice>
             <div v-if="name !== 'webPush'" class="gx-sentry-channel__fields">
@@ -128,7 +131,6 @@ export const SentryNotifications = {
             <div class="gx-sentry-channel__actions gx-actions">
             <button v-if="name !== 'webPush'" class="gx-btn gx-btn--tonal" type="button" @click="save(name, true)">Save and enable</button>
             <button v-else class="gx-btn gx-btn--tonal" type="button" @click="subscribe">Subscribe this browser</button>
-            <button class="gx-btn gx-btn--tonal" type="button" :disabled="!notifications.channels[name].configured" @click="save(name, !notifications.channels[name].enabled)">{{ notifications.channels[name].enabled ? 'Disable' : 'Enable' }}</button>
             <button class="gx-btn gx-btn--tonal" type="button" :disabled="!notifications.channels[name].enabled || !notifications.channels[name].configured" @click="test(name)">Send test</button>
             <button class="gx-btn gx-btn--tonal" type="button" @click="forget(name)">Forget configuration</button>
             </div>

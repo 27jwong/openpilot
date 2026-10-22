@@ -96,6 +96,7 @@ createApp({
     deviceSettingsPage() { return devicePage(route.path) },
     pageName() {
       if (this.currentTool) return this.currentTool.name
+      if (route.path === "/device-preferences") return "Force Drive State"
       return NAV.find((item) => item.path === route.path)?.name || "This page"
     },
     isLight() { return state.theme === "light" },

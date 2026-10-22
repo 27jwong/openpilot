@@ -64,10 +64,12 @@ export const ToyotaToolsPage = {
     <template v-if="state.data?.visible">
       <p>Changes apply after the next start. Only the connected Toyota controller can send door commands.</p>
       <p v-if="!state.data.parked || !state.data.readable">Park the car and refresh before changing these settings.</p>
-      <div class="gx-actions"><button class="gx-btn gx-btn--tonal" :disabled="state.busy || !state.data.parked || !state.data.readable"
-        @click="choose('lock', null, !state.data.lock)">Auto lock leaving Park: {{ state.data.lock ? 'On' : 'Off' }}</button>
-      <button class="gx-btn gx-btn--tonal" :disabled="state.busy || !state.data.parked || !state.data.readable"
-        @click="choose('unlock', null, !state.data.unlock)">Auto unlock entering Park: {{ state.data.unlock ? 'On' : 'Off' }}</button></div>
+      <div class="gx-row gx-row--borderless"><span class="gx-row__info gx-row__label">Auto lock leaving Park</span>
+        <label class="gx-switch"><input type="checkbox" role="switch" aria-label="Auto lock leaving Park" :checked="state.data.lock" :disabled="state.busy || !state.data.parked || !state.data.readable"
+          @change="$event.target.checked=state.data.lock; choose('lock', null, !state.data.lock)"><span class="gx-switch__track"></span><span class="gx-switch__thumb"></span></label></div>
+      <div class="gx-row gx-row--borderless"><span class="gx-row__info gx-row__label">Auto unlock entering Park</span>
+        <label class="gx-switch"><input type="checkbox" role="switch" aria-label="Auto unlock entering Park" :checked="state.data.unlock" :disabled="state.busy || !state.data.parked || !state.data.readable"
+          @change="$event.target.checked=state.data.unlock; choose('unlock', null, !state.data.unlock)"><span class="gx-switch__track"></span><span class="gx-switch__thumb"></span></label></div>
       <p>Commands are sent once at a stationary gear transition with doors closed. Door response must be checked on your vehicle.</p>
       <template v-if="state.data.security"><h4>Toyota Security Keys</h4>
         <p>{{ state.data.activePresent ? 'A key is saved for the next start.' : 'No valid active key is saved.' }} Key values are never displayed.</p>

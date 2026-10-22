@@ -155,7 +155,7 @@ input[type="range"].gx-slider:disabled { cursor: default; opacity: .4; }
   border: 1px solid rgba(120, 73, 232, 0.3);
 }
 
-.gx-switch:active .gx-switch__thumb {
+.gx-switch:not(:has(input:disabled)):active .gx-switch__thumb {
   width: 26px;
 }
 
@@ -168,7 +168,7 @@ input[type="range"].gx-slider:disabled { cursor: default; opacity: .4; }
   transform: translateX(22px);
 }
 
-.gx-switch:active input:checked ~ .gx-switch__thumb {
+.gx-switch:not(:has(input:disabled)):active input:checked ~ .gx-switch__thumb {
   transform: translateX(18px);
 }
 
@@ -299,20 +299,21 @@ input[type="range"].gx-slider:active::-moz-range-thumb {
   text-shadow: 0 0 10px var(--secondary-glow);
 }
 
-.gx-model-control { flex-wrap: wrap; }
-.gx-model-control > .gx-row__label { flex: 0 1 160px; min-width: 0; }
-.gx-model-control > .gx-field { flex: 1 1 240px; min-width: 0; }
-@media (max-width: 520px) {
-  .gx-model-control { align-items: stretch; flex-direction: column; }
-  .gx-model-control > .gx-row__label { flex: none; }
-  .gx-model-control > .gx-field { flex: none; width: 100%; }
-}
+.gx-model-control { display: grid; gap: var(--sp-2); min-width: 0; }
+.gx-model-filter-bar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); min-width: 0; }
+.gx-model-filter-bar > .gx-row__label { margin-right: var(--sp-2); }
+.gx-model-control > .gx-field { width: 100%; min-width: 0; }
 
 .gx-model-manager .gx-card-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); }
 .gx-model-manager .gx-card { overflow: visible; }
 .gx-model-manager .gx-card > div { min-width: 0; }
 .gx-model-manager .gx-card strong, .gx-model-manager .gx-chip { overflow-wrap: anywhere; }
+.gx-model-card > .gx-panel { padding: var(--sp-3) var(--sp-4); }
+.gx-model-card__heading { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
+.gx-model-card__actions { display: flex; flex: none; gap: var(--sp-1); }
+
 .gx-model-reason { margin: var(--sp-3) 0; color: var(--text-muted); font-size: var(--fs-sm); }
+.gx-model-card__reason { margin: 0 var(--panel-padding) var(--sp-3); }
 .gx-model-runtime { margin-top: var(--sp-3); }
 .gx-model-runtime__body { padding: 0 var(--sp-3) var(--sp-3); overflow-wrap: anywhere; }
 .gx-model-runtime__body p { margin: 0 0 var(--sp-2); }

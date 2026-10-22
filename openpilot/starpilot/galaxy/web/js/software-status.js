@@ -499,10 +499,10 @@ export const SoftwarePage = {
       <template v-else>
         <section class="gx-card gx-panel gx-stack gx-software-card">
           <dl v-if="data" class="gx-software-summary">
-            <div><dt>Branch</dt><dd><a v-if="commitsUrl" class="gx-link" :href="commitsUrl" target="_blank" rel="noopener noreferrer">{{ data.installed.branch }}</a><span v-else>{{ shown(data.installed.branch) }}</span></dd></div>
+            <div><dt>Branch</dt><dd><a v-if="commitsUrl" class="gx-btn gx-btn--tonal" :href="commitsUrl" target="_blank" rel="noopener noreferrer">{{ data.installed.branch }}</a><span v-else>{{ shown(data.installed.branch) }}</span></dd></div>
             <div><dt>Version</dt><dd>{{ shown(data.installed.displayVersion ?? data.installed.version) }}</dd></div>
             <div><dt>Commit</dt><dd class="gx-actions">
-              <a v-if="commitUrl" class="gx-link" :href="commitUrl" target="_blank" rel="noopener noreferrer" title="View commit on GitHub"><i class="bi bi-github" aria-hidden="true"></i> {{ shortCommit(data.installed.commit) }}</a>
+              <a v-if="commitUrl" class="gx-btn gx-btn--tonal" :href="commitUrl" target="_blank" rel="noopener noreferrer" title="View commit on GitHub"><i class="bi bi-github" aria-hidden="true"></i> {{ shortCommit(data.installed.commit) }}</a>
               <span v-else>{{ shortCommit(data.installed.commit) }}</span>
             </dd></div>
           </dl>

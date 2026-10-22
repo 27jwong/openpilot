@@ -191,11 +191,10 @@ export const BluetoothPage = {
         <GxNotice tone="danger" v-if="error">{{ error }}</GxNotice>
         <GxState v-if="!status && !error" loading>Checking Bluetooth…</GxState>
         <template v-else-if="status">
-          <div class="gx-card gx-driving__intro"><h3>Adapter {{ status.powered ? 'On' : 'Off' }}</h3>
+          <div class="gx-card gx-driving__intro"><h3>Bluetooth adapter</h3>
             <p v-if="status.errorCode">{{ bluetoothError(status.errorCode) }}</p>
             <p v-else-if="!status.parked">Park to restart the Bluetooth radio.</p>
-            <div class="gx-driving__actions gx-actions"><button class="gx-btn" :disabled="!status.parked || !status.available" @click="action('power', {enabled: !status.powered})">Turn {{ status.powered ? 'Off' : 'On' }}</button>
-
+            <div class="gx-driving__actions gx-actions"><span class="gx-row__label">Power</span><label class="gx-switch"><input type="checkbox" role="switch" aria-label="Bluetooth power" :checked="status.powered" :disabled="!status.parked || !status.available" @change="$event.target.checked=status.powered; action('power', {enabled: !status.powered})"><span class="gx-switch__track"></span><span class="gx-switch__thumb"></span></label>
               <button class="gx-btn gx-btn--tonal" :disabled="!status.powered" @click="action(status.discovering ? 'stop_scan' : 'scan')">{{ status.discovering ? 'Stop Search' : 'Search' }}</button></div></div>
           <div v-if="status.pairing" class="gx-card gx-driving__intro" role="status"><h3>Pairing {{ status.pairing.address }}</h3>
             <p v-if="status.pairing.state === 'pairing'">Waiting for the device and any confirmation below.</p>

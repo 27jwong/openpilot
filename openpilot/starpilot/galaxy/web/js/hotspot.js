@@ -96,7 +96,8 @@ export const GalaxyHotspot = {
         <div class="gx-settings__controls gx-actions"><button class="gx-btn" type="button" :disabled="!dirty || busy || !snapshot.editable || !passwordValid" @click="save">{{ busy ? 'Saving…' : 'Save hotspot' }}</button></div>
       </div>
       <GxNotice v-if="!snapshot.editable">Park before changing hotspot settings.</GxNotice>
-      <p>Join the network, stay connected if warned of no Internet, then open and bookmark <a :href="snapshot.url">{{ snapshot.url }}</a>.</p>
+      <p>Join the network and stay connected if warned of no Internet. Open the address below, then bookmark it.</p>
+      <div class="gx-actions"><a class="gx-btn gx-btn--tonal" :href="snapshot.url">Open {{ snapshot.url }}</a></div>
     </template>
     <ul class="gx-install-benefits">
       <li><i class="bi bi-power" aria-hidden="true"></i><span>Starts automatically when enabled. Needs the comma on and Wi-Fi available.</span></li>
