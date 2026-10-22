@@ -14,11 +14,18 @@ def inactive(cp, now, sequence):
   return sm, native
 
 
-def test_fresh_off_retains_intent_without_minting_active_baseline(established_stock):
+@pytest.mark.parametrize('unbelted', (False, True))
+def test_fresh_off_retains_intent_without_minting_active_baseline(established_stock, unbelted):
   cp, cs, feedback = established_stock
+  cs.seatbeltUnlatched = unbelted
   for tick in range(2, 65):
     now = NOW + tick * 10_000_000
     sm, native = inactive(cp, now, tick)
+    if unbelted:
+      event = sm.messages['onroadEvents'].as_builder()
+      event.onroadEvents = [{'name': 'pcmDisable', 'userDisable': True},
+                           {'name': 'seatbeltNotLatched', 'softDisable': True, 'noEntry': True}]
+      sm.messages['onroadEvents'] = event.as_reader()
     assert not feedback.observe(sm, cp, cs, now, latched=True, intent_producer_session=PRODUCER, intent_paused=True)
     assert not feedback.failed and not feedback.lateral_only_baseline
     assert not feedback.lateral_baseline_ns and not feedback.lateral_source_ns
@@ -27,7 +34,7 @@ def test_fresh_off_retains_intent_without_minting_active_baseline(established_st
     assert sm['aolAxisState'].validUntilMonoTime == now + 30_000_000
 
 
-@pytest.mark.parametrize('bad', ('invalid_can', 'main_off', 'permanent_eps', 'temporary_eps', 'door', 'belt',
+@pytest.mark.parametrize('bad', ('invalid_can', 'main_off', 'permanent_eps', 'temporary_eps', 'door', 'seatbelt_event_without_source',
   'sensors', 'acc_fault', 'steering_disengage', 'wrong_epoch', 'wrong_producer', 'wrong_session', 'source_future',
   'expired', 'native_invalid', 'native_request', 'inventory', 'immediate', 'soft', 'other_user'))
 def test_inactive_receipt_cannot_bypass_existing_veto(established_stock, bad):
@@ -37,7 +44,7 @@ def test_inactive_receipt_cannot_bypass_existing_veto(established_stock, bad):
   producer = PRODUCER
   fields = {'invalid_can': ('canValid', False), 'permanent_eps': ('steerFaultPermanent', True),
             'temporary_eps': ('steerFaultTemporary', True), 'door': ('doorOpen', True),
-            'belt': ('seatbeltUnlatched', True), 'sensors': ('vehicleSensorsInvalid', True),
+            'sensors': ('vehicleSensorsInvalid', True),
             'acc_fault': ('accFaulted', True), 'steering_disengage': ('steeringDisengage', True)}
   if bad in fields:
     name, value = fields[bad]
@@ -64,6 +71,10 @@ def test_inactive_receipt_cannot_bypass_existing_veto(established_stock, bad):
   elif bad in ('immediate', 'soft'):
     change(sm, 'onroadEvents', lambda events: setattr(events[0],
            'immediateDisable' if bad == 'immediate' else 'softDisable', True))
+  elif bad == 'seatbelt_event_without_source':
+    event = sm.messages['onroadEvents'].as_builder()
+    event.onroadEvents = [{'name': 'seatbeltNotLatched', 'softDisable': True, 'noEntry': True}]
+    sm.messages['onroadEvents'] = event.as_reader()
   elif bad == 'other_user':
     change(sm, 'onroadEvents', lambda events: setattr(events[0], 'name', log.OnroadEvent.EventName.pedalPressed))
   assert feedback.observe(sm, cp, cs, now, latched=True, intent_producer_session=producer, intent_paused=bad != 'temporary_eps')

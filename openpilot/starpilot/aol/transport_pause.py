@@ -354,7 +354,12 @@ class TransportPauseFeedback:
     from openpilot.starpilot.nostalgia import physical_cancel
     if physical_cancel(cs, cp) or cs.steeringDisengage:
       return False
-    events = sm['onroadEvents']
+    belt_eps_recovery = bool(not cs.steerFaultTemporary and self.lateral_only_baseline and
+      getattr(self, 'temporary_eps_event_ns', 0) and axis.faultEventMonoTime == self.temporary_eps_event_ns and
+      not axis.desiredLongitudinal and not axis.longitudinalActive)
+    events = tuple(event for event in sm['onroadEvents'] if not (
+      belt_eps_recovery and cs.seatbeltUnlatched and event.name == log.OnroadEvent.EventName.seatbeltNotLatched and
+      event.softDisable and event.noEntry and not event.immediateDisable and not event.userDisable))
     faults = [event for event in events if event.immediateDisable or event.softDisable]
     names = (log.OnroadEvent.EventName.selfdrivedLagging, log.OnroadEvent.EventName.locationdTemporaryError)
     location_fault = bool(any(event.name == log.OnroadEvent.EventName.locationdTemporaryError for event in faults) and
@@ -390,7 +395,7 @@ class TransportPauseFeedback:
       not axis.desiredLongitudinal and not axis.longitudinalActive and
       cs.cruiseState.available and not cs.cruiseState.enabled and
       cs.gearShifter in (gears.drive, gears.low, gears.sport, gears.brake) and
-      not cs.doorOpen and not cs.seatbeltUnlatched and not cs.brakePressed and not cs.regenBraking and
+      not cs.doorOpen and (not cs.seatbeltUnlatched or belt_eps_recovery) and not cs.brakePressed and not cs.regenBraking and
       (not cs.gasPressed or stock_angle) and
       all(event.name == stock_user and not event.softDisable and
           not event.immediateDisable for event in users))
@@ -592,7 +597,12 @@ class TransportPauseFeedback:
     if not withdrawn and not held_original:
       return False
     event_ns = int(sm.logMonoTime['onroadEvents'])
-    events = sm['onroadEvents']
+    # Seatbelt warnings block ordinary LONG, not already admitted independent
+    # LAT intent. Keep the published warning and all native/output checks.
+    events = tuple(event for event in sm['onroadEvents'] if not (
+      self.lateral_only_baseline and cs.seatbeltUnlatched and not axis.desiredLongitudinal and
+      not axis.longitudinalActive and event.name == log.OnroadEvent.EventName.seatbeltNotLatched and
+      event.softDisable and event.noEntry and not event.immediateDisable and not event.userDisable))
     temporary_names = (log.OnroadEvent.EventName.steerTempUnavailable,
                        log.OnroadEvent.EventName.steerTempUnavailableSilent)
     if (not sm.seen['onroadEvents'] or not sm.valid['onroadEvents'] or not sm.alive['onroadEvents'] or
@@ -631,7 +641,7 @@ class TransportPauseFeedback:
       cs.cruiseState.available and not cs.cruiseState.enabled and
       cs.gearShifter == structs.CarState.GearShifter.drive and
       not cs.brakePressed and not cs.regenBraking and not cs.gasPressed and
-      not cs.doorOpen and not cs.seatbeltUnlatched and not cs.accFaulted and
+      not cs.doorOpen and not cs.accFaulted and
       not cs.vehicleSensorsInvalid and not cs.steeringDisengage and not cs.buttonEvents and
       all(not event.userDisable or event.name == log.OnroadEvent.EventName.pcmDisable and
           not event.softDisable and not event.immediateDisable for event in events))
@@ -1284,7 +1294,7 @@ class TransportPauseFeedback:
         (intent_paused or bool(getattr(self, 'temporary_eps_event_ns', 0)) or not any(previous[9:13])) and
         str(axis.mode) == 'off' and not any(signature[9:13]) and
         cs.cruiseState.available and not cs.accFaulted and not cs.vehicleSensorsInvalid and
-        not cs.doorOpen and not cs.seatbeltUnlatched and not cs.steeringDisengage and
+        not cs.doorOpen and not cs.steeringDisengage and
         (cs.gearShifter in (structs.CarState.GearShifter.drive, structs.CarState.GearShifter.sport,
                            structs.CarState.GearShifter.low, structs.CarState.GearShifter.brake) or
          intent_paused and cs.gearShifter in (structs.CarState.GearShifter.reverse, structs.CarState.GearShifter.neutral)) and
@@ -1293,7 +1303,9 @@ class TransportPauseFeedback:
         now_ns - int(sm.logMonoTime['onroadEvents']) <= 1_500_000_000 and
         all(not event.immediateDisable and
             (not event.softDisable or intent_paused and event.name in
-             (log.OnroadEvent.EventName.wrongGear, log.OnroadEvent.EventName.steerTempUnavailable)) and
+             (log.OnroadEvent.EventName.wrongGear, log.OnroadEvent.EventName.steerTempUnavailable) or
+             cs.seatbeltUnlatched and event.name == log.OnroadEvent.EventName.seatbeltNotLatched and
+             event.noEntry and not event.userDisable) and
             (not event.userDisable or event.name in
              (log.OnroadEvent.EventName.pcmDisable, log.OnroadEvent.EventName.buttonCancel,
               log.OnroadEvent.EventName.reverseGear) or intent_paused and event.name == log.OnroadEvent.EventName.wrongGear)

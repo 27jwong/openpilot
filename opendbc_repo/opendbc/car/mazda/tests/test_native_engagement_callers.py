@@ -90,7 +90,7 @@ def test_eps_recovery_actual_callers(identity, lateral_only, monkeypatch, armed_
 
 
 def _exercise_actual_family_callers(identity, monkeypatch, *, scenario='brake', cancel_action=3, armed_intent=None,
-                                    lateral_only=False):
+                                    lateral_only=False, unbelted=False):
   from openpilot.cereal import messaging
   from openpilot.selfdrive.car import card as card_module
   from openpilot.starpilot.aol.wire import PandaSlot, SafetyState, encode_safety
@@ -107,6 +107,7 @@ def _exercise_actual_family_callers(identity, monkeypatch, *, scenario='brake', 
     now, tick, queued = [10_000_000_000], 0, []
     received, previous_sd = {}, {}
     first_engagement_ns = None
+    belt_off = [False]
     try:
       sd, controls, drive = case._authority_callers(False, cp=card.CP.as_reader().as_builder(), genuine_events=True)
       if scenario in ('cancel', 'long_cancel', 'mapped_cancel', 'temporary'):
@@ -146,6 +147,9 @@ def _exercise_actual_family_callers(identity, monkeypatch, *, scenario='brake', 
         frames = complete_frames(packer, card.CP, tick, main=main, engaged=engaged, brake=brake, cancel=cancel, reverse=reverse,
                                  speed_kph=speed_kph, permanent=permanent, temporary=temporary)
         frames.append(packer.make_can_msg('STEER', 0, {'STEER_ANGLE': 1.0}))
+        if belt_off[0]:
+          belt = packer.make_can_msg('SEATBELT', 0, {'DRIVER_SEATBELT': 0})
+          frames = [row for row in frames if not (row[0] == belt[0] and row[2] == 0)] + [belt]
         safety.set_timer(now[0] // 1000)
         prior_state = previous_sd.get('selfdriveState')
         prior_axis = previous_sd.get('aolAxisState')
@@ -241,6 +245,10 @@ def _exercise_actual_family_callers(identity, monkeypatch, *, scenario='brake', 
           assert any(frame.address == 0x243 for frame in outgoing.sendcan)
           for frame in outgoing.sendcan:
             assert safety.safety_tx_hook(make_msg(frame.src, frame.address, dat=frame.dat))
+        if unbelted and belt_off[0]:
+          assert state.seatbeltUnlatched
+          assert not axis.desiredLongitudinal and not axis.longitudinalActive and not command.longActive
+          assert not safety.aol_get_permission_mask() & 2
         return state, axis, host_state, command
 
       for _ in range(120):
@@ -250,6 +258,16 @@ def _exercise_actual_family_callers(identity, monkeypatch, *, scenario='brake', 
         state, axis, host_state, command = step(engaged=True)
       assert state.canValid and host_state.enabled and command.latActive
       assert card.aol_card_intent.allowed_latch
+      if unbelted:
+        for _ in range(30):
+          state, axis, host_state, command = step(brake=True)
+        assert card.aol_card_intent.allowed_latch and axis.lateralActive and not axis.longitudinalActive
+        belt_off[0] = True
+        for _ in range(5):
+          state, axis, host_state, command = step()
+          assert state.seatbeltUnlatched and card.aol_card_intent.allowed_latch
+          assert axis.lateralActive and command.latActive and not command.longActive
+          assert safety.aol_get_permission_mask() == 1
       if lateral_only:
         for _ in range(30):
           state, axis, host_state, command = step(brake=True)
@@ -370,3 +388,9 @@ def _exercise_actual_family_callers(identity, monkeypatch, *, scenario='brake', 
       case.doCleanups()
 
   exercise_startup(identity, False, False, True, monkeypatch, probe=probe, cancel_action=cancel_action)
+
+@pytest.mark.parametrize('identity', (CAR.MAZDA_CX5_2022, CAR.MAZDA_CX9_2021))
+@pytest.mark.parametrize('scenario', ('mapped_cancel', 'temporary'))
+def test_unbelted_lateral_pause_recovery_actual_callers(identity, scenario, monkeypatch, armed_intent_decoder):
+  _exercise_actual_family_callers(identity, monkeypatch, scenario=scenario, cancel_action=3,
+                                 armed_intent=armed_intent_decoder, unbelted=True)
