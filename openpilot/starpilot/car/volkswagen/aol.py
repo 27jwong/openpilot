@@ -51,6 +51,7 @@ class VolkswagenStockCardIntent(AolCardIntent):
 
   def __init__(self, cp, settings):
     self.main_seen = False
+    self.main_startup_pending = True
     self.main_available = False
     self.main_neutral = False
     self.main_pulse = False
@@ -66,6 +67,12 @@ class VolkswagenStockCardIntent(AolCardIntent):
       else:
         events.append(structs.CarState.ButtonEvent(**event.to_dict()))
     available = bool(state.cruiseState.available)
+    if (not self.settings.enabled or self.settings.main_action == AOL_TOGGLE or self.settings.lkas_action == AOL_TOGGLE or
+        (state.canValid and not state.canTimeout and (state.steerFaultPermanent or state.accFaulted)) or
+        any(event.type == ButtonType.cancel and event.pressed for event in CS.buttonEvents)):
+      self.main_startup_pending = False
+    default_main_edge = (available and (self.main_startup_pending or (self.main_neutral and not self.main_available)) and
+                         self.settings.main_action != AOL_TOGGLE and self.settings.lkas_action != AOL_TOGGLE)
     if state.canValid and not state.canTimeout:
       if self.main_pulse:
         events.append(structs.CarState.ButtonEvent(type=ButtonType.mainCruise, pressed=False))
@@ -83,7 +90,14 @@ class VolkswagenStockCardIntent(AolCardIntent):
       self.main_pulse = False
     state.buttonEvents = events
     super().update(state.as_reader(), **kwargs)
+    if (default_main_edge and state.canValid and not state.canTimeout and self.settings.enabled and
+        not state.steerFaultPermanent and not state.accFaulted and not self._fault_inhibit):
+      self.allowed_latch = True
+      self.main_startup_pending = False
+      self.main_neutral = False
     if not available:
+      if state.canValid and not state.canTimeout:
+        self.main_startup_pending = False
       self.allowed_latch = False
 
 

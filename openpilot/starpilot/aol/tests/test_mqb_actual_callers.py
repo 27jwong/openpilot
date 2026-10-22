@@ -26,9 +26,10 @@ from openpilot.starpilot.aol.tests.stock_lateral_test_helpers import authority_c
 
 @pytest.mark.parametrize('gearbox', ('automatic', 'manual'))
 @pytest.mark.parametrize('alpha', (False, True))
+@pytest.mark.parametrize('engage_on_set', (False, True))
 @pytest.mark.parametrize('offset', (0,))
 @pytest.mark.parametrize('fixed', (False,))
-def test_mqb_full_engagement_brake_reverse_drive_actual_callers(gearbox, alpha, offset, fixed):
+def test_mqb_full_engagement_brake_reverse_drive_actual_callers(gearbox, alpha, offset, fixed, engage_on_set):
   with ExitStack() as cleanup:
     cleanup.enter_context(OpenpilotPrefix())
     cleanup.enter_context(mock.patch.dict('os.environ', {'SIMULATION': '0', 'AOL_REPLAY_RUNTIME': '1'}))
@@ -158,7 +159,7 @@ def test_mqb_full_engagement_brake_reverse_drive_actual_callers(gearbox, alpha, 
 
       brake = 65 <= tick < 75
       reverse = 85 <= tick < 95
-      ordinary = 21 <= tick < 65
+      ordinary = engage_on_set and 21 <= tick < 65
       overrides = {
         'TSK_06': {'TSK_Status': 3 if ordinary and not alpha else 2},
         'LH_EPS_03': {'EPS_HCA_Status': 3, 'EPS_Lenkmoment': 0},
@@ -170,13 +171,15 @@ def test_mqb_full_engagement_brake_reverse_drive_actual_callers(gearbox, alpha, 
         'Motor_EV_01': {'MO_Waehlpos': 3 if reverse else 5},
         'ESP_19': dict.fromkeys(('ESP_VL_Radgeschw_02', 'ESP_VR_Radgeschw_02', 'ESP_HL_Radgeschw_02', 'ESP_HR_Radgeschw_02'), 72),
         'Airbag_02': {'AB_Gurtschloss_FA': 0 if 105 <= tick < 111 else 3},
-        'GRA_ACC_01': {'GRA_Hauptschalter': 1, 'GRA_Tip_Setzen': int(tick == 20)},
+        'GRA_ACC_01': {'GRA_Hauptschalter': 1, 'GRA_Tip_Setzen': int(engage_on_set and tick == 20)},
         'ACC_02': {'ACC_Gesetzte_Zeitluecke': 1},
       }
       incoming = []
       for parser in card.CI.can_parsers.values():
         for name in tuple(parser.vl):
           if isinstance(name, str) and name in dbc.name_to_msg:
+            if tick < 3 and name in ('TSK_06', 'LH_EPS_03'):
+              continue  # Real startup may receive other CAN sources before cruise and EPS.
             fields = dict(overrides.get(name, {}))
             if 'COUNTER' in dbc.name_to_msg[name].sigs:
               fields['COUNTER'] = tick % 16
@@ -242,7 +245,7 @@ def test_mqb_full_engagement_brake_reverse_drive_actual_callers(gearbox, alpha, 
     assert any(lat_commands[106:110])  # Existing qualified unbelted policy, with current native permission.
     assert not any(long_commands[66:])  # no automatic longitudinal restoration
     assert emitted
-    if alpha:
+    if alpha and engage_on_set:
       assert any(long_commands[35:60])
     else:
       assert not any(long_commands)

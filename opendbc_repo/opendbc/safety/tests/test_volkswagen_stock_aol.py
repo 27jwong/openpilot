@@ -59,8 +59,11 @@ class TestVolkswagenStockAol(unittest.TestCase):
   def test_main_cycle_native_ownership_and_long_denial(self):
     for word in (8, 24):
       self.configure(word)
+      self.safety.aol_set_host_request(3)
+      assert self.safety.aol_get_permission_mask() == 0  # No complete physical source snapshot yet.
       self.feed()
-      assert self.safety.aol_get_permission_mask() == 0
+      assert not self.safety.get_controls_allowed()
+      assert self.safety.aol_get_permission_mask() == 1  # Complete fresh MAIN snapshot grants LAT only.
       self.arm()
       assert self.safety.safety_fwd_hook(2, 0x126) == 0
       torque = self.packet("HCA_01", {"HCA_01_LM_Offset": 4, "HCA_01_Sendestatus": 1})

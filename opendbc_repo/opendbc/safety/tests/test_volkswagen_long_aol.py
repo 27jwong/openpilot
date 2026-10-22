@@ -27,7 +27,7 @@ def test_longitudinal_needs_ordinary_native_grant_and_never_resumes_after_brake(
     for _ in range(12):
       owner.feed()
     owner.safety.aol_set_host_request(3)
-    assert owner.safety.aol_get_permission_mask() == 0
+    assert owner.safety.aol_get_permission_mask() == (1 if debug else 0)
     if not debug:
       assert not owner.safety.safety_tx_hook(owner.packet('ACC_06', {'ACC_Sollbeschleunigung_02': 0.5}))
       assert not owner.safety.safety_tx_hook(owner.packet('HCA_01', {'HCA_01_LM_Offset': 4, 'HCA_01_Sendestatus': 1}))
@@ -93,6 +93,7 @@ def test_press_held_across_permanent_fault_cannot_regrant_on_release(word):
     if debug:
       engage(owner, 'GRA_Tip_Setzen')
       original = owner.packet
+
       def held_packet(name, fields, bus=0):
         if name == 'GRA_ACC_01':
           fields = {**fields, 'GRA_Tip_Setzen': 1}

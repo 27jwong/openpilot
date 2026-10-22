@@ -446,10 +446,16 @@ int main() {
 
   auto ev9 = status();
   ev9.safety_mode = HYUNDAI_AOL_PROFILE.mode;
-  ev9.safety_param = 0x5C91U;
-  assert(aol_capable(ev9, HYUNDAI_AOL_PROFILE.mode, VEHICLE_REGISTRY));
-  assert(aol_runtime_enabled(false, ev9, VEHICLE_REGISTRY));
-  for (uint16_t denied : {0x5C90U, 0x5C93U, 0x5C95U, 0x5C11U, 0x5CB1U, 0x5E91U}) {
+  // Stock and the separately qualified paired LONG profile are both published.
+  for (uint16_t admitted : {0x5C91U, 0x5C95U}) {
+    ev9.safety_param = admitted;
+    assert(aol_capable(ev9, HYUNDAI_AOL_PROFILE.mode, VEHICLE_REGISTRY));
+    assert(aol_runtime_enabled(false, ev9, VEHICLE_REGISTRY));
+    ev9.capability_flags = 0U;
+    assert(!aol_capable(ev9, HYUNDAI_AOL_PROFILE.mode, VEHICLE_REGISTRY));
+    ev9.capability_flags = 1U;
+  }
+  for (uint16_t denied : {0x5C90U, 0x5C93U, 0x5C97U, 0x5C11U, 0x5CB1U, 0x5E91U}) {
     ev9.safety_param = denied;
     assert(!aol_capable(ev9, HYUNDAI_AOL_PROFILE.mode, VEHICLE_REGISTRY));
   }
@@ -475,7 +481,7 @@ int main() {
     0x7090U, 0x7092U, 0x7208U, 0x720AU, 0x7228U, 0x722AU, 0x7809U, 0x7829U,
   };
   for (uint32_t word = 0U; word <= 0xFFFFU; ++word) {
-    bool expected = word == 0x0815U || word == 0x0895U || word == 0x8815U || word == 0x8895U || word == 0x5491U || word == 0x5C91U;
+    bool expected = word == 0x0815U || word == 0x0895U || word == 0x8815U || word == 0x8895U || word == 0x5491U || word == 0x5C91U || word == 0x5C95U;
     for (uint16_t stock_word : stock_canfd_words) {
       expected = expected || word == stock_word;
     }

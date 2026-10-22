@@ -6,6 +6,7 @@ static bool vw_aol_long_armed = false;
 static uint8_t vw_aol_buttons = 0U;
 static bool vw_aol_manual = false;
 static bool vw_aol_token = false;
+static bool vw_aol_initial_main = true;
 static bool vw_aol_cruise_engaged = false;
 static bool vw_aol_main_neutral = false;
 static bool vw_aol_requested = false;
@@ -33,6 +34,7 @@ static void vw_aol_clear(void) {
 static void vw_aol_reset(void) {
   vw_aol_clear();
   vw_aol_enabled = false;
+  vw_aol_initial_main = true;
   vw_aol_longitudinal = false;
   vw_aol_cruise_engaged = false;
   vw_aol_manual = false;
@@ -124,6 +126,7 @@ static void vw_aol_rx(const CANPacket_t *msg) {
       vw_aol_eps_ts = microsecond_timer_get();
       vw_aol_eps_ready = (eps == 3U) || (eps == 5U);
       if ((eps != 1U) && (eps != 3U) && (eps != 4U) && (eps != 5U) && (eps != 8U)) {
+        vw_aol_initial_main = false;
         vw_aol_clear();
       }
     } else if (msg_matches(msg, MSG_TSK_06, 0U, 8U)) {
@@ -136,9 +139,14 @@ static void vw_aol_rx(const CANPacket_t *msg) {
       if (!heartbeat_engaged || !aol_rx_healthy() || !vw_aol_current() || safety_rx_checks_invalid) {
         vw_aol_clear();
       } else if (!acc_main_on) {
+        vw_aol_initial_main = false;
         vw_aol_clear();
         // Only a valid OFF observation may prepare a subsequent main-ON edge.
         vw_aol_main_neutral = ((msg->data[3] & 7U) < 2U);
+      } else if (vw_aol_initial_main && vw_aol_gear_drive && vw_aol_eps_ready && !brake_pressed) {
+        // Fresh complete physical MAIN-on startup grants LAT only. It never restores a cleared drive session.
+        vw_aol_initial_main = false;
+        vw_aol_token = true;
       } else if (!vw_aol_longitudinal && engage_edge && controls_allowed && vw_aol_gear_drive && vw_aol_eps_ready && !brake_pressed) {
         // A fresh stock engagement supplies native arm; host still requires its own current intent.
         vw_aol_token = true;
@@ -150,6 +158,7 @@ static void vw_aol_rx(const CANPacket_t *msg) {
       }
     } else if (msg_matches(msg, MSG_GRA_ACC_01, 0U, 8U)) {
       if (GET_BIT(msg, 13U)) {
+        vw_aol_initial_main = false;
         vw_aol_clear();
       } else if (vw_aol_longitudinal) {
         const bool healthy = heartbeat_engaged && aol_rx_healthy() && vw_aol_current() && !safety_rx_checks_invalid;

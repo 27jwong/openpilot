@@ -21,7 +21,7 @@ def test_saved_main_action_and_off_are_preserved(main_action, enabled):
   for tick, available in enumerate((True, False, True, True)):
     state.cruiseState.available = available
     owner.update(state, now_ns=1_000_000_000 + tick * 10_000_000)
-  assert owner.allowed_latch == (enabled and main_action == 9)
+  assert owner.allowed_latch == enabled
 
 
 @pytest.mark.parametrize('enabled', (False, True))

@@ -10,7 +10,8 @@ def test_fresh_engagement_arms_without_main_cycle_and_fault_needs_new_edge(word)
     owner.configure(word)
     for _ in range(12):
       owner.feed()
-    assert owner.safety.aol_get_permission_mask() == 0
+    assert not owner.safety.get_controls_allowed()
+    assert owner.safety.aol_get_permission_mask() == 1  # Fresh default MAIN-on may request lateral before SET.
     owner.feed(engaged=True)
     owner.feed(brake=True)
     assert not owner.safety.get_controls_allowed()
