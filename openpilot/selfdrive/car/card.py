@@ -1054,6 +1054,9 @@ class Car:
         companion = feedback_companion
       except Exception:
         self.learning_feedback_publication = None
+    if self.CP.brand == 'mazda':
+      from openpilot.starpilot.car.mazda.dashboard import compose
+      companion = compose(self.CP, self.CI.CS, CS, companion, car_state_stamp=int(cs_send.logMonoTime))
     self.car_gps_publisher.update(self.CI.CS, self.pm, companion)
     self.pm.send('carState', cs_send)
     if getattr(self, 'learning_stamp_observer', None) is not None:

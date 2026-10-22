@@ -41,6 +41,7 @@ AOL_LIFECYCLE_TARGETS = (
   "openpilot/starpilot/aol/tests/test_honda_recovery_lifecycle.py",
   "openpilot/starpilot/aol/tests/test_fresh_inactive_transport.py",
   "opendbc_repo/opendbc/car/mazda/tests/test_native_engagement_callers.py",
+  "opendbc_repo/opendbc/car/mazda/tests/test_dashboard_stop_sign.py",
   "opendbc_repo/opendbc/safety/tests/test_mazda_stock_aol.py",
   "openpilot/starpilot/aol/tests/test_temporary_lag_intent.py",
   "openpilot/starpilot/aol/tests/test_stock_location_recovery.py",
