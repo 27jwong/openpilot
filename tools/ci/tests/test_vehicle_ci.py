@@ -17,6 +17,8 @@ from tools.ci.record_firmware import compile_commands
 
 class TestVehicleCollection(unittest.TestCase):
   def test_ev9_joined_main_cancel_off_and_vetoes_run_in_lifecycle_ci(self):
+    self.assertIn('opendbc_repo/opendbc/safety/tests/test_ev9_set_release_callers.py', targets_for('safety-debug'))
+    self.assertIn('opendbc_repo/opendbc/safety/tests/test_ev9_set_release_callers.py', targets_for('aol-lifecycle'))
     self.assertLessEqual({
       'opendbc_repo/opendbc/safety/tests/test_ev9_combined_callers.py',
       'openpilot/starpilot/aol/tests/test_ev9_main_withdrawal_guards.py',
