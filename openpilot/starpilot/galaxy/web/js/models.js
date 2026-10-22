@@ -329,6 +329,15 @@ export const ModelsPage = {
   },
   computed: {
     currentLabel() { return this.models.find(m => m.value === this.currentModel)?.label || this.currentModel || "" },
+    runningModelLabel() {
+      if (!this.selectionUncertain && this.status.jetlink?.active) return "Jetlink remote model"
+      if (this.runtime.status === "unavailable" || this.runtime.status === "stale") return "Status unavailable"
+      if (this.runtime.status !== "ready" || !this.runtime.data) return "Checking…"
+      const model = this.runtime.data
+      if (model.health === "unavailable") return "No running model"
+      if (!model.loadedId) return model.health === "loading" ? "Loading…" : "Identity unverified"
+      return model.catalog.find(item => item.id === model.loadedId)?.name || model.loadedId
+    },
     installedSmallModels() { return this.models.filter(m => (m.value === this.activeSmallModel || m.installed && m.selectable) && fitsModelProfile(m, "small")) },
     installedBigModels() { return this.models.filter(m => (m.value === this.activeBigModel || m.installed && m.selectable) && fitsModelProfile(m, "big")) },
     sorted() {
@@ -464,13 +473,38 @@ export const ModelsPage = {
         <GxNotice v-if="error" tone="danger" title="Model Manager">{{ error }}</GxNotice>
         <GxNotice v-if="status.isOnroad" tone="warn">Park the vehicle before changing or downloading models.</GxNotice>
         <GxNotice v-if="status.downloading" :title="'Downloading ' + downloadTargetLabel">{{ status.progress || 'Keep the device connected until the download finishes.' }}</GxNotice>
-        <section class="gx-card">
+        <section class="gx-card gx-model-overview">
           <div class="gx-section__header">
             <i aria-hidden="true" class="bi bi-cpu"></i>
             <span class="gx-section__title">Models</span>
             <span v-if="currentLabel" class="gx-section__count">Selected: {{ currentLabel }}</span>
           </div>
-          <GxSummary :items="[{label: 'Installed', value: summary.installed}, {label: 'Missing', value: summary.missing}, {label: 'Total', value: summary.total}]" />
+          <GxSummary :items="[{label: 'Installed', value: summary.installed}, {label: 'Missing', value: summary.missing}, {label: 'Total', value: summary.total}, {label: 'Running model', value: runningModelLabel}]" />
+        </section>
+
+        <section v-if="status.jetlink" class="gx-card">
+          <div class="gx-section__header"><i aria-hidden="true" class="bi bi-usb-symbol"></i><span class="gx-section__title">Jetlink</span></div>
+          <div class="gx-panel gx-stack">
+            <div class="gx-field-group">
+              <label for="gx-jetlink-mode" class="gx-row__label">Remote model connection</label>
+              <GalaxySelect id="gx-jetlink-mode" class="gx-field" :value="pendingChoice?.action === 'jetlink' ? pendingChoice.value : status.jetlink.mode" :disabled="!actionAvailable('jetlink')" @change="configureJetlink($event.target.value)">
+                <option value="off">Off</option>
+                <option value="usb" :disabled="!status.jetlink.supported || status.jetlink.chestnut">USB computer</option>
+                <option value="ios" :disabled="!status.jetlink.supported || status.jetlink.chestnut">iPhone / iPad</option>
+              </GalaxySelect>
+            </div>
+            <p class="gx-note" role="status"><span class="gx-chip">{{ status.jetlink.state }}</span><span v-if="status.jetlink.model && !status.jetlink.active"> · selected: {{ status.jetlink.model }}</span></p>
+            <p v-if="status.jetlink.progress">{{ status.jetlink.progress }}</p>
+            <p v-if="status.jetlink.reason" class="gx-model-reason">{{ status.jetlink.reason }}</p>
+            <p v-if="status.jetlink.chestnut" class="gx-model-reason">Chestnut is connected. Jetlink stays off while Chestnut is fitted.</p>
+            <p class="gx-model-reason">Prepared means the remote model is built, not active. The local Small model remains available. Small and Chestnut catalog selections are unchanged.</p>
+            <div v-if="status.jetlink.mode === 'ios'" class="gx-row" :class="{disabled: !actionAvailable('jetlink')}">
+              <span class="gx-row__info gx-row__label">Charge phone over USB</span>
+              <label class="gx-switch"><input type="checkbox" role="switch" aria-label="Charge phone over USB" :checked="status.jetlink.chargePhone === true" :disabled="!actionAvailable('jetlink')" @change="toggleJetlinkCharge($event)"><span class="gx-switch__track"></span><span class="gx-switch__thumb"></span></label>
+            </div>
+            <p class="gx-model-reason">Set up parked with a USB 3 data cable and separate power. Keep the computer awake; keep the iPhone app open and unlocked.</p>
+            <div class="gx-actions"><a class="gx-btn gx-btn--tonal" href="https://github.com/firestar5683/StarPilot/blob/StarPilot/openpilot/starpilot/models/JETLINK.md" target="_blank" rel="noopener noreferrer"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i> Open Jetlink setup guide</a></div>
+          </div>
         </section>
 
         <section class="gx-card">
@@ -518,10 +552,12 @@ export const ModelsPage = {
 
             <div class="gx-model-filter-bar" role="group" aria-label="Show models">
               <span class="gx-row__label">Show models</span>
-              <label class="gx-btn gx-btn--tonal"><input type="checkbox" :checked="['both', 'comma'].includes(hardwareFilter)" @change="toggleHardware('comma', $event.target.checked)"> Small · On-device</label>
-              <label class="gx-btn gx-btn--tonal"><input type="checkbox" :checked="['both', 'gpu'].includes(hardwareFilter)" @change="toggleHardware('gpu', $event.target.checked)"> Big · GPU</label>
-              <label class="gx-btn gx-btn--tonal"><input type="checkbox" :checked="userFilter === 'yes'" @change="userFilter = $event.target.checked ? 'yes' : 'all'"> Your favorites only</label>
-              <label class="gx-btn gx-btn--tonal"><input type="checkbox" :checked="communityFilter === 'yes'" @change="communityFilter = $event.target.checked ? 'yes' : 'all'"> Community favorites only</label>
+              <div class="gx-actions">
+                <button type="button" class="gx-btn gx-btn--tonal" :aria-pressed="['both', 'comma'].includes(hardwareFilter)" @click="toggleHardware('comma', !['both', 'comma'].includes(hardwareFilter))">Small · On-device</button>
+                <button type="button" class="gx-btn gx-btn--tonal" :aria-pressed="['both', 'gpu'].includes(hardwareFilter)" @click="toggleHardware('gpu', !['both', 'gpu'].includes(hardwareFilter))">Big · GPU</button>
+                <button type="button" class="gx-btn gx-btn--tonal" :aria-pressed="userFilter === 'yes'" @click="userFilter = userFilter === 'yes' ? 'all' : 'yes'">Your favorites only</button>
+                <button type="button" class="gx-btn gx-btn--tonal" :aria-pressed="communityFilter === 'yes'" @click="communityFilter = communityFilter === 'yes' ? 'all' : 'yes'">Community favorites only</button>
+              </div>
             </div>
           </div>
         </section>
@@ -573,46 +609,6 @@ export const ModelsPage = {
             </section>
           </div>
         </template>
-        <section class="gx-card gx-model-runtime">
-          <div class="gx-section__header"><i aria-hidden="true" class="bi bi-cpu"></i><span class="gx-section__title">Running model</span></div>
-          <div v-if="!selectionUncertain && status.jetlink?.active" class="gx-model-runtime__body">
-            <p>Active · Jetlink remote model</p>
-            <p v-if="status.jetlink.activeCheckpoint">{{ status.jetlink.activeCheckpoint }}</p>
-            <p v-if="status.jetlink.activeArtifactSha256">{{ status.jetlink.activeArtifactSha256.slice(0,16) }}…</p>
-          </div>
-          <div class="gx-model-runtime__body" v-else-if="runtime.status === 'ready' && runtime.data">
-            <p>{{ runtime.data.health.replaceAll('-', ' ') }} · {{ runtime.data.loadedId ? (runtime.data.variant === 'chestnut' ? 'Chestnut big' : 'Small') : 'No verified load receipt' }}</p>
-            <p v-if="runtime.data.loadedId">{{ runtime.data.loadedId }} · {{ runtime.data.artifactSha256.slice(0,16) }}…</p>
-            <p v-if="runtime.data.pendingNextStart">A saved selection is waiting for the next start.</p>
-            <p v-if="runtime.data.fallbackReason">Fallback: {{ runtime.data.fallbackReason.replaceAll('-', ' ') }}</p>
-          </div>
-          <p v-else class="gx-panel gx-note">{{ runtime.error || 'Checking the running model…' }}</p>
-        </section>
-        <section v-if="status.jetlink" class="gx-card">
-          <div class="gx-section__header"><i aria-hidden="true" class="bi bi-usb-symbol"></i><span class="gx-section__title">Jetlink</span></div>
-          <div class="gx-panel gx-stack">
-            <div class="gx-field-group">
-              <label for="gx-jetlink-mode" class="gx-row__label">Remote model connection</label>
-              <GalaxySelect id="gx-jetlink-mode" class="gx-field" :value="pendingChoice?.action === 'jetlink' ? pendingChoice.value : status.jetlink.mode" :disabled="!actionAvailable('jetlink')" @change="configureJetlink($event.target.value)">
-                <option value="off">Off</option>
-                <option value="usb" :disabled="!status.jetlink.supported || status.jetlink.chestnut">USB computer</option>
-                <option value="ios" :disabled="!status.jetlink.supported || status.jetlink.chestnut">iPhone / iPad</option>
-              </GalaxySelect>
-            </div>
-            <p class="gx-note" role="status"><span class="gx-chip">{{ status.jetlink.state }}</span><span v-if="status.jetlink.model && !status.jetlink.active"> · selected: {{ status.jetlink.model }}</span></p>
-            <p v-if="status.jetlink.progress">{{ status.jetlink.progress }}</p>
-            <p v-if="status.jetlink.reason" class="gx-model-reason">{{ status.jetlink.reason }}</p>
-            <p v-if="status.jetlink.chestnut" class="gx-model-reason">Chestnut is connected. Jetlink stays off while Chestnut is fitted.</p>
-            <p class="gx-model-reason">Prepared means the remote model is built, not active. The local Small model remains available. Small and Chestnut catalog selections are unchanged.</p>
-            <div v-if="status.jetlink.mode === 'ios'" class="gx-row" :class="{disabled: !actionAvailable('jetlink')}">
-              <span class="gx-row__info gx-row__label">Charge phone over USB</span>
-              <label class="gx-switch"><input type="checkbox" role="switch" aria-label="Charge phone over USB" :checked="status.jetlink.chargePhone === true" :disabled="!actionAvailable('jetlink')" @change="toggleJetlinkCharge($event)"><span class="gx-switch__track"></span><span class="gx-switch__thumb"></span></label>
-            </div>
-            <p class="gx-model-reason">Set up parked with a USB 3 data cable and separate power. Keep the computer awake; keep the iPhone app open and unlocked.</p>
-            <div class="gx-actions"><a class="gx-btn gx-btn--tonal" href="https://github.com/firestar5683/StarPilot/blob/StarPilot/openpilot/starpilot/models/JETLINK.md" target="_blank" rel="noopener noreferrer"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i> Open Jetlink setup guide</a></div>
-          </div>
-        </section>
-
       </template>
       <GxDialog v-if="dialog" labelledby="gx-model-dialog-title" @close="finishDialog(false)">
           <h3 id="gx-model-dialog-title">{{ dialog.title }}</h3><p>{{ dialog.message }}</p>

@@ -68,7 +68,7 @@ export const GalaxyPage = {
             <div><h3>Remote pairing</h3><p>Pair your comma to get a secure Galaxy link.</p></div></div>
           <div class="gx-aa-step__body">
             <template v-if="paired">
-              <p v-if="!tunnelClientAvailable" class="gx-note gx-note--danger">The remote tunnel client is unavailable. Your link will work when it is installed.</p>
+              <GxNotice v-if="!tunnelClientAvailable" tone="warn">The remote tunnel client is unavailable. Your link will work when it is installed.</GxNotice>
               <img src="./api/galaxy/qr.svg" alt="QR code for your Galaxy link" class="gx-tunnel__qr" />
               <p><a :href="url" target="_blank" rel="noopener" class="gx-btn gx-btn--tonal gx-wrap">Open your Galaxy link</a></p>
               <div class="gx-actions"><button type="button" class="gx-btn gx-btn--danger" @click="unpair">{{ busy ? 'Unpairing…' : 'Unpair' }}</button></div>

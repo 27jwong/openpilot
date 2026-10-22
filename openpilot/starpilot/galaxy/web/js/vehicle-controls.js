@@ -200,7 +200,7 @@ export const VehicleControlsPage = {
         <GxNotice tone="danger" v-if="state.error">{{ state.error }}
           </GxNotice>
         <GxState v-if="state.status === 'loading'" loading>Loading vehicle selection…</GxState>
-        <article v-if="state.data" class="gx-card gx-vehicle__body">
+        <article v-if="state.data" class="gx-card"><div class="gx-section__header"><i class="bi bi-car-front" aria-hidden="true"></i><span class="gx-section__title">Selection &amp; status</span></div><div class="gx-panel gx-stack">
           <div class="gx-vehicle__summary"><div><small>Configured selection mode</small>
               <strong>{{ state.data.valid ? (state.data.selected === null ? 'Auto Detection' : 'Manually Selected') : state.data.selectedLabel }}</strong>
               <p v-if="state.data.selected !== null">{{ state.data.selectedLabel }}</p>
@@ -223,7 +223,7 @@ export const VehicleControlsPage = {
                 :aria-pressed="state.data.selected === item.platform" :disabled="autoDetection || !state.data.parked || !state.data.readable" @click="choose(item.platform)">
                 <strong>{{ item.label }}</strong></button></div>
           </template>
-        </article>
+        </div></article>
         <ToyotaToolsPage :mode="mode" :unauthorized="unauthorized" />
         <SettingsPage :mode="mode" :unauthorized="unauthorized" initial-page="vehicle" title="Vehicle settings" />
         <GxDialog v-if="state.pending" labelledby="gx-vehicle-controls-confirm-title" @close="feed.cancel()"><h3 id="gx-vehicle-controls-confirm-title">Confirm Vehicle Selection</h3><p>{{ state.pending.question }}</p>

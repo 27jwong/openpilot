@@ -106,8 +106,8 @@ export const SentryNotifications = {
     },
   },
   template: `
-    <section class="gx-card gx-home__card" aria-label="Sentry notifications" :inert="notificationBusy" :aria-busy="notificationBusy || undefined">
-      <h2>Notifications</h2>
+    <section class="gx-card" aria-label="Sentry notifications" :inert="notificationBusy" :aria-busy="notificationBusy || undefined">
+      <div class="gx-section__header"><i class="bi bi-bell" aria-hidden="true"></i><span class="gx-section__title">Notifications</span></div><div class="gx-panel gx-stack">
       <p class="gx-note">Receive new locally recorded motion events. Notification channels work independently.</p>
       <p v-if="mode !== 'local'">Notification configuration is available on your connected device.</p>
       <template v-else>
@@ -117,7 +117,8 @@ export const SentryNotifications = {
         <template v-if="notifications">
           <p class="gx-note">{{ notifications.deliverySemantics }}</p>
           <section v-for="name in channels" :key="name" class="gx-card gx-sentry-channel">
-            <div class="gx-row"><div class="gx-row__info"><h3 class="gx-row__label">{{ labels[name] }}</h3>
+            <div class="gx-section__header"><i class="bi" :class="{webPush: 'bi-bell', discord: 'bi-discord', webhook: 'bi-link-45deg', ntfy: 'bi-broadcast'}[name]" aria-hidden="true"></i><span class="gx-section__title">{{ labels[name] }}</span></div>
+            <div class="gx-panel gx-stack"><div class="gx-row gx-row--borderless"><div class="gx-row__info"><span class="gx-row__label">Enabled</span>
               <span class="gx-row__desc">{{ notifications.channels[name].configured ? 'Configured' : 'Not configured' }}</span></div>
               <label class="gx-switch"><input type="checkbox" role="switch" :aria-label="labels[name] + ' notifications'" :checked="notifications.channels[name].enabled"
                 :disabled="!notifications.channels[name].configured || notificationBusy"
@@ -133,11 +134,11 @@ export const SentryNotifications = {
             <button v-else class="gx-btn gx-btn--tonal" type="button" @click="subscribe">Subscribe this browser</button>
             <button class="gx-btn gx-btn--tonal" type="button" :disabled="!notifications.channels[name].enabled || !notifications.channels[name].configured" @click="test(name)">Send test</button>
             <button class="gx-btn gx-btn--tonal" type="button" @click="forget(name)">Forget configuration</button>
-            </div>
+            </div></div>
           </section>
           <p v-if="notifications.subscriptionCount">Subscribed browsers: {{ notifications.subscriptionCount }}</p>
           <button v-for="(subscription, index) in notifications.subscriptions" :key="subscription.id" class="gx-btn gx-btn--tonal" type="button" @click="remove(subscription.id)">Remove browser {{ index + 1 }}</button>
         </template>
-      </template>
+      </template></div>
     </section>`,
 }

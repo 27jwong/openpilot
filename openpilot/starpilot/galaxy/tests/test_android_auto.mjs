@@ -224,7 +224,7 @@ assert.equal(uploadCalls.length, beforeDeniedEnable, "failed enable never upload
 console.log("Android Auto: APK/XAPK/APKM uploads in either road state, enable/upload sequencing, explicit blockers and feed boundaries passed")
 assert.match(AndroidAutoPage.template, /<section[^>]*:inert="busy"[^>]*:aria-busy="busy \|\| undefined"/)
 assert.match(AndroidAutoPage.template, /@click="openInstall">Update/)
-assert.match(AndroidAutoPage.template, /Turning Android Auto on or off, package uploads, package deletion, Connect, and Disconnect work on-road and off-road/)
+assert.match(AndroidAutoPage.template, /<header class="gx-page-header">/)
 const removePage = page({ ...setup, enabled: false, parked: false })
 removePage.runtime = { running: true }
 removePage.feed = { async removePackage() { return true } }

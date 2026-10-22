@@ -649,7 +649,6 @@ export const AndroidAutoPage = {
   },
   template: `
     <section class="gx-driving" aria-label="Android Auto setup" :inert="busy" :aria-busy="busy || undefined">
-      <p class="gx-note">Turning Android Auto on or off, package uploads, package deletion, Connect, and Disconnect work on-road and off-road. Pairing and connection settings require Park or offroad mode.</p>
       <header class="gx-page-header">
         <h2>Android Auto</h2>
         <p>Show the StarPilot driving view on your car’s screen. Set up support, {{ wired ? 'plug in your car' : 'pair your car' }}, then connect.</p>
@@ -961,7 +960,7 @@ export const AndroidAutoPage = {
                     <p>{{ problem }}</p>
                     <button class="gx-btn gx-btn--tonal" @click="chooseAgain">Choose Another File</button>
                   </GxNotice>
-                  <p v-if="error && installState === 'choose' && installAttempted" class="gx-aa-bad" role="alert">{{ error }}</p>
+                  <GxNotice v-if="error && installState === 'choose' && installAttempted" tone="danger">{{ error }}</GxNotice>
                 </div>
               </li>
             </ol>

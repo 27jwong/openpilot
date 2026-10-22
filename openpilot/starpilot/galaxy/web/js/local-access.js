@@ -1,6 +1,7 @@
 import { PollTimer, connectionError } from "./polling.js"
 import { requestJson } from "./startup.js"
 import { reactive } from "../vendor/vue/vue.esm-browser.js"
+import { GxNotice } from "./notice.js"
 
 export function validLocalAccess(value) {
   if (!value || typeof value.available !== "boolean" || typeof value.reason !== "string" || value.reason.length > 1024 ||
@@ -49,6 +50,7 @@ export class LocalAccessFeed {
 }
 
 export const LocalAccess = {
+  components: { GxNotice },
   props: { mode: { type: String, required: true }, onUnauthorized: { type: Function, default: () => {} } },
   setup(props) {
     const state = reactive({ loading: false, data: null, error: "" })
@@ -59,8 +61,8 @@ export const LocalAccess = {
   watch: { mode(value) { this.feed.start(value) } },
   beforeUnmount() { this.feed.stop() },
   template: `<section class="gx-card gx-local-access gx-panel" aria-label="Local comma access">
-    <div class="gx-settings__subhead"><h3>Local access</h3></div>
-    <p v-if="state.error" class="gx-note" role="status">{{ state.error }}</p>
+    <div class="gx-section__header"><i class="bi bi-router" aria-hidden="true"></i><span class="gx-section__title">Local access</span></div>
+    <GxNotice v-if="state.error" tone="danger">{{ state.error }}</GxNotice>
     <template v-else-if="state.data?.available">
       <p>Connect your phone to the Galaxy hotspot, or put your phone and comma on the same Wi-Fi or Ethernet network, then open a local address:</p>
       <ul class="gx-stack"><li v-for="address in state.data.addresses" :key="address.interface + address.url"><a :href="address.url" target="_blank" rel="noopener" class="gx-btn gx-btn--tonal gx-wrap">{{ address.label }} · {{ address.url }}</a></li></ul>
