@@ -16,6 +16,13 @@ PROFILES = {
 def hardware_supported(candidate, fingerprint):
   # The filter's advertisement is a hardware discriminator, not an actuation
   # permission or a copy of ACC_CONTROL to decode under a different checksum.
+  # The 2025 radar filter observed in the field uses a four-byte 2FF
+  # advertisement. It is distinct from the legacy eight-byte SDSU state.
+  # Panda discovery may also expose its forwarded camera-bus copy.
+  if (candidate == CAR.TOYOTA_RAV4_TSS2_2023 and fingerprint.get(0, {}).get(0x2FF) == 4 and
+      not any(address in messages for messages in fingerprint.values() for address in (0x201, 0x2AA)) and
+      all(bus in (0, 2) and messages[0x2FF] == 4 for bus, messages in fingerprint.items() if 0x2FF in messages)):
+    return True
   return (candidate in PROFILES and fingerprint.get(0, {}).get(0x2AA) == 8 and
           not any(0x2AA in frames for bus, frames in fingerprint.items() if bus != 0) and
           not any(addr in frames for frames in fingerprint.values() for addr in (0x201, 0x2FF)))

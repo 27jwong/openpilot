@@ -36,7 +36,8 @@ def test_rav4_filter_actual_callers(alpha, disable, radar_mode, tmp_path):
   run_case(CAR.TOYOTA_RAV4_TSS2_2023, alpha, disable, radar_mode, tmp_path)
 
 
-def run_case(candidate, alpha, disable, radar_mode, tmp_path, *, aol=True, has_filter=True, bridge=None):
+def run_case(candidate, alpha, disable, radar_mode, tmp_path, *, aol=True, has_filter=True, bridge=None,
+             filter_advertisements=None, recorded_firmware=None):
   helpers.SYNTHETIC_LAST.clear()
   helpers.NATIVE_LAST.clear()
   safety = libsafety_py.libsafety
@@ -77,12 +78,13 @@ def run_case(candidate, alpha, disable, radar_mode, tmp_path, *, aol=True, has_f
                        ('DisableOpenpilotLongitudinal', disable), ('AlwaysOnLateral', aol), ('SafeMode', False)]:
       params.put_bool(key, value, block=True)
     params.put('ToyotaRadarMode', radar_mode, block=True)
-    fw = helpers.firmware(candidate)
+    fw = helpers.firmware(candidate) if recorded_firmware is None else recorded_firmware
     exact, found = match_fw_to_car(fw, '', log=False)
     assert exact and found == {candidate}
     fp = gen_empty_fingerprint()
-    if has_filter:
-      fp[0][0x2AA] = 8
+    advertisements = ([(0x2AA, bytes(8), 0)] if has_filter else []) if filter_advertisements is None else filter_advertisements
+    for address, data, bus in advertisements:
+      fp[bus][address] = len(data)
     observed = (candidate, fp, '0' * 17, fw, structs.CarParams.FingerprintSource.fw, True)
     with (patch.object(car_helpers, 'fingerprint', return_value=observed),
           patch.object(card_module, 'can_comm_callbacks', return_value=(diag_recv, diag_send)),
@@ -143,7 +145,7 @@ def run_case(candidate, alpha, disable, radar_mode, tmp_path, *, aol=True, has_f
                    packer.make_can_msg('EPS_STATUS', 0, {'LKA_STATE': 9 if fault else 1, 'LTA_STATE': 9 if fault else 1}),
                    packer.make_can_msg('PCS_HUD', 0, {}),
                    # The physical filter advertises itself; it does not grant controls.
-                   *([(0x2AA, bytes(8), 0)] if has_filter else [])]
+                   *advertisements]
         if not has_filter and not long:
           frames.append(packer.make_can_msg('ACC_CONTROL', 0, {'ACC_TYPE': 1}))
         # Stock AEB/PCS traffic must not trip the ACC relay check.
