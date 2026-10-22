@@ -224,7 +224,7 @@ def control_inputs(controls, published, state, sd_events, native, now):
   return values
 
 
-def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H, bridge=None, input_clock=False):
+def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H, bridge=None, input_clock=False, brake_stop_check_start=350):
   SYNTHETIC_LAST.clear()
   NATIVE_LAST.clear()
   safety = libsafety_py.libsafety
@@ -438,7 +438,9 @@ def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H,
           assert cc.longActive == (not stock and scenario != 'cold_low'), trace[-1]
           seen_active = True
         if scenario == 'physical':
-          if any(a <= tick < b for a, b in ((260, 266), (350, 366), (445, 456), (530, 536))):
+          if 340 <= tick < 366:
+            assert not cc.longActive, trace[-1]
+          if any(a <= tick < b for a, b in ((260, 266), (brake_stop_check_start, 366), (445, 456), (530, 536))):
             assert cc.latActive and not cc.longActive, trace[-1]
           if 415 <= tick < 430:
             assert not cc.latActive and not cc.longActive, trace[-1]

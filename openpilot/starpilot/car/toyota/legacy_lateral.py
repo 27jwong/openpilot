@@ -7,7 +7,7 @@ from openpilot.starpilot.aol.runtime import AXIS_MAX_AGE_NS, INTENT_MAX_AGE_NS, 
 
 def below_engage_lateral_allowed(cp, cs, intent, native, *, source_ns, now_ns, axis_session_id):
   try:
-    return bool(configured(cp) and cp.carFingerprint == CAR.TOYOTA_HIGHLANDER and cp.alternativeExperience == 32 and
+    return bool(configured(cp) and cp.carFingerprint in (CAR.TOYOTA_HIGHLANDER, CAR.TOYOTA_AVALON) and cp.alternativeExperience == 32 and
       cp.steerAtStandstill and cp.minSteerSpeed <= 0 and cp.minEnableSpeed > 0 and 0 <= cs.vEgo < cp.minEnableSpeed and
       intent is not None and intent.settingsQualified and intent.allowedLatch and intent.lateralArmed and not intent.pauseLateral and
       intent.producerSessionId and intent.carStateLogMonoTime == source_ns and

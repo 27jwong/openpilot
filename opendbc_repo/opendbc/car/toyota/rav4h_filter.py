@@ -4,7 +4,9 @@ from opendbc.car import structs
 from opendbc.car.toyota.values import CAR, ToyotaFlags
 
 # Bit15 is a distinct exact-profile marker; reserve Dom bit14 for Lexus ALT_CRUISE.
-EPS5_SDSU_CARS = frozenset((CAR.TOYOTA_RAV4H, CAR.TOYOTA_HIGHLANDER, CAR.TOYOTA_SIENNA, CAR.LEXUS_NX, CAR.LEXUS_RX))
+EPS5_SDSU_CARS = frozenset((
+  CAR.TOYOTA_RAV4H, CAR.TOYOTA_HIGHLANDER, CAR.TOYOTA_SIENNA, CAR.LEXUS_NX, CAR.LEXUS_RX, CAR.TOYOTA_AVALON,
+))
 LONG_WORD = 0x9049
 STOCK_WORD = 0x9249
 
