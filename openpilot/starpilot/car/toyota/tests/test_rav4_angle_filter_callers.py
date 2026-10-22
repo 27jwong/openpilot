@@ -30,15 +30,18 @@ daemon_gc_scope = helpers.daemon_gc_scope
 
 @pytest.mark.parametrize('alpha,disable,radar_mode', [(False, False, 0), (True, False, 0), (True, False, 1), (True, False, 2), (True, True, 1)])
 def test_rav4_filter_actual_callers(alpha, disable, radar_mode, tmp_path):
+  run_case(CAR.TOYOTA_RAV4_TSS2_2023, alpha, disable, radar_mode, tmp_path)
+
+
+def run_case(candidate, alpha, disable, radar_mode, tmp_path, *, aol=True):
   helpers.SYNTHETIC_LAST.clear()
   helpers.NATIVE_LAST.clear()
-  candidate = CAR.TOYOTA_RAV4_TSS2_2023
   safety = libsafety_py.libsafety
   trace = []
   with OpenpilotPrefix(), ExitStack() as stack:
     params = Params()
     for key, value in [('OpenpilotEnabledToggle', True), ('AlphaLongitudinalEnabled', alpha),
-                       ('DisableOpenpilotLongitudinal', disable), ('AlwaysOnLateral', True), ('SafeMode', False)]:
+                       ('DisableOpenpilotLongitudinal', disable), ('AlwaysOnLateral', aol), ('SafeMode', False)]:
       params.put_bool(key, value, block=True)
     params.put('ToyotaRadarMode', radar_mode, block=True)
     fw = helpers.firmware(candidate)
@@ -53,15 +56,18 @@ def test_rav4_filter_actual_callers(alpha, disable, radar_mode, tmp_path):
       host = card_module.Car()
     long = alpha and not disable
     assert not host.CP.flags & ToyotaFlags.DISABLE_RADAR
-    assert host.CP.safetyConfigs[0].safetyParam == (0x1449 if long else 0x1649)
+    angle = candidate == CAR.TOYOTA_RAV4_TSS2_2023
+    enrolled = not angle and aol
+    assert host.CP.safetyConfigs[0].safetyParam == ((0x1449 if long else 0x1649) if angle else (0x1049 if long else 0x1249))
     assert host.CP.openpilotLongitudinalControl == long
     # This port keeps the existing angle-control AOL enrollment boundary.
-    assert host.CP.alternativeExperience == 0
+    assert host.CP.alternativeExperience == (0 if angle else 32)
     controls, sd = Controls(), sd_module.SelfdriveD(CP=host.CP)
     assert controls.CP.to_dict() == host.CP.to_dict()
     safety.init_tests()
     safety.set_alternative_experience(host.CP.alternativeExperience)
     assert safety.set_safety_hooks(host.CP.safetyConfigs[0].safetyModel.raw, host.CP.safetyConfigs[0].safetyParam) == 0
+    safety.set_aol_test_heartbeat(True)
     packer = CANPacker(DBC[candidate][Bus.pt])
     published, previous = {}, {}
 
@@ -91,7 +97,7 @@ def test_rav4_filter_actual_callers(alpha, disable, radar_mode, tmp_path):
         fault = 420 <= tick < 440
         main = not 500 <= tick < 520
         cruise = tick >= 150 and not any(a <= tick < b for a, b in ((260, 290), (310, 340), (360, 390), (420, 450), (500, 530)))
-        frames = helpers.physical(packer, cruise=cruise, main=main, brake=brake, gas=gas, gear=16 if reverse else 0, eps=9 if fault else 1)
+        frames = helpers.physical(packer, cruise=cruise, main=main, brake=brake, gas=gas, stopped=brake, gear=16 if reverse else 0, eps=9 if fault else 1)
         # LTA requires initialized measured angle and its own EPS status.
         frames = [f for f in frames if f[0] not in (0x260, 0x262)]
         frames += [packer.make_can_msg('STEER_TORQUE_SENSOR', 0, {'STEER_ANGLE': .0573}),
@@ -120,6 +126,9 @@ def test_rav4_filter_actual_callers(alpha, disable, radar_mode, tmp_path):
               patch.object(sd.sm, 'update', side_effect=lambda _, peers=peers: helpers.deliver(sd.sm, peers)),
               patch.object(sd.pm, 'send', side_effect=lambda n, m, events=events: events.update({n: m.as_reader()}))):
           sd.step()
+        wanted = sd.aol_axis_decision
+        safety.aol_set_host_request(int(wanted.desired_lateral) | int(wanted.desired_longitudinal) << 1)
+        native = helpers.native_events(host, safety, now, sd.aol_session_id)
         current = {**previous, **events}
         helpers.deliver(controls.sm, helpers.control_inputs(controls, published, state, current, native, now, .00005))
         command, lac_log = controls.state_control()
@@ -136,6 +145,9 @@ def test_rav4_filter_actual_callers(alpha, disable, radar_mode, tmp_path):
           if frame.address == 0x191:
             value = decode(host.CP, (frame.address, bytes(frame.dat), frame.src), 'STEERING_LTA')
             steering |= bool(value['STEER_REQUEST'] and abs(value['STEER_ANGLE_CMD']) > 0)
+          elif frame.address == 0x2E4 and not angle:
+            value = decode(host.CP, (frame.address, bytes(frame.dat), frame.src), 'STEERING_LKA')
+            steering |= bool(value['STEER_REQUEST'] and value['STEER_TORQUE_CMD'])
           elif frame.address == 0x343:
             value = decode(host.CP, (frame.address, bytes(frame.dat), frame.src), 'ACC_CONTROL')
             acceleration |= value['ACCEL_CMD'] > 0
@@ -145,8 +157,12 @@ def test_rav4_filter_actual_callers(alpha, disable, radar_mode, tmp_path):
           assert cs.canValid and not cs.canTimeout and host.ci_initialized and sd.initialized, trace[-1]
           assert cc.latActive and cc.longActive == long, trace[-1]
           active = True
-        if any(a <= tick < b for a, b in ((270, 279), (370, 379), (430, 439), (510, 519))):
+        if any(a <= tick < b for a, b in ((370, 379), (430, 439), (510, 519))):
           assert not cc.latActive and not cc.longActive, trace[-1]
+        if any(a <= tick < b for a, b in ((270, 279), (320, 329))):
+          assert cc.latActive == enrolled and not cc.longActive, trace[-1]
+        if enrolled and 442 <= tick < 449:
+          assert cc.latActive and not cc.longActive, trace[-1]
         previous = current
       assert active and steering
       assert acceleration == long
