@@ -608,3 +608,36 @@ automatic.fire(1000)
 await automatic.reply(2, snapshot({ operations: { ...operations, request: { ...request("update", "complete", installed.branch), outcome: "up_to_date" } } }))
 assert.equal(automatic.feed.installBaseline, null)
 automatic.feed.stop()
+
+// A remote tunnel can answer while the comma itself is restarting.
+for (const [code, body] of [[502, null], [504, { message: 'Device unreachable' }],
+                          [503, { message: 'Your comma cannot be reached' }],
+                          [503, { error: 'Device offline' }], [200, null]]) {
+  const restarts = []
+  const f = fixture(true, value => restarts.push(value))
+  f.feed.start()
+  await f.reply(0, snapshot({ operations: { ...operations, canFastUpdate: true } }))
+  f.feed.action('update', 'Dom')
+  await f.reply(1, body, code)
+  assert.ok(restarts.length > 0, `update disconnect ${code} must show restart recovery`)
+  assert.equal(restarts.at(-1).action, 'update')
+  assert.equal(f.feed.uncertain, true)
+  f.feed.stop()
+  const ordinary = fixture(true, () => { throw new Error('ordinary disconnect is not an update') })
+  ordinary.feed.start()
+  await ordinary.reply(0, body, code)
+  ordinary.feed.stop()
+}
+for (const [state, outcome] of [['failed', undefined], ['complete', 'up_to_date']]) {
+  let canceled = 0
+  const f = fixture(true, () => { throw new Error('finished update must not imply restart') }, () => {}, () => canceled++)
+  f.feed.start()
+  await f.reply(0, snapshot({ operations: { ...operations, canFastUpdate: true } }))
+  f.feed.action('update', 'Dom')
+  await f.reply(1, snapshot({ operations: { ...operations, request: request('update', 'pending', 'Dom') } }))
+  f.feed.load()
+  await f.reply(2, snapshot({ operations: { ...operations, request: { ...request('update', state, 'Dom'), outcome } } }))
+  assert.equal(f.feed.installBaseline, null)
+  assert.equal(canceled, 1)
+  f.feed.stop()
+}

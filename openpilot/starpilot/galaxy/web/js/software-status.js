@@ -188,12 +188,19 @@ export class SoftwareStatusFeed {
       }
       if (!response.ok) {
         const error = new Error(payload?.error || payload?.message || "Software request failed. Refresh to try again.")
+        error.connectionLost = [502, 504].includes(response.status) ||
+          response.status === 503 && !payload?.code &&
+          !["Software status is unavailable", "Updater status is unavailable"].includes(payload?.error)
         error.rejected = response.status >= 400 && response.status < 500
         error.startupUnavailable = body === null && response.status === 503 &&
           ["Software status is unavailable", "Updater status is unavailable"].includes(payload?.error)
         throw error
       }
-      if (!validSoftwareSnapshot(payload)) throw new Error("Software response is unavailable. Refresh to try again.")
+      if (!validSoftwareSnapshot(payload)) {
+        const error = new Error("Software response is unavailable. Refresh to try again.")
+        error.connectionLost = payload === null
+        throw error
+      }
       this.data = payload.operations === undefined ? { ...payload, operations: unavailableOperations() } : payload
       this.attempted = true
       this.blocked = false
@@ -230,6 +237,7 @@ export class SoftwareStatusFeed {
             ["complete", "failed"].includes(observed.state)) {
           if (observed.state === "failed" || observed.outcome === "up_to_date") {
             this.installBaseline = null
+            this.cancelPreparation()
             this.notice = observed.state === "failed" ? "" : "Installed branch is already up to date. No restart needed."
           } else this.notice = "Update installed. Waiting to reconnect and verify the installed build."
         }
@@ -241,6 +249,7 @@ export class SoftwareStatusFeed {
           this.uncertain = false
           this.uncertainAction = null
           this.actionPriorRequestId = null
+          this.cancelPreparation()
           this.notice = "Installed build verified after reconnect."
         }
         if (this.installBaseline && payload.operations.updaterAvailable === false && payload.operations.progress?.stage === "unavailable")
@@ -259,7 +268,7 @@ export class SoftwareStatusFeed {
         this.attempted = true
         this.blocked = true
         this.waitingForStatus = false
-        this.connectionLost = !reachedServer
+        this.connectionLost = !reachedServer || error?.connectionLost === true
         if (body !== null) {
           this.uncertain = !error?.rejected
           this.uncertainAction = this.uncertain ? body : null
