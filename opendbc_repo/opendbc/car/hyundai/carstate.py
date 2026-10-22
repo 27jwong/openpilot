@@ -70,7 +70,7 @@ class CarState(CarStateBase):
     self.long_buttons = (LongCruiseButtons(track_main=CP.carFingerprint != CAR.HYUNDAI_IONIQ_5_PE)
                          if long_buttons_qualified(CP) else None)
     self.pe_long = pe_long_qualified(CP)
-    self.pe_ready = PEReadySource() if self.pe_long else None
+    self.pe_ready = PEReadySource() if self.pe_long or ev9_long_qualified(CP) else None
     self.ev9_long = ev9_long_qualified(CP) or self.pe_long
     self.ev9_camera_lead = (CANFDCameraLead(CP, CanBus(CP).ECAN) if self.pe_long else
                             EV9CameraLead(CP) if self.ev9_long else None)

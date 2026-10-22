@@ -160,9 +160,10 @@ class CarController(CarControllerBase):
     self._ray_disengage_frame = None
 
   def update(self, CC, CS, now_nanos):
-    if self.pe_longitudinal is not None and (self.pe_startup is None or not self.pe_startup.can_emit(self)):
+    pending_startup_required = self.pe_longitudinal is not None or self.ev9_longitudinal is not None
+    if pending_startup_required and (self.pe_startup is None or not self.pe_startup.can_emit(self)):
       return structs.CarControl.Actuators.new_message(), []
-    if self.pe_longitudinal is not None and not self.pe_startup.handed_off:
+    if pending_startup_required and not self.pe_startup.handed_off:
       CC = structs.CarControl.new_message().as_reader()
     _projection = self.learning_projection_observer
     if _projection is not None:

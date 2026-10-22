@@ -40,10 +40,14 @@ class Lease:
 
 
 class PEPendingStartup:
+  @staticmethod
+  def profile_qualified(cp):
+    return qualified(cp)
+
   def __init__(self, cp, callbacks, *, stock_cp, clock=time.monotonic,
                boot_clock=clock_boot_ns,
                exchange=query_ioniq6_adas, event_factory=threading.Event, thread_factory=threading.Thread):
-    if not qualified(cp) or not stock_qualified(stock_cp):
+    if not self.profile_qualified(cp) or not stock_qualified(stock_cp) or stock_cp.carFingerprint != cp.carFingerprint:
       raise ValueError('PE startup requires exact separately prepared PE LONG and stock CP')
     self.owner = Lease(copy_cp(cp))
     self.stock_cp = copy_cp(stock_cp)

@@ -74,10 +74,10 @@ class CarInterface(CarInterfaceBase):
     if gv70_required(cp):
       return GV70Startup(cp, callbacks) if requested else None
     from opendbc.car.hyundai.ev9_longitudinal import candidate as ev9_candidate, qualified as ev9_qualified
-    from opendbc.car.hyundai.ev9_startup import EV9Startup
+    from opendbc.car.hyundai.ev9_pending_startup import EV9PendingStartup
     ev9_cp = ev9_candidate(cp, enabled=requested, is_release=False)
     if ev9_qualified(ev9_cp):
-      return EV9Startup(ev9_cp, callbacks, stock_cp=cp) if requested else None
+      return EV9PendingStartup(ev9_cp, callbacks, stock_cp=cp) if requested else None
     from opendbc.car.hyundai.torque_ev_startup import candidate as torque_ev_candidate, TorqueEVStartup
     torque_cp = torque_ev_candidate(cp, requested=requested, is_release=False)
     if torque_cp is not None:
