@@ -198,7 +198,9 @@ def test_native_captions_offsets_and_bounce_fit_their_touch_targets():
           assert ink['SET'][1] == ink['LIMIT'][1]
           assert ink['120'][3] == ink['+10'][3]
           assert ink['120'][2] < ink['+10'][0]
-          left, top, right, bottom = speed_limit_bounds(profile, current)
+          bounds = speed_limit_bounds(profile, current)
+          assert bounds is not None
+          left, top, right, bottom = bounds
           for label in ('LIMIT', '120', '+10'):
             x1, y1, x2, y2 = ink[label]
             assert left < x1 < x2 < right and top <= y1 < y2 < bottom
