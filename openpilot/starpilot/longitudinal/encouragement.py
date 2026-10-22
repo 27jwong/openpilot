@@ -4,8 +4,8 @@ import math
 
 SOURCES = ('carState', 'carControl', 'controlsState', 'selfdriveState', 'radarState', 'modelV2')
 MAX_SOURCE_AGE_NS = 250_000_000
-MAX_BOOST = .2
-BOOST_RATE = .025
+MAX_BOOST = .3
+BOOST_RATE = .05
 SETTLE_SECONDS = 2.
 
 

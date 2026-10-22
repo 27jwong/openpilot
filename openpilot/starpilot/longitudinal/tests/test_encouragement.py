@@ -11,7 +11,7 @@ from opendbc.car.toyota.interface import CarInterface as ToyotaInterface
 from opendbc.car.toyota.values import CAR as TOYOTA
 from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner
 from openpilot.starpilot.longitudinal.cruise_ceiling import CruiseCeiling, CurveCeiling
-from openpilot.starpilot.longitudinal.encouragement import Encouragement, MAX_BOOST, SOURCES
+from openpilot.starpilot.longitudinal.encouragement import BOOST_RATE, Encouragement, MAX_BOOST, SOURCES
 from openpilot.starpilot.longitudinal.tests.test_conditional_handoff import Frame, NOW
 from openpilot.starpilot.longitudinal.tests.test_cruise_ceiling import ACTIVE
 
@@ -50,7 +50,7 @@ def test_ramp_settling_bound_and_near_target_taper():
   values = [step(owner, tick) for tick in range(250)]
   assert values[:40] == [0.] * 40
   assert values[-1] == pytest.approx(MAX_BOOST)
-  assert all(0 <= b - a <= .025 * .05 + 1e-9 for a, b in zip(values, values[1:], strict=False))
+  assert all(0 <= b - a <= BOOST_RATE * .05 + 1e-9 for a, b in zip(values, values[1:], strict=False))
   assert step(owner, 250, target_speed=20.3) == pytest.approx(MAX_BOOST / 18.)
   assert step(owner, 251, target_speed=20.) == 0.
   assert owner.boost == 0.
@@ -209,3 +209,19 @@ def test_native_planner_preserves_manual_override_input_and_boost():
     planner.update(sm, now_ns=now)
     assert planner.encouragement.boost == 0.
   assert planner.accel_boost.total_boost == pytest.approx(.05)
+
+
+@pytest.mark.parametrize('factory,car', [(HondaInterface, HONDA.HONDA_CIVIC),
+                                       (HyundaiInterface, HYUNDAI.HYUNDAI_IONIQ_6),
+                                       (ToyotaInterface, TOYOTA.TOYOTA_RAV4_TSS2)])
+def test_native_planner_reaches_clear_road_boost_plateau(factory, car):
+  params = factory.get_non_essential_params(car)
+  params.openpilotLongitudinalControl = True
+  planner = LongitudinalPlanner(params, init_v=20.)
+  for tick in range(220):
+    sm, now = frame(tick)
+    planner.update(sm, now_ns=now)
+    assert planner.mpc.solution_status == 0
+    assert planner.output_a_target <= planner.a_cruise + 1e-6
+  assert planner.encouragement.boost == pytest.approx(MAX_BOOST)
+  assert planner.output_a_target == pytest.approx(MAX_BOOST, abs=.01)
