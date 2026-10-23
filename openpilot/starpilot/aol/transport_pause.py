@@ -314,12 +314,12 @@ class TransportPauseFeedback:
     """
     from openpilot.starpilot.nostalgia import physical_cancel
     from openpilot.starpilot.car.gm.aol import native_accepts_cp
-    from openpilot.starpilot.car.hyundai.aol import qualified_ioniq6
+    from openpilot.starpilot.car.hyundai.aol import early_native_long_withdrawal_supported
     gm = native_accepts_cp(cp, int(cp.safetyConfigs[0].safetyModel.raw), int(cp.safetyConfigs[0].safetyParam))
     from openpilot.starpilot.car.hyundai.aol import qualified_ccnc_long_aol as ev9_qualified
     from opendbc.car import structs
     ev9 = ev9_qualified(cp, marked_only=True)
-    early_long = gm or cp.openpilotLongitudinalControl and qualified_ioniq6(cp) or ev9
+    early_long = gm or early_native_long_withdrawal_supported(cp) or ev9
     from openpilot.starpilot.car.gm.aol import sdgm_alpha_pedal_withdrawal
     sdgm_pedal = sdgm_alpha_pedal_withdrawal(cp, cs)
     event_ns = int(sm.logMonoTime['onroadEvents'])

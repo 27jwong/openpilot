@@ -24,6 +24,7 @@ from tools.ci import lifecycle_shards, vehicle_pytest
 # Representative production callers plus their source/native refusal cases.
 # The emitted selected_test_ids record exact parametrized configurations.
 AOL_LIFECYCLE_TARGETS = (
+  'openpilot/starpilot/aol/tests/test_hkg_early_long_withdrawal.py',
   'openpilot/starpilot/car/toyota/tests/test_prius_retrofit_stock.py',
   'openpilot/starpilot/car/toyota/tests/test_prius_retrofit_stock_callers.py',
   'openpilot/starpilot/aol/tests/test_crossmake_native_admission.py',

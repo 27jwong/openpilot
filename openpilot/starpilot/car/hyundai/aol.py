@@ -318,6 +318,12 @@ def retain_on_native_denial(CP, native, state):
               native.requestedLateral and not native.lateralAllowed and temporary_restriction(CP, state))
 
 
+def early_native_long_withdrawal_supported(CP) -> bool:
+  """Exact LONG profiles whose native policy grants lateral independently."""
+  return bool(CP.openpilotLongitudinalControl and
+              (qualified_ioniq6(CP) or qualified_canfd_long(CP, marked_only=True)))
+
+
 def source_deadline_supported(CP) -> bool:
   """Admit only an already marked HKG axis owner to original-proof waits."""
   from openpilot.starpilot.aol.vehicle import policy_for as vehicle_policy_for

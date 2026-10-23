@@ -1748,6 +1748,7 @@ class SelfdriveD:
       return False
     from openpilot.starpilot.car.gm.aol import native_accepts_cp as gm_native_accepts_cp
     from openpilot.starpilot.car.toyota.aol import qualified as toyota_aol_qualified
+    from openpilot.starpilot.car.hyundai.aol import early_native_long_withdrawal_supported
     # Pandad reads health before its final native permission read. A GM driver
     # withdrawal between those reads legitimately leaves the earlier health
     # controlsAllowed true. For an admitted OP-long GM profile, the current
@@ -1760,7 +1761,7 @@ class SelfdriveD:
     # Retain only its already granted LAT; all proof, health and LONG withdrawal gates remain.
     # The exact vehicle policies and all proof/health checks above remain required.
     return bool(gm_native_accepts_cp(self.CP, native.safetyModel, native.safetyParam) or
-                qualified_ioniq6(self.CP) or
+                early_native_long_withdrawal_supported(self.CP) or
                 toyota_aol_qualified(self.CP, marked_only=True) or
                 not native.pandaInventory[owners[0]].controlsAllowed and
                 not self.sm['pandaStates'][owners[0]].controlsAllowed)
