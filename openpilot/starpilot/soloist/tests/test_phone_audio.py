@@ -260,7 +260,7 @@ def test_car_controls_flush_queued_phone_audio_only_for_pause_and_skip(music, mo
     assert sup.handle({'command': 'control', 'action': action, 'args': {}})['ok']
   assert sent == [(player.pid, signal.SIGUSR1), (player.pid, signal.SIGUSR2), (player.pid, signal.SIGUSR2),
                   (player.pid, signal.SIGUSR1)]
-  player.code = 1  # a dead worker is never signalled
+  player.code = 1  # a dead worker is never signaled
   sent.clear()
   assert sup.handle({'command': 'control', 'action': 'pause', 'args': {}})['ok']
   assert sent == []
@@ -291,7 +291,7 @@ def test_relay_flushes_and_mutes_phone_audio_after_a_flush_request(tmp_path, mon
     if data and data[0] == 3:
       phone_audio.request_flush('skip')  # the car pressed next while chunk 3 was in flight
     return data
-  Capture.stdout = type('S', (), {'read': staticmethod(read)})
+  monkeypatch.setattr(Capture.stdout, 'read', read)
   monkeypatch.setattr(phone_audio, 'PulseWriter', Writer)
   monkeypatch.setattr(phone_audio.subprocess, 'Popen', lambda *a, **k: Capture())
   monkeypatch.setattr(phone_audio.time, 'monotonic', lambda: clock[0])
