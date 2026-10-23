@@ -12,6 +12,7 @@ uint32_t microsecond_timer_get(void) {
 
 #include "opendbc/safety/can.h"
 #include "opendbc/safety/safety.h"
+#include "opendbc/safety/modes/tesla_preap_pedal_transport.h"
 #include "opendbc/safety/ignition.h"
 
 // Capture checked internally scheduled CAN frames for native safety tests.
