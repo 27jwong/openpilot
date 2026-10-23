@@ -969,7 +969,11 @@ class TransportPauseFeedback:
   def _availability_recovery_current(self, sm, cp, cs, axis, stamp, now_ns, *, latched, current, continuity, producer):
     """Join a verified pause's healthy recovery pair; this never grants output."""
     event_ns = int(sm.logMonoTime['onroadEvents'])
-    if (not latched or self.failed or self.paused or self.pending_event or not self.retention_verified or
+    # Both owners validate an accepted SOFT withdrawal. Closing its already
+    # pending healthy pair still requires every original deadline, source,
+    # event, producer/epoch, inventory and current native LAT grant below.
+    verified_pause = self.retention_verified or self.ordinary_warning_retained
+    if (not latched or self.failed or self.paused or self.pending_event or not verified_pause or
         not self.retention_started_ns or not 0 <= now_ns - self.retention_started_ns <= AXIS_MAX_AGE_NS or
         not current or not continuity or str(axis.sessionId) != self.session or
         not producer or producer != self.availability_producer or
