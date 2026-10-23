@@ -120,12 +120,13 @@ def test_native_unqualified_aol_profile_has_no_transmit_catalog(param):
     assert rig.feed(feature=1, request=3) == 0
   # Even an ordinary physical cruise engagement cannot give an unsupported
   # AE32 profile a steering, longitudinal, wheel-touch or cruise-cancel TX slot.
-  for name, bus, values in (
+  messages: tuple[tuple[str, int, dict[str, float]], ...] = (
     ('ACM_lkaHbaCmd', 0, {'ACM_lkaStrToqReq': 0, 'ACM_lkaActToi': False}),
     ('ACM_longitudinalRequest', 0, {'ACM_AccelerationRequest': 0.0}),
     ('SCCM_WheelTouch', 2, {'SCCM_WheelTouch_HandsOn': 0}),
     ('VDM_AdasSts', 2, {'VDM_AdasInterfaceStatus': 0}),
-  ):
+  )
+  for name, bus, values in messages:
     address, data, frame_bus = rig.car.packer.make_can_msg(name, bus, values)
     assert not rig.native.safety_tx_hook(libsafety_py.make_CANPacket(address, frame_bus, data))
 
