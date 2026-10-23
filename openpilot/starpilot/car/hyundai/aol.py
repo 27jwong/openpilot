@@ -458,3 +458,38 @@ def expected_stopped_lateral_denial(CP, CS, native, *, sm, axis_session_id, now_
                                    allow_restricted_lateral=True) == native)
   except (AttributeError, KeyError, IndexError, TypeError, ValueError, OverflowError):
     return False
+
+
+def pending_stock_angle_arm(CP, CS, sm, owner, *, now_ns, producer, acknowledged_arm_ns=0):
+  """Keep a fresh physical arm pending its original native acknowledgement."""
+  from opendbc.car.hyundai.canfd_angle_aol import ANGLE_ACK_TIMEOUT_NS
+  from openpilot.starpilot.aol.runtime import AXIS_MAX_AGE_NS, current_axis
+  from openpilot.starpilot.aol.transport_pause import _configured_transport_native
+
+  try:
+    arm = owner.physical_arm_ns
+    if (not qualified_angle_aol(CP, marked_only=True) or CP.openpilotLongitudinalControl or not CP.pcmCruise or
+        not owner.allowed_latch or not owner.settings.enabled or owner.pause_lateral or
+        arm != owner._last_latch_edge_ns or arm == acknowledged_arm_ns or not 0 < arm <= now_ns < arm + ANGLE_ACK_TIMEOUT_NS or
+        not CS.canValid or CS.canTimeout or CS.steerFaultTemporary or CS.steerFaultPermanent or CS.accFaulted or
+        CS.gearShifter != car.CarState.GearShifter.drive or temporary_restriction(CP, CS)):
+      return False
+    axis = current_axis(sm, now_ns=now_ns)
+    if (axis is None or str(axis.faultReason) != 'none' or axis.faultSessionId != axis.sessionId or
+        not axis.desiredLateral or axis.lateralActive or axis.desiredLongitudinal or axis.longitudinalActive or
+        axis.observedMonoTime != sm.logMonoTime['aolAxisState'] or
+        not 0 < axis.sourceCarStateMonoTime <= axis.observedMonoTime <= now_ns or
+        now_ns - axis.sourceCarStateMonoTime > AXIS_MAX_AGE_NS or
+        axis.validUntilMonoTime - axis.observedMonoTime > AXIS_MAX_AGE_NS or
+        axis.intentProducerSessionId != producer or not producer):
+      return False
+    event_ns = int(sm.logMonoTime['onroadEvents'])
+    if (not sm.seen['onroadEvents'] or not sm.valid['onroadEvents'] or not sm.alive['onroadEvents'] or
+        not 0 < event_ns <= now_ns or now_ns - event_ns > 1_500_000_000 or
+        any(event.immediateDisable or event.softDisable or event.userDisable for event in sm['onroadEvents'])):
+      return False
+    native = _configured_transport_native(sm, CP, axis.sessionId, now_ns, allow_restricted_lateral=True)
+    return bool(native is not None and native.pandaInventory and not native.lateralAllowed and
+                not native.requestedLongitudinal and not native.longitudinalAllowed)
+  except (AttributeError, KeyError, IndexError, TypeError, ValueError, OverflowError):
+    return False

@@ -66,7 +66,7 @@ from openpilot.starpilot.car.nissan.aol import (
   qualified as qualified_nissan_aol, native_observation as nissan_native_observation,
   temporary_restriction as nissan_temporary_restriction,
 )
-from openpilot.starpilot.car.hyundai.aol import aol_safety_config as hyundai_aol_safety_config
+from openpilot.starpilot.car.hyundai.aol import aol_safety_config as hyundai_aol_safety_config, pending_stock_angle_arm
 from openpilot.starpilot.car.hyundai.aol import retained_shared_long_cancel_intent as hkg_cancel_intent_retained
 from openpilot.starpilot.aol.runtime import AXIS_MAX_AGE_NS, current_axis, current_native
 from openpilot.starpilot.aol.vehicle import create_intent as create_aol_intent, native_latch_rejected, policy_for as aol_policy_for
@@ -607,7 +607,11 @@ class Car:
           cancel_feedback.last_cancel_source_ns = cancel_source_ns
       rivian_brake_retained = rivian_brake_intent_retained(self.CP, CS, self.sm, self.aol_transport_feedback,
         self.aol_card_intent, now_ns=now_ns, producer=self.slc_producer_session)
-      transport_reset = not (hkg_cancel_retained or rivian_brake_retained) and self.aol_transport_feedback.observe(self.sm, self.CP, CS, now_ns,
+      angle_arm_pending = pending_stock_angle_arm(self.CP, CS, self.sm, self.aol_card_intent,
+        now_ns=now_ns, producer=self.slc_producer_session,
+        acknowledged_arm_ns=getattr(self, '_angle_aol_acknowledged_arm_ns', 0))
+      transport_reset = not (hkg_cancel_retained or rivian_brake_retained or angle_arm_pending) and self.aol_transport_feedback.observe(
+        self.sm, self.CP, CS, now_ns,
         latched=self.aol_card_intent.allowed_latch, cancel_source_ns=cancel_source_ns,
         brake_source_ns=brake_source_ns,
         gm_withdrawal_source_ns=gm_withdrawal_source_ns,
@@ -632,7 +636,7 @@ class Car:
           not feedback.retention_started_ns and not feedback.retention_qualified and not feedback.retention_pending and
           not any(e.immediateDisable or e.softDisable or e.userDisable for e in self.sm['onroadEvents']))
         fault_active = transport_reset or self.aol_disarming_fault(CS, event_ns, now_ns,
-          transport_observed_healthy=reuse_transport)
+          transport_observed_healthy=reuse_transport or angle_arm_pending)
       angle_aol, ford_aol, honda_aol, mazda_aol, preap_aol, volkswagen_aol = self.aol_permission_owners()
       nissan_aol = qualified_nissan_aol(self.CP, marked_only=True)
       rivian_aol = qualified_rivian_aol(self.CP, marked_only=True)
@@ -680,7 +684,11 @@ class Car:
         self._angle_aol_pending_since_ns = pending_since
         if lost:
           fault_active = True
-      rejected = native_reset or native_latch_rejected(self.CP, native, state=CS if angle_panda_ready else None)
+      if (angle_aol and native is not None and native.requestedLateral and native.lateralAllowed and
+          0 < self.aol_card_intent.physical_arm_ns <= native.observedMonoTime):
+        self._angle_aol_acknowledged_arm_ns = self.aol_card_intent.physical_arm_ns
+      rejected = native_reset or (not angle_arm_pending and
+        native_latch_rejected(self.CP, native, state=CS if angle_panda_ready else None))
       rejection_ns = now_ns if native_reset else int(native.observedMonoTime) if rejected else 0
       observe_physical = getattr(self.aol_card_intent, 'observe_physical_samples', None)
       if observe_physical is not None:

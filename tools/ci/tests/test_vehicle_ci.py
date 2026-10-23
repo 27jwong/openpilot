@@ -17,6 +17,12 @@ from tools.ci.record_firmware import compile_commands
 
 class TestVehicleCollection(unittest.TestCase):
 
+  def test_stock_angle_recovery_callers_are_required_by_vehicle_ci(self):
+    for path in ('opendbc_repo/opendbc/safety/tests/test_hyundai_angle_tx_recovery.py',
+                 'openpilot/starpilot/aol/tests/test_stock_angle_physical_recovery.py'):
+      self.assertIn(path, targets_for('aol-lifecycle'))
+    self.assertIn('opendbc_repo/opendbc/safety/tests/test_hyundai_angle_tx_recovery.py', targets_for('safety-debug'))
+
   def test_hkg_mode_parity_callers_are_required(self):
     path = 'opendbc_repo/opendbc/safety/tests/test_hkg_mode_parity.py'
     self.assertIn(path, targets_for('aol-lifecycle'))

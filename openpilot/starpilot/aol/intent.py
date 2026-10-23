@@ -148,6 +148,7 @@ class AolCardIntent:
     self._lkas_held = False
     self._fault_inhibit = False
     self._last_latch_edge_ns = 0
+    self.physical_arm_ns = 0
     self._native_rejection_ns = 0
     self._engagement_source_ns = 0
     self._engagement_consumed = True
@@ -344,6 +345,8 @@ class AolCardIntent:
           self._record_latch_clear('physical_toggle')
         self.allowed_latch = not lateral_engaged
         self.pause_lateral = lateral_engaged
+        if not lateral_engaged:
+          self.physical_arm_ns = now_ns
 
     for event in CS.buttonEvents:
       button = int(event.type.raw)
