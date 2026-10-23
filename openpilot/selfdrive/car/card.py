@@ -658,7 +658,8 @@ class Car:
           native,
           latched=self.aol_card_intent.allowed_latch,
           panda_ready=angle_panda_ready,
-          restricted=(restrict(self.CP, CS) or
+          restricted=(getattr(self.aol_transport_feedback, 'ordinary_warning_qualified', False) or
+            restrict(self.CP, CS) or
             ((angle_aol or mazda_aol or preap_aol or rivian_aol) and self.aol_card_intent.pause_lateral) or
             (angle_aol and CS.brakePressed and (not CS.standstill) and (CS.vEgo < self.aol_settings.pause_brake_mps)) or
             (volkswagen_aol and (self.aol_card_intent.pause_lateral or
@@ -877,6 +878,8 @@ class Car:
       getattr(self, '_aol_can_observation', None), now_ns)
 
   def aol_disarming_fault(self, CS, event_ns: int, now_ns: int, *, transport_observed_healthy=False) -> bool:
+    if not aol_policy_for(self.CP).intent_supported:
+      return True
     from openpilot.starpilot.aol.vehicle import intent_disarming_fault
     if getattr(self, 'aol_transport_feedback', None) is None:
       self.aol_transport_feedback = TransportPauseFeedback(self.CP)

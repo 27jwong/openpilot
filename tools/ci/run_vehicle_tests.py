@@ -41,6 +41,7 @@ AOL_LIFECYCLE_TARGETS = (
   "openpilot/starpilot/aol/tests/test_gm_steering_receive_order.py",
   "openpilot/starpilot/aol/tests/test_gm_main_response.py",
   "openpilot/starpilot/aol/tests/test_gm_held_native.py",
+  "openpilot/starpilot/aol/tests/test_gm_ordinary_warning.py",
   "openpilot/starpilot/aol/tests/test_gm_startup_main.py",
   "openpilot/starpilot/aol/tests/test_gm_pedal_order.py",
   "openpilot/starpilot/aol/tests/test_gm_cancel_remap.py",
