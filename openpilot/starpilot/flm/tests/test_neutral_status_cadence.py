@@ -50,3 +50,37 @@ def test_neutral_status_meets_declared_frequency_without_renewing_physical_proof
     assert all(m.starpilotSteeringTracking.sourceReceipt.observedMonoTime == fixed.observed_ns and
                m.starpilotSteeringTracking.sourceReceipt.validUntilMonoTime == fixed.expires_ns for _, m in sends)
   assert actor.closed and fitter.closed
+
+
+def test_explicit_learning_off_still_publishes_withdrawal_on_the_next_source_packet(monkeypatch):
+  from dataclasses import replace
+  now, sends = [BASE - 50_000_000], []
+  class SM:
+    updated = {'deviceMotion': False}
+    logMonoTime = {'deviceMotion': 0}
+    steps = 0
+    def update(self, timeout=None):
+      self.steps += 1
+      if self.steps > 6:
+        raise LoopComplete
+      now[0] += 50_000_000
+      self.updated['deviceMotion'] = True
+      self.logMonoTime['deviceMotion'] = now[0]
+  actor, fitter = RecordingActor(), NoLegacyFitter()
+  actor.interrupt = lambda reason, **kwargs: None
+  fitter.cancel = lambda reason: None
+  def current(stamp):
+    return source(stamp) if stamp < BASE + 100_000_000 else replace(source(stamp), enabled=False, source_epoch='')
+  def send(topic, message):
+    if topic == 'starpilotSteeringTracking':
+      sends.append((now[0], message.as_reader()))
+  monkeypatch.setattr(steerlearnerd, 'drain', lambda *args: None)
+  with pytest.raises(LoopComplete):
+    steerlearnerd.run(SimpleNamespace(), SM(), object(), object(), SimpleNamespace(send=send),
+      None, None, current, None, None, None, None, fitter, None, clock=lambda: now[0], live_actor=actor)
+  withdrawn = [(stamp, msg) for stamp, msg in sends if stamp >= BASE + 100_000_000]
+  assert withdrawn and withdrawn[0][0] == BASE + 100_000_000
+  assert all(not msg.starpilotSteeringTracking.sourceReceipt.enabled and
+             msg.starpilotSteeringTracking.trial.version == 0 and msg.starpilotSteeringTracking.restore.version == 0
+             for _, msg in withdrawn)
+  assert actor.closed and fitter.closed
