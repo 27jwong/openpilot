@@ -21,6 +21,11 @@ def test_full_configuration_and_tune_preserved(candidate, alpha, hybrid):
   baseline = CarInterface.get_params(candidate, fp, fw, alpha, False, False)
   fp[0][0x2FF] = 8
   actual = CarInterface.get_params(candidate, fp, fw, alpha, False, False)
+  if candidate == CAR.TOYOTA_MATRIX_RETROFIT and hybrid:
+    # A logged hybrid donor is not the admitted manual non-hybrid Matrix.
+    assert not legacy_sdsu.configured(actual) and not qualified(actual)
+    assert not apply_toyota_auto_hold(actual, True)
+    return
   assert legacy_sdsu.configured(actual) and qualified(actual)
   assert actual.openpilotLongitudinalControl and not actual.alphaLongitudinalAvailable
   assert actual.autoResumeSng == (candidate == CAR.TOYOTA_PRIUS_V)
@@ -60,7 +65,12 @@ def test_hardware_boundaries(candidate, bad):
     fp[2][0x343] = 7
   else:
     fw = []
-  assert not legacy_sdsu.hardware_supported(candidate, fp, fw)
+  if candidate == CAR.TOYOTA_MATRIX_RETROFIT and bad == 'firmware':
+    # Manual enrollment deliberately permits an empty acquisition; this is not
+    # evidence of a catalog fingerprint or permission supplied by the filter.
+    assert not fw and legacy_sdsu.hardware_supported(candidate, fp, fw)
+  else:
+    assert not legacy_sdsu.hardware_supported(candidate, fp, fw)
 
 
 @pytest.mark.parametrize('candidate', sorted(legacy_sdsu.PROFILES))
@@ -69,9 +79,18 @@ def test_catalog_identity_is_required(candidate, field, value):
   fp = gen_empty_fingerprint()
   fp[0][0x2FF] = 8
   fw = firmware(candidate)
+  if candidate == CAR.TOYOTA_MATRIX_RETROFIT:
+    # Synthetic acquired observation, not a fabricated firmware-catalog entry.
+    fw = [structs.CarParams.CarFw(ecu=structs.CarParams.Ecu.fwdCamera, address=0x750,
+      fwVersion=b'manual metadata test observation', brand='toyota', bus=0)]
   camera = next(item for item in fw if item.ecu == structs.CarParams.Ecu.fwdCamera)
   setattr(camera, field, value)
-  assert not legacy_sdsu.hardware_supported(candidate, fp, fw)
+  if candidate == CAR.TOYOTA_MATRIX_RETROFIT:
+    # Its fixed-selection contract rejects invalid transport metadata and
+    # accepts nonempty observations without claiming catalog addresses/bytes.
+    assert legacy_sdsu.hardware_supported(candidate, fp, fw) == (field in ('fwVersion', 'address', 'subAddress'))
+  else:
+    assert not legacy_sdsu.hardware_supported(candidate, fp, fw)
 
 
 @pytest.mark.parametrize('candidate', [CAR.TOYOTA_PRIUS_V, CAR.LEXUS_CTH])

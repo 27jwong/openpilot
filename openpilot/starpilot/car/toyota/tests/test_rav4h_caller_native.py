@@ -77,6 +77,9 @@ def deliver(sm, messages):
 
 
 def firmware(candidate=CAR.TOYOTA_RAV4H):
+  # Manual Matrix has no acquired firmware catalog; keep its fixed selection explicit.
+  if candidate == CAR.TOYOTA_MATRIX_RETROFIT:
+    return []
   return [
     structs.CarParams.CarFw(ecu=e, address=a, subAddress=s or 0, fwVersion=v[0], brand='toyota', bus=0)
     for (e, a, s), v in FW_VERSIONS[candidate].items()
