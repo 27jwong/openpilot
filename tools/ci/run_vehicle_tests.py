@@ -37,6 +37,7 @@ AOL_LIFECYCLE_TARGETS = (
   'opendbc_repo/opendbc/safety/tests/test_toyota_prius_retrofit_advert.py',
   'openpilot/starpilot/aol/tests/test_crossmake_native_admission.py',
   'openpilot/starpilot/aol/tests/test_hkg_source_policy_cache.py',
+  'openpilot/starpilot/flm/tests/test_controls_capture_startup.py',
   'openpilot/starpilot/aol/tests/test_hkg_deadline_admission_cache.py',
   'openpilot/starpilot/aol/tests/test_hkg_native_admission.py',
   'openpilot/starpilot/aol/tests/test_native_observation_admission.py',

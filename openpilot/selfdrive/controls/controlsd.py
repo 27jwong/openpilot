@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import math
+import importlib
 import os
 import time
 from numbers import Number
@@ -128,6 +129,14 @@ class Controls:
 
     from openpilot.starpilot.flm.live_trial_store import load_confirmed_history
     self.global_learning = GlobalRuntime(self.CP, self.CI, self.LaC, confirmed_live_history=load_confirmed_history(self.params))
+    # Load optional capture code before publishing the first control command.
+    # Engagement must not compile/import replay and feedback modules in the loop.
+    if self.global_learning.descriptor is not None:
+      try:
+        for module in ('controller_replay', 'physical_input_observation', 'feedback_wire'):
+          importlib.import_module('openpilot.starpilot.flm.' + module)
+      except Exception:
+        self._discard_global_learning()
 
     from openpilot.starpilot.lateral.controller_selection import model_turn_assist_supported
     assist_enabled = self.vehicle_startup_preferences.turn_assist and model_turn_assist_supported(self.CP)
@@ -531,10 +540,22 @@ class Controls:
 
   def run(self):
     rk = Ratekeeper(100, print_delay_threshold=None)
+    next_overrun_log_ns = 0
     while True:
+      started, cpu_started = time.monotonic_ns(), time.thread_time_ns()
       self.update()
+      updated = time.monotonic_ns()
       CC, lac_log = self.state_control()
+      controlled = time.monotonic_ns()
       self.publish(CC, lac_log)
+      published = time.monotonic_ns()
+      # Report real blocking/scheduling costs after output; never alter authority.
+      if published - started > 50_000_000 and published >= next_overrun_log_ns:
+        next_overrun_log_ns = published + 5_000_000_000
+        cloudlog.event('controls_cycle_overrun', update_ms=(updated - started) / 1e6,
+                       control_ms=(controlled - updated) / 1e6, publish_ms=(published - controlled) / 1e6,
+                       wall_ms=(published - started) / 1e6, cpu_ms=(time.thread_time_ns() - cpu_started) / 1e6,
+                       error=True)
       rk.monitor_time()
 
 
