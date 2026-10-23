@@ -87,6 +87,7 @@ class StopStartRequest:
     self.configured_last = None
     self.start = None
     self.pulse_start = None
+    self.pulse_start_ns = 0
     self.last_send = None
     self.last_counter = None
     self.done = False
@@ -104,7 +105,8 @@ class StopStartRequest:
     else:
       self.configured_last = None
 
-  def update(self, command, state, now):
+  def update(self, command, state, now, *, now_nanos=None):
+    now_nanos = round(now * 1e9) if now_nanos is None else now_nanos
     if self.start is None:
       self.start = now
     if self.done:
@@ -139,7 +141,8 @@ class StopStartRequest:
       return None
     if self.pulse_start is None:
       self.pulse_start = now
-    if now - self.pulse_start >= .3:
+      self.pulse_start_ns = now_nanos
+    if now_nanos - self.pulse_start_ns >= 300_000_000:
       self.done = True
       return None
     if self.last_send is not None and now - self.last_send < .05:

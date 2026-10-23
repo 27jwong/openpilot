@@ -102,7 +102,7 @@ class CarController(CarControllerBase):
 
     can_sends = []
     if self.stop_start is not None:
-      request = self.stop_start.update(CC, CS, now_nanos / 1e9)
+      request = self.stop_start.update(CC, CS, now_nanos / 1e9, now_nanos=now_nanos)
       if request is not None:
         can_sends.append(request)
 
