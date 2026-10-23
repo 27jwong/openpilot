@@ -746,7 +746,6 @@ def original_source_pose_observer(sm, cp, collector, now_ns, *, distinguish_pend
     calibrator = collector._original_source_calibrator[1]
     if not calibrator.calib_valid:
       return reject()
-    pose = calibrator.build_calibrated_pose(Pose.from_device_motion(dm))
     ready = getattr(collector, 'ready', ())
     history = {}
     if ready and getattr(getattr(collector, 'adapter', None), 'command_domain', None) != 'ford_path_angle':
@@ -799,13 +798,6 @@ def original_source_pose_observer(sm, cp, collector, now_ns, *, distinguish_pend
       )
       current_identity = (command.identity, command.generation, command.source_epoch, command.baseline_revision,
         command.controller_revision, command.native_identity)
-      for command, _ in ready:
-        if (command.identity, command.generation, command.source_epoch, command.baseline_revision,
-            command.controller_revision, command.native_identity) != current_identity:
-          continue  # State brackets cannot bridge a command/native epoch.
-        values = dict(command.replay_inputs)
-        if 'vEgo' in values and 'steeringAngleDeg' in values:
-          history[command.state_ns] = (float(values['vEgo']), float(values['steeringAngleDeg']))
     else:
       return reject()
     if not native:
@@ -852,6 +844,8 @@ def original_source_pose_observer(sm, cp, collector, now_ns, *, distinguish_pend
     if pose_ns < seen:
       return reject()
     if pose_ns > seen:
+      # Convert a new original pose once; bracket retries retain that exact row.
+      pose = calibrator.build_calibrated_pose(Pose.from_device_motion(dm))
       collector._original_source_seen_pose = pose_ns
       evidence = OriginalSourcePose(
         mono_ns=pose_ns, received_ns=int(sm.recv_time['deviceMotion'] * 1e9), observed_ns=now_ns,
@@ -878,6 +872,16 @@ def original_source_pose_observer(sm, cp, collector, now_ns, *, distinguish_pend
       )
       queue = (*queue, evidence)[-4:]
     collector._original_source_pose_queue = queue
+    if queue:
+      # No original pose is waiting after a completed publication. Rebuild
+      # state brackets only for retained/new rows, after all current guards.
+      for command, _ in ready:
+        if (command.identity, command.generation, command.source_epoch, command.baseline_revision,
+            command.controller_revision, command.native_identity) != current_identity:
+          continue  # State brackets cannot bridge a command/native epoch.
+        values = dict(command.replay_inputs)
+        if 'vEgo' in values and 'steeringAngleDeg' in values:
+          history[command.state_ns] = (float(values['vEgo']), float(values['steeringAngleDeg']))
     for index, evidence in enumerate(queue):
       before = [stamp for stamp in history if stamp <= (evidence.source_lower_ns or evidence.mono_ns)]
       after = [stamp for stamp in history if stamp >= (evidence.source_upper_ns or evidence.mono_ns)]
