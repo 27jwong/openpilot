@@ -54,6 +54,42 @@ def steering_raw_projection_owner(cp) -> bool:
   return bool(qualified_gm(cp) and monitored_profile(cp))
 
 
+
+def steering_source_gap_intent_only(owner, cs, companion, now_ns: int) -> bool:
+  """Recognize lost Card publication; never supply a current steering receipt."""
+  from openpilot.starpilot.aol.runtime import INTENT_MAX_AGE_NS
+  service = 'starpilotCarState'
+  if (not is_volt_ascm_longitudinal(owner.CP) or not steering_raw_projection_owner(owner.CP) or
+      getattr(owner, 'steering_authority_unavailable', False) or
+      getattr(owner, 'car_state_samples', ())):
+    return False
+  anchor = getattr(owner, 'aol_ordinary_source_anchor', None)
+  accepted = anchor[2] if anchor is not None else None
+  held = bool(accepted is not None and
+    getattr(owner, 'aol_publication_retained_intent', None) is accepted and
+    getattr(owner, 'aol_published_fault_reason', '') == 'availabilityPause')
+  if not (getattr(owner, 'aol_expired_healthy_source', False) or held):
+    return False
+  source = getattr(owner, 'car_state_retained_source_ns', 0)
+  if not source and held:
+    source = int(accepted.carStateLogMonoTime)
+  latest = companion.latest
+  sm = owner.sm
+  if (latest is None or not latest[1] or latest[0] != source or latest[2] != source or latest[3] or
+      not 0 < source < now_ns or now_ns - source <= INTENT_MAX_AGE_NS or
+      not sm.seen.get(service, False) or not sm.valid.get(service, False) or not sm.alive.get(service, False)):
+    return False
+  cached = sm[service]
+  stamp = int(sm.logMonoTime[service])
+  if (not 0 < stamp <= source or cached.sourceCarStateMonoTime != stamp or
+      cached.lateralAuthorityUnavailable):
+    return False
+  # The existing classifier owns every original 200ms intent/native, identity,
+  # physical, fault and host-health veto. The 30ms source/output cutoff remains
+  # independent. No old receipt becomes current and no fault latch is cleared.
+  return owner.ordinary_source_availability(cs, now_ns)
+
+
 def sdgm_alpha_pedal_withdrawal(cp, cs) -> bool:
   """Physical LONG withdrawal for the 2019 SASCM Alpha configuration."""
   from opendbc.car.gm.values import is_volt_sdgm_accepted_envelope
