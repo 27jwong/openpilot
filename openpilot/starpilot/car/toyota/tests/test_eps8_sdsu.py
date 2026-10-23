@@ -35,7 +35,7 @@ def test_eps8_hardware_boundaries(candidate, bad):
   if bad == 'length':
     fp[0][0x2FF] = 4
   if bad == 'mirror':
-    fp[2][0x2FF] = 8
+    fp[2][0x2FF] = 7
   if bad == 'pedal':
     fp[0][0x201] = 6
   if bad == 'mixed':

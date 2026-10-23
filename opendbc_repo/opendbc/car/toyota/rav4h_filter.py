@@ -13,7 +13,7 @@ STOCK_WORD = 0x9249
 
 def hardware_supported(candidate, fingerprint, car_fw):
   if (candidate not in EPS5_SDSU_CARS or fingerprint.get(0, {}).get(0x2FF) != 8 or
-      any(0x2FF in fingerprint.get(bus, {}) for bus in (1, 2)) or
+      any(0x2FF in messages and (bus != 2 or messages[0x2FF] != 8) for bus, messages in fingerprint.items() if bus != 0) or
       any(address in messages for messages in fingerprint.values() for address in (0x201, 0x2AA)) or
       any(address in fingerprint.get(2, {}) for address in (0x343, 0x4CB))):
     return False

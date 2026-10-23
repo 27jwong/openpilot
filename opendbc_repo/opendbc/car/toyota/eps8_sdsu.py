@@ -39,7 +39,7 @@ def hardware_supported(candidate, fingerprint, car_fw):
   if (
     candidate not in CARS
     or fingerprint.get(0, {}).get(0x2FF) != 8
-    or any(0x2FF in messages for bus, messages in fingerprint.items() if bus != 0)
+    or any(0x2FF in messages and (bus != 2 or messages[0x2FF] != 8) for bus, messages in fingerprint.items() if bus != 0)
     or any(address in messages for messages in fingerprint.values() for address in (0x201, 0x2AA))
   ):
     return False
