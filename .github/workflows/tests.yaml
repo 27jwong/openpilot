@@ -196,17 +196,6 @@ jobs:
       run: |
         uv pip install --python .venv/bin/python --only-binary av av==19.0.1
         .venv/bin/python -c "import av; assert 'libx264' in av.codecs_available"
-    - name: Gate shared AOL vehicle lifecycles
-      if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-      timeout-minutes: 10
-      run: python3 tools/ci/run_vehicle_tests.py --suite aol-lifecycle --output ci-results/aol-lifecycle
-    - name: Save AOL lifecycle cases and source/native evidence
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: aol-lifecycle
-        path: ci-results/aol-lifecycle/
-        if-no-files-found: warn
     - name: Run unit tests
       if: ${{ !cancelled() && steps.build.outcome == 'success' }}
       timeout-minutes: ${{ contains(runner.name, 'nsc') && 2 || 20 }}
@@ -250,6 +239,57 @@ jobs:
         path: |
           unit-test-results.json
           gm-test-results.json
+        if-no-files-found: error
+
+  aol_lifecycles:
+    name: AOL lifecycles (${{ matrix.shard }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    env:
+      FUZZ_SEED: '0'
+    steps:
+    - uses: actions/checkout@v7
+    - run: ./tools/op.sh setup
+    - name: Build native host dependencies
+      run: scons
+    - name: Gate every assigned lifecycle module serially
+      timeout-minutes: 10
+      run: python3 tools/ci/run_vehicle_tests.py --suite aol-lifecycle --shard-index "${{ matrix.shard }}" --shard-count 4 --output "ci-results/aol-lifecycle-${{ matrix.shard }}"
+    - name: Save every lifecycle outcome and native build
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: aol-lifecycle-${{ matrix.shard }}
+        path: ci-results/aol-lifecycle-${{ matrix.shard }}/
+        if-no-files-found: error
+
+  aol_lifecycle_complete:
+    name: complete AOL lifecycle catalog
+    needs: aol_lifecycles
+    if: always()
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@v7
+    - uses: actions/download-artifact@v4
+      with:
+        pattern: aol-lifecycle-*
+        path: ci-results/aol-lifecycles
+    - name: Require every full-catalog case exactly once and passed
+      run: python3 tools/ci/lifecycle_shards.py ci-results/aol-lifecycles --count 4 --output ci-results/aol-lifecycle-complete.json
+    - name: Save complete catalog verdict
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: aol-lifecycle-complete
+        path: ci-results/aol-lifecycle-complete.json
         if-no-files-found: error
 
   map_provider:

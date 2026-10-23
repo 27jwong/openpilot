@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from tools import test_runner
-from tools.ci import vehicle_pytest
+from tools.ci import lifecycle_shards, vehicle_pytest
 
 # Representative production callers plus their source/native refusal cases.
 # The emitted selected_test_ids record exact parametrized configurations.
@@ -559,7 +559,8 @@ def source_provenance():
           "inputs": source_input_snapshot(),
           "manifest_sha256": sha256(manifest), "dependencies": json.loads(manifest.read_text())["dependencies"],
           "runner_sha256": sha256(ROOT / "tools/test_runner.py"), "suite_runner_sha256": sha256(__file__),
-          "pytest_runner_sha256": sha256(ROOT / "tools/ci/vehicle_pytest.py")}
+          "pytest_runner_sha256": sha256(ROOT / "tools/ci/vehicle_pytest.py"),
+          "shard_runner_sha256": sha256(ROOT / "tools/ci/lifecycle_shards.py")}
 
 
 def native_provenance():
@@ -615,7 +616,9 @@ def build_aol_protocol(output):
   return {"command": command, "path": str(executable), "sha256": sha256(executable)}
 
 
-def run(suite, output, collect_only=False):
+def run(suite, output, collect_only=False, shard_index=None, shard_count=4):
+  if shard_index is not None and (suite != "aol-lifecycle" or not 0 <= shard_index < shard_count):
+    raise ValueError("Lifecycle shard index is outside its catalog")
   output = Path(output).resolve()
   output.mkdir(parents=True, exist_ok=True)
   started = time.monotonic()
@@ -654,6 +657,16 @@ def run(suite, output, collect_only=False):
     pytest_nodeids, pytest_errors = vehicle_pytest.collect(pytest_targets)
     errors.extend(pytest_errors)
     ids = [test.id() for test in tests] + [vehicle_pytest.test_id(nodeid) for nodeid in pytest_nodeids]
+    if shard_index is not None and not errors:
+      full_targets = list(plan["targets"])
+      shards = lifecycle_shards.partition(full_targets, ids, shard_count)
+      plan.update(full_catalog_targets=full_targets, full_catalog_test_ids=list(ids),
+                  shard={"index": shard_index, "count": shard_count})
+      plan["targets"] = shards[shard_index]
+      prefixes = tuple(target.removesuffix(".py").replace("/", ".") + "." for target in plan["targets"])
+      tests = [test for test in tests if test.id().startswith(prefixes)]
+      pytest_nodeids = [nodeid for nodeid in pytest_nodeids if vehicle_pytest.test_id(nodeid).startswith(prefixes)]
+      ids = [test.id() for test in tests] + [vehicle_pytest.test_id(nodeid) for nodeid in pytest_nodeids]
     if len(set(ids)) != len(ids):
       errors.append("Vehicle runners selected duplicate test IDs")
     if suite == "interfaces":
@@ -718,11 +731,13 @@ def main():
   parser.add_argument("--suite", choices=("interfaces", "safety-debug", "safety-release", "aol-lifecycle"), required=True)
   parser.add_argument("--output", type=Path, required=True)
   parser.add_argument("--collect-only", action="store_true")
+  parser.add_argument("--shard-index", type=int)
+  parser.add_argument("--shard-count", type=int, default=4)
   args = parser.parse_args()
   os.chdir(ROOT)
   # Keep the same generated examples across collection, execution, and reruns.
   os.environ.setdefault("FUZZ_SEED", "0")
-  return run(args.suite, args.output, args.collect_only)
+  return run(args.suite, args.output, args.collect_only, args.shard_index, args.shard_count)
 
 
 if __name__ == "__main__":
