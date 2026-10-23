@@ -42,9 +42,10 @@ def freeze_plan(preferences: dict, entries: dict, default: dict, *, recovery_sma
     raise ValueError("wrong runtime fallback for frozen selection")
   selected_big = big if not recovery_small_only and entries.get(big, {}).get("_runtime_family") == family else ""
   parts = [json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False) for value in (preferences, entries, default)]
-  return RuntimePlan(family, NATIVE_REVISION if native else LEGACY_REVISION, NATIVE_ABI if native else LEGACY_ABI,
-                     "rdf43" if native else small, selected_big, *parts,
-                     hashlib.sha256("\n".join(parts).encode()).hexdigest())
+  return RuntimePlan(family=family, compiler_revision=NATIVE_REVISION if native else LEGACY_REVISION,
+                     artifact_abi=NATIVE_ABI if native else LEGACY_ABI, small_id="rdf43" if native else small,
+                     big_id=selected_big, preferences_json=parts[0], entries_json=parts[1], default_json=parts[2],
+                     snapshot_sha256=hashlib.sha256("\n".join(parts).encode()).hexdigest())
 
 
 def require_artifact_contract(artifact: dict, plan: RuntimePlan | None) -> None:

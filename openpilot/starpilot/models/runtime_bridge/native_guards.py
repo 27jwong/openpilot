@@ -10,6 +10,10 @@ import hashlib
 import itertools
 from pathlib import Path
 import struct
+from typing import TYPE_CHECKING, Protocol, cast
+
+if TYPE_CHECKING:
+  from _ctypes import _CData
 
 from tinygrad import Device
 from tinygrad.device import Buffer, Compiled, HCQ_RUNTIME_DEV
@@ -22,8 +26,21 @@ from tinygrad.runtime.support.c import DLL
 from tinygrad.uop.ops import Ops, PatternMatcher, ProgramInfo, UOp, UPat, graph_rewrite, pm_renumber_slots
 from tinygrad.schedule.prepare import resolve_function, pm_inline_calls
 
+if TYPE_CHECKING:
+  class _LowerAndCompile(Protocol):
+    def __call__(self, linear: UOp, verbose: bool = True) -> UOp: ...
+
+  class _HCQCompiler(Protocol):
+    lower_and_compile: _LowerAndCompile
+
 
 FORMAT = "starpilot_native02e_guard_v1"
+# This immutable proof field names the qualified executable implementation ABI,
+# originally identified by the exact v9 source SHA. It is not this file's SHA.
+# This successor changes typing/registration syntax only; the release policy
+# separately pins its exact current source bytes. A behavior change requires a
+# new proof ABI and qualification, never an alias for this baseline.
+QUALIFIED_PROOF_IMPLEMENTATION_SHA256 = "895349c6d5745eb1c3d4cd5bd8e767b200e0ca31ecb92a5287735dc28ab8a0d5"
 REVISION = "02e698160eed1751738212144a7ea2cfb160b3f1"
 FENCE_SHA256 = "24ed559861c8636c1026cad9a244854bb2236b5ee8b91bf21c5efbf688fa4a69"
 USB_SHA256 = "66a3dfe48ac17899862ab80160cf6dac2c9b9707234527ba0d808f3b68404114"
@@ -310,7 +327,7 @@ class Protection:
     if role == "driving":
       self.usb_library = _load_library(usb_library, USB_SHA256, "starpilot_native02e_usb",
                                       (*WRAPPERS.values(), "sp_loop_touch", "sp_loop_check"))
-      fields = {name: (typ, offset) for name, typ, offset, *_ in libusb.struct_libusb_transfer._real_fields_}
+      fields = {name: (typ, offset) for name, typ, offset, *_ in cast("list[tuple[str, type[_CData], int]]", libusb.struct_libusb_transfer._real_fields_)}
       if any(fields[name][1] != offset or ctypes.sizeof(fields[name][0]) != 4
              for name, offset in (("status", 16), ("length", 20), ("actual_length", 24))):
         raise ValueError("Unqualified native libusb transfer layout")
@@ -324,9 +341,10 @@ class Protection:
       self.ffi = UOp.alloc((len(addresses),), dtypes.uint64, 0, device=HCQ_RUNTIME_DEV.device).rtag(FFI_TAG)
       previous = Compiled.pm_bufferize
       Compiled.pm_bufferize = previous + PatternMatcher([(UPat(Ops.ALLOC, tag=FFI_TAG, name="b"), _resolve_native_ffi)])
+    self.source_sha256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     self.identity = {
       "format": FORMAT, "compiler_revision": REVISION,
-      "implementation_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+      "implementation_sha256": QUALIFIED_PROOF_IMPLEMENTATION_SHA256,
       "fence_sha256": FENCE_SHA256, "usb_sha256": USB_SHA256,
       "host_target": str(self.renderer.target),
     }
@@ -559,7 +577,7 @@ class Protection:
     original = hcq2.lower_and_compile
     if original is not realize.lower_and_compile:
       raise ValueError("Native host compiler was already replaced")
-    def guarded(linear, *args, **kwargs):
+    def guarded(linear: UOp, *args, **kwargs) -> UOp:
       replacements = {}
       for call in _nodes(linear):
         if call.op is not Ops.CALL or not isinstance(call.arg.aux, hcq2.HCQInfo):
@@ -578,7 +596,7 @@ class Protection:
       # execute the intermediate graph or ask a GPU compiler to rebuild kernels.
       return original(prepared, *args, **kwargs)
 
-    hcq2.lower_and_compile = guarded
+    cast("_HCQCompiler", hcq2).lower_and_compile = guarded
 
 
 def install(role, fence_library, usb_library):

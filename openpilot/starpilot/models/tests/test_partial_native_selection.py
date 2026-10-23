@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import types
 import unittest
+from typing import Any
 from unittest.mock import Mock, patch
 
 SOURCE = Path(os.environ.get("STARPILOT_PARTIAL_NATIVE_SOURCE_ROOT", Path(__file__).resolve().parents[4]))
@@ -20,7 +21,8 @@ def extract(path, names, namespace):
   if {node.name for node in selected} != set(names):
     raise AssertionError("Missing actual source definitions")
   # Compile the original nodes unchanged, including decorators and annotations.
-  exec(compile(ast.Module(body=selected, type_ignores=[]), str(path), "exec"), namespace)
+  body: list[ast.stmt] = [*selected]
+  exec(compile(ast.Module(body=body, type_ignores=[]), str(path), "exec"), namespace)
 
 
 def subjects():
@@ -268,7 +270,7 @@ class TestPartialNativeSelection(unittest.TestCase):
       self.n["native_stock"]()
 
   def test_monitoring_prepare_never_freezes_driving_preferences(self):
-    ns = {"__name__": __name__, "_selection": None, "_plan": None}
+    ns: dict[str, Any] = {"__name__": __name__, "_selection": None, "_plan": None}
     extract(MODELS / "runtime_bridge/runtime.py", ["prepare"], ns)
     hardware = types.ModuleType("openpilot.common.hardware")
     hardware.AGNOS = True

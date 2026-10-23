@@ -25,7 +25,7 @@ class PersistentLoad(Protocol):
   persistent_load: Callable[[tuple[int, int]], "Buffer"]
 
 # Deliberately unpublishable until native source/guard and model evidence is sealed.
-POLICY_SHA256 = '6608a8280152a1b37c39370942a910c8f34180f4c0626f7ee73340b32a6b6c7e'
+POLICY_SHA256 = '37d7b056bc6f1bd1748cab5f20bbdc75986b5af6e4ea6b878d1e1e58545ddb88'
 ROOT = Path(__file__).resolve().parents[4]
 BRIDGE = Path(__file__).parent
 _LIBRARIES = {
@@ -52,6 +52,62 @@ def _digest(path):
     return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
+def _unique_object(pairs):
+  result = {}
+  for key, value in pairs:
+    if key in result:
+      raise ValueError('Duplicate native policy key')
+    result[key] = value
+  return result
+
+
+def _vendor_mapping(value):
+  if not isinstance(value, dict) or not value:
+    raise ValueError('Empty native vendor mapping')
+  for name, expected in value.items():
+    if not isinstance(name, str) or not name or not isinstance(expected, str):
+      raise ValueError('Invalid native vendor entry type')
+    relative = PurePosixPath(name)
+    if relative.is_absolute() or '..' in relative.parts or '\\' in name or str(relative) != name:
+      raise ValueError('Invalid native vendor path')
+    if len(expected) != 64 or any(c not in '0123456789abcdef' for c in expected):
+      raise ValueError('Invalid native vendor digest')
+  return value
+
+
+def _vendor_files(policy):
+  if 'vendor_files' in policy:
+    if 'vendor_parts' in policy or 'vendor_file_count' in policy:
+      raise ValueError('Mixed native vendor policy formats')
+    return _vendor_mapping(policy['vendor_files'])
+  parts, count = policy.get('vendor_parts'), policy.get('vendor_file_count')
+  if not isinstance(parts, list) or not 1 <= len(parts) <= 99 or type(count) is not int or count <= 0:
+    raise ValueError('Invalid native vendor shard inventory')
+  merged = {}
+  for index, part in enumerate(parts, 1):
+    if not isinstance(part, dict) or set(part) != {'name', 'sha256', 'count'}:
+      raise ValueError('Invalid native vendor shard descriptor')
+    if part['name'] != f'native-vendor-{index:02d}.json' or type(part['count']) is not int or part['count'] <= 0:
+      raise ValueError('Invalid native vendor shard name/count')
+    expected = part['sha256']
+    if not isinstance(expected, str) or len(expected) != 64 or any(c not in '0123456789abcdef' for c in expected):
+      raise ValueError('Invalid native vendor shard digest')
+    path = BRIDGE / part['name']
+    _plain_file(path)
+    if path.stat().st_size > 96 * 1024:
+      raise ValueError('Oversized native vendor shard')
+    raw = path.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != expected:
+      raise ValueError('Native vendor shard changed')
+    entries = _vendor_mapping(json.loads(raw, object_pairs_hook=_unique_object))
+    if len(entries) != part['count'] or merged.keys() & entries.keys():
+      raise ValueError('Duplicate or miscounted native vendor shard entries')
+    merged.update(entries)
+  if len(merged) != count:
+    raise ValueError('Native vendor inventory count changed')
+  return merged
+
+
 def _verify_policy():
   path = BRIDGE / 'native-policy.json'
   _plain_file(path)
@@ -62,8 +118,7 @@ def _verify_policy():
   required = {'native_guards.py', 'bounded_wait.c', 'usb_guards.c', *_LIBRARIES}
   if (policy.get('compiler_revision') != NATIVE_REVISION or policy.get('native_abi') != 'linux-aarch64-64bit' or
       policy.get('host_runtime_dev') not in ('CPU:LLVM', 'CPU:CLANG') or
-      not isinstance(policy.get('files'), dict) or set(policy['files']) != required or
-      not isinstance(policy.get('vendor_files'), dict) or not policy['vendor_files']):
+      not isinstance(policy.get('files'), dict) or set(policy['files']) != required):
     raise ValueError('Native runtime identity mismatch')
   for name, expected in policy['files'].items():
     if _digest(BRIDGE / name) != expected or name in _LIBRARIES and expected != _LIBRARIES[name]:
@@ -71,7 +126,7 @@ def _verify_policy():
   if _digest(BRIDGE.parent / 'catalog-native02e.json') != policy.get('catalog_sha256'):
     raise ValueError('Native stock release metadata changed')
   vendor = ROOT / 'tinygrad_repo'
-  expected_files = policy['vendor_files']
+  expected_files = _vendor_files(policy)
   actual = set()
   for directory, dirs, files in os.walk(vendor, followlinks=False):
     dirs[:] = [name for name in dirs if name not in ('__pycache__', '.git')]
@@ -149,7 +204,7 @@ def prepare(role, plan):
   _check_source_package('examples', tg_root / 'examples/__init__.py')
   _role, _allowed = role, allowed
   return {'role': role, 'family': 'native02e', 'compiler_revision': NATIVE_REVISION,
-          'manifest_sha256': POLICY_SHA256, 'runtime_files': len(policy['vendor_files']),
+          'manifest_sha256': POLICY_SHA256, 'runtime_files': len(_vendor_files(policy)),
           'tinygrad_origin': str(tg_root / 'tinygrad/__init__.py'), 'cache': str(cache)}
 
 
