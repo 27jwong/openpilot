@@ -144,6 +144,11 @@ def main() -> None:
   except Exception as error:
     cloudlog.error('vision SLC model unavailable: %s', error)
   last_inference_ns = 0
+  last_publish_ns = 0
+  last_result = None
+  last_result_session = ''
+  last_result_observed_ns = 0
+  last_result_valid_until_ns = 0
   processing_interval_ns = 0
   last_placement_check = -2.0
   last_clock_offset_ns = None
@@ -225,6 +230,35 @@ def main() -> None:
         processing_interval_ns, int(core.last_detection_at * 1e9), admission_pair[0])
       if offset_stable and admission_pair[0] - last_inference_ns < inference_interval_ns:
         del buffer_info
+        # Camera/model liveness is separate from costly sign inference. Keep
+        # the existing road-limit confirmation and its real support timestamp.
+        # No conversion or new detector evidence is needed for this heartbeat.
+        if (admission_pair[0] - last_publish_ns >= INFERENCE_INTERVAL_NS and
+            last_result is not None and session == last_result_session and
+            0 < last_result_observed_ns <= admission_pair[0] <= last_result_valid_until_ns):
+          sm.update(0)
+          heartbeat_pair = clock_pair_ns()
+          if (heartbeat_pair is None or
+              abs((heartbeat_pair[1] - heartbeat_pair[0]) - admission_offset_ns) > MAX_PAIR_SKEW_NS or
+              not 0 <= heartbeat_pair[1] - eof_boot_ns <= MAX_FRAME_AGE_NS):
+            core.reset()
+            session = uuid.uuid4().hex
+            last_clock_offset_ns = None
+            _send(pm, session=session, status='stale', stream=stream, eof_boot_ns=eof_boot_ns, frame_id=frame_id)
+            continue
+          if heartbeat_pair[0] > last_result_valid_until_ns:
+            continue
+          if not _driving_model_ready(sm, heartbeat_pair[0]):
+            core.reset()
+            session = uuid.uuid4().hex
+            model_paused = True
+            last_unavailable = heartbeat_pair[0] / 1e9
+            _send(pm, session=session, status='unavailable', stream=stream)
+            continue
+          _send(pm, session=session, status='valid', stream=stream,
+                observed_ns=last_result_observed_ns, eof_boot_ns=eof_boot_ns,
+                frame_id=frame_id, result=last_result, valid_until_ns=last_result_valid_until_ns)
+          last_publish_ns = heartbeat_pair[0]
         continue
       try:
         frame_info = _convert_camera_buffer(buffer_info)
@@ -289,6 +323,11 @@ def main() -> None:
       _send(pm, session=session, status='valid' if result is not None else 'unknown', stream=stream,
             observed_ns=sign_observed_ns, eof_boot_ns=eof_boot_ns, frame_id=frame_id, result=result,
             valid_until_ns=source_observed_ns + MAX_RESULT_AGE_NS)
+      last_publish_ns = observed_pair[0]
+      last_result = result
+      last_result_session = session
+      last_result_observed_ns = sign_observed_ns
+      last_result_valid_until_ns = source_observed_ns + MAX_RESULT_AGE_NS if result is not None else 0
     except Exception as error:
       cloudlog.error('vision SLC camera unavailable: %s', error)
       _send(pm, session=session, status='unavailable', stream=stream)

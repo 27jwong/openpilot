@@ -11,6 +11,8 @@ from openpilot.cereal import messaging
 from openpilot.cereal.visionipc import VisionStreamType
 from openpilot.starpilot.speed_limits.vision import producer
 from openpilot.starpilot.speed_limits.vision.model import Detection, VisionModelCore
+from openpilot.starpilot.speed_limits.vision.observation import vision_observation
+from openpilot.starpilot.speed_limits.acceptance import ObservationKind
 
 place_inference = producer._place_inference
 
@@ -379,6 +381,108 @@ class TestVisionProducer(unittest.TestCase):
       self.assertEqual(core.last_detection_at, 1.)
     core.reset()
     self.assertEqual(core.last_detection_at, 0.)
+
+  def cooldown_messages(self, *, processing_ns=500_000_000, heartbeat_failure=None):
+    core = VisionModelCore.__new__(VisionModelCore)
+    core.is_metric = False
+    core.history = deque()
+    core.reset()
+    client = Mock()
+    client.is_connected.return_value = True
+    camera = Mock(return_value=client)
+    road = {VisionStreamType.VISION_STREAM_NARROW_ROAD}
+    sources = (1_000_000_000, 1_550_000_000, 1_800_000_000, 2_000_000_000, 2_200_000_000, 2_250_000_000)
+    if heartbeat_failure == 'camera':
+      sources = (1_000_000_000, 1_550_000_000, 1_800_000_000, 2_150_000_000, 2_200_000_000, 2_250_000_000)
+    if processing_ns == 1_200_000_000:
+      sources = (1_000_000_000, 2_400_000_000, 2_800_000_000, 3_050_000_000, 4_000_000_000)
+    streams = [road] * len(sources)
+    if heartbeat_failure == 'session':
+      streams[2:] = [{VisionStreamType.VISION_STREAM_WIDE_ROAD}] * (len(sources)-2)
+    camera.available_streams.side_effect = streams + [EndProducer()]
+    buffers = [(object(), t + 4_000_000_000, i) for i, t in enumerate(sources)]
+    frames = [(np.full((2, 2, 3), i), b[1], b[2]) for i, b in enumerate(buffers)]
+    pending = iter(buffers)
+    current = [0, 0, 0]
+    messages = []
+
+    def receive(_client):
+      buffer = next(pending)
+      current[:] = [buffer[2], 0, sources[buffer[2]]]
+      return buffer
+
+    def clock_pair():
+      index, sample = current[:2]
+      now = sources[index]
+      if index in (0, len(sources)-1) and sample >= 2:
+        now += processing_ns
+      if heartbeat_failure == 'camera' and index == 2 and sample == 1:
+        now += 260_000_000
+      self.sm.valid['drivingModelData'] = not (heartbeat_failure == 'model' and index == 2 and sample == 1)
+      self.sm.logMonoTime['drivingModelData'] = now
+      current[1] += 1
+      current[2] = now
+      skew = 10_000_000 if heartbeat_failure == 'clock' and index == 2 and sample == 1 else 0
+      return now, now + 4_000_000_000 + skew
+
+    def send(_service, event):
+      wire = messaging.log_from_bytes(event.to_bytes()).slcVisionObservation.vision
+      messages.append((wire, current[2]))
+
+    with patch('msgq.visionipc.VisionIpcClient', camera), \
+         patch('openpilot.common.params.Params', return_value=SimpleNamespace(get_bool=lambda _: False)), \
+         patch.object(messaging, 'PubMaster', return_value=SimpleNamespace(send=send)), \
+         patch.object(producer, 'VisionModelCore', return_value=core), \
+         patch.object(producer, '_camera_buffer', side_effect=receive), \
+         patch.object(producer, '_convert_camera_buffer', side_effect=lambda buffer: frames[buffer[2]]) as convert, \
+         patch.object(producer, 'clock_pair_ns', side_effect=clock_pair), \
+         patch.object(producer.time, 'sleep'), \
+         patch.object(core, 'infer', side_effect=[Detection(55, 0.90), None]) as infer, \
+         self.assertRaises(EndProducer):
+      producer.main()
+    self.assertEqual(infer.call_count, 2)
+    self.assertEqual(convert.call_count, 2)
+    return messages
+
+  def test_confirmed_camera_heartbeat_preserves_inference_expiry_and_health(self):
+    messages = self.cooldown_messages()
+    probe = 2_510_000_000
+    wire, receipt = next(row for row in reversed(messages) if row[1] <= probe)
+    observation = vision_observation(wire, receipt_mono_ns=receipt, now_mono_ns=probe,
+                                     now_boot_ns=probe+4_000_000_000, car_fingerprint='IONIQ6', drive_session='drive')
+    self.assertIs(observation.kind, ObservationKind.VALID)
+    first, _ = messages[0]
+    heartbeats = [(event, stamp) for event, stamp in messages if 1_500_000_000 < stamp < 2_250_000_000]
+    self.assertTrue(heartbeats)
+    for event, _ in heartbeats:
+      self.assertEqual(event.observedMonoTime, 1_000_000_000)
+      self.assertEqual(event.validUntilMonoTime, 3_000_000_000)
+      self.assertEqual((event.speedMps, event.confidence, event.supportCount, event.episode),
+                       (first.speedMps, first.confidence, first.supportCount, first.episode))
+      self.assertEqual(event.producerSessionId, first.producerSessionId)
+      self.assertGreater(event.cameraFrameEofBootTime, first.cameraFrameEofBootTime)
+    self.assertTrue(all(b[1]-a[1] >= producer.INFERENCE_INTERVAL_NS for a, b in zip(heartbeats, heartbeats[1:], strict=False)))
+    # No background heartbeat can hide an actually stopped or blocked producer.
+    final, receipt = messages[-1]
+    stopped = receipt + 1_000_000_001
+    self.assertIs(vision_observation(final, receipt_mono_ns=receipt, now_mono_ns=stopped,
+                                    now_boot_ns=stopped+4_000_000_000,
+                                    car_fingerprint='IONIQ6', drive_session='drive').kind, ObservationKind.STALE)
+    for reason in ('model', 'clock', 'camera', 'session'):
+      with self.subTest(reason=reason):
+        invalid = self.cooldown_messages(heartbeat_failure=reason)
+        if reason != 'session':
+          self.assertTrue(any(event.status in ('stale', 'unavailable') for event, _ in invalid[1:]))
+        self.assertNotEqual(invalid[-1][0].producerSessionId, invalid[0][0].producerSessionId)
+        self.assertTrue(all(event.status != 'valid' for event, _ in invalid[1:]))
+    # A new camera receipt cannot extend the last completed inference's deadline.
+    expired = self.cooldown_messages(processing_ns=1_200_000_000)
+    self.assertEqual([stamp for _, stamp in expired], [2_200_000_000, 2_400_000_000, 2_800_000_000, 5_200_000_000])
+    old, receipt = expired[-2]
+    self.assertEqual(old.validUntilMonoTime, 3_000_000_000)
+    self.assertIs(vision_observation(old, receipt_mono_ns=receipt, now_mono_ns=3_200_000_000,
+                                    now_boot_ns=7_200_000_000, car_fingerprint='IONIQ6',
+                                    drive_session='drive').kind, ObservationKind.STALE)
 
   def test_same_client_reconnect_starts_new_consensus_and_session(self):
     # Use the real temporal state machine without loading ONNX assets. A sign
