@@ -2,6 +2,7 @@
 
 import json
 import time
+from typing import TypedDict
 from unittest.mock import patch
 import pytest
 from opendbc.can import CANParser
@@ -27,13 +28,31 @@ from openpilot.starpilot.car.subaru.tests.native_fixture import (
 )
 
 
+
+class CallerRow(TypedDict):
+  tick: int
+  buttons: list[tuple[int, str, int, bool]]
+  enabled: bool
+  native: bool
+  long: bool
+  target: float
+  throttle: float
+  speed: float
+  driver: list[tuple[str, bool]]
+  fault: object
+  state: str
+  events: list[str]
+  axis: dict[str, object]
+  ordinary_warning: bool
+
+
 @pytest.mark.parametrize("aol", [False, True])
 @pytest.mark.parametrize('candidate,software', [(CAR.SUBARU_ASCENT, False), (CAR.SUBARU_IMPREZA, False),
                                                    (CAR.SUBARU_IMPREZA_2020, False), (CAR.SUBARU_FORESTER, False),
                                                    (CAR.SUBARU_IMPREZA_2020, True)])
 def test_sng_actual_stock_callers(candidate, software, aol, subaru_native_pair, tmp_path):
   fw = firmware_records(candidate, FW_VERSIONS, "subaru")
-  rows = []
+  rows: list[CallerRow] = []
   with actual_factory(
     candidate,
     gen_empty_fingerprint(),
