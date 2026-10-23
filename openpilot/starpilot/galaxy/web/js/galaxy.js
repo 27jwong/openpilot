@@ -4,6 +4,7 @@ import { requestJson } from "./startup.js"
 import { InstallApp, isIosDevice } from "./install-app.js"
 import { GalaxyCompanion, newerCompanionVersion } from "./companion.js"
 import { GalaxyHotspot } from "./hotspot.js"
+import { LocalAccess } from "./local-access.js"
 import { BluetoothNotice, bluetoothConnection } from "./bluetooth-notice.js"
 
 const DISMISSED_UPDATE = 'galaxy.companion.dismissedUpdateVersion'
@@ -11,7 +12,7 @@ const dismissedUpdate = () => { try { return localStorage.getItem(DISMISSED_UPDA
 
 export const GalaxyPage = {
   name: "GalaxyPage",
-  components: { GxState, GxNotice, BluetoothNotice, InstallApp, GalaxyHotspot, GalaxyCompanion },
+  components: { GxState, GxNotice, BluetoothNotice, InstallApp, GalaxyHotspot, GalaxyCompanion, LocalAccess },
   props: { mode: { type: String, required: true }, unauthorized: { type: Function, required: true } },
   data: () => ({ loading: true, paired: false, url: "", tunnelClientAvailable: false, legacyPassword: false,
     legacyPairingAvailable: false, password: "", busy: false, error: "", companionStatus: null,
@@ -123,6 +124,7 @@ export const GalaxyPage = {
           <div class="gx-aa-step__body"><InstallApp :url="url" :update-available="appUpdateAvailable" />
             <p v-if="availableAppVersion && !ios">Android offline app version: <strong>{{ availableAppVersion }}</strong><span v-if="installedAppVersion"> · {{ nativeVersion ? 'Installed' : 'Connected phone' }}: {{ installedAppVersion }}</span></p>
             <p v-if="!ios"><strong>Download Android APK</strong> to use Galaxy over Galaxy Wi-Fi or your local network without Internet. Download it while connected locally from this page.</p>
+            <LocalAccess v-if="!ios" :mode="mode" :on-unauthorized="unauthorized" />
             <p class="gx-note">Your remote link needs Internet and an active tunnel. For offline local access, bookmark your hotspot or local address.</p>
           </div>
         </li>
