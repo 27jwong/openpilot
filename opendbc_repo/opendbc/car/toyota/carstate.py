@@ -311,6 +311,8 @@ class CarState(CarStateBase):
 
     if CP.carFingerprint == CAR.TOYOTA_SIENNA_4TH_GEN:
       pt_messages.append(("PCM_CRUISE_4", 1))
+    from opendbc.car.toyota import camera_2aa_filter
+    camera_twoaa = camera_2aa_filter.configured(CP)
     legacy_advert = legacy_advert_filter.configured(CP)
     alternate_sdsu_main = (legacy_sdsu.configured(CP) or legacy_advert) and CP.carFingerprint in legacy_sdsu.ALT_MAIN_CARS
     if CP.carFingerprint == CAR.LEXUS_IS or alternate_sdsu_main:
@@ -325,7 +327,8 @@ class CarState(CarStateBase):
 
     if pedal.configured(CP):
       pt_messages.append(("GAS_SENSOR", 50))
-    pt_parser = (legacy_advert_filter.LegacyAdvertCANParser if legacy_advert else
+    pt_parser = (camera_2aa_filter.CameraTwoAACANParser if camera_twoaa else
+                 legacy_advert_filter.LegacyAdvertCANParser if legacy_advert else
                  legacy_sdsu.AlternateMainSDSUCANParser if alternate_sdsu_main else
                  LexusIsCANParser if CP.carFingerprint == CAR.LEXUS_IS else pedal.PedalCANParser if pedal.configured(CP) else
                  advert_filter.AdvertFilterCANParser if advert_filter.configured(CP) else

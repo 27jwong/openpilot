@@ -202,7 +202,8 @@ class CarInterface(CarInterfaceBase):
     from opendbc.car.toyota import advert_filter
     advertised_filter = advert_filter.hardware_supported(candidate, fingerprint, car_fw)
     if advertised_filter:
-      advert_filter.apply(ret)
+      from opendbc.car.toyota import camera_2aa_filter
+      advert_filter.apply(ret, camera_twoaa=camera_2aa_filter.hardware_supported(candidate, fingerprint, car_fw))
       if legacy_advert and candidate == CAR.TOYOTA_RAV4H:
         stop_and_go = True
     # Toyota EPS accepts lateral commands down to zero. Keep the existing
