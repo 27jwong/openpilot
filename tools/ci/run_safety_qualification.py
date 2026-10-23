@@ -238,6 +238,8 @@ def complete_mutation_artifact(path, summary, *, digest_out=None):
 
 
 def check_import_origins(python, env, output, *, full_catalog=False):
+  sidecar = output.with_suffix(".origins.json")
+  sidecar.unlink(missing_ok=True)
   script = """
 import json
 from pathlib import Path
@@ -278,14 +280,15 @@ print(json.dumps({'msgq_visionipc': str(Path(msgq.visionipc.visionipc_pyx.__file
               "cereal_messaging": ROOT / "openpilot/cereal", "msgq_ipc": ROOT / "msgq_repo"}
   if full_catalog:
     expected["msgq_visionipc"] = ROOT / "msgq_repo"
-  return all(isinstance(origins.get(name), str) and Path(origins[name]).is_relative_to(path)
-             for name, path in expected.items())
+  valid = all(isinstance(origins.get(name), str) and Path(origins[name]).is_relative_to(path)
+              for name, path in expected.items())
+  if valid:
+    sidecar.write_text(json.dumps(origins, sort_keys=True) + "\n")
+  return valid
 
 
 def imported_module_hashes(output):
-  origins = {}
-  for line in output.read_text().splitlines():
-    origins.update(json.loads(line))
+  origins = json.loads(output.with_suffix(".origins.json").read_text())
   return {name: {"path": path, "sha256": hashlib.sha256(Path(path).read_bytes()).hexdigest()}
           for name, path in origins.items()}
 

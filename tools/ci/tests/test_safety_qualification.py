@@ -56,7 +56,41 @@ class TestSafetyQualificationRunner(TestCase):
         Path(path).write_bytes(b"native")
       log = root / "imports.log"
       log.write_text("\n".join(json.dumps({name: path}) for name, path in modules.items()) + "\n")
+      log.with_suffix(".origins.json").write_text(json.dumps(modules))
       self.assertEqual(set(qualification.imported_module_hashes(log)), set(modules))
+
+  def test_validated_origins_sidecar_retains_multiline_stdout_and_stderr(self):
+    with tempfile.TemporaryDirectory() as td:
+      root = Path(td)
+      prefixes = {"opendbc": "opendbc_repo", "panda": "panda", "msgq": "msgq_repo",
+                  "openpilot": "openpilot", "libsafety_py": "opendbc_repo",
+                  "can_parser": "opendbc_repo", "can_packer": "opendbc_repo", "can_dbc": "opendbc_repo",
+                  "cereal_log": "openpilot/cereal", "cereal_messaging": "openpilot/cereal", "msgq_ipc": "msgq_repo",
+                  "msgq_visionipc": "msgq_repo"}
+      origins = {name: str(root / prefix / name) for name, prefix in prefixes.items()}
+      for path in origins.values():
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        Path(path).write_bytes(b"actual provenance fixture")
+      first = {name: path for name, path in origins.items() if name != "msgq_visionipc"}
+      stdout = json.dumps(first) + "\n" + json.dumps({"msgq_visionipc": origins["msgq_visionipc"]}) + "\n"
+      warning = "kj/filesystem-disk-unix.c++:1734: warning: PWD environment variable doesn't match current directory\n"
+      log = root / "imports.log"
+      sidecar = log.with_suffix(".origins.json")
+      with patch.object(qualification, "ROOT", root), patch.object(qualification.subprocess, "run",
+          return_value=subprocess.CompletedProcess([], 0, stdout, warning)):
+        self.assertTrue(qualification.check_import_origins(sys.executable, {}, log, full_catalog=True))
+      self.assertEqual(log.read_text(), stdout + warning)
+      self.assertEqual(json.loads(sidecar.read_text()), origins)
+      self.assertEqual(set(qualification.imported_module_hashes(log)), set(origins))
+      foreign = dict(origins, msgq_visionipc="/foreign/visionipc.so")
+      for code, invalid in ((0, json.dumps(foreign)), (0, "bad stdout"), (1, stdout)):
+        sidecar.write_text(json.dumps(origins))  # Never reuse earlier success after a failed probe.
+        with self.subTest(code=code, stdout=invalid), patch.object(qualification, "ROOT", root), \
+             patch.object(qualification.subprocess, "run", return_value=subprocess.CompletedProcess([], code, invalid, warning)):
+          self.assertFalse(qualification.check_import_origins(sys.executable, {}, log, full_catalog=True))
+        self.assertFalse(sidecar.exists())
+        with self.assertRaises(FileNotFoundError):
+          qualification.imported_module_hashes(log)
 
   def test_source_identity_includes_gate_and_workflow_inputs(self):
     identity = qualification.source_identity()
@@ -456,7 +490,25 @@ class TestSafetyQualificationRunner(TestCase):
     with tempfile.TemporaryDirectory() as td:
       output = Path(td)
       gate = qualification.Gate("coverage", output, "/usr/bin/python3")
-      code, text = gate.run("timeout", [sys.executable, "-c", "import time; print('partial', flush=True); time.sleep(10)"], timeout=0.05)
+      ready = output / "child-ready"
+      script = "import pathlib,sys,time; print('partial', flush=True); pathlib.Path(sys.argv[1]).touch(); time.sleep(10)"
+      spawn = subprocess.Popen
+
+      def started_child(*args, **kwargs):
+        proc = spawn(*args, **kwargs)
+        deadline = time.monotonic() + 5
+        while not ready.exists():
+          if proc.poll() is not None or time.monotonic() >= deadline:
+            if proc.poll() is None:
+              os.killpg(proc.pid, signal.SIGKILL)
+            proc.communicate()
+            self.fail("Timeout fixture never became ready")
+          time.sleep(.005)
+        return proc
+
+      # Exercise the real timeout after the child's partial output is actually flushed.
+      with patch.object(qualification.subprocess, "Popen", side_effect=started_child):
+        code, text = gate.run("timeout", [sys.executable, "-c", script, str(ready)], timeout=0.05)
       self.assertEqual(code, 124)
       self.assertIn("Timed out", text)
       self.assertIn("partial", (output / "timeout.log").read_text())
