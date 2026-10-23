@@ -104,6 +104,13 @@ AOL_LIFECYCLE_TARGETS = (
   "openpilot/starpilot/car/subaru/tests/test_angle_tune.py",
   "openpilot/starpilot/car/subaru/tests/test_forester_angle_callers.py",
   "opendbc_repo/opendbc/safety/tests/test_subaru_forester_angle.py",
+  "openpilot/starpilot/car/subaru/tests/test_outback_angle_callers.py",
+  "openpilot/starpilot/car/subaru/tests/test_outback_startup_callers.py",
+  "openpilot/starpilot/car/subaru/tests/test_smoothing.py",
+  "openpilot/starpilot/car/subaru/tests/test_smoothing_factory.py",
+  "openpilot/starpilot/car/subaru/tests/test_smoothing_settings.py",
+  "openpilot/starpilot/car/subaru/tests/test_smoothing_model_join.py",
+  "opendbc_repo/opendbc/safety/tests/test_subaru_outback_angle.py",
 )
 
 AOL_LIFECYCLE_SCOPE = {
@@ -111,7 +118,8 @@ AOL_LIFECYCLE_SCOPE = {
              "Reverse/Drive, temporary ToI recovery and physical UP_1 cancel; GEN2/unknown profiles refused"),
   "mazda": ("CX5 2022/CX9 2021 GEN1 stock AE32: engagement/brake/Cancel pause/toggle/Reverse/standstill/EPS recovery; " +
             "native permanent-fault rearm vetoes"),
-  "subaru": "nine stock global identities; five actual factory-to-native lifecycles, brake, Reverse/Drive, EPS recovery, MAIN-off and refusal guards",
+  "subaru": ("eleven stock global identities; automatic/manual and AOL on/off factory-to-native lifecycles, " +
+               "startup requests, frozen smoothing, brake, Reverse/Drive, EPS recovery, MAIN-off and refusal guards"),
   "volkswagen": "stock MQB auto/manual, gateway/camera factory acquisition, MAIN/engagement/brake/Reverse joins, permanent EPS native rearm",
   "gm": "Volt/Bolt factory profiles, MAIN boot, stock/Alpha, BE/C9, pedal/regen, Cancel mappings, RES, lag withdrawal/recovery",
   "honda": "stock Civic source/native vetoes, native-first Reverse joins, and EPS-recovery/Reverse/Drive native TX lifecycle",
@@ -382,6 +390,7 @@ RELEASE_TARGETS = (
   "opendbc_repo/opendbc/safety/tests/test_subaru_avh_startup.py",
   "opendbc_repo/opendbc/safety/tests/test_subaru_forester_angle.py",
   "opendbc_repo/opendbc/safety/tests/test_subaru_receive_guards.py",
+  "opendbc_repo/opendbc/safety/tests/test_subaru_outback_angle.py",
 )
 
 # Vehicle tests import both the vendored car code and these host control owners.

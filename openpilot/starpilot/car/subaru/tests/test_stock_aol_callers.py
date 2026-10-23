@@ -46,7 +46,7 @@ def test_actual_full_engage_brake_reverse_temporary_recovery_mainoff(candidate, 
     receipt = None
     steering_name = 'ES_LKAS_ANGLE' if cp.steerControlType == structs.CarParams.SteerControlType.angle else 'ES_LKAS'
     steering_address = ci.CC.packer.dbc.name_to_msg[steering_name].address
-    steering_bus = 0 if candidate in (CAR.SUBARU_ASCENT_2023, CAR.SUBARU_FORESTER, CAR.SUBARU_OUTBACK, CAR.SUBARU_FORESTER_2022) else 1
+    steering_bus = 0 if candidate in (CAR.SUBARU_ASCENT_2023, CAR.SUBARU_FORESTER, CAR.SUBARU_OUTBACK, CAR.SUBARU_FORESTER_2022, CAR.SUBARU_OUTBACK_2023) else 1
     decoder = CANParser(DBC[candidate][Bus.pt], [(steering_name, 0)], steering_bus)
     dash_decoder = CANParser(DBC[candidate][Bus.pt], [('ES_LKAS_State', 0)], 0)
     dash_emissions = 0

@@ -13,7 +13,7 @@ from opendbc.car.vehicle_model import VehicleModel
 # involves the total steering angle change rather than rate, but these limits work well for now
 MAX_STEER_RATE = 25  # deg/s
 MAX_STEER_RATE_FRAMES = 7  # tx control frames needed before torque can be cut
-GEN2_ANGLE_PORTS = frozenset((CAR.SUBARU_CROSSTREK_2025, CAR.SUBARU_LEGACY_2025, CAR.SUBARU_ASCENT_2023, CAR.SUBARU_FORESTER_2022))
+GEN2_ANGLE_PORTS = frozenset((CAR.SUBARU_CROSSTREK_2025, CAR.SUBARU_LEGACY_2025, CAR.SUBARU_ASCENT_2023, CAR.SUBARU_FORESTER_2022, CAR.SUBARU_OUTBACK_2023))
 
 
 class CarController(CarControllerBase):
@@ -131,7 +131,7 @@ class CarController(CarControllerBase):
           angle_active = False
         if angle_active and not self.angle_was_active and self.CP.carFingerprint != CAR.SUBARU_ASCENT_2023:
           self.apply_angle_last = CS.out.steeringAngleDeg
-        if self.CP.carFingerprint in (CAR.SUBARU_LEGACY_2025, CAR.SUBARU_ASCENT_2023):
+        if self.CP.carFingerprint in (CAR.SUBARU_LEGACY_2025, CAR.SUBARU_ASCENT_2023, CAR.SUBARU_OUTBACK_2023):
           apply_angle = apply_std_steer_angle_limits(actuators.steeringAngleDeg, self.apply_angle_last,
                                                      CS.out.vEgoRaw, CS.out.steeringAngleDeg, angle_active,
                                                      self.p.FIXED_ANGLE_LIMITS)
@@ -142,7 +142,7 @@ class CarController(CarControllerBase):
                                                     self.p, self.VM)
         self.apply_angle_last = apply_angle
         self.angle_was_active = angle_active
-        angle_bus = CanBus.main if self.CP.carFingerprint in (CAR.SUBARU_ASCENT_2023, CAR.SUBARU_FORESTER_2022) else CanBus.alt
+        angle_bus = CanBus.main if self.CP.carFingerprint in (CAR.SUBARU_ASCENT_2023, CAR.SUBARU_FORESTER_2022, CAR.SUBARU_OUTBACK_2023) else CanBus.alt
         can_sends.append(subarucan.create_steering_control_angle(self.packer, apply_angle, angle_active, angle_bus))
       else:
         apply_torque = int(round(actuators.torque * self.p.STEER_MAX))

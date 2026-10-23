@@ -160,6 +160,8 @@ class FeatureSettingsOwner:
     self.gm_cancel_remap = GmCancelRemapFeature(self)
 
     self.preap_radar = PreAPRadarFeature(self)
+    from openpilot.starpilot.ui.subaru_smoothing_feature import SubaruSmoothingFeature
+    self.subaru_smoothing = SubaruSmoothingFeature(self)
     self.gm_tune = GmTuneFeature(self)
     self.gm_truck = GmTruckFeature(self)
     self.gm_ev_preset = GmEvPresetFeature(self)
@@ -808,6 +810,7 @@ class FeatureSettingsOwner:
       if (self._long_pitch_capability() is not None or self._bolt_disable_capability() is not None or
           self._auto_hold_capability() is not None or self._jeep_hold_capability() is not None or
           self._toyota_radar_capability() is not None or self._pedal_setup_capability() is not None or
+          self.subaru_smoothing.capability() is not None or
           self._subaru_avh_capability() is not None or self._subaru_startup_capability() is not None or self._subaru_sng_capability() is not None or
           self._subaru_software_capability() is not None or self._gm_stop_capability("VoltSNG") is not None or
           self._gm_stop_capability("GMAutoHold") is not None or self.tesla_screen.capability() is not None or
@@ -846,6 +849,7 @@ class FeatureSettingsOwner:
       rows.extend(self.gm_cancel_remap.rows(parked))
 
       rows.extend(self.preap_radar.rows())
+      rows.extend(self.subaru_smoothing.rows(parked))
       rows.extend(self.gm_tune.rows(parked))
       rows.extend(self.gm_truck.rows(parked))
       rows.extend(self.gm_ev_preset.rows(parked))
@@ -1324,6 +1328,8 @@ class FeatureSettingsOwner:
       return self.gm_truck.apply(request)
     if key == "DisableOpenpilotLongitudinal":
       return self._apply_bolt_disable(request)
+    if key in ("DeveloperUI", "LatSmoothSeconds"):
+      return self.subaru_smoothing.apply(request)
     if key == "SubaruAvhStartup":
       from openpilot.starpilot.car.subaru.avh_settings import apply
       return apply(self, request)

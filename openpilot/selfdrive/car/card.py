@@ -440,6 +440,8 @@ class Car:
     from openpilot.starpilot.car.tesla.radar_context import install_startup_context
     self.tesla_preap_radar_context = install_startup_context(
       self.RI, self.CP, cp_bytes, startup_preferences.tesla_preap_radar)
+    from openpilot.starpilot.car.subaru.smoothing import install as install_subaru_smoothing
+    install_subaru_smoothing(self.CP, cp_bytes, startup_preferences.subaru_smoothing, self.params)
     self.params.put("CarParams", cp_bytes, block=True)
     put_cache(self.params, "CarParamsCache", self.CP)
     put_cache(self.params, "CarParamsPersistent", self.CP)

@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from openpilot.starpilot.car.subaru.smoothing import Snapshot, read_snapshot, prepare as prepare_smoothing
 
 from opendbc.car.gm.startup_preferences import prepare_disable_longitudinal
 from opendbc.car.toyota.interface import apply_toyota_auto_hold
@@ -27,6 +28,7 @@ class VehicleStartupPreferences:
   tesla_preap_stock: bool = True
   tesla_preap_radar: RadarSettings | None = field(default=None, kw_only=True)
   tesla_preap_pedal: PedalSettings | None = field(default=None, kw_only=True)
+  subaru_smoothing: Snapshot | None = field(default=None, kw_only=True)
   subaru_avh_startup: bool = field(default=False, kw_only=True)
   subaru_stop_start_off: bool = field(default=False, kw_only=True)
   subaru_sng: bool = field(default=False, kw_only=True)
@@ -53,6 +55,7 @@ class VehicleStartupPreferences:
     from openpilot.starpilot.car.tesla.preap_preferences import stock_configuration
     from openpilot.starpilot.car.tesla.radar_settings import read_radar_settings
     from openpilot.starpilot.car.tesla.pedal_preferences import read_pedal_settings
+    smoothing = read_snapshot(params, enabled=enabled)
     radar = read_radar_settings(params)
     pedal = read_pedal_settings(params)
     preap_stock = stock_configuration(params, radar, pedal)
@@ -79,7 +82,7 @@ class VehicleStartupPreferences:
       volt_one_pedal = bool(enabled and not disable_bolt and read_saved(params, "VoltOnePedalMode", 8) == (b"1", True) and
                             readable and safe in (None, b"0"))
     except (OSError, TypeError, ValueError):
-      return cls(disable_bolt_long=disable_bolt, honda_bosch_a_radar=honda_radar, tesla_preap_stock=preap_stock,
+      return cls(subaru_smoothing=smoothing, disable_bolt_long=disable_bolt, honda_bosch_a_radar=honda_radar, tesla_preap_stock=preap_stock,
                  tesla_preap_radar=radar, tesla_preap_pedal=pedal,
                  gm_camera_pedal=False, toyota_filter=False)
     try:
@@ -96,7 +99,7 @@ class VehicleStartupPreferences:
                   read_saved(params, 'AlwaysOnLateral', 8) == (b'1', True) and
                   read_saved(params, 'TeslaAOLScreenTap', 8) == (b'1', True))
     screen_brake = read_saved(params, 'TeslaAOLDisengageOnBrake', 8) == (b'1', True)
-    return cls(subaru_avh_startup=bool(enabled and readable and safe in (None, b"0") and
+    return cls(subaru_smoothing=smoothing, subaru_avh_startup=bool(enabled and readable and safe in (None, b"0") and
                     read_saved(params, "IsReleaseBranch", 8) in ((None, True), (b"0", True)) and
                     read_saved(params, "SubaruAvhStartup", 8) == (b"1", True)),
                subaru_stop_start_off=bool(enabled and readable and safe in (None, b"0") and
@@ -243,6 +246,8 @@ class VehicleStartupPreferences:
       apply_toyota_auto_hold(cp, self.toyota_auto_hold and admitted)
       from opendbc.car.toyota.ars510_preferences import apply_radar_mode
       apply_radar_mode(cp, self.toyota_radar_mode)
+
+    prepare_smoothing(cp, self.subaru_smoothing)
 
   def configure_controller(self, ci) -> None:
     from opendbc.car.gm.values import (CAR, is_bolt_euv_longitudinal, is_volt_longitudinal, is_gm_auto_hold,
