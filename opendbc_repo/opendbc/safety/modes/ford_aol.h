@@ -1,5 +1,6 @@
 #pragma once
 
+static bool ford_aol_manual = false;
 static bool ford_aol_enabled = false;
 static bool ford_aol_token = false;
 static bool ford_aol_main_available = false;
@@ -151,7 +152,9 @@ static void ford_aol_rx(const CANPacket_t *msg) {
       ford_aol_lka_ready = ((ford_aol_param & 0xFFFEU) == 12U) ?
         ((((msg->data[0] >> 4U) & 3U) == 3U) && ((msg->data[0] & 0x40U) == 0U)) :
         ((state == 1U) || (state == 2U) || (state == 3U));
-    } else {
+    } else if (ford_aol_manual && msg_matches(msg, 0x3C3U, 0U, 8U)) {
+      ford_aol_drive = !GET_BIT(msg, 9U);
+    } else if (!ford_aol_manual) {
       const uint16_t base = ford_aol_param & 0xFFFEU;
       const uint16_t gear_addr = (base == 8U) ? 0x230U : ((base == 10U) ? 0x5AU : 0x176U);
       if (msg_matches(msg, gear_addr, 0U, 8U)) {
@@ -159,6 +162,8 @@ static void ford_aol_rx(const CANPacket_t *msg) {
                                   ((base == 10U) ? (msg->data[6] & 15U) : (msg->data[3] & 15U));
         ford_aol_drive = (gear == 3U) || (gear == 4U) || (gear == 5U);
       }
+    } else {
+      // Manual profiles consume only the dedicated reverse lamp source.
     }
   }
 }
@@ -177,15 +182,13 @@ static void ford_aol_full_engagement(bool cruise_rising) {
 
 static bool ford_aol_param_valid(uint16_t param) {
   bool result = false;
-  switch (param) {
+  switch (param & ~256U) {
     case 8U: case 9U: case 10U: case 12U: case 13U: case 18U: case 32U: case 33U: case 66U:
       result = true;
       break;
-#ifdef ALLOW_DEBUG
     case 11U: case 19U: case 67U:
       result = true;
       break;
-#endif
     default:
       break;
   }
@@ -195,7 +198,8 @@ static bool ford_aol_param_valid(uint16_t param) {
 static void ford_aol_configure(uint16_t param) {
   ford_aol_reset();
   ford_aol_enabled = ford_aol_param_valid(param) && ((unsigned int)alternative_experience == 32U);
-  ford_aol_param = param;
+  ford_aol_manual = (param & 256U) != 0U;
+  ford_aol_param = param & ~256U;
   if (ford_aol_enabled) {
     static const AolSafetyPolicy policy = {
       .reset = ford_aol_reset,
