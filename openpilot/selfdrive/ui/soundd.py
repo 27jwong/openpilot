@@ -274,7 +274,7 @@ class Soundd:
     with self.get_stream(sd) as stream:
       rk = Ratekeeper(20)
 
-      cloudlog.info(f"soundd stream started: {stream.samplerate=} {stream.channels=} {stream.dtype=} {stream.device=}, "
+      cloudlog.info(f"soundd stream started: {stream.samplerate=} {stream.channels=} {stream.dtype=} {stream.device=}, " +
                    f"{stream.blocksize=}, {stream.latency=}, backend={self.audio_backend}, fallback={self.audio_fallback_reason}")
       while True:
         sm.update(0)
