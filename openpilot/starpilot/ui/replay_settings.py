@@ -30,6 +30,7 @@ from openpilot.system.ui.widgets.scroller import Scroller
 
 
 ACTIVE_STATES = frozenset(('preparing', 'playing', 'paused', 'seeking', 'buffering', 'ended', 'stopping'))
+TIMELINE_NEUTRAL = rl.Color(54, 60, 71, 255)
 
 
 @dataclass(frozen=True)
@@ -375,13 +376,16 @@ class ReplayPage(Widget):
       rl.unload_render_texture(self.rail_texture)
     self.rail_texture = self.rail_key = None
 
+  def _rail_size(self):
+    return (28, 6, 2) if self.profile == Profile.LARGE else (16, 4, 2)
+
   def _prepare_rail(self):
     history = getattr(self.controller, 'timeline', None)
     large = self.profile == Profile.LARGE
     (_, _, width, _), _buttons = self._transport()
     start, end = (self.controller.status.get(key) or 0 for key in ('start', 'end'))
     ranges = self.controller.status.get('seekRanges') or ((start, end),)
-    rail, tick, gap = (12, 4, 2) if large else (8, 3, 2)
+    rail, tick, gap = self._rail_size()
     if history is None or history.rows is None or end <= start:
       self._clear_rail()
       return
@@ -400,19 +404,22 @@ class ReplayPage(Widget):
       line_y, line_h = round((tick + gap) * scale), max(1, round(rail * scale))
       def rect(left, right, color, bookmark=False):
         lo = max(0, min(pixels - 1, math.floor(pixels * (left - start) / (end - start))))
-        hi = min(pixels, max(lo + (2 if bookmark else 1), math.ceil(pixels * (right - start) / (end - start))))
+        minimum = max(1, round((4 if large else 3) * scale)) if bookmark else 1
+        hi = min(pixels, max(lo + minimum, math.ceil(pixels * (right - start) / (end - start))))
+        if bookmark:
+          lo = max(0, hi - minimum)
         rl.draw_rectangle(lo, 0 if bookmark else line_y, hi - lo, max(1, round(tick * scale)) if bookmark else line_h, color)
       for left, right in ranges:
-        rect(left, right, CONTROL_BORDER)
+        rect(left, right, TIMELINE_NEUTRAL)
       for layer in ('mode', 'error', 'bookmark'):
         for left, right, kind in history.rows:
           if (kind if kind in ('error', 'bookmark') else 'mode') == layer:
             rect(left, right, rl.Color(*LEGEND[kind]['rgb'], 255), layer == 'bookmark')
       rl.end_texture_mode()
 
-  def _timeline_rail(self, x, y, width, height, start, end, ranges, large):
+  def _timeline_rail(self, x, y, width, height, start, end, ranges):
     history = getattr(self.controller, 'timeline', None)
-    rail, tick, gap = (12, 4, 2) if large else (8, 3, 2)
+    rail, tick, gap = self._rail_size()
     top = y + (height - rail - tick - gap) / 2
     target = getattr(self, 'rail_texture', None)
     if target is not None and history is not None and self.rail_key is not None and self.rail_key[0] == id(history):
@@ -421,7 +428,26 @@ class ReplayPage(Widget):
     elif end > start:
       for left, right in ranges:
         rl.draw_rectangle(round(x + width * (left - start) / (end - start)), round(top + tick + gap),
-                          max(1, round(width * (right - left) / (end - start))), rail, CONTROL_BORDER)
+                          max(1, round(width * (right - left) / (end - start))), rail, TIMELINE_NEUTRAL)
+    return top + tick + gap, rail
+
+  def _scrub_preview(self, head_x, position, label, entry):
+    large = self.profile == Profile.LARGE
+    size, padding, swatch = (28, 22, 14) if large else (18, 16, 10)
+    text = elide_text(self.fonts, f'{duration(position)} - {label}', FontRole.MEDIUM, size, 460)
+    measured = self.fonts.measure(text, FontRole.MEDIUM, size)
+    width = measured.width + padding * 3 + swatch if large else 520
+    left = max(100, min(2060 - width, head_x - width / 2)) if large else 8
+    top, height = (784, 62) if large else (8, 42)
+    bounds = rl.Rectangle(left, top, width, height)
+    radius = 14 if large else 10
+    draw_rounded_fill(bounds, rl.Color(8, 8, 10, 245), radius_px=radius)
+    draw_rounded_stroke(bounds, TEXT_MUTED, radius_px=radius)
+    if large:
+      rl.draw_line(round(head_x), top + height + 4, round(head_x), 868, TEXT_MUTED)
+    color = rl.Color(*entry['rgb'], 255) if entry else TEXT_MUTED
+    rl.draw_rectangle(round(left + padding), round(top + (height - swatch) / 2), swatch, swatch, color)
+    self.fonts.draw(text, FontRole.MEDIUM, size, left + padding * 2 + swatch, top + (height - measured.height) / 2, TEXT_PRIMARY)
 
   def _update_state(self):
     self.controller.tick()
@@ -786,9 +812,11 @@ class ReplayPage(Widget):
                      (owner.status.get('state') != 'playing' or time.monotonic() - self.last_touch < 3))
     if self.press:
       self.controls = self.press[4]
-    if not large:
+    scrubbing = self.seek_preview is not None and self.press is not None and self.press[2] == 'seek'
+    if not large and not scrubbing:
       draw_rounded_fill(rl.Rectangle(8, 8, 94, 28), rl.Color(8, 8, 10, 235))
-    self.fonts.draw('REPLAY', FontRole.SEMI_BOLD, 36 if large else 18, 30 if large else 12, 30 if large else 12, ACCENT)
+    if large or not scrubbing:
+      self.fonts.draw('REPLAY', FontRole.SEMI_BOLD, 36 if large else 18, 30 if large else 12, 30 if large else 12, ACCENT)
     if not self.controls:
       self._button('Stop', self._collapsed_stop_bounds(), not owner.busy)
       self._render_loading()
@@ -803,22 +831,31 @@ class ReplayPage(Widget):
     displayed = self.seek_preview if self.seek_preview is not None else position
     amount = max(0, min(1, (displayed - start) / (end - start))) if end > start else 0
     ranges = owner.status.get('seekRanges') or ((start, end),)
-    self._timeline_rail(x, y, width, height, start, end, ranges, large)
-    rl.draw_circle(round(x + width * amount), round(y + height / 2 + 3 if large else y + height / 2 + 2.5), 9 if large else 7, rl.WHITE)
+    rail_y, rail_h = self._timeline_rail(x, y, width, height, start, end, ranges)
+    head_x = round(x + width * amount)
+    rl.draw_rectangle(head_x - 1, round(rail_y - 1), 3 if large else 2, rail_h + 2, rl.WHITE)
+    rl.draw_rectangle(head_x - 4, round(rail_y + rail_h + 3), 9 if large else 8, 3, rl.WHITE)
     timing = f'{duration(displayed)} / {duration(end)}' if end > start else ''
     history = getattr(owner, 'timeline', None)
-    if history is not None:
-      timing += ' - ' + history.label(displayed)
-    elif owner.status.get('timelineState'):
-      timing += ' - ' + (getattr(owner, 'timeline_error', '') or 'Loading history')
+    entry = history.entry(displayed) if history is not None else None
+    label = entry['label'] if entry else ''
+    if history is not None and not label:
+      label = 'Loading history' if history.rows is None else 'Neutral'
+    if not label and owner.status.get('timelineState'):
+      label = getattr(owner, 'timeline_error', '') or 'Loading history'
     if end > start and not any(left <= displayed <= right for left, right in ranges):
-      timing += ' - Unavailable gap'
-    if not large and timing:
+      label, entry = 'Unavailable gap', None
+    if label:
+      timing += ' - ' + label
+    if not large and not scrubbing and timing:
       timing = elide_text(self.fonts, timing, FontRole.MEDIUM, 18, 504)
       width = self.fonts.measure(timing, FontRole.MEDIUM, 18).width + 16
       draw_rounded_fill(rl.Rectangle(8, 30, width, 30), rl.Color(8, 8, 10, 235))
-    self.fonts.draw(timing, FontRole.MEDIUM, 26 if large else 18,
-                    x, y - 26 if large else 36, TEXT_PRIMARY)
+    if large or not scrubbing:
+      self.fonts.draw(timing, FontRole.MEDIUM, 26 if large else 18,
+                      x, y - 26 if large else 36, TEXT_PRIMARY)
+    if scrubbing:
+      self._scrub_preview(head_x, displayed, label or 'History unavailable', entry)
     if large:
       for index, item in enumerate(LEGEND.values()):
         left = 1130 + index * 184

@@ -40,33 +40,34 @@ export class ReplayHistory {
       for (const track of ["mode", "error"]) this.layers[track] = this.rows.filter(row => layer(row[2]) === track)
     }
   }
-  label(position) {
-    if (!this.rows) return "Loading history"
+  entry(position) {
+    if (!this.rows) return null
     for (const track of ["error", "mode"]) {
       const rows = this.layers[track]
       let lo = 0, hi = rows.length
       while (lo < hi) { const mid = (lo + hi) >>> 1; if (rows[mid][0] <= position) lo = mid + 1; else hi = mid }
-      if (lo && position < rows[lo-1][1]) return this.legend[rows[lo-1][2]].label
+      if (lo && position < rows[lo-1][1]) return this.legend[rows[lo-1][2]]
     }
-    return "Neutral"
+    return null
   }
+  label(position) { return this.entry(position)?.label || (this.rows ? "Neutral" : "Loading history") }
 }
 
 export function drawReplayTimeline(canvas, status, history, dpr = globalThis.devicePixelRatio || 1) {
   if (!canvas || !status) return
-  const width = canvas.getBoundingClientRect().width, small = globalThis.innerWidth <= 600
-  const rail = small ? 8 : 10, tick = small ? 3 : 4, y = tick + 2, height = y + rail
+  const { width, height } = canvas.getBoundingClientRect(), style = getComputedStyle(canvas)
+  const tick = parseFloat(style.getPropertyValue("--replay-tick")), y = tick + parseFloat(style.getPropertyValue("--replay-gap")), rail = height - y
   canvas.width = Math.max(1, Math.round(width * dpr)); canvas.height = Math.round(height * dpr)
-  canvas.style.height = `${height}px`
   const ctx = canvas.getContext("2d")
   if (!ctx || status.end <= status.start) return
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   const rect = (left, right, color, bookmark = false) => {
-    const x = Math.max(0, Math.min(width - 1 / dpr, width * (left - status.start) / (status.end - status.start)))
-    const end = Math.min(width, Math.max(x + (bookmark ? 2 : 1) / dpr, width * (right - status.start) / (status.end - status.start)))
+    let x = Math.max(0, Math.min(width - 1 / dpr, width * (left - status.start) / (status.end - status.start)))
+    const end = Math.min(width, Math.max(x + (bookmark ? 3 : 1 / dpr), width * (right - status.start) / (status.end - status.start)))
+    if (bookmark) x = Math.max(0, end - 3)
     ctx.fillStyle = color; ctx.fillRect(x, bookmark ? 0 : y, end - x, bookmark ? tick : rail)
   }
-  for (const [left, right] of status.seekRanges?.length ? status.seekRanges : [[status.start, status.end]]) rect(left, right, "rgba(255,255,255,.16)")
+  for (const [left, right] of status.seekRanges?.length ? status.seekRanges : [[status.start, status.end]]) rect(left, right, "#363c47")
   if (history?.rows) for (const track of ["mode", "error", "bookmark"]) for (const [left, right, kind] of history.rows) {
     if (layer(kind) === track) rect(left, right, `rgb(${history.legend[kind].rgb.join(" ")})`, track === "bookmark")
   }

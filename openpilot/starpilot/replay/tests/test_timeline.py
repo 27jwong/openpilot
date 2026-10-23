@@ -28,6 +28,7 @@ def test_paged_history_is_atomic_and_seek_independent(tmp_path):
   page = read_page(path, 0, identity, [[0, 3]])
   history.append({**page, 'ownerId': OWNER, 'sessionId': SESSION}, [[0, 3]])
   assert history.rows is None and history.label(1) == 'Loading history'
+  assert history.entry(1) is None
   page = read_page(path, history.cursor, identity, [[0, 3]])
   history.append({**page, 'ownerId': OWNER, 'sessionId': SESSION}, [[0, 3]])
   assert history.rows == rows and history.cursor is None
@@ -44,9 +45,12 @@ def test_alert_bookmark_and_mode_layers(tmp_path):
   page = read_page(path, 0, identity, [[0, 2]])
   history.append({**page, 'ownerId': OWNER, 'sessionId': SESSION}, [[0, 2]])
   assert history.label(.4) == 'Alert'
+  assert history.entry(.4) is LEGEND['error']
   assert history.label(.8) == 'Chill'
+  assert history.entry(.8) is LEGEND['chill']
   assert history.label(1) == 'AOL'
   assert history.label(2) == 'Neutral'
+  assert history.entry(2) is None
 
 
 @pytest.mark.parametrize('cursor', [-1, True, 1, 10000000])

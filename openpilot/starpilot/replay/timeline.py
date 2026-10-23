@@ -123,12 +123,18 @@ class TimelineHistory:
         rows = [row for row in self.rows if (row[2] == 'error') == (kind == 'error') and row[2] != 'bookmark']
         self.layers[kind] = ([row[0] for row in rows], rows)
 
-  def label(self, position):
+  def entry(self, position):
     if self.rows is None:
-      return 'Loading history'
+      return None
     for kind in ('error', 'mode'):
       times, rows = self.layers[kind]
       i = bisect_right(times, position) - 1
       if i >= 0 and rows[i][0] <= position < rows[i][1]:
-        return LEGEND[rows[i][2]]['label']
-    return 'Neutral'
+        return LEGEND[rows[i][2]]
+    return None
+
+  def label(self, position):
+    if self.rows is None:
+      return 'Loading history'
+    entry = self.entry(position)
+    return entry['label'] if entry else 'Neutral'

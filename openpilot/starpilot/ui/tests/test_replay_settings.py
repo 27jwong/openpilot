@@ -423,14 +423,15 @@ def page_for_input():
   return page, controller
 
 
-@pytest.mark.parametrize('profile,rail,tick', [(Profile.LARGE, 12, 4), (Profile.COMPACT, 8, 3)])
-def test_timeline_cache_draws_alerts_last_and_keeps_existing_hit_area(monkeypatch, profile, rail, tick):
+@pytest.mark.parametrize('profile,rail,tick,mark_width', [(Profile.LARGE, 28, 6, 4), (Profile.COMPACT, 16, 4, 3)])
+@pytest.mark.parametrize('scale', [1, 2])
+def test_timeline_cache_draws_alerts_last_and_keeps_existing_hit_area(monkeypatch, profile, rail, tick, mark_width, scale):
   from openpilot.starpilot.ui import replay_settings as module
   from openpilot.starpilot.replay.timeline import LEGEND
   page, controller = page_for_input()
   page.profile = profile
   controller.timeline = NS(rows=[[0, 120, 'chill'], [30, 30.001, 'error'], [30, 30, 'bookmark']])
-  monkeypatch.setattr(module.gui_app, '_scale', 1.)
+  monkeypatch.setattr(module.gui_app, '_scale', scale)
   target = NS(id=1)
   upload, paint, unload = Mock(return_value=target), Mock(), Mock()
   monkeypatch.setattr(rl, 'load_render_texture', upload)
@@ -440,10 +441,10 @@ def test_timeline_cache_draws_alerts_last_and_keeps_existing_hit_area(monkeypatc
     monkeypatch.setattr(rl, name, Mock())
   page._prepare_rail()
   assert page._transport()[0][-1] == 48
-  assert upload.call_args.args[1] == rail + tick + 2
+  assert upload.call_args.args[1] == (rail + tick + 2) * scale
   calls = paint.call_args_list
-  assert calls[-2].args[1:4:2] == (tick + 2, rail)
-  assert calls[-2].args[2] >= 1 and calls[-1].args[2] >= 2
+  assert calls[-2].args[1:4:2] == ((tick + 2) * scale, rail * scale)
+  assert calls[-2].args[2] >= 1 and calls[-1].args[2] >= mark_width * scale
   for call, kind in zip(calls[-3:], ('chill', 'error', 'bookmark'), strict=True):
     color = call.args[-1]
     assert [color.r, color.g, color.b] == LEGEND[kind]['rgb']
@@ -462,9 +463,35 @@ def test_timeline_texture_without_cache_key_uses_neutral_rail(monkeypatch):
   paint, draw = Mock(), Mock()
   monkeypatch.setattr(rl, 'draw_rectangle', paint)
   monkeypatch.setattr(rl, 'draw_texture_pro', draw)
-  page._timeline_rail(100, 916, 1960, 48, 0, 120, [[0, 120]], True)
+  page._timeline_rail(100, 916, 1960, 48, 0, 120, [[0, 120]])
   draw.assert_not_called()
   paint.assert_called_once()
+
+
+@pytest.mark.parametrize('profile', [Profile.LARGE, Profile.COMPACT])
+@pytest.mark.parametrize('head_x', [16, 270, 2060])
+def test_scrub_preview_stays_above_touch_area_and_inside_screen(monkeypatch, profile, head_x):
+  from openpilot.starpilot.ui import replay_settings as module
+  from openpilot.starpilot.replay.timeline import LEGEND
+  page, _ = page_for_input()
+  page.profile = profile
+  page.fonts.measure.side_effect = lambda text, _role, size: NS(width=len(text) * size / 2, height=size)
+  fill, paint = Mock(), Mock()
+  monkeypatch.setattr(module, 'draw_rounded_fill', fill)
+  monkeypatch.setattr(module, 'draw_rounded_stroke', Mock())
+  monkeypatch.setattr(rl, 'draw_line', Mock())
+  monkeypatch.setattr(rl, 'draw_rectangle', paint)
+  page._scrub_preview(head_x, 90, 'Experimental', LEGEND['experimental'])
+  bounds = fill.call_args.args[0]
+  assert 0 <= bounds.x < bounds.x + bounds.width <= profile.size[0]
+  assert bounds.y + bounds.height < page._transport()[0][1] - (48 if profile == Profile.LARGE else 8)
+  color = paint.call_args.args[-1]
+  assert [color.r, color.g, color.b] == LEGEND['experimental']['rgb']
+  assert page.fonts.draw.call_args.args[0] == '1:30 - Experimental'
+  if profile == Profile.COMPACT:
+    assert (bounds.x, bounds.y, bounds.width, bounds.height) == (8, 8, 520, 42)
+  page._scrub_preview(head_x, 90, 'Unavailable gap', None)
+  assert paint.call_args.args[-1] is module.TEXT_MUTED
 
 
 @pytest.mark.parametrize('profile', [Profile.LARGE, Profile.COMPACT])
@@ -475,9 +502,9 @@ def test_timeline_commits_only_on_release_and_epoch_change_cancels(profile):
   x, top, width, height = page._transport()[0]
   y, destination = top + height / 2, x + width * .75
   page._handle_mouse_press(NS(x=x, y=y))
-  page._handle_mouse_event(mouse_event=NS(left_down=True, left_released=False, pos=NS(x=destination, y=y), t=1))
+  page._handle_mouse_event(mouse_event=NS(left_down=True, left_released=False, pos=NS(x=destination, y=y + 50), t=1))
   controller.seek.assert_not_called()
-  page._handle_mouse_release(NS(x=destination, y=y))
+  page._handle_mouse_release(NS(x=destination, y=y + 50))
   controller.seek.assert_called_once_with(90)
   controller.seek.reset_mock()
   page._handle_mouse_press(NS(x=x, y=y))
@@ -576,6 +603,7 @@ def test_transport_autohides_only_during_playback_and_tap_does_not_activate_hidd
   page.set_rect(rl.Rectangle(0, 0, *profile.size))
   page.fonts.measure.return_value = NS(width=20, height=20)
   page._button = Mock()
+  page._scrub_preview = Mock()
   monkeypatch.setattr(module, 'draw_rounded_fill', Mock())
   owner.available, owner.busy, owner.error = True, False, ''
   owner.frame = NS(session_id='b' * 32, epoch=1, frame_id=1, width=profile.size[0], height=profile.size[1], data=b'pixels')
