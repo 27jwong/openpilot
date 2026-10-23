@@ -615,34 +615,24 @@ static safety_config toyota_init(uint16_t param) {
     };
 
     SET_RX_CHECKS(toyota_secoc_rx_checks, ret);
-  } else if (toyota_lta) {
-    // Check the quality flag for angle measurement when using LTA, since it's not set on TSS-P cars
-    static RxCheck toyota_lta_rx_checks[] = {
-      TOYOTA_RX_CHECKS(true)
-      {.msg = {{0x2FF, 0, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = false}, { 0 }, { 0 }}},
-    };
-
-    SET_RX_CHECKS(toyota_lta_rx_checks, ret);
-    if (!toyota_sdsu_status) {
-      ret.rx_checks_len -= 1;
-    }
   } else {
-    // The final entry belongs only to the exact RAV4H filter profile. Share
-    // the ordinary checks instead of duplicating their mutable status table.
-    static RxCheck toyota_lka_rx_checks[] = {
+    // These profiles use the same four base checks. Share their mutable
+    // workspace; set_safety_hooks resets every active status on each switch.
+    static RxCheck toyota_rx_checks[] = {
       TOYOTA_RX_CHECKS(false)
       {.msg = {{0x2FF, 0, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = false}, { 0 }, { 0 }}},
     };
-    // The alternate-brake profile differs only in this source address. Reuse
-    // the same workspace; set_safety_hooks resets all active mutable status.
-    toyota_lka_rx_checks[3].msg[0].addr = toyota_alt_brake ? 0x224U : 0x226U;
-    toyota_lka_rx_checks[4].msg[0] = (CanMsgCheck){.addr = toyota_alt_cruise ? 0x365 : (toyota_pedal ? 0x201 : 0x2FF),
+    // LTA alone validates initialized measured angle. Preserve the existing
+    // alternate-brake selection only on non-LTA profiles.
+    toyota_rx_checks[1].msg[0].ignore_quality_flag = !toyota_lta;
+    toyota_rx_checks[3].msg[0].addr = (!toyota_lta && toyota_alt_brake) ? 0x224U : 0x226U;
+    toyota_rx_checks[4].msg[0] = (CanMsgCheck){.addr = toyota_alt_cruise ? 0x365 : (toyota_pedal ? 0x201 : 0x2FF),
       .bus = 0U, .len = toyota_alt_cruise ? 7 : (toyota_pedal ? 6 : 8), .frequency = toyota_alt_cruise ? 10U : 50U,
       .ignore_checksum = !toyota_pedal, .ignore_counter = !toyota_pedal,
       .max_counter = toyota_pedal ? 15U : 0U, .ignore_quality_flag = toyota_alt_cruise};
-    SET_RX_CHECKS(toyota_lka_rx_checks, ret);
+    SET_RX_CHECKS(toyota_rx_checks, ret);
     if (!toyota_pedal && !toyota_alt_cruise && !toyota_sdsu_status) {
-      ret.rx_checks_len -= 1;  // Ordinary profiles do not require smartDSU.
+      ret.rx_checks_len -= 1;  // Ordinary profiles do not require an auxiliary source.
     }
   }
 
