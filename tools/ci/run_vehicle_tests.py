@@ -159,6 +159,8 @@ AOL_LIFECYCLE_TARGETS = (
   "openpilot/starpilot/car/subaru/tests/test_smoothing_settings.py",
   "openpilot/starpilot/car/subaru/tests/test_smoothing_model_join.py",
   "opendbc_repo/opendbc/safety/tests/test_subaru_outback_angle.py",
+  'openpilot/starpilot/car/toyota/tests/test_matrix_stock_caller_native.py',
+  'opendbc_repo/opendbc/safety/tests/test_toyota_matrix_stock_aol.py',
 )
 
 AOL_LIFECYCLE_SCOPE = {
@@ -454,6 +456,8 @@ RELEASE_TARGETS = (
   "opendbc_repo/opendbc/safety/tests/test_subaru_forester_angle.py",
   "opendbc_repo/opendbc/safety/tests/test_subaru_receive_guards.py",
   "opendbc_repo/opendbc/safety/tests/test_subaru_outback_angle.py",
+  'openpilot/starpilot/car/toyota/tests/test_matrix_stock_caller_native.py',
+  'opendbc_repo/opendbc/safety/tests/test_toyota_matrix_stock_aol.py',
 )
 
 # Vehicle tests import both the vendored car code and these host control owners.
