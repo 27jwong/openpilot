@@ -1135,13 +1135,21 @@ class SelfdriveD:
       alerts.append(notification)
     if not recovery.monitor.visible(now_ns):
       clear_event_types.add(RADAR_RECOVERY_EVENT)
-    if getattr(self, 'aol_fault_reason', 'none') == 'availabilityPause':
+    # A cold/unarmed fault classification is not a pause of expected steering.
+    # Qualified availability retention already carries both fields even while
+    # ordinary cruise is disabled; this only selects its presentation.
+    availability_warning = bool(getattr(self, 'aol_fault_reason', 'none') == 'availabilityPause' and
+      self.aol_axis_decision.desired_lateral and self.aol_axis_decision.native_acknowledged)
+    if availability_warning:
       warning = Alert("Steering Paused", "Communication Issue", log.SelfdriveState.AlertStatus.normal,
         log.SelfdriveState.AlertSize.small, AlertPriority.LOW, car.CarControl.HUDControl.VisualAlert.none,
         (log.SelfdriveState.AudibleAlert.prompt if
          now_ns <= getattr(self, 'aol_availability_chime_until_ns', 0) else log.SelfdriveState.AudibleAlert.none), 0.)
       warning.alert_type, warning.event_type = 'aolAvailability/warning', ET.WARNING
       alerts.append(warning)
+    else:
+      # Retire only this presentation; retain every original safety alert.
+      self.AM.alerts.pop('aolAvailability/warning', None)
     if getattr(self, 'jetlink_link_lost', False):
       alerts.append(jetlink_lost_alert())
     self.AM.add_many(self.sm.frame, alerts)
