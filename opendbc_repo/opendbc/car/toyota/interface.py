@@ -249,9 +249,9 @@ class CarInterface(CarInterfaceBase):
     if prius_advert_filter.hardware_supported(candidate, fingerprint, car_fw):
       prius_advert_filter.apply(ret)
     from opendbc.car.toyota import pedal
-    if pedal.hardware_supported(candidate, fingerprint, car_fw):
+    if ret.openpilotLongitudinalControl and pedal.hardware_supported(candidate, fingerprint, car_fw):
       ret.flags |= int(ToyotaFlags.GAS_INTERCEPTOR)
-      ret.safetyConfigs[0].safetyParam = pedal.LONG_WORD
+      ret.safetyConfigs[0].safetyParam = pedal.long_word(candidate)
     return ret
 
   @staticmethod

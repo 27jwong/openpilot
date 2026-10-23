@@ -332,6 +332,11 @@ class CarController(CarControllerBase):
       if (rav4h_long or pedal_owner or advert_long or original_prius_long) and (not filter_allowed or not long_active and CS.out.standstill):
         self.standstill_req = True
 
+      if pedal_owner and self.CP.carFingerprint in pedal.RADAR_PEDAL_CARS and not long_active:
+        # A radar-disable safety handoff starts with fresh native RX checks.
+        # Neutral output must not request release before LONG is admitted.
+        self.standstill_req = True
+
       if self.frame % 3 == 0:
         # Press distance button until we are at the correct bar length. Only change while enabled to avoid skipping startup popup
         if self.frame % 6 == 0 and self.CP.openpilotLongitudinalControl:

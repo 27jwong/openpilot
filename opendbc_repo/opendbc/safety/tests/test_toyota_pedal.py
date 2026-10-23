@@ -107,7 +107,7 @@ class TestPairedPedal(unittest.TestCase):
     self.safety.set_timer(1_300_001)
     self.assertFalse(self.tx(0.1))
     self.assertTrue(self.tx(0))
-    for word in (0x2149, 0x2449, 0x3049, 0xA049):
+    for word in (0x2149, 0x2849, 0x3049, 0xA049):
       self.init(word)
       self.assertFalse(self.tx(0))
       self.assertFalse(self.tx(0.1))
