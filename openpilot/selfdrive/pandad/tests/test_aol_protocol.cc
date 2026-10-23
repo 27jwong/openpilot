@@ -102,8 +102,8 @@ int main() {
   }
 
   for (uint32_t word = 0U; word <= 65535U; ++word) {
-    const bool stock = (word == 8U) || (word == 24U);
-    const bool longitudinal = (word == 9U) || (word == 25U);
+    const bool stock = (word == 8U) || (word == 24U) || (word == 40U);
+    const bool longitudinal = (word == 9U) || (word == 25U) || (word == 41U);
     const bool expected = stock || longitudinal;
     auto vw = status();
     vw.safety_mode = 15U;

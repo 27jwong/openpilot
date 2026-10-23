@@ -1,5 +1,5 @@
 from opendbc.car import structs
-from opendbc.car.volkswagen.stock_aol import qualified as stock_qualified, safety_config as aol_safety_config, AOL_WORD, MANUAL_WORD, AOL_WORDS
+from opendbc.car.volkswagen.stock_aol import qualified as stock_qualified, safety_config as aol_safety_config, AOL_WORD, MANUAL_WORD, DIRECT_WORD, AOL_WORDS
 from opendbc.car.volkswagen.long_aol import qualified as long_qualified, WORDS as LONG_WORDS
 from openpilot.starpilot.aol.intent import AolCardIntent, AOL_TOGGLE, ButtonType
 from openpilot.starpilot.aol.policy import AolVehiclePolicy
@@ -20,6 +20,7 @@ def policy_for(cp):
   if not qualified(cp):
     return AolVehiclePolicy()
   word = AOL_WORD | (MANUAL_WORD if cp.transmissionType == structs.CarParams.TransmissionType.manual else 0)
+  word |= DIRECT_WORD if cp.transmissionType == structs.CarParams.TransmissionType.direct else 0
   return AolVehiclePolicy(intent_supported=True, settings_supported=True, runtime_supported=True,
                          normal_runtime_supported=True, ordinary_axis_ack_required=qualified(cp, marked_only=True),
                          explicit_latch=True, lkas_button_supported=False, safety_param_addition=word,

@@ -142,7 +142,7 @@ def test_mqb_full_engagement_brake_reverse_drive_actual_callers(gearbox, alpha, 
     cleanup.callback(native.init_tests)
     native.init_tests()
     native.set_alternative_experience(32)
-    native.set_safety_hooks(15, (24 if gearbox == 'manual' else 8) | int(alpha))
+    native.set_safety_hooks(15, (24 if gearbox == 'manual' else 40 if gearbox == 'direct' else 8) | int(alpha))
     native.set_aol_test_heartbeat(True)
     card.CI.update([])
     dbc = ParsedDBC('vw_mqb')
