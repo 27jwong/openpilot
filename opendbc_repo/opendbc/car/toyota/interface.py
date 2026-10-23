@@ -77,7 +77,10 @@ class CarInterface(CarInterfaceBase):
       ret.steerActuatorDelay = 0.12  # Default delay, Prius has larger delay
       ret.steerLimitTimer = 0.4
 
-    smart_dsu = (candidate in (CAR.TOYOTA_PRIUS, CAR.TOYOTA_PRIUS_RETROFIT) and 0x2FF in fingerprint[0] and
+    from opendbc.car.toyota import prius_retrofit_advert
+    retrofit_advert = prius_retrofit_advert.hardware_supported(candidate, fingerprint, car_fw)
+    smart_dsu = (candidate in (CAR.TOYOTA_PRIUS, CAR.TOYOTA_PRIUS_RETROFIT) and
+                 (fingerprint.get(0, {}).get(0x2FF) == 8 or retrofit_advert) and
                  any(fw.ecu == Ecu.eps and bytes(fw.fwVersion) == b"8965B47070\x00\x00\x00\x00\x00\x00"
                      for fw in car_fw))
     if candidate in (CAR.TOYOTA_PRIUS, CAR.TOYOTA_PRIUS_RETROFIT) and fingerprint.get(0, {}).get(0x23) == 8:
@@ -162,7 +165,8 @@ class CarInterface(CarInterfaceBase):
       if late_camera:
         bypass = ((0x343 in camera_fp and not any(0x343 in fingerprint.get(bus, {}) for bus in (0, 1))) or
                   (0x4CB in camera_fp and 0x4CB not in fingerprint[0]))
-      smart_dsu = (candidate == CAR.TOYOTA_PRIUS_RETROFIT and 0x2FF in fingerprint[0] and
+      smart_dsu = (candidate == CAR.TOYOTA_PRIUS_RETROFIT and
+                   (fingerprint.get(0, {}).get(0x2FF) == 8 or retrofit_advert) and
                    any(fw.ecu == Ecu.eps and bytes(fw.fwVersion) == b"8965B47070\x00\x00\x00\x00\x00\x00"
                        for fw in car_fw))
       takeover = 0x2FF in fingerprint[0] or bypass

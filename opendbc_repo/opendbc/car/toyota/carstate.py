@@ -34,7 +34,8 @@ class CarState(CarStateBase):
     super().__init__(CP)
     can_define = CANDefine(DBC[CP.carFingerprint][Bus.pt])
     original_prius = prius_sdsu.configured(CP) or prius_advert_filter.configured(CP)
-    self.eps_torque_scale = (.73 if prius_filter_configured(CP) and not original_prius else EPS_SCALE[CP.carFingerprint] / 100.)
+    self.eps_torque_scale = ((CP.safetyConfigs[0].safetyParam & 0xFF) / 100. if prius_advert_filter.configured(CP) else
+                             .73 if prius_filter_configured(CP) and not original_prius else EPS_SCALE[CP.carFingerprint] / 100.)
     self.cluster_speed_hyst_gap = CV.KPH_TO_MS / 2.
     self.cluster_min_speed = CV.KPH_TO_MS / 2.
 

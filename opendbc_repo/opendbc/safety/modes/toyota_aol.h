@@ -8,8 +8,12 @@ static bool toyota_prius_sdsu(void) {
   return toyota_prius_sdsu_param(current_safety_param);
 }
 
+static bool toyota_prius_retrofit_advert_param(uint16_t param) {
+  return (param == 0xD049U) || (param == 0xD249U);
+}
+
 static bool toyota_prius_advert_param(uint16_t param) {
-  return (param == 0xC042U) || (param == 0xC242U);
+  return (param == 0xC042U) || (param == 0xC242U) || toyota_prius_retrofit_advert_param(param);
 }
 
 static bool toyota_prius_advert(void) {

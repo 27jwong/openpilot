@@ -250,8 +250,14 @@ def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H,
     fw = firmware(candidate) if firmware_override is None else firmware_override
     if manual_selection:
       if manual_filter_length is not None:
-        assert candidate == CAR.TOYOTA_MATRIX_RETROFIT and manual_filter_length in (4, 8)
-        assert not fw and firmware_override == []
+        if candidate == CAR.TOYOTA_MATRIX_RETROFIT:
+          assert manual_filter_length in (4, 8) and not fw and firmware_override == []
+        else:
+          assert candidate in (CAR.TOYOTA_PRIUS, CAR.TOYOTA_PRIUS_RETROFIT) and manual_filter_length == 4
+          observed_eps = [entry for entry in fw if entry.ecu == structs.CarParams.Ecu.eps]
+          assert len(observed_eps) == 1 and observed_eps[0].address == 0x7A1 and observed_eps[0].bus == 0
+          assert bytes(observed_eps[0].fwVersion) == b'8965B47070' + bytes(6)
+          assert all(entry.brand == 'toyota' and not entry.logging and entry.bus == 0 for entry in fw)
         assert fingerprint_frames == [(0x2FF, bytes(manual_filter_length), 0)]
       else:
         assert stock and fingerprint_frames == []

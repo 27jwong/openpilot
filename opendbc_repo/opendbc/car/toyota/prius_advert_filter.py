@@ -10,6 +10,9 @@ RETROFIT_EPS = b'8965B47070\x00\x00\x00\x00\x00\x00'
 
 
 def hardware_supported(candidate, fingerprint, car_fw):
+  from opendbc.car.toyota import prius_retrofit_advert
+  if prius_retrofit_advert.hardware_supported(candidate, fingerprint, car_fw):
+    return True
   if (candidate != CAR.TOYOTA_PRIUS or fingerprint.get(0, {}).get(0x2FF) != 4 or
       any(0x2FF in messages and (bus != 2 or messages[0x2FF] != 4) for bus, messages in fingerprint.items() if bus != 0) or
       any(address in messages for messages in fingerprint.values() for address in (0x201, 0x2AA)) or
@@ -32,12 +35,16 @@ def hardware_supported(candidate, fingerprint, car_fw):
 
 def apply(cp):
   cp.flags |= int(ToyotaFlags.HYBRID | ToyotaFlags.LONG_FILTER | ToyotaFlags.RAISED_ACCEL_LIMIT)
-  cp.safetyConfigs[0].safetyParam = LONG_WORD
+  from opendbc.car.toyota import prius_retrofit_advert
+  cp.safetyConfigs[0].safetyParam = prius_retrofit_advert.LONG_WORD if cp.safetyConfigs[0].safetyParam & 0xFF == 73 else LONG_WORD
   cp.openpilotLongitudinalControl = True
   cp.alphaLongitudinalAvailable = False
 
 
 def configured(cp):
+  from opendbc.car.toyota import prius_retrofit_advert
+  if prius_retrofit_advert.configured(cp):
+    return True
   if (cp is None or cp.brand != 'toyota' or cp.carFingerprint != CAR.TOYOTA_PRIUS or cp.notCar or cp.passive or
       cp.dashcamOnly or cp.secOcRequired or not cp.pcmCruise or len(cp.safetyConfigs) != 1 or
       cp.steerControlType != structs.CarParams.SteerControlType.torque):
@@ -53,7 +60,8 @@ def prepare_stock(cp):
   if not configured(cp):
     return False
   cp.openpilotLongitudinalControl = False
-  cp.safetyConfigs[0].safetyParam = STOCK_WORD
+  from opendbc.car.toyota import prius_retrofit_advert
+  cp.safetyConfigs[0].safetyParam = prius_retrofit_advert.STOCK_WORD if cp.safetyConfigs[0].safetyParam in prius_retrofit_advert.WORDS else STOCK_WORD
   cp.autoResumeSng = False
   return True
 
