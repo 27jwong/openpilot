@@ -34,7 +34,6 @@ SYSTEM_ALSA_CONFIG = Path('/usr/share/alsa/alsa.conf')
 # The Android Auto media channel format every head unit must offer; the pipe runs on the system clock,
 # so it produces exactly real-time audio (silence when paused) whether or not anyone reads it.
 PIPE_RATE, PIPE_CHANNELS, PIPE_BYTES_PER_FRAME = 48000, 2, 4
-PLAYER_VOLUME = 100  # level is the car's/speaker's job; the saved initial_volume preference is ignored
 
 
 class BackendUnavailable(RuntimeError):
@@ -118,7 +117,7 @@ def player_launch(layout: Layout, prefs: Preferences, api_key: str) -> Launch:
   # The key must be an argument: Soloist documents no file, fd or environment alternative.
   argv = [str(layout.current / 'soloist'), '--device-name', prefs.device_name, '--api-key', api_key,
           '--data-dir', str(layout.state), '--cache-dir', str(layout.cache), '--cache-size', str(prefs.cache_mb),
-          '--initial-volume', str(PLAYER_VOLUME), '--ws', '127.0.0.1:0']
+          '--initial-volume', str(prefs.initial_volume), '--ws', '127.0.0.1:0']
   env = {'HOME': str(paths['home']), 'XDG_RUNTIME_DIR': str(paths['run']), 'PATH': '/usr/bin:/bin',
          'PULSE_SERVER': f'unix:{paths["socket"]}'}
   return Launch(argv, env)

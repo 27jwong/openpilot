@@ -269,7 +269,8 @@ def test_car_controls_flush_queued_phone_audio_only_for_pause_and_skip(music, mo
 def test_relay_flushes_and_mutes_phone_audio_after_a_flush_request(tmp_path, monkeypatch):
   import io
   events = []
-  chunk = lambda n: bytes([n]) * 3840
+  def chunk(n):
+    return bytes([n]) * 3840
   class Capture:
     returncode = 0
     stdout = io.BytesIO(b''.join(chunk(n) for n in range(1, 7)))

@@ -58,7 +58,7 @@ def test_alsa_config_is_process_local_bluealsa_pcm():
 
 
 def test_launch_commands_isolate_the_server_and_player(layout):
-  prefs = preferences.Preferences(output_address='AA:BB:CC:DD:EE:FF')
+  prefs = preferences.Preferences(output_address='AA:BB:CC:DD:EE:FF', initial_volume=60)
   server = backend.server_launch(layout, prefs, alsa_base=Path('/usr/share/alsa/alsa.conf'))
   assert '-n' in server.argv and '--system=no' in server.argv
   assert any(arg.startswith('module-alsa-sink device=starpilot_spotify') for arg in server.argv)
@@ -72,6 +72,7 @@ def test_launch_commands_isolate_the_server_and_player(layout):
   assert 'PULSE_SINK' not in player.env  # follows the server's default sink, so outputs can switch live
   assert player.argv[player.argv.index('--ws') + 1] == '127.0.0.1:0'
   assert player.argv[player.argv.index('--cache-size') + 1] == '256'
+  assert player.argv[player.argv.index('--initial-volume') + 1] == '60'
   assert player.env['PULSE_SERVER'] == f'unix:{layout.runtime}/pulse/native'
 
 
@@ -184,7 +185,8 @@ def make_supervisor(layout, spawned, logged_in=True):
       backend.runtime_paths(layout)['socket'].touch()
     return process
   now = [100.0]
-  sup = supervisor.Supervisor(layout, spawn=spawn, clock=lambda: now[0], make_client=type('Client', (FakeClient,), {'logged_in': logged_in}), network=lambda: True)  # ty: ignore[invalid-argument-type]  # test double
+  make_client = type('Client', (FakeClient,), {'logged_in': logged_in})
+  sup = supervisor.Supervisor(layout, spawn=spawn, clock=lambda: now[0], make_client=make_client, network=lambda: True)  # ty: ignore[invalid-argument-type]
   sup.run_async = lambda fn: fn()
   return sup, now
 
@@ -396,31 +398,6 @@ def test_supervisor_waits_for_network_before_starting(layout, monkeypatch):
   assert [Path(p.argv[0]).name for p in spawned] == ['pulseaudio', 'soloist']
 
 
-def test_supervisor_retries_sign_in_with_backoff_and_resets_on_login(layout, monkeypatch):
-  ready_layout(layout, monkeypatch)
-  spawned = []
-  sup, now = make_supervisor(layout, spawned, logged_in=False)
-  sup.tick()
-  assert len(spawned) == 2
-  delays = []
-  for attempt in range(1, 4):
-    sup.tick()
-    now[0] += supervisor.LOGIN_SECONDS + 1
-    sup.tick()
-    assert sup.status()['state'] == 'retrying'
-    assert sup.login_failures == attempt
-    delays.append(sup.retry_at - now[0])
-    assert ('API key' in sup.status()['message']) == (attempt >= supervisor.LOGIN_REJECTED_AFTER)
-    now[0] = sup.retry_at + 0.1
-    sup.tick()
-    assert len(spawned) == 2 * (attempt + 1)
-  assert delays[0] < delays[1] < delays[2]
-  sup.client.snapshot = lambda: {'connected': True, 'loggedIn': True, 'status': 'idle', 'active': False}
-  sup.tick()
-  assert sup.login_failures == 0
-  assert sup.status()['state'] == 'ready'
-
-
 def test_changing_mute_values_never_restarts_the_player(layout, monkeypatch):
   from dataclasses import replace
   ready_layout(layout, monkeypatch)
@@ -457,3 +434,18 @@ def test_changing_mute_values_keeps_phone_audio_running(layout, monkeypatch):
   preferences.save(replace(preferences.load(layout), cache_mb=512), layout)
   sup.tick()
   assert len(spawned) == 4
+
+
+@pytest.mark.parametrize(('ipv4', 'ipv6', 'expected'), [
+  ('', '', False),
+  ('Iface Destination Gateway Flags', '', False),
+  ('wlan0 00000000 0100000A 0003', '', True),
+  ('', '0' * 32 + ' 00 ' + '0' * 32 + ' 00 ' + '0' * 32 + ' 00000001 00000000 00000000 00000003 wlan0', True),
+  ('', '0' * 32 + ' 00 ' + '0' * 32 + ' 00 ' + '0' * 32 + ' 00000001 00000000 00000000 00200200 lo', False),
+  ('wlan0 00000000 0100000A 0201', '', False),
+  ('lo 00000000 00000000 0001', '', False),
+])
+def test_network_ready_accepts_either_address_family(monkeypatch, ipv4, ipv6, expected):
+  from io import StringIO
+  monkeypatch.setattr('builtins.open', lambda path: StringIO(ipv4 if path.endswith('/route') else ipv6))
+  assert supervisor.network_ready() is expected

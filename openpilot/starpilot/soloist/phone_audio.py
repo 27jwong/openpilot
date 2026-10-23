@@ -25,9 +25,7 @@ A2DP_SOURCE = '0000110a-0000-1000-8000-00805f9b34fb'
 MEDIA_PLAYER = 'org.bluez.MediaPlayer1'
 MEDIA_TRANSPORT = 'org.bluez.MediaTransport1'
 PLAYER_METHODS = {'play': 'Play', 'pause': 'Pause', 'next': 'Next', 'previous': 'Previous'}
-# The deep buffer rides out Bluetooth stalls, so queued audio must be thrown away when the car sends pause or
-# skip, and the phone's still-arriving audio muted until it has acted on the command.
-# The windows are the pause_mute / skip_mute settings (Galaxy › Music), reread on every flush so they apply live.
+# Flush queued audio and mute incoming samples until the phone handles pause or skip.
 FLUSH_ACTIONS = {'pause': (signal.SIGUSR1, 'pause'), 'next': (signal.SIGUSR2, 'skip'), 'previous': (signal.SIGUSR2, 'skip')}
 
 
@@ -179,8 +177,6 @@ class PulseWriter:
     self.lib.pa_simple_free.restype = None
     self.lib.pa_simple_flush.argtypes = [C.c_void_p, C.POINTER(C.c_int)]
     self.lib.pa_simple_flush.restype = C.c_int
-    self.lib.pa_simple_get_latency.argtypes = [C.c_void_p, C.POINTER(C.c_int)]
-    self.lib.pa_simple_get_latency.restype = C.c_uint64
     spec = SampleSpec(3, 48000, 2)  # PA_SAMPLE_S16LE
     # 500 ms maximum, 200 ms target, refill before playing: the phone's stream stalls up to ~90 ms at a time.
     attr = BufferAttr(96000, 38400, 0xffffffff, 3840, 0xffffffff)
@@ -199,10 +195,6 @@ class PulseWriter:
     error = C.c_int()
     self.lib.pa_simple_flush(self.stream, C.byref(error))
 
-  def latency_ms(self) -> float:
-    error = C.c_int()
-    return self.lib.pa_simple_get_latency(self.stream, C.byref(error)) / 1000.0
-
   def close(self):
     self.lib.pa_simple_free(self.stream)
 
@@ -218,10 +210,6 @@ def request_flush(kind: str):
     FlushRequest.kind = kind
 
 
-LATENCY_FLAG = Path('/data/phone_audio_latency')
-LATENCY_LOG = Path('/tmp/phone_audio_latency.log')
-
-
 def relay(address: str, server: str, config: Path):
   config.write_text(capture_config(address))
   os.chmod(config, 0o600)
@@ -231,12 +219,9 @@ def relay(address: str, server: str, config: Path):
                            '-r', '48000', '-c', '2', '--buffer-time=200000', '--period-time=20000'],
                           env={**os.environ, 'ALSA_CONFIG_PATH': str(config)}, stdout=subprocess.PIPE) as capture:
       try:
-        log = LATENCY_LOG.open('a') if LATENCY_FLAG.exists() else None
-        last_log, last_read, max_read, mute_until = time.monotonic(), time.monotonic(), 0.0, 0.0
+        mute_until = 0.0
         while data := capture.stdout.read(3840):
           now = time.monotonic()
-          max_read = max(max_read, now - last_read)
-          last_read = now
           if len(data) % 4:
             raise RuntimeError('Incomplete phone audio frame')
           if FlushRequest.kind:
@@ -245,11 +230,6 @@ def relay(address: str, server: str, config: Path):
           if now < mute_until:
             continue
           writer.write(data)
-          if log is not None and now - last_log >= 0.5:
-            epoch = time.time()  # noqa: TID251 - correlate diagnostic logs with btmon/journal timestamps
-            log.write(f'{epoch:.3f} latency_ms={writer.latency_ms():.1f} max_read_ms={max_read * 1000:.0f}\n')
-            log.flush()
-            last_log, max_read = now, 0.0
       finally:
         capture.terminate()
         try:

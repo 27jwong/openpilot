@@ -80,65 +80,29 @@ supervisor publishes the snapshot in its status file; the car screen reads it on
 card is enabled, and the card stays hidden when nothing is playing or an alert is up. Phone metadata comes
 from the phone's Bluetooth media player (BlueZ `MediaPlayer1`), so it depends on the phone sharing it.
 
-## Spotify Connect on hotspots and cellular
+## Spotify Connect recovery
 
-Enable Spotify and pair once from Spotify's device picker on a shared local network
-(home Wi-Fi, a phone hotspot, or the comma's Galaxy hotspot). Both local discovery
-and device-to-device traffic must be allowed. A hotspot-hosting phone may restrict
-this traffic; if initial pairing fails, use another shared Wi-Fi network. Wireless
-Android Auto by itself is not a promise of local discovery or an internet uplink.
+Pair once from Spotify's device picker on a shared Wi-Fi network or hotspot that
+allows device-to-device traffic. Both devices need internet access; the Galaxy
+hotspot and wireless Android Auto alone do not provide it. After pairing, use the
+same Spotify account and turn off **Local device visibility** in Spotify to control
+the comma across networks. On iPhone, allow Spotify **Local Network** access.
 
-Soloist keeps its device identity and Connect session in `state/` across restarts,
-output changes, network handoffs and cache clearing. After pairing, keep both devices
-online and use the same Spotify account. On the phone, disable Spotify's **Local
-device visibility** under Settings → Apps and devices to allow devices on other
-networks. On iPhone also grant Spotify **Local Network** access for local pairing.
-The comma needs its own usable internet connection (cellular or tethered internet
-is fine); the local Galaxy hotspot alone does not supply one.
+Soloist retains its account across restarts, network handoffs, output changes and
+cache clearing. Startup waits for an IPv4 or IPv6 default route. A disconnected
+Bluetooth speaker uses a private silent sink; two consecutive background checks,
+twenty seconds apart, trigger an output switch without restarting Soloist. A failed
+switch restarts playback with the saved account. Recovery never requests playback
+transfer from another Spotify device.
 
-The supervisor has no Wi-Fi, unmetered-network or ignition requirement, and it never
-restarts Soloist because the network changed. Soloist follows network changes itself:
-it binds one mDNS socket on `0.0.0.0:5353` and answers on interfaces that appear after
-it starts, because the device's avahi-daemon joins the mDNS group on every interface.
-Checked on the device 2026-10-20 with network namespaces: a running Soloist answered
-`_spotify-connect._tcp` queries on a link created after launch within ten seconds.
+The local API checks authentication every fifteen seconds and reconnects after
+forty-five seconds without a response. Two minutes without a working API or a
+previously observed login restarts Soloist; loss of login while playing allows ten
+minutes for cached music. First-time pairing has no timeout. Repeated starts that
+never answer the API can roll back the Soloist package. A route or API response
+does not prove internet access; Spotify off/on retries without clearing the account.
 
-A disconnected selected Bluetooth speaker no longer prevents Soloist from starting.
-It uses a private silent sink so the device can be paired and remain online; Galaxy
-still shows the pairing state and adds that audio is waiting for the speaker. The
-supervisor checks the selected speaker every twenty seconds in the background, so that
-periodic check never blocks Galaxy commands. After two checks in a row agree that availability
-changed, it uses the vendored `pactl` to load the speaker (or silent) sink into the running audio
-server and move Soloist's stream onto it, so Soloist keeps its session, any pairing in progress,
-and playback. Soloist plays to the server's default sink rather than a named one, so later streams
-follow too. Only if `pactl` is missing or the switch fails does it restart the audio/player with
-the saved session.
-It never takes over playback from another Spotify device automatically.
-
-The local API is polled for authentication state every fifteen seconds. A response
-missing for forty-five seconds reconnects that socket; two minutes without a working
-API restarts Soloist without clearing the account. A build that never answers at all
-counts as a failed start, so repeated silence still rolls back to the previous build.
-Loss of a previously observed login gets the same two-minute grace period, or ten
-minutes if it was playing just before (cached music can outlast a coverage gap); an
-initial pairing can wait indefinitely. A live API/login is not proof of internet reachability. If discovery still
-fails, switch Spotify off/on in Galaxy to refresh it without resetting the account.
-
-These behaviors cannot override phone hotspot isolation, Spotify app permissions,
-cloud availability, expired Soloist builds, or a sleeping/powered-off comma.
-The optional control WebSocket stays on loopback; exposing it or the Galaxy tunnel
-is not how Spotify Connect discovers a device.
-
-References checked 2026-10-20:
-- https://developer.spotify.com/documentation/soloist/concepts/authentication
-- https://developer.spotify.com/documentation/soloist/tutorials/getting-started
-- https://developer.spotify.com/documentation/soloist/reference/websocket-api
-- https://support.spotify.com/us/article/spotify-connect/
-
-Hardware acceptance (not covered by unit tests): pair from Android and iPhone on
-home Wi-Fi and each phone's hotspot; pair through the Galaxy hotspot with a separate
-comma internet uplink; move a paired comma from Wi-Fi to cellular and IPv6 tethering;
-control it from a phone on a different network with Local device visibility off;
-restart the comma and confirm the saved account returns; connect/disconnect the
-selected Bluetooth speaker; verify availability after a tunnel/coverage outage.
-Confirm another Spotify player is never activated or interrupted by background recovery.
+Device acceptance remains necessary: Android/iPhone pairing on Wi-Fi and hotspots,
+Wi-Fi/cellular handoffs, saved-account recovery, speaker reconnects, and control
+across networks. See [Spotify Connect](https://support.spotify.com/us/article/spotify-connect/)
+and the [Soloist API](https://developer.spotify.com/documentation/soloist/reference/websocket-api).

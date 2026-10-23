@@ -133,12 +133,14 @@ assert.doesNotMatch(SpotifyPage.template, /Pause smoothing[^>]*parked/)
 {
   const posts = []
   const page = { pauseDraft: 0.9, skipDraft: 0.9, feed: { post: (path, body) => { posts.push([path, body]); return Promise.resolve() } } }
-  SpotifyPage.methods.commitPauseMute.call(page, { target: { value: "0.3" } })
-  SpotifyPage.methods.commitSkipMute.call(page, { target: { value: "0" } })
-  SpotifyPage.methods.commitSkipMute.call(page, { target: { value: "not a number" } })
+  SpotifyPage.methods.commitMute.call(page, "pause", { target: { value: "0.3" } })
+  SpotifyPage.methods.commitMute.call(page, "skip", { target: { value: "0" } })
+  SpotifyPage.methods.commitMute.call(page, "skip", { target: { value: "not a number" } })
   assert.deepEqual(posts, [["./api/spotify/preferences", { pauseMute: 0.3 }], ["./api/spotify/preferences", { skipMute: 0 }]])
   assert.equal(page.pauseDraft, null)
   assert.equal(page.skipDraft, null)
   assert.equal(SpotifyPage.computed.pauseMuteLabel.call({ pauseDraft: 0.6, setup: { preferences: { pauseMute: 0.5 } } }), "600 ms")
   assert.equal(SpotifyPage.computed.skipMuteLabel.call({ skipDraft: null, setup: { preferences: { skipMute: 0.25 } } }), "250 ms")
 }
+
+assert.equal(serviceLabel({ enabled: true, service: { state: "ready", player: { status: "paused" }, outputWaiting: "Car" } }), "Paused Audio waits for Car.")

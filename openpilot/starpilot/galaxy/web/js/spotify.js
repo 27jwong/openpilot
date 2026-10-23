@@ -99,8 +99,8 @@ export function serviceLabel(setup) {
   if (!setup?.enabled) return "Off"
   const service = setup.service
   if (!service) return "Starting…"
-  if (service.state === "ready" && service.player?.status === "paused") return "Paused"
-  const text = service.message && !["ready", "playing", "waiting"].includes(service.state) ? service.message : STATE_TEXT[service.state] || "Starting…"
+  const text = service.state === "ready" && service.player?.status === "paused" ? "Paused" :
+    service.message && !["ready", "playing", "waiting"].includes(service.state) ? service.message : STATE_TEXT[service.state] || "Starting…"
   return service.outputWaiting ? `${text} Audio waits for ${service.outputWaiting}.` : text
 }
 
@@ -378,15 +378,10 @@ export const SpotifyPage = {
     async removeAll() { this.removeOpen = false; return this.feed.removeAll() },
     control(action, args) { return this.feed.control(action, args) },
     togglePlay() { return this.control(this.playing ? "pause" : "play") },
-    commitPauseMute(event) {
+    commitMute(kind, event) {
       const value = Number(event.target.value)
-      this.pauseDraft = null
-      if (Number.isFinite(value)) return this.feed.post("./api/spotify/preferences", { pauseMute: value })
-    },
-    commitSkipMute(event) {
-      const value = Number(event.target.value)
-      this.skipDraft = null
-      if (Number.isFinite(value)) return this.feed.post("./api/spotify/preferences", { skipMute: value })
+      this[`${kind}Draft`] = null
+      if (Number.isFinite(value)) return this.feed.post("./api/spotify/preferences", { [`${kind}Mute`]: value })
     },
     openInstall() { this.chooseAgain(); Object.assign(this, { installOpen: true, downloadStarted: false }) },
     closeInstall() { this.installOpen = false },
@@ -457,11 +452,11 @@ export const SpotifyPage = {
           <p class="gx-note" role="status">{{ statusText }}</p>
           <label class="gx-stack"><span>Pause smoothing · {{ pauseMuteLabel }}</span>
             <input type="range" class="gx-slider" min="0" :max="setup.preferences.muteMax || 1.5" step="0.05" :value="pauseDraft ?? setup.preferences.pauseMute"
-              aria-label="Pause smoothing" :disabled="busy" @input="pauseDraft = Number($event.target.value)" @change="commitPauseMute" /></label>
+              aria-label="Pause smoothing" :disabled="busy" @input="pauseDraft = Number($event.target.value)" @change="commitMute('pause', $event)" /></label>
           <label class="gx-stack"><span>Skip smoothing · {{ skipMuteLabel }}</span>
             <input type="range" class="gx-slider" min="0" :max="setup.preferences.muteMax || 1.5" step="0.05" :value="skipDraft ?? setup.preferences.skipMute"
-              aria-label="Skip smoothing" :disabled="busy" @input="skipDraft = Number($event.target.value)" @change="commitSkipMute" /></label>
-          <p class="gx-note">After you pause or skip from the car screen, phone audio is muted this long so the song’s last moments don’t play. Raise a slider if you hear the old song’s tail; lower it if the next song starts clipped. Changes apply immediately, even while driving.</p>
+              aria-label="Skip smoothing" :disabled="busy" @input="skipDraft = Number($event.target.value)" @change="commitMute('skip', $event)" /></label>
+          <p class="gx-note">Briefly mutes incoming audio after pause or skip. Increase if the old song lingers; decrease if the next song starts clipped. Changes apply immediately.</p>
           <p class="gx-note">Music only. Calls and microphone audio are not forwarded.</p>
         </template>
         <template v-if="setupDone && !phoneSource && !showSetup">

@@ -66,7 +66,7 @@ def test_lost_login_recovers_but_first_pairing_waits_without_restart(tmp_path, m
   ready_layout(layout, monkeypatch)
   monkeypatch.setattr(supervisor, '_kill_group', lambda _p: None)
   spawned = []
-  sup, now = make_supervisor(layout, spawned)
+  sup, now = make_supervisor(layout, spawned, logged_in=False)
   sup.tick()
   for _ in range(5):
     now[0] += 200
