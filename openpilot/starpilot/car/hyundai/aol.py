@@ -320,8 +320,10 @@ def retain_on_native_denial(CP, native, state):
 
 def source_deadline_supported(CP) -> bool:
   """Admit only an already marked HKG axis owner to original-proof waits."""
+  from openpilot.starpilot.aol.vehicle import policy_for as vehicle_policy_for
+
   config = aol_safety_config(CP)
-  policy = policy_for(CP)
+  policy = vehicle_policy_for(CP)
   return bool(policy.runtime_supported and policy.full_axis_runtime_required and config is not None and
               native_accepts_cp(CP, int(config.safetyModel.raw), int(config.safetyParam)))
 
