@@ -34,6 +34,24 @@ class LifecycleShardTests(unittest.TestCase):
       with self.subTest(targets=bad_targets, count=count), self.assertRaises(ValueError):
         helper.partition(bad_targets, bad_ids, count)
 
+  def test_measured_native_callers_keep_whole_module_and_outweigh_case_count(self):
+    module = 'opendbc_repo/opendbc/car/mazda/tests/test_native_engagement_callers.py'
+    policy = helper.workload_policy()
+    measured = policy['modules'][module]
+    self.assertNotIn(module, policy['function_groups'])
+    self.assertEqual(measured['cases'], 48)
+    self.assertGreater(measured['seconds'], 56 * policy['unknown_seconds_per_case'])
+    self.assertEqual(len(measured['source_sha256']), 64)
+    self.assertEqual(measured['reference']['artifact_id'], 12520491388)
+    prefix = module.removesuffix('.py').replace('/', '.') + '.'
+    identities = [prefix + f'test_case[{i}]' for i in range(48)]
+    identities += [f'other.test_case[{i}]' for i in range(56)]
+    shards = helper.partition([module, 'other.py'], identities, 2)
+    self.assertEqual(shards, [[module], ['other.py']])
+    selected = [identity for shard in shards for identity in identities
+                if any(helper.matches(identity, target) for target in shard)]
+    self.assertCountEqual(selected, identities)
+
   def test_only_large_reviewed_heavy_functions_split_into_exact_parameter_leaves(self):
     heavy = 'openpilot/starpilot/car/toyota/tests/test_legacy_advert_callers.py'
     prefix = heavy.removesuffix('.py').replace('/', '.') + '.'

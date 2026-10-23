@@ -39,6 +39,18 @@
       "seconds": 1.8563495159999093,
       "source_sha256": "ae178c63d9cdc55845036f8d062ddc16d323a518ae1f91b5a3e11417a432ceda"
     },
+    "opendbc_repo/opendbc/car/mazda/tests/test_native_engagement_callers.py": {
+      "cases": 48,
+      "reference": {
+        "artifact_id": 12520491388,
+        "results_sha256": "04083573cc6db3fb5c100b940054bfc8af95193a980156ca0e913a9d0c38b321",
+        "revision": "01a31c1f2fe9ba04c7b2b4246f6962a617eae9cd",
+        "run_id": 39995003180,
+        "shard": 0
+      },
+      "seconds": 97.41501304299936,
+      "source_sha256": "41af76aaa5ad7b6c2e59e37605254aec6b8f36764ad99bf4b7ec1a0a26b297ff"
+    },
     "opendbc_repo/opendbc/car/volkswagen/tests/test_meb_discovery.py": {
       "cases": 8,
       "seconds": 0.22158582399970328,
