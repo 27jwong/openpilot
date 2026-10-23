@@ -47,14 +47,16 @@ def button_reported(cp, key):
   if brand in ('body', 'byd', 'mg', 'mock', 'psa', 'rivian', 'subaru'):
     return False
   if brand == 'toyota':
+    from opendbc.car.toyota import legacy_advert_filter
     from opendbc.car.toyota.values import CAR, ToyotaFlags
+    legacy_advert = bool(cp.flags & ToyotaFlags.RADAR_CAN_FILTER) and legacy_advert_filter.configured(cp)
     if key == 'MainCruiseButtonControl' or key in KEYS[5:8]:
       return False
     if key == 'LKASButtonControl':
       return bool(cp.flags & (ToyotaFlags.TSS2 | ToyotaFlags.LONG_FILTER) or
-                  cp.carFingerprint == CAR.TOYOTA_PRIUS_RETROFIT)
+                  cp.carFingerprint == CAR.TOYOTA_PRIUS_RETROFIT or legacy_advert)
     return bool(cp.flags & ToyotaFlags.TSS2 and not cp.flags & (ToyotaFlags.RADAR_ACC | ToyotaFlags.SECOC) or
-                cp.flags & ToyotaFlags.LONG_FILTER or cp.carFingerprint in
+                cp.flags & ToyotaFlags.LONG_FILTER or legacy_advert or cp.carFingerprint in
                 (CAR.TOYOTA_PRIUS, CAR.TOYOTA_PRIUS_RETROFIT, CAR.TOYOTA_SIENNA_4TH_GEN))
   if brand == 'tesla':
     from opendbc.car.tesla.values import CAR, TeslaFlags

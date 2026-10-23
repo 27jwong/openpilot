@@ -8,7 +8,7 @@ from opendbc.car.common.pid import PIDController
 from opendbc.car.secoc import add_mac, build_sync_mac
 from opendbc.car.interfaces import CarControllerBase
 from opendbc.car.toyota import toyotacan
-from opendbc.car.toyota import prius_longitudinal, rav4h_filter, pedal, eps8_sdsu, legacy_sdsu, advert_filter, legacy_stop_timer
+from opendbc.car.toyota import prius_longitudinal, rav4h_filter, pedal, eps8_sdsu, legacy_sdsu, advert_filter, legacy_stop_timer, legacy_advert_filter
 from opendbc.car.toyota.door_locks import DoorLocks
 from opendbc.car.toyota.values import CAR, CarControllerParams, ToyotaFlags, TOYOTA_AUTO_HOLD_CARS, uses_toyota_auto_hold_aeb
 from opendbc.can import CANPacker
@@ -85,6 +85,7 @@ class CarController(CarControllerBase):
     self.prius_longitudinal = prius_longitudinal.enabled(CP)
     self.sdsu_hybrid = (eps8_sdsu.configured(CP) or legacy_sdsu.configured(CP)) and bool(CP.flags & ToyotaFlags.HYBRID)
     self.legacy_stop_timer = legacy_stop_timer.enabled(CP)
+    self.legacy_advert_filter = legacy_advert_filter.configured(CP)
     self.permit_braking = True
     self.steer_rate_counter = 0
     self.distance_button = 0
@@ -157,10 +158,16 @@ class CarController(CarControllerBase):
       filter_allowed = bool(self.advert_filter_input is not None and self.advert_filter_input.update(now_nanos) and
                             CS.out.canValid and not CS.out.canTimeout and CS.out.cruiseState.available and
                             not CS.out.steerFaultTemporary and not CS.out.steerFaultPermanent and not CS.out.accFaulted and not CS.out.stockAeb)
+    legacy_advert_source_ready = not self.legacy_advert_filter or (
+      CS.out.gearShifter in (structs.CarState.GearShifter.drive, structs.CarState.GearShifter.sport) and not CS.out.doorOpen)
+    if self.legacy_advert_filter:
+      filter_allowed = filter_allowed and legacy_advert_source_ready
     pedal_owner = pedal.configured(self.CP)
     if pedal_owner:
       filter_allowed = bool(self.pedal_input is not None and self.pedal_input.update(now_nanos) and CS.pedal_ready)
     long_active = CC.longActive and filter_allowed
+    if self.legacy_advert_filter:
+      long_active = long_active and not (CS.out.seatbeltUnlatched or CS.out.gasPressed or CS.out.brakePressed)
     actuators = CC.actuators
     stopping = actuators.longControlState == LongCtrlState.stopping
     hud_control = CC.hudControl
@@ -171,6 +178,8 @@ class CarController(CarControllerBase):
     if advert_owner:
       lat_active = lat_active and CS.out.canValid and not CS.out.canTimeout and CS.out.cruiseState.available and not (
         CS.out.steerFaultTemporary or CS.out.steerFaultPermanent)
+    if self.legacy_advert_filter:
+      lat_active = lat_active and legacy_advert_source_ready
     CS.zss_lateral_active = bool(CC.latActive)
 
     if len(CC.orientationNED) == 3:
@@ -292,12 +301,13 @@ class CarController(CarControllerBase):
           self.last_standstill, self.standstill_req, CS.out.standstill,
           CS.pcm_acc_status, CC.cruiseControl.resume, long_active)
         self.last_standstill = CS.out.standstill
-      elif self.sdsu_hybrid or advert_long and bool(self.CP.flags & ToyotaFlags.HYBRID):
+      elif self.sdsu_hybrid or (advert_long and bool(self.CP.flags & ToyotaFlags.HYBRID) and
+                              not (legacy_advert_filter.enabled(self.CP) and self.CP.carFingerprint == CAR.TOYOTA_RAV4H)):
         # Retain the existing hybrid resume behavior while active. The shared
         # owner guard below still holds neutral when LONG or its source is lost.
         self.standstill_req = not long_active and CS.out.standstill
-      elif rav4h_long or not self.CP.flags & ToyotaFlags.HYBRID.value:
-        should_resume = long_active and actuators.accel > 0 if rav4h_long else actuators.accel > 0
+      elif rav4h_long or (legacy_advert_filter.enabled(self.CP) and self.CP.carFingerprint == CAR.TOYOTA_RAV4H) or not self.CP.flags & ToyotaFlags.HYBRID.value:
+        should_resume = long_active and actuators.accel > 0 if rav4h_long or legacy_advert_filter.enabled(self.CP) else actuators.accel > 0
         if should_resume:
           self.standstill_req = False
 

@@ -12,6 +12,10 @@ STOCK_WORD = 0x1249
 
 
 def hardware_supported(candidate, fingerprint, car_fw):
+  from opendbc.car.toyota import legacy_advert_filter
+  if candidate in legacy_advert_filter.PROFILES:
+    return legacy_advert_filter.hardware_supported(candidate, fingerprint, car_fw)
+
   if (
     candidate not in CARS
     or fingerprint.get(0, {}).get(0x2FF) != 4
@@ -35,6 +39,10 @@ def hardware_supported(candidate, fingerprint, car_fw):
 
 
 def apply(cp):
+  from opendbc.car.toyota import legacy_advert_filter
+  if cp is not None and cp.carFingerprint in legacy_advert_filter.PROFILES:
+    return legacy_advert_filter.apply(cp)
+
   # This is an advertisement, never the eight-byte SDSU status/FD_BUTTON source.
   cp.flags |= int(ToyotaFlags.RADAR_CAN_FILTER)
   cp.safetyConfigs[0].safetyParam = LONG_WORD
@@ -43,6 +51,10 @@ def apply(cp):
 
 
 def configured(cp):
+  from opendbc.car.toyota import legacy_advert_filter
+  if cp is not None and cp.carFingerprint in legacy_advert_filter.PROFILES:
+    return legacy_advert_filter.configured(cp)
+
   if (
     cp is None
     or cp.brand != "toyota"
@@ -73,6 +85,10 @@ def enabled(cp):
 
 
 def prepare_stock(cp):
+  from opendbc.car.toyota import legacy_advert_filter
+  if cp is not None and cp.carFingerprint in legacy_advert_filter.PROFILES:
+    return legacy_advert_filter.prepare_stock(cp)
+
   if not configured(cp):
     return False
   cp.openpilotLongitudinalControl = False

@@ -25,7 +25,7 @@ def test_factory_owner_scope_and_full_cp_unchanged():
         count += 1
         assert car in legacy_stop_timer.CARS and cp.minEnableSpeed < 0
       assert cp.to_dict() == original
-  assert count == 13  # Seven SDSU, four DLC4, Camry/C-HR 2AA.
+  assert count == 16  # Seven SDSU, seven DLC4, Camry/C-HR 2AA.
 
 
 def test_dom_latch_transition_oracle_and_inactive_neutral_veto():

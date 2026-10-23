@@ -226,7 +226,8 @@ def control_inputs(controls, published, state, sd_events, native, now):
 
 def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H, bridge=None, input_clock=False, brake_stop_check_start=350,
              sdsu_words=(0x9049, 0x9249), alpha_long=False, disable_setting=None, physical_frames=None, angle=False,
-             firmware_override=None, assert_hybrid_release=False, sdsu_mirror=False, on_sample=None, camera_messages=False, filter_advert=False):
+             firmware_override=None, assert_hybrid_release=False, sdsu_mirror=False, on_sample=None, camera_messages=False, filter_advert=False,
+             brake_pause_mps=None, native_rx_expected=None, on_state=None):
   SYNTHETIC_LAST.clear()
   NATIVE_LAST.clear()
   safety = libsafety_py.libsafety
@@ -242,6 +243,8 @@ def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H,
       ('ToyotaAutoHold', False),
     ):
       params.put_bool(k, v, block=True)
+    if brake_pause_mps is not None:
+      params.put('AolBrakePauseSpeedMps', float(brake_pause_mps), block=True)
     fw = firmware(candidate) if firmware_override is None else firmware_override
     exact, found = match_fw_to_car(fw, '', log=False)
     assert exact and found == {candidate}
@@ -368,7 +371,10 @@ def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H,
           frames.append((malformed[0], malformed[1][:7], malformed[2]))
         for a, d, bus in frames:
           accepted = bool(safety.safety_rx_hook(libsafety_py.make_CANPacket(a, bus, d)))
-          assert accepted == (not (a == 0x2FF and bus == 0 and 0 < (d[2] >> 4) < 7)), (tick, hex(a), d.hex(), accepted)
+          expected = not (a == 0x2FF and bus == 0 and 0 < (d[2] >> 4) < 7)
+          if native_rx_expected is not None:
+            expected = native_rx_expected(a, d, bus, expected, host.CP)
+          assert accepted == expected, (tick, hex(a), d.hex(), accepted, expected)
         safety.safety_tick()
         native = native_events(host, safety, now, sd.aol_session_id)
         deliver(host.sm, [*native, *prev.values()])
@@ -376,6 +382,8 @@ def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H,
         batch.logMonoTime = time.clock_gettime_ns(time.CLOCK_BOOTTIME)
         with patch.object(card_module.messaging, 'drain_sock_raw', return_value=[batch.to_bytes()]), patch.object(host.sm, 'update'):
           cs, radar = host.state_update()
+        if on_state is not None:
+          on_state(tick, host, cs)
         host.state_publish(cs, radar)
         state = dict(published)
         peers = selfdrive_inputs(sd, state, native, cc, host.CP, now)

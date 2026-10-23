@@ -2,7 +2,7 @@ import copy
 import math
 
 from opendbc.can import CANDefine, CANParser
-from opendbc.car.toyota import pedal, legacy_sdsu, advert_filter
+from opendbc.car.toyota import pedal, legacy_sdsu, advert_filter, legacy_advert_filter
 from opendbc.car.toyota.lexus_is import LexusIsCANParser
 from opendbc.car import Bus, DT_CTRL, create_button_events, structs
 from opendbc.car.common.conversions import Conversions as CV
@@ -159,7 +159,8 @@ class CarState(CarStateBase):
     if self.CP.flags & ToyotaFlags.UNSUPPORTED_DSU:
       # TODO: find the bit likely in DSU_CRUISE that describes an ACC fault. one may also exist in CLUTCH
       ret.cruiseState.available = cp.vl["DSU_CRUISE"]["MAIN_ON"] != 0
-      if self.CP.carFingerprint == CAR.LEXUS_IS or legacy_sdsu.configured(self.CP) and self.CP.carFingerprint in legacy_sdsu.ALT_MAIN_CARS:
+      if (self.CP.carFingerprint == CAR.LEXUS_IS or
+          (legacy_sdsu.configured(self.CP) or legacy_advert_filter.configured(self.CP)) and self.CP.carFingerprint in legacy_sdsu.ALT_MAIN_CARS):
         stamp = cp.ts_nanos["DSU_CRUISE"]["MAIN_ON"]
         ret.cruiseState.available &= bool(cp.main_valid and stamp > 0 and 0 <= cp._last_update_nanos - stamp <= 303_031_000)
       ret.cruiseState.speed = cp.vl["DSU_CRUISE"]["SET_SPEED"] * CV.KPH_TO_MS
@@ -221,7 +222,8 @@ class CarState(CarStateBase):
     buttonEvents = create_button_events(int(pcm_acc_status) if pcm_acc_status in (9, 10) else 0,
                                        int(previous_pcm_acc_status) if previous_pcm_acc_status in (9, 10) else 0,
                                        {9: ButtonType.accelCruise, 10: ButtonType.decelCruise})
-    if self.CP.flags & (ToyotaFlags.TSS2 | ToyotaFlags.LONG_FILTER) or self.CP.carFingerprint == CAR.TOYOTA_PRIUS_RETROFIT:
+    if (self.CP.flags & (ToyotaFlags.TSS2 | ToyotaFlags.LONG_FILTER) or self.CP.carFingerprint == CAR.TOYOTA_PRIUS_RETROFIT or
+        self.CP.flags & ToyotaFlags.RADAR_CAN_FILTER and legacy_advert_filter.configured(self.CP)):
       # lkas button is wired to the camera
       prev_lkas_button = self.lkas_button
       self.lkas_button = cp_cam.vl["LKAS_HUD"]["LDA_ON_MESSAGE"]
@@ -309,11 +311,12 @@ class CarState(CarStateBase):
 
     if CP.carFingerprint == CAR.TOYOTA_SIENNA_4TH_GEN:
       pt_messages.append(("PCM_CRUISE_4", 1))
-    alternate_sdsu_main = legacy_sdsu.configured(CP) and CP.carFingerprint in legacy_sdsu.ALT_MAIN_CARS
+    legacy_advert = legacy_advert_filter.configured(CP)
+    alternate_sdsu_main = (legacy_sdsu.configured(CP) or legacy_advert) and CP.carFingerprint in legacy_sdsu.ALT_MAIN_CARS
     if CP.carFingerprint == CAR.LEXUS_IS or alternate_sdsu_main:
       pt_messages.append(("DSU_CRUISE", 10))
 
-    if advert_filter.configured(CP):
+    if advert_filter.configured(CP) and not alternate_sdsu_main:
       pt_messages.append(("PCM_CRUISE_2", 10))
     if CP.flags & ToyotaFlags.LONG_FILTER:
       pt_messages.append(("SDSU", 50))
@@ -322,11 +325,12 @@ class CarState(CarStateBase):
 
     if pedal.configured(CP):
       pt_messages.append(("GAS_SENSOR", 50))
-    pt_parser = (legacy_sdsu.AlternateMainSDSUCANParser if alternate_sdsu_main else
+    pt_parser = (legacy_advert_filter.LegacyAdvertCANParser if legacy_advert else
+                 legacy_sdsu.AlternateMainSDSUCANParser if alternate_sdsu_main else
                  LexusIsCANParser if CP.carFingerprint == CAR.LEXUS_IS else pedal.PedalCANParser if pedal.configured(CP) else
                  advert_filter.AdvertFilterCANParser if advert_filter.configured(CP) else
                  Rav4hCANParser if rav4h_filter_configured(CP) else CANParser)
     return {
-      Bus.pt: pt_parser(DBC[CP.carFingerprint][Bus.pt], pt_messages, 0),
+      Bus.pt: pt_parser(DBC[CP.carFingerprint][Bus.pt], pt_messages, 0, **({"alternate_main": alternate_sdsu_main} if legacy_advert else {})),
       Bus.cam: CANParser(dbc_name, cam_messages, 2),
     }

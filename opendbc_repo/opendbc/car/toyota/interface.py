@@ -176,6 +176,8 @@ class CarInterface(CarInterfaceBase):
       ret.flags |= int(ToyotaFlags.HYBRID | ToyotaFlags.LONG_FILTER)
       ret.safetyConfigs[0].safetyParam = 4169
       ret.openpilotLongitudinalControl = True
+    from opendbc.car.toyota import legacy_advert_filter
+    legacy_advert = legacy_advert_filter.hardware_supported(candidate, fingerprint, car_fw)
     from opendbc.car.toyota.rav4h_filter import hardware_supported, LONG_WORD
     rav4h_sdsu = hardware_supported(candidate, fingerprint, car_fw)
     if rav4h_sdsu:
@@ -187,7 +189,7 @@ class CarInterface(CarInterfaceBase):
       ret.alphaLongitudinalAvailable = False
       if candidate == CAR.TOYOTA_RAV4H:
         stop_and_go = True
-    elif candidate == CAR.TOYOTA_RAV4H and 0x2FF in fingerprint.get(0, {}):
+    elif candidate == CAR.TOYOTA_RAV4H and 0x2FF in fingerprint.get(0, {}) and not legacy_advert:
       ret.dashcamOnly = True
     from opendbc.car.toyota import eps8_sdsu
     eps8_filter = eps8_sdsu.hardware_supported(candidate, fingerprint, car_fw)
@@ -201,6 +203,8 @@ class CarInterface(CarInterfaceBase):
     advertised_filter = advert_filter.hardware_supported(candidate, fingerprint, car_fw)
     if advertised_filter:
       advert_filter.apply(ret)
+      if legacy_advert and candidate == CAR.TOYOTA_RAV4H:
+        stop_and_go = True
     # Toyota EPS accepts lateral commands down to zero. Keep the existing
     # native/axis/fault gates; a stock cruise stop does not withdraw steering.
     ret.steerAtStandstill = ret.minSteerSpeed <= 0.
@@ -209,6 +213,9 @@ class CarInterface(CarInterfaceBase):
       (eps8_filter and bool(ret.flags & ToyotaFlags.TSS2)) or
       (legacy_filter and candidate == CAR.TOYOTA_PRIUS_V) or
       (advertised_filter and bool(ret.flags & ToyotaFlags.TSS2)) or not ret.flags & ToyotaFlags.LONG_FILTER and not advertised_filter)
+
+    if legacy_advert:
+      ret.autoResumeSng = ret.openpilotLongitudinalControl and candidate in legacy_advert_filter.AUTO_RESUME_CARS
 
     if radar_filter and not ret.flags & ToyotaFlags.TSS2:
       ret.autoResumeSng = False  # Preserve the pre-TSS2 stock stop timer.
