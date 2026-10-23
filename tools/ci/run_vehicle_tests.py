@@ -24,8 +24,7 @@ from tools.ci import lifecycle_shards, vehicle_pytest
 # Representative production callers plus their source/native refusal cases.
 # The emitted selected_test_ids record exact parametrized configurations.
 AOL_LIFECYCLE_TARGETS = (
-  'openpilot/starpilot/aol/tests/test_hkg_cancel_joined.py::test_gv70_single_panda_long_cancel_neighbor',
-  'openpilot/starpilot/aol/tests/test_hkg_cancel_joined.py::test_gv70_two_panda_long_actual_join',
+  'openpilot/starpilot/aol/tests/test_hkg_cancel_joined.py',
   'openpilot/starpilot/aol/tests/test_gv70_two_panda_long.py',
   'openpilot/starpilot/longitudinal/tests/test_gv70_stopping_parity.py',
 
