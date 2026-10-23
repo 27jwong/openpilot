@@ -3,6 +3,7 @@ import argparse
 import ast
 import hashlib
 import json
+import os
 from pathlib import Path
 import sys
 from unittest import mock
@@ -37,9 +38,72 @@ def targets_for_coverage(root=ROOT):
   return sorted(selected - RELEASE_ONLY)
 
 
+
+class InstrumentedLibraries:
+  """Admit only the supplied library and authentic source-matched coverage builds."""
+  def __init__(self, native, module, root=ROOT):
+    self.native = Path(native).resolve()
+    self.module = module
+    self.root = root
+    self.original_build = module._build_libsafety
+    self.original_load = module.load
+    self.registered = {str(self.native): hashlib.sha256(self.native.read_bytes()).hexdigest()}
+    self.builds = []
+    self.source_sha256 = self.source_signature()
+
+  def source_signature(self):
+    files = {}
+    for relative in ('opendbc_repo/opendbc/safety', 'opendbc_repo/opendbc/bluepilot_lateral'):
+      for path in sorted((self.root / relative).rglob('*')):
+        if path.is_file() and path.suffix in ('.h', '.c', '.py'):
+          files[path.relative_to(self.root).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
+    if not files:
+      raise RuntimeError('Missing native coverage source inputs')
+    return hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()
+
+  def build(self, release=False):
+    if type(release) is not bool or os.environ.get('SAFETY_COVERAGE') != '1':
+      raise RuntimeError('Variant builds require genuine coverage instrumentation')
+    before = self.source_signature()
+    if before != self.source_sha256:
+      raise RuntimeError('Native coverage sources changed before a variant build')
+    path = Path(self.original_build(release=release)).resolve()
+    if self.source_signature() != before or not path.is_file():
+      raise RuntimeError('Native coverage sources changed during a variant build')
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    if str(path) in self.registered:
+      raise RuntimeError('Native coverage builder must return a fresh artifact')
+    self.registered[str(path)] = digest
+    self.builds.append({'path': str(path), 'sha256': digest, 'source_sha256': before,
+                        'variant': 'release' if release else 'debug', 'instrumented': True})
+    return str(path)
+
+  def load(self, path):
+    if self.source_signature() != self.source_sha256:
+      raise RuntimeError('Native coverage sources changed before loading')
+    path = Path(path).resolve()
+    expected = self.registered.get(str(path))
+    if expected is None or not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+      raise RuntimeError('Native coverage cases must use a registered unchanged instrumented library')
+    return self.original_load(path)
+
+
 def report_complete(report, targets, native_sha256):
   if (not isinstance(report, dict) or type(report.get('schema_version')) is not int or
       report.get('schema_version') != 1 or report.get('full_catalog') is not True):
+    return False
+  builds = report.get('native_builds')
+  source = report.get('native_source_sha256')
+  if (not isinstance(builds, list) or not isinstance(source, str) or len(source) != 64 or
+      any(char not in '0123456789abcdef' for char in source)):
+    return False
+  for row in builds:
+    if (not isinstance(row, dict) or row.get('instrumented') is not True or row.get('variant') not in ('debug', 'release') or
+        not isinstance(row.get('path'), str) or not Path(row['path']).is_absolute() or
+        not all(isinstance(row.get(key), str) and len(row[key]) == 64 and all(char in '0123456789abcdef' for char in row[key])
+                for key in ('sha256', 'source_sha256')) or row['source_sha256'] != report.get('native_source_sha256')):
+      return False
+  if len({row['path'] for row in builds}) != len(builds):
     return False
   ids, records = report.get('nodeids'), report.get('records')
   if (report.get('targets') != targets or not targets or report.get('native_sha256') != native_sha256 or
@@ -64,23 +128,22 @@ def run(native, output, targets=None):
     raise ValueError('Coverage subset must name existing native catalog cases')
   digest = hashlib.sha256(native.read_bytes()).hexdigest()
   libsafety_py.load(native)
-  original_load = libsafety_py.load
-
-  def load_pinned(path):
-    if Path(path).resolve() != native:
-      raise RuntimeError('Native coverage cases must retain the same instrumented libsafety')
-    return original_load(native)
+  libraries = InstrumentedLibraries(native, libsafety_py)
 
   report = {'schema_version': 1, 'full_catalog': full_catalog, 'targets': targets, 'native_sha256': digest,
             'native_path': str(native), 'native_bound_before': Path(libsafety_py.libpath).resolve() == native,
             'nodeids': [], 'records': [], 'collection_errors': [], 'execution_errors': []}
-  with mock.patch.object(libsafety_py, 'load', side_effect=load_pinned):
+  with (mock.patch.object(libsafety_py, 'load', side_effect=libraries.load),
+        mock.patch.object(libsafety_py, '_build_libsafety', side_effect=libraries.build)):
     nodeids, errors = vehicle_pytest.collect(targets)
     report.update(nodeids=nodeids, collection_errors=errors)
     if not errors:
       records, errors = vehicle_pytest.run(nodeids)
       report.update(records=records, execution_errors=errors)
-  report['native_bound_after'] = Path(libsafety_py.libpath).resolve() == native and hashlib.sha256(native.read_bytes()).hexdigest() == digest
+  report['native_builds'] = libraries.builds
+  report['native_source_sha256'] = libraries.source_sha256
+  report['native_bound_after'] = (Path(libsafety_py.libpath).resolve() == native and hashlib.sha256(native.read_bytes()).hexdigest() == digest and
+                                    libraries.source_signature() == libraries.source_sha256)
   Path(output).write_text(json.dumps(report, indent=2) + '\n')
   # The root's bounded native subset is a diagnostic; production always requires the complete catalog.
   checked = dict(report, full_catalog=True)
