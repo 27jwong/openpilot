@@ -125,8 +125,11 @@ def test_latest_panda_fault_veto_stays_live(cp):
 
 
 def test_unknown_ducktype_never_serializes_or_caches():
+  def unexpected_copy():
+    raise AssertionError('unknown CP must not be serialized')
+
   cp = SimpleNamespace(brand='hyundai', carFingerprint='KIA_EV9', schema=None,
-                       copy=lambda: pytest.fail('unknown CP must not be serialized'))
+                       copy=unexpected_copy)
   assert vehicle.native_admission_key(cp) is None
 
 
