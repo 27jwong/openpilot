@@ -479,6 +479,7 @@ class LiveTrackingOptimizer:
     self.selector_after_ns = self.last_episode_end_ns = 0
     self.comparison: list[TrackingEpisode] = []
     self.settled_ns: int | None = None
+    self.paused_intent: tuple[TrialState, tuple[TrackingEpisode, ...], tuple[TrackingEpisode, ...]] | None = None
     self.status, self.reason = 'collecting', 'qualified_tracking_episodes_required'
     self.model_status = 'unavailable'
 
@@ -486,6 +487,22 @@ class LiveTrackingOptimizer:
     return full_profile_sha256(self.binding.baseline_revision, values)
 
   def interrupt(self, reason: str, *, context_changed: bool = False) -> None:
+    # Retain only inert numerical study intent on missing/stale evidence. The
+    # command still rolls back; a fresh baseline ACK must precede a NEW wire
+    # trial. Completed scores, alpha and original deadline are never reset.
+    transient = not context_changed and reason in (
+      'acknowledged_trial_profile_withdrawn', 'expired_response_witness', 'stale_control', 'stale_applied_output',
+      'current_evidence_delayed', 'learning_evidence_delayed',
+      'fresh_physical_residual_window_required',
+    )
+    if not transient:
+      self.paused_intent = None
+    elif (reason in ('acknowledged_trial_profile_withdrawn', 'expired_response_witness') and self.offer_state is not None
+        and self.offer_state['phase'] == 'trial' and not self.offer_state.get('accepted', False) and self.before):
+      # Profile withdrawal requires a qualified newer source control. Expiry
+      # requires an otherwise valid original owned physical witness. Neither
+      # restores its command lease; both retain only the numerical study.
+      self.paused_intent = (self.offer_state.copy(), self.before, tuple(self.future))
     # Already completed clean geometry survives an ordinary brake/override.
     # The input builder discards interrupted partial episodes independently.
     retain_comparison = not context_changed and self.discovery is not None and (self.offer_state is None or self.offer_state.get('accepted') is True)
@@ -1137,6 +1154,7 @@ class LiveTrackingOptimizer:
     )
 
   def _rollback(self, reason: str) -> None:
+    self.paused_intent = None  # An actual scored rejection is terminal.
     if self.offer_state is None:
       raise ValueError('rollback requires a pending live trial')
     state = self.offer_state.copy()
@@ -1221,6 +1239,21 @@ class LiveTrackingOptimizer:
         self.offer_state = accepted
         if self.selector_pending:
           self.selector_after_ns = max(self.selector_after_ns, control_ns)
+      paused, self.paused_intent = self.paused_intent, None
+      if phase == 'rollback' and paused is not None:
+        intent, before, future = paused
+        if now_ns < intent['deadline_ns'] and intent['baseline'] == self.accepted:
+          self.sequence += 1
+          resumed = intent.copy()
+          resumed['trial_id'] = hashlib.sha256(repr((intent['trial_id'], self.sequence, control_ns)).encode()).hexdigest()
+          resumed['target_sequence'] = self.sequence
+          resumed['published'] = False
+          resumed['prior_accepted'] = self.offer_state
+          self.offer_state = resumed
+          self.before, self.future = before, list(future)
+          self.settled_ns = None
+          self.status, self.reason = 'trial_pending', 'fresh_target_application_after_evidence_gap_required'
+          return True
       self.baseline.clear()
       self.future.clear()
       self.settled_ns = None
@@ -1232,6 +1265,18 @@ class LiveTrackingOptimizer:
     if state is not None and offer.trial_id == state['trial_id'] and offer.target_sequence == state.get('target_sequence', self.sequence):
       state['published'] = True  # Conservative before-send marker, not an ACK.
 
+  def _witness_expired(self, now_ns: int) -> bool:
+    from openpilot.starpilot.flm.live_tracking_response import response_witness_value, validate_response_witness
+
+    try:
+      value = response_witness_value(self.response_witness)
+      # Validate every original field at its original deadline. This tests
+      # expiry only; it does not make the old witness current or authorize TX.
+      validate_response_witness(self.response_witness, self.binding, value.valid_until_ns)
+      return type(now_ns) is int and now_ns > value.valid_until_ns
+    except (AttributeError, TypeError, ValueError):
+      return False
+
   def offer(self, now_ns: int, *, publication=True) -> LiveTrialOffer | None:
     from openpilot.starpilot.flm.live_tracking_response import validate_response_witness
 
@@ -1239,7 +1284,7 @@ class LiveTrackingOptimizer:
       validate_response_witness(self.response_witness, self.binding, now_ns)
     except (TypeError, ValueError):
       if self.offer_state is not None:
-        self.interrupt('fresh_physical_response_witness_unavailable')
+        self.interrupt('expired_response_witness' if self._witness_expired(now_ns) else 'fresh_physical_response_witness_unavailable')
       return None
     state = self.offer_state
     if state is None:

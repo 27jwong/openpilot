@@ -86,6 +86,15 @@ def _collect_source_control(collector, prepared, sm, cp, now_ns):
   return collector.control(prepared, now_ns)
 
 
+def _collect_applied_output(collector, applied, sm, cp, now_ns):
+  """Each emission rechecks current native health for its original consumed CC."""
+  from openpilot.starpilot.flm.native_health import current_native_health
+
+  control = collector.controls.get(applied.control_ns, collector.recent_controls.get(applied.control_ns))
+  collector._learning_current_native_allowed = bool(control is not None and current_native_health(sm, cp, control, now_ns))
+  return collector.output(applied, now_ns)
+
+
 def _source_config_binding(source):
   return (source.cp_sha256, source.source_epoch, source.reset, source.calibration_generation,
           source.enabled, source.manual, source.persistent_source_epoch, tuple(source.manual_baseline))
@@ -334,6 +343,7 @@ def run(
   live_offer = None
   previous_tracking_pose_header = 0
   next_tracking_status_ns = 0
+  study_health_control = None
   saved_live_targets = set()
   live_history = _LiveHistoryRestore(confirmed_history)
   import gc
@@ -341,6 +351,7 @@ def run(
   trial_gc_deferred = False
 
   def clear(reason):
+    nonlocal study_health_control
     nonlocal collector, raw_context, active_key, pending_key, pending_token, unavailable_reason, retained_event, pending_event, live_offer
     unavailable_reason = reason
     retained_event = pending_event = None
@@ -348,6 +359,7 @@ def run(
       if reporter is not None:
         reporter.reset(reason)
       collector.split(reason, reset=True)
+    study_health_control = None
     collector = None
     cached_reports.clear()
     prior_attached.clear()
@@ -419,6 +431,9 @@ def run(
     source_rejected = False
     return True, now
 
+  def study_native_current(now_ns):
+    return study_health_control is not None and current_native_health(sm, CP, study_health_control, now_ns)
+
   class Sink:
     def split(self, reason, **kwargs):
       if collector is not None:
@@ -462,6 +477,8 @@ def run(
         # Geometry arrives at100Hz independently of the actual native emission
         # cadence. This Boolean is current owner health, never a fabricated CAN.
         previous = collector.ready[-1][0] if collector.ready else None
+        if previous is not None:
+          study_health_control = previous
         collector._learning_current_native_allowed = bool(source_valid and previous is not None and
           current_native_health(sm, CP, previous, now))
 
@@ -472,7 +489,9 @@ def run(
           return
         if event.which() == 'starpilotLateralState' and event.starpilotLateralState.learningEvidence.version == 0:
           if collector is not None:
-            collector.split('no_current_learning_evidence')
+            collector.split('learning_evidence_delayed' if event.starpilotLateralState.active and
+              study_native_current(received_now)
+              else 'no_current_learning_evidence')
           return
         evidence = read_control(event)
         if (
@@ -568,7 +587,7 @@ def run(
           if event.which() == 'starpilotCarState' and event.starpilotCarState.appliedEvidence.version == 0:
             collector.split('no_current_applied_evidence')
             return
-          collector.output(read_applied(event), received_now)
+          _collect_applied_output(collector, read_applied(event), sm, CP, received_now)
 
       drain(control_socket, control, messaging.recv_one_or_none, sink, now)
       drain(applied_socket, output, messaging.recv_one_or_none, sink, now)
@@ -688,7 +707,8 @@ def run(
             current_native=current_native, native_key=native_key, hardware_inventory=hardware_inventory)
         latest = live_actor.tick(collector, source if source_valid else None, now_ns=now,
           current_native=current_native, native_key=native_key, hardware_inventory=hardware_inventory,
-          allow_bootstrap=live_history.requalifier is None)
+          allow_bootstrap=live_history.requalifier is None,
+          evidence_delay_only=bool(source_valid and study_native_current(now)))
         if live_history.observe_response_recovery(live_actor):
           # Clear cached trial/restore publication in this SAME parent tick.
           # No old history or accepted target is silently promoted afterward.
