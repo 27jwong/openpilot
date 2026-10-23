@@ -58,9 +58,10 @@ def test_raw_sources_keep_original_clock_duplicate_does_not_renew():
   packer = CANPacker('subaru_global_2017_generated')
   source = StartupSources()
   for tick in (1, 2):
-    frames = [packer.make_can_msg(name, bus, fields) for name, bus, fields in (
+    inputs: tuple[tuple[str, int, dict[str, float]], ...] = (
       ('Dashlights', 1, {'COUNTER': tick}), ('Transmission', 0, {'COUNTER': tick, 'Gear': 4}),
-      ('Engine_Stop_Start', 1, {'Counter': tick, 'STOP_START_STATE': 1}), ('ES_Distance', 1, {'COUNTER': tick}))]
+      ('Engine_Stop_Start', 1, {'Counter': tick, 'STOP_START_STATE': 1}), ('ES_Distance', 1, {'COUNTER': tick}))
+    frames = [packer.make_can_msg(name, bus, fields) for name, bus, fields in inputs]
     source.observe([(10_000_000_000 + tick * 10_000_000, frames)],
                    boot_ns=10_000_000_000 + tick * 10_000_000, mono_ns=1_000_000_000 + tick * 10_000_000)
   assert source.fresh(1.02)
@@ -81,8 +82,9 @@ def test_manual_press_and_fault_stop_startup_even_before_delay():
   from opendbc.car import structs
   from types import SimpleNamespace
   packer = CANPacker('subaru_global_2017_generated')
-  for name, bus, fields in (('Dashlights', 1, {'STOP_START': 1}),
-                            ('Engine_Stop_Start', 1, {'STOP_START_STATE': 3}), ('ES_Distance', 1, {'Cruise_Fault': 1})):
+  cases: tuple[tuple[str, int, dict[str, float]], ...] = (('Dashlights', 1, {'STOP_START': 1}),
+                            ('Engine_Stop_Start', 1, {'STOP_START_STATE': 3}), ('ES_Distance', 1, {'Cruise_Fault': 1}))
+  for name, bus, fields in cases:
     source = StartupSources()
     source.observe([(1_000_000_000, [packer.make_can_msg(name, bus, fields)])], boot_ns=1_000_000_000, mono_ns=1_000_000_000)
     assert source.blocked

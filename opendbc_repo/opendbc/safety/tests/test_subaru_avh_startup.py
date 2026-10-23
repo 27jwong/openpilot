@@ -1,3 +1,4 @@
+import unittest
 import pytest
 from opendbc.car import structs
 from opendbc.car.subaru.avh import avh_request, checksum
@@ -92,3 +93,24 @@ def test_native_refusals(fault):
     changed[0] = checksum(target, changed)
     safety.safety_rx_hook(libsafety_py.make_CANPacket(target, 1, bytes(changed)))
   assert not safety.safety_tx_hook(libsafety_py.make_CANPacket(addr, bus, data))
+
+
+class TestSubaruAvhDiscovery(unittest.TestCase):
+  """The mandatory native coverage runner uses unittest discovery."""
+
+  def test_pair_and_release_guard(self):
+    for param in (1169, 1425):
+      for ae in (0, 32):
+        with self.subTest(param=param, ae=ae):
+          test_exact_pair_debug_only_and_status_never_tx(param, ae)
+
+  def test_conflicting_counters(self):
+    for target in (0x6BB, 0x32B, 0x40, 0x48, 0x174):
+      with self.subTest(target=target):
+        test_conflicting_same_counter_withdraws(target)
+
+  def test_receiver_refusals(self):
+    for fault in ('main_gas', 'eps', 'control', 'wrong_bus', 'opaque', 'late_second', 'ack', 'manual',
+                  'alt_gear', 'alt_gas', 'engine', 'main_gear'):
+      with self.subTest(fault=fault):
+        test_native_refusals(fault)
