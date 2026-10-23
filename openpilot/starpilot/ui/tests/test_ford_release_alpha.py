@@ -1,6 +1,7 @@
 """Both actual Developer panels expose only qualified Ford release opt-in."""
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import patch
 import pytest
 from opendbc.car import gen_empty_fingerprint
@@ -17,7 +18,7 @@ def panel_for(module, cp, params):
   ui = SimpleNamespace(CP=cp.as_reader(), params=params, is_release=True, engaged=False, has_longitudinal_control=False,
                        is_offroad=lambda: True, update_params=lambda: None)
   layout = large.DeveloperLayout if module is large else compact.DeveloperLayoutMici
-  panel = layout.__new__(layout)
+  panel: Any = layout.__new__(layout)
   panel._alpha_long_toggle = Toggle()
   panel._alpha_long_toggle.title, panel._alpha_long_toggle.description = 'Alpha Long', 'Existing alpha confirmation'
   panel._long_maneuver_toggle = Toggle()

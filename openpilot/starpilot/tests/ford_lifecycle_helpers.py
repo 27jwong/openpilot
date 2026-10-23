@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 from opendbc.can import CANParser
 from opendbc.car import Bus
+from opendbc.car.can_definitions import CanData
 from unittest.mock import patch
 
 import pytest
@@ -159,7 +160,7 @@ def ford_joined(identity, alpha, hands_free, monkeypatch, record_property):
         extras += [('Side_Detect_L_Stat', 2 if host.CP.flags & FordFlags.CANFD else 0, {}),
                    ('Side_Detect_R_Stat', 2 if host.CP.flags & FordFlags.CANFD else 0, {})]
         preframes += [native.packer.make_can_msg(message, bus, fields) for message, bus, fields in extras]
-        state = host.CI.update([(10_000_000_000 + native.tick * 10_000_000, [(addr, data, bus + offset) for addr, data, bus in preframes])])
+        state = host.CI.update([(10_000_000_000 + native.tick * 10_000_000, [CanData(addr, data, bus + offset) for addr, data, bus in preframes])])
         assert not native.safety.get_controls_allowed() and native.safety.aol_get_permission_mask() == 0
       assert state.canValid and not state.canTimeout
       yield SimpleNamespace(host=host, native=native, safety=native.safety, initial_cp=host.CP.to_dict(),
