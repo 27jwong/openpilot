@@ -680,10 +680,12 @@ def run(suite, output, collect_only=False, shard_index=None, shard_count=4):
       shards = lifecycle_shards.partition(full_targets, ids, shard_count)
       plan.update(full_catalog_targets=full_targets, full_catalog_test_ids=list(ids),
                   shard={"index": shard_index, "count": shard_count})
-      plan["targets"] = shards[shard_index]
-      prefixes = tuple(target.removesuffix(".py").replace("/", ".") + "." for target in plan["targets"])
-      tests = [test for test in tests if test.id().startswith(prefixes)]
-      pytest_nodeids = [nodeid for nodeid in pytest_nodeids if vehicle_pytest.test_id(nodeid).startswith(prefixes)]
+      assigned_targets = shards[shard_index]
+      plan["targets"] = assigned_targets
+      def assigned(identity):
+        return any(lifecycle_shards.matches(identity, target) for target in assigned_targets)
+      tests = [test for test in tests if assigned(test.id())]
+      pytest_nodeids = [nodeid for nodeid in pytest_nodeids if assigned(vehicle_pytest.test_id(nodeid))]
       ids = [test.id() for test in tests] + [vehicle_pytest.test_id(nodeid) for nodeid in pytest_nodeids]
     if len(set(ids)) != len(ids):
       errors.append("Vehicle runners selected duplicate test IDs")
@@ -724,8 +726,7 @@ def run(suite, output, collect_only=False, shard_index=None, shard_count=4):
     gate_errors.extend(f"Required lifecycle case did not pass: {record['id']} ({record['status']})"
                        for record in records if record["status"] != "passed")
     for target in plan["targets"]:
-      prefix = Path(target).with_suffix("").as_posix().replace("/", ".") + "."
-      if not any(identity.startswith(prefix) for identity in ids):
+      if not any(lifecycle_shards.matches(identity, target) for identity in ids):
         gate_errors.append(f"Required lifecycle module collected no cases: {target}")
   elapsed = time.monotonic() - started
   exit_code = test_runner.report(records, errors + gate_errors, 10, elapsed)

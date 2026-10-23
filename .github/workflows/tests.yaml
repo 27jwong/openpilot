@@ -253,7 +253,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
     env:
       FUZZ_SEED: '0'
     steps:
@@ -263,7 +263,7 @@ jobs:
       run: scons
     - name: Gate every assigned lifecycle module serially
       timeout-minutes: 10
-      run: python3 tools/ci/run_vehicle_tests.py --suite aol-lifecycle --shard-index "${{ matrix.shard }}" --shard-count 4 --output "ci-results/aol-lifecycle-${{ matrix.shard }}"
+      run: python3 tools/ci/run_vehicle_tests.py --suite aol-lifecycle --shard-index "${{ matrix.shard }}" --shard-count 8 --output "ci-results/aol-lifecycle-${{ matrix.shard }}"
     - name: Save every lifecycle outcome and native build
       if: always()
       uses: actions/upload-artifact@v4
@@ -286,7 +286,7 @@ jobs:
         pattern: aol-lifecycle-*
         path: ci-results/aol-lifecycles
     - name: Require every full-catalog case exactly once and passed
-      run: python3 tools/ci/lifecycle_shards.py ci-results/aol-lifecycles --count 4 --output ci-results/aol-lifecycle-complete.json
+      run: python3 tools/ci/lifecycle_shards.py ci-results/aol-lifecycles --count 8 --output ci-results/aol-lifecycle-complete.json
     - name: Save complete catalog verdict
       if: always()
       uses: actions/upload-artifact@v4

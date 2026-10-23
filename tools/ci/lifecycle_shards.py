@@ -1,8 +1,9 @@
-"""Partition whole lifecycle modules and prove complete shard outcomes."""
+"""Partition lifecycle workloads and prove complete shard outcomes."""
 import argparse
 import hashlib
 from collections import Counter
 import json
+import math
 import os
 import subprocess
 from pathlib import Path
@@ -74,24 +75,91 @@ def same_build_inputs(first, second):
   return first['inputs'] == second['inputs']
 
 
+def matches(identity, target):
+  """A whole module, or one declared heavy module's whole pytest function."""
+  module, *functions = target.split('::', 1)
+  prefix = module.removesuffix('.py').replace('/', '.') + '.'
+  if not functions:
+    return identity.startswith(prefix)
+  function = functions[0].split('[', 1)[0]
+  if not function.isidentifier() or not function.startswith('test_'):
+    raise ValueError('Invalid lifecycle function selector')
+  selected = prefix + functions[0]
+  return identity == selected if '[' in functions[0] else identity == selected or identity.startswith(selected + '[')
+
+
+def workload_policy():
+  policy = json.loads(Path(__file__).with_name('lifecycle_workloads.json').read_text())
+  if policy['version'] != 1 or set(policy['function_groups']) != {
+      'openpilot/starpilot/car/toyota/tests/test_legacy_advert_callers.py',
+      'openpilot/starpilot/car/toyota/tests/test_camera_2aa_callers.py'}:
+    raise ValueError('Unreviewed lifecycle function grouping policy')
+  if type(policy['independent_function_max_cases']) is not int or not 1 <= policy['independent_function_max_cases'] <= 60:
+    raise ValueError('Invalid independent function group size')
+  if any(row.get('independent_parameters') is not True for row in policy['function_groups'].values()):
+    raise ValueError('Function parameter independence was not reviewed')
+  values = [policy['independent_function_max_seconds'], policy['unknown_seconds_per_case']]
+  values.extend(row['estimated_seconds_per_case'] for row in policy['function_groups'].values())
+  if any(not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0 for value in values):
+    raise ValueError('Invalid lifecycle workload estimate')
+  for row in policy['modules'].values():
+    if type(row['cases']) is not int or row['cases'] < 1 or not math.isfinite(row['seconds']) or row['seconds'] <= 0:
+      raise ValueError('Invalid measured lifecycle workload')
+  return policy
+
+
 def partition(targets, identities, count):
-  if count < 1 or len(set(targets)) != len(targets) or len(set(identities)) != len(identities):
+  if (not 1 <= count <= 8 or len(set(targets)) != len(targets) or len(set(identities)) != len(identities) or
+      any(not target.endswith('.py') or '::' in target or Path(target).is_absolute() or '..' in Path(target).parts for target in targets)):
     raise ValueError('Invalid lifecycle catalog')
   owners = {}
   for identity in identities:
-    matches = [target for target in targets if identity.startswith(target.removesuffix('.py').replace('/', '.') + '.')]
-    if len(matches) != 1:
+    modules = [target for target in targets if matches(identity, target)]
+    if len(modules) != 1:
       raise ValueError(f'Lifecycle identity needs exactly one module: {identity}')
-    owners[identity] = matches[0]
-  weights = Counter(owners.values())
-  if set(weights) != set(targets):
+    owners[identity] = modules[0]
+  if set(owners.values()) != set(targets):
     raise ValueError('Lifecycle module collected no cases')
-  shards = [[] for _ in range(count)]
-  loads = [0] * count
-  for target in sorted(targets, key=lambda target: (-weights[target], target)):
+  policy = workload_policy()
+  units = {}
+  for identity, target in owners.items():
+    unit = target
+    if target in policy['function_groups']:
+      function = identity[len(target.removesuffix('.py').replace('/', '.') + '.'):].split('[', 1)[0]
+      if not function.isidentifier() or not function.startswith('test_'):
+        raise ValueError('Heavy lifecycle grouping requires top-level pytest functions')
+      unit += '::' + function
+    units.setdefault(unit, []).append(identity)
+  bounded = {}
+  for unit, selected in units.items():
+    target = unit.split('::', 1)[0]
+    if (target in policy['function_groups'] and
+        (len(selected) > policy['independent_function_max_cases'] or
+         len(selected) * policy['function_groups'][target]['estimated_seconds_per_case'] > policy['independent_function_max_seconds'])):
+      prefix = target.removesuffix('.py').replace('/', '.') + '.'
+      # Only reviewed independent parameter cases become exact leaf selectors.
+      # Actual collected node IDs are retained verbatim, including parameter punctuation.
+      for identity in selected:
+        bounded[target + '::' + identity[len(prefix):]] = [identity]
+    else:
+      bounded[unit] = selected
+  units = bounded
+  weights = {}
+  for unit, selected in units.items():
+    target = unit.split('::', 1)[0]
+    if target in policy['function_groups']:
+      per_case = policy['function_groups'][target]['estimated_seconds_per_case']
+    elif target in policy['modules']:
+      measured = policy['modules'][target]
+      per_case = measured['seconds'] / measured['cases']
+    else:
+      per_case = policy['unknown_seconds_per_case']
+    weights[unit] = per_case * len(selected)
+  shards, loads = [[] for _ in range(count)], [0.0] * count
+  for unit in sorted(units, key=lambda unit: (-weights[unit], unit)):
     index = min(range(count), key=lambda index: (loads[index], index))
-    shards[index].append(target)
-    loads[index] += weights[target]
+    shards[index].append(unit)
+    loads[index] += weights[unit]
   return shards
 
 
@@ -160,8 +228,7 @@ def aggregate(directory, count):
       raise ValueError('Lifecycle outcome report failed')
     if result['selected_test_ids'] != ids or Counter(row['id'] for row in records) != Counter(ids) or any(row['status'] != 'passed' for row in records):
       raise ValueError('Lifecycle missing, duplicate or unsuccessful outcomes')
-    prefixes = tuple(target.removesuffix('.py').replace('/', '.') + '.' for target in expected[index])
-    if ids != [identity for identity in full if identity.startswith(prefixes)]:
+    if ids != [identity for identity in full if any(matches(identity, target) for target in expected[index])]:
       raise ValueError('Lifecycle shard cases differ from the full catalog')
     seen.extend(ids)
   if Counter(seen) != Counter(full) or len(set(full)) != len(full):

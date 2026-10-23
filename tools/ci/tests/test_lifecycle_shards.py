@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('private_lifecycle_shards', Path(__file__).parents[1] / 'lifecycle_shards.py')
 assert spec is not None and spec.loader is not None
@@ -33,6 +34,46 @@ class LifecycleShardTests(unittest.TestCase):
       with self.subTest(targets=bad_targets, count=count), self.assertRaises(ValueError):
         helper.partition(bad_targets, bad_ids, count)
 
+  def test_only_large_reviewed_heavy_functions_split_into_exact_parameter_leaves(self):
+    heavy = 'openpilot/starpilot/car/toyota/tests/test_legacy_advert_callers.py'
+    prefix = heavy.removesuffix('.py').replace('/', '.') + '.'
+    full = [prefix + f'test_nominal[{index}]' for index in range(126)]
+    full += [prefix + f'test_veto[{index}]' for index in range(32)]
+    full += ['other.Test.test_one', 'other.Test.test_two']
+    targets = [heavy, 'other.py']
+    shards = helper.partition(targets, full, 4)
+    selectors = [target for shard in shards for target in shard]
+    self.assertIn(heavy + '::test_veto', selectors)
+    self.assertIn('other.py', selectors)
+    self.assertEqual(len(selectors), 128)
+    self.assertTrue(all(heavy + f'::test_nominal[{index}]' in selectors for index in range(126)))
+    selected = [[identity for identity in full if any(helper.matches(identity, target) for target in shard)] for shard in shards]
+    self.assertEqual(sorted(identity for shard in selected for identity in shard), sorted(full))
+    self.assertEqual(shards, helper.partition(list(reversed(targets)), list(reversed(full)), 4))
+    self.assertFalse(helper.matches(prefix + 'test_nominal_extra[1]', heavy + '::test_nominal'))
+    self.assertFalse(helper.matches('foreign.test_nominal[1]', heavy + '::test_nominal'))
+    self.assertTrue(helper.matches(prefix + 'test_nominal[1]', heavy + '::test_nominal[1]'))
+    self.assertFalse(helper.matches(prefix + 'test_nominal[10]', heavy + '::test_nominal[1]'))
+    self.assertTrue(helper.matches(prefix + 'test_nominal[::complex/parameter]', heavy + '::test_nominal[::complex/parameter]'))
+
+  def test_heavy_function_rule_never_splits_classes_or_accepts_forged_targets(self):
+    heavy = 'openpilot/starpilot/car/toyota/tests/test_legacy_advert_callers.py'
+    prefix = heavy.removesuffix('.py').replace('/', '.') + '.'
+    for targets, ids in (([heavy], [prefix + 'TestClass.test_case']),
+                         ([heavy + '::test_case'], [prefix + 'test_case']),
+                         ([heavy], [prefix + 'test_case', prefix + 'test_case'])):
+      with self.subTest(targets=targets), self.assertRaises(ValueError):
+        helper.partition(targets, ids, 4)
+    with self.assertRaises(ValueError):
+      helper.partition(['other.py'], ['other.test_case'], 9)
+
+  def test_future_declared_module_does_not_add_any_cases(self):
+    targets, identities = self.catalog()
+    shards = helper.partition(targets, identities, 8)
+    self.assertEqual(sorted(target for shard in shards for target in shard), targets)
+    camera = 'openpilot/starpilot/car/toyota/tests/test_camera_2aa_callers.py'
+    self.assertFalse(any(camera in target for shard in shards for target in shard))
+
   def documents(self):
     targets, full = self.catalog()
     partition = helper.partition(targets, full, 4)
@@ -49,7 +90,7 @@ class LifecycleShardTests(unittest.TestCase):
                                                                for name, checksum in can_sources.items()})
     docs = []
     for index, assigned in enumerate(partition):
-      ids = [identity for identity in full if identity.startswith(assigned[0].removesuffix('.py') + '.')]
+      ids = [identity for identity in full if any(helper.matches(identity, target) for target in assigned)]
       doc = {'suite': 'aol-lifecycle', 'status': 'completed', 'exit_code': 0, 'shard': {'index': index, 'count': 4},
              'targets': assigned, 'selected_test_ids': ids, 'full_catalog_targets': targets, 'full_catalog_test_ids': full,
              'collection_errors': [], 'gate_errors': [], 'source': source, 'source_after': source,
@@ -82,6 +123,28 @@ class LifecycleShardTests(unittest.TestCase):
 
   def test_complete_catalog_passes(self):
     self.assertEqual(self.check(self.documents())['cases_passed'], 12)
+
+  def test_parameter_leaf_aggregate_requires_exact_complete_passed_outcomes(self):
+    heavy = 'openpilot/starpilot/car/toyota/tests/test_legacy_advert_callers.py'
+    prefix = heavy.removesuffix('.py').replace('/', '.') + '.'
+    full = [prefix + f'test_nominal[{index}]' for index in range(126)] + ['other.Test.test_case']
+    with patch.object(self, 'catalog', return_value=([heavy, 'other.py'], full)):
+      docs = self.documents()
+    self.assertEqual(self.check(copy.deepcopy(docs))['cases_passed'], 127)
+    for change in ('missing', 'duplicate', 'skip', 'forged_catalog', 'forged_leaf'):
+      bad = json.loads(json.dumps(docs))
+      if change == 'missing':
+        bad[0][1]['results'].pop()
+      elif change == 'duplicate':
+        bad[0][1]['results'].append(bad[0][1]['results'][0])
+      elif change == 'skip':
+        bad[0][1]['results'][0]['status'] = 'skipped'
+      elif change == 'forged_catalog':
+        bad[0][0]['full_catalog_test_ids'].pop()
+      else:
+        bad[0][0]['targets'][0] += '-forged'
+      with self.subTest(change=change), self.assertRaises((ValueError, KeyError, StopIteration)):
+        self.check(bad)
 
   def test_missing_modified_or_forged_native_artifacts_are_denied(self):
     def remove(root):
