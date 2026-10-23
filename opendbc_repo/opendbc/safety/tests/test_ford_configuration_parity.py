@@ -1,4 +1,10 @@
 """Exact manual profiles consume a fresh physical reverse signal on local bus0."""
+import hashlib
+import json
+from pathlib import Path
+import shlex
+import subprocess
+
 import pytest
 from opendbc.car import structs
 from opendbc.safety.tests.libsafety import libsafety_py
@@ -94,10 +100,40 @@ def test_manual_unmarked_profile_preserves_ordinary_physical_long_and_brake(ford
   assert not n.safety.get_controls_allowed() and not tx(n, active=True)
 
 
-def test_release_keeps_unregistered_legacy_canfd_long_parameter_denied(ford_native):
-  n = ford_native
-  if n.safety.set_safety_hooks(structs.CarParams.SafetyModel.allOutput, 0) == 0:
-    pytest.skip('Legacy parameter3 remains DEBUG-only; RELEASE exercises the denial')
+@pytest.fixture
+def ford_release_native(tmp_path, record_property):
+  """Use a real RELEASE library even when the containing gate loads DEBUG."""
+  from opendbc.safety.tests.test_ford_aol import TestFordAolDriverIntent
+
+  root = Path(__file__).resolve().parents[3]
+  source = root / 'opendbc/safety/tests/libsafety/safety.c'
+  obj, library, dependencies = (tmp_path / name for name in ('safety.o', 'libsafety-release.so', 'safety.d'))
+  flags = ['-fPIC', '-Wall', '-Wextra', '-Werror', '-nostdlib', '-fno-builtin', '-std=gnu11',
+           '-Wfatal-errors', '-Wno-pointer-to-int-cast', '-g', '-O0', '-fno-omit-frame-pointer',
+           '-fsanitize=undefined', '-fno-sanitize-recover=undefined']
+  commands = [
+    ['cc', *flags, '-MMD', '-MF', str(dependencies), '-I', str(root), '-c', str(source), '-o', str(obj)],
+    ['cc', '-shared', str(obj), '-o', str(library), '-fsanitize=undefined', '-fno-sanitize-recover=undefined'],
+  ]
+  for command in commands:
+    subprocess.run(command, check=True, timeout=45)
+  dependency_text = ' '.join(line.removesuffix(chr(92)) for line in dependencies.read_text().splitlines())
+  sources = shlex.split(dependency_text.split(':', 1)[1])
+  receipt = {'variant': 'RELEASE', 'library_sha256': hashlib.sha256(library.read_bytes()).hexdigest(),
+             'commands': commands, 'source_sha256': {name: hashlib.sha256(Path(name).read_bytes()).hexdigest() for name in sources}}
+  record_property('ford_release_native', json.dumps(receipt, sort_keys=True))
+  print(json.dumps({'ford_release_native': receipt}, sort_keys=True))
+  native = TestFordAolDriverIntent(methodName='runTest')
+  native.setUp()
+  native.safety = libsafety_py.ffi.dlopen(str(library))
+  try:
+    assert native.safety.set_safety_hooks(structs.CarParams.SafetyModel.allOutput, 0) != 0
+    yield native
+  finally:
+    native.tearDown()
+
+
+def test_release_keeps_unregistered_legacy_canfd_long_parameter_denied(ford_release_native):
   from opendbc.safety.tests.ford_release_contract import assert_release_denial
-  select(n, 3)
-  assert_release_denial(n, 3)
+  select(ford_release_native, 3)
+  assert_release_denial(ford_release_native, 3)
