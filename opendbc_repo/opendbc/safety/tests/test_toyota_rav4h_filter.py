@@ -40,7 +40,7 @@ class TestRav4hFilterNative(unittest.TestCase):
       bad.data[4] ^= 1
       self.safety.safety_rx_hook(bad)
       self.assertEqual(self.safety.aol_get_permission_mask(), 0)
-    for word in (0x5049, 0x5249, 0x9048, 0x904A, 0x9149, 0x9449, 0xB049, 0xD049):
+    for word in (0x5049, 0x5249, 0x9048, 0x904A, 0x914A, 0x9449, 0xB049, 0xD049):
       self.init(word, 32)
       self.physical(cruise=True)
       self.assertEqual(self.safety.aol_get_permission_mask(), 0)

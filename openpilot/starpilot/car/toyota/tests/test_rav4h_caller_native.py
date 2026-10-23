@@ -226,7 +226,7 @@ def control_inputs(controls, published, state, sd_events, native, now):
 
 def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H, bridge=None, input_clock=False, brake_stop_check_start=350,
              sdsu_words=(0x9049, 0x9249), alpha_long=False, disable_setting=None, physical_frames=None, angle=False,
-             firmware_override=None, assert_hybrid_release=False, sdsu_mirror=False):
+             firmware_override=None, assert_hybrid_release=False, sdsu_mirror=False, on_sample=None):
   SYNTHETIC_LAST.clear()
   NATIVE_LAST.clear()
   safety = libsafety_py.libsafety
@@ -312,7 +312,11 @@ def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H,
         patch.object(time, 'clock_gettime_ns', side_effect=lambda c: clock[0] if c in (time.CLOCK_MONOTONIC, time.CLOCK_BOOTTIME) else real_clock(c))
       )
     try:
-      for tick in range(1, {'nominal': 251, 'physical': 601, 'faults': 801, 'bad_dlc': 801, 'off': 401, 'cold_low': 251, 'hybrid_stop': 251}[scenario]):
+      duration = {
+        'nominal': 251, 'physical': 601, 'faults': 801, 'bad_dlc': 801,
+        'off': 401, 'cold_low': 251, 'hybrid_stop': 251, 'main_lease': 501,
+      }[scenario]
+      for tick in range(1, duration):
         if deterministic:
           clock[0] += 10_000_000
         else:
@@ -321,6 +325,8 @@ def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H,
         now = time.monotonic_ns()
         safety.set_timer((now // 1000) & 0xFFFFFFFF)
         fields = {'cruise': tick >= 150}
+        if scenario == 'main_lease':
+          fields.update(cruise=tick >= 150 and not 330 <= tick < 360, main=not 340 <= tick < 350)
         if scenario == 'hybrid_stop':
           fields.update(stopped=200 <= tick < 230)
         if scenario == 'cold_low':
@@ -441,6 +447,7 @@ def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H,
         )
         nominal = tick >= 220 and (
           scenario in ('nominal', 'cold_low', 'hybrid_stop')
+          or scenario == 'main_lease' and (tick < 250 or tick >= 480)
           or scenario == 'off'
           and tick < 250
           or scenario == 'physical'
@@ -484,6 +491,8 @@ def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H,
                 acc = decode(host.CP, (f.address, bytes(f.dat), f.src), 'ACC_CONTROL')
                 assert acc['ACCEL_CMD'] == 0 and acc['CANCEL_REQ'] and not acc['RELEASE_STANDSTILL']
 
+        if on_sample is not None:
+          on_sample(tick, host, cs, cc, safety, native)
         prev = current_sd
       assert seen_active
       if scenario != 'cold_low':

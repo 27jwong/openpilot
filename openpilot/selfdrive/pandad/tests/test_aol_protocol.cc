@@ -167,7 +167,7 @@ int main() {
   }
 
   for (uint32_t word = 0U; word <= 65535U; ++word) {
-    const bool expected = (word == 73U) || (word == 585U) || (word == 4169U) || (word == 4681U) || (word == 2121U) || (word == 0x9049U) || (word == 0x9249U) || (word == 0x2049U) || (word == 0x2249U) || (word == 0x424DU) || (word == 0x449U) || (word == 0x649U) || (word == 0x1449U) || (word == 0x1649U) || (word == 0x8049U) || (word == 0x8249U) || (word == 0x8449U) || (word == 0x8649U);
+    const bool expected = (word == 73U) || (word == 585U) || (word == 4169U) || (word == 4681U) || (word == 2121U) || (word == 0x9049U) || (word == 0x9249U) || (word == 0x2049U) || (word == 0x2249U) || (word == 0x424DU) || (word == 0x449U) || (word == 0x649U) || (word == 0x1449U) || (word == 0x1649U) || (word == 0x8049U) || (word == 0x8249U) || (word == 0x8449U) || (word == 0x8649U) || (word == 0x9158U) || (word == 0x9358U) || (word == 0x9149U) || (word == 0x9349U) || (word == 0x9164U) || (word == 0x9364U) || (word == 0xd149U) || (word == 0xd349U) || (word == 0xd04dU) || (word == 0xd24dU);
     auto toyota = status();
     toyota.safety_mode = 2U;
     toyota.safety_param = static_cast<uint16_t>(word);

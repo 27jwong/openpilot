@@ -193,12 +193,17 @@ class CarInterface(CarInterfaceBase):
     eps8_filter = eps8_sdsu.hardware_supported(candidate, fingerprint, car_fw)
     if eps8_filter:
       eps8_sdsu.apply(ret, alpha_long)
+    from opendbc.car.toyota import legacy_sdsu
+    legacy_filter = legacy_sdsu.hardware_supported(candidate, fingerprint, car_fw)
+    if legacy_filter:
+      legacy_sdsu.apply(ret)
     # Toyota EPS accepts lateral commands down to zero. Keep the existing
     # native/axis/fault gates; a stock cruise stop does not withdraw steering.
     ret.steerAtStandstill = ret.minSteerSpeed <= 0.
     ret.autoResumeSng = ret.openpilotLongitudinalControl and (
       (rav4h_sdsu and candidate in (CAR.TOYOTA_RAV4H, CAR.TOYOTA_HIGHLANDER, CAR.TOYOTA_SIENNA)) or
-      (eps8_filter and bool(ret.flags & ToyotaFlags.TSS2)) or not ret.flags & ToyotaFlags.LONG_FILTER)
+      (eps8_filter and bool(ret.flags & ToyotaFlags.TSS2)) or
+      (legacy_filter and candidate == CAR.TOYOTA_PRIUS_V) or not ret.flags & ToyotaFlags.LONG_FILTER)
 
     if radar_filter and not ret.flags & ToyotaFlags.TSS2:
       ret.autoResumeSng = False  # Preserve the pre-TSS2 stock stop timer.
@@ -210,7 +215,7 @@ class CarInterface(CarInterfaceBase):
     # to a negative value, so it won't matter.
     ret.minEnableSpeed = -1. if stop_and_go else MIN_ACC_SPEED
 
-    if ret.flags & ToyotaFlags.TSS2 or ret.flags & ToyotaFlags.LONG_FILTER and not (rav4h_sdsu or eps8_filter):
+    if ret.flags & ToyotaFlags.TSS2 or ret.flags & ToyotaFlags.LONG_FILTER and not (rav4h_sdsu or eps8_filter or legacy_filter):
       ret.flags |= ToyotaFlags.RAISED_ACCEL_LIMIT.value
 
       # Hybrids have much quicker longitudinal actuator response

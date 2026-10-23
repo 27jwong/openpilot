@@ -8,7 +8,7 @@ from opendbc.car.common.pid import PIDController
 from opendbc.car.secoc import add_mac, build_sync_mac
 from opendbc.car.interfaces import CarControllerBase
 from opendbc.car.toyota import toyotacan
-from opendbc.car.toyota import prius_longitudinal, rav4h_filter, pedal, eps8_sdsu
+from opendbc.car.toyota import prius_longitudinal, rav4h_filter, pedal, eps8_sdsu, legacy_sdsu
 from opendbc.car.toyota.door_locks import DoorLocks
 from opendbc.car.toyota.values import CAR, CarControllerParams, ToyotaFlags, TOYOTA_AUTO_HOLD_CARS, uses_toyota_auto_hold_aeb
 from opendbc.can import CANPacker
@@ -82,7 +82,7 @@ class CarController(CarControllerBase):
     self.standstill_req = False
     self.last_standstill = False
     self.prius_longitudinal = prius_longitudinal.enabled(CP)
-    self.eps8_hybrid = eps8_sdsu.configured(CP) and bool(CP.flags & ToyotaFlags.HYBRID)
+    self.sdsu_hybrid = (eps8_sdsu.configured(CP) or legacy_sdsu.configured(CP)) and bool(CP.flags & ToyotaFlags.HYBRID)
     self.permit_braking = True
     self.steer_rate_counter = 0
     self.distance_button = 0
@@ -145,6 +145,10 @@ class CarController(CarControllerBase):
       filter_allowed = bool(self.rav4h_filter_input is not None and self.rav4h_filter_input.update(now_nanos) and
                             CS.out.canValid and not CS.out.canTimeout and CS.sdsu_state == 0 and
                             not CS.out.accFaulted and not CS.out.stockAeb)
+      if legacy_sdsu.configured(self.CP) and self.CP.carFingerprint in legacy_sdsu.ALT_MAIN_CARS:
+        # The native owner requires fresh physical DSU MAIN independently of
+        # status. Neutral output must also withdraw its standstill release.
+        filter_allowed = filter_allowed and bool(CS.out.cruiseState.available)
     pedal_owner = pedal.configured(self.CP)
     if pedal_owner:
       filter_allowed = bool(self.pedal_input is not None and self.pedal_input.update(now_nanos) and CS.pedal_ready)
@@ -272,7 +276,7 @@ class CarController(CarControllerBase):
         self.last_standstill = CS.out.standstill
         if not long_active and CS.out.standstill:
           self.standstill_req = True
-      elif self.eps8_hybrid:
+      elif self.sdsu_hybrid:
         # Retain the existing hybrid resume behavior while active. The shared
         # owner guard below still holds neutral when LONG or its source is lost.
         self.standstill_req = not long_active and CS.out.standstill

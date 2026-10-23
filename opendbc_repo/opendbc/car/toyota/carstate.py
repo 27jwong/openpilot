@@ -2,7 +2,7 @@ import copy
 import math
 
 from opendbc.can import CANDefine, CANParser
-from opendbc.car.toyota import pedal
+from opendbc.car.toyota import pedal, legacy_sdsu
 from opendbc.car.toyota.lexus_is import LexusIsCANParser
 from opendbc.car import Bus, DT_CTRL, create_button_events, structs
 from opendbc.car.common.conversions import Conversions as CV
@@ -154,7 +154,7 @@ class CarState(CarStateBase):
     if self.CP.flags & ToyotaFlags.UNSUPPORTED_DSU:
       # TODO: find the bit likely in DSU_CRUISE that describes an ACC fault. one may also exist in CLUTCH
       ret.cruiseState.available = cp.vl["DSU_CRUISE"]["MAIN_ON"] != 0
-      if self.CP.carFingerprint == CAR.LEXUS_IS:
+      if self.CP.carFingerprint == CAR.LEXUS_IS or legacy_sdsu.configured(self.CP) and self.CP.carFingerprint in legacy_sdsu.ALT_MAIN_CARS:
         stamp = cp.ts_nanos["DSU_CRUISE"]["MAIN_ON"]
         ret.cruiseState.available &= bool(cp.main_valid and stamp > 0 and 0 <= cp._last_update_nanos - stamp <= 303_031_000)
       ret.cruiseState.speed = cp.vl["DSU_CRUISE"]["SET_SPEED"] * CV.KPH_TO_MS
@@ -298,7 +298,8 @@ class CarState(CarStateBase):
 
     if CP.carFingerprint == CAR.TOYOTA_SIENNA_4TH_GEN:
       pt_messages.append(("PCM_CRUISE_4", 1))
-    if CP.carFingerprint == CAR.LEXUS_IS:
+    alternate_sdsu_main = legacy_sdsu.configured(CP) and CP.carFingerprint in legacy_sdsu.ALT_MAIN_CARS
+    if CP.carFingerprint == CAR.LEXUS_IS or alternate_sdsu_main:
       pt_messages.append(("DSU_CRUISE", 10))
 
     if CP.flags & ToyotaFlags.LONG_FILTER:
@@ -308,7 +309,8 @@ class CarState(CarStateBase):
 
     if pedal.configured(CP):
       pt_messages.append(("GAS_SENSOR", 50))
-    pt_parser = (LexusIsCANParser if CP.carFingerprint == CAR.LEXUS_IS else pedal.PedalCANParser if pedal.configured(CP) else
+    pt_parser = (legacy_sdsu.AlternateMainSDSUCANParser if alternate_sdsu_main else
+                 LexusIsCANParser if CP.carFingerprint == CAR.LEXUS_IS else pedal.PedalCANParser if pedal.configured(CP) else
                  Rav4hCANParser if rav4h_filter_configured(CP) else CANParser)
     return {
       Bus.pt: pt_parser(DBC[CP.carFingerprint][Bus.pt], pt_messages, 0),

@@ -34,8 +34,8 @@ def hardware_supported(candidate, fingerprint, car_fw):
 
 
 def configured(cp):
-  from opendbc.car.toyota import eps8_sdsu
-  if eps8_sdsu.configured(cp):
+  from opendbc.car.toyota import eps8_sdsu, legacy_sdsu
+  if legacy_sdsu.configured(cp) or eps8_sdsu.configured(cp):
     return True
   if (cp is None or cp.brand != "toyota" or cp.carFingerprint not in EPS5_SDSU_CARS or
       not cp.pcmCruise or cp.dashcamOnly or cp.notCar or cp.passive or
@@ -61,8 +61,8 @@ def enabled(cp):
 
 
 def prepare_stock(cp):
-  from opendbc.car.toyota import eps8_sdsu
-  if eps8_sdsu.prepare_stock(cp):
+  from opendbc.car.toyota import eps8_sdsu, legacy_sdsu
+  if legacy_sdsu.prepare_stock(cp) or eps8_sdsu.prepare_stock(cp):
     return True
   if not configured(cp):
     return False
