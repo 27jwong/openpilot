@@ -201,12 +201,14 @@ jobs:
       timeout-minutes: ${{ contains(runner.name, 'nsc') && 2 || 20 }}
       env:
         RAYLIB_BACKEND: headless
+        STARPILOT_TEST_DIAGNOSTICS: ci-results/host-test-diagnostics/unittest
       run: tools/op.sh test --json-output unit-test-results.json
     - name: Test custom module-level pytest cases
       if: ${{ !cancelled() && steps.build.outcome == 'success' }}
       timeout-minutes: 15
       env:
         RAYLIB_BACKEND: headless
+        STARPILOT_TEST_DIAGNOSTICS: ci-results/host-test-diagnostics/pytest
       run: python3 tools/ci/run_host_tests.py --pytest
     - name: Test GM vehicle configurations and CAN behavior
       if: ${{ !cancelled() && steps.build.outcome == 'success' }}
@@ -232,13 +234,14 @@ jobs:
         STARPILOT_PYTHON: ${{ github.workspace }}/.venv/bin/python
       run: go test -mod=readonly -race -run '^Test(MsgqNativeLayout|Shadow(GoPythonIPC|ExecutableHostGpsIPC))$' -count=1 -v
     - name: Save complete unit test results
-      if: ${{ always() && (hashFiles('unit-test-results.json') != '' || hashFiles('gm-test-results.json') != '') }}
+      if: ${{ always() && (hashFiles('unit-test-results.json') != '' || hashFiles('gm-test-results.json') != '' || hashFiles('ci-results/host-test-diagnostics/**') != '') }}
       uses: actions/upload-artifact@v4
       with:
         name: unit-test-results
         path: |
           unit-test-results.json
           gm-test-results.json
+          ci-results/host-test-diagnostics/
         if-no-files-found: error
 
   aol_lifecycles:
