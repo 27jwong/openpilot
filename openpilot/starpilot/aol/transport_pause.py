@@ -321,8 +321,8 @@ class TransportPauseFeedback:
     from opendbc.car import structs
     ev9 = ev9_qualified(cp, marked_only=True)
     early_long = gm or early_native_long_withdrawal_supported(cp) or ev9
-    from openpilot.starpilot.car.gm.aol import gm_physical_pedal_withdrawal
-    gm_pedal = gm_physical_pedal_withdrawal(cp, cs)
+    from openpilot.starpilot.car.gm.aol import f1_conventional_lateral_owner, gm_physical_pedal_withdrawal
+    gm_pedal = gm_physical_pedal_withdrawal(cp, cs) and not f1_conventional_lateral_owner(cp)
     event_ns = int(sm.logMonoTime['onroadEvents'])
     main_off_recovery = bool(0 < event_ns <= self.ccnc_main_off_source_ns <= now_ns and
       now_ns - self.ccnc_main_off_source_ns <= AXIS_MAX_AGE_NS)
@@ -509,8 +509,10 @@ class TransportPauseFeedback:
       not axis.desiredLongitudinal and not axis.longitudinalActive and
       all(event.name in (stock_user, log.OnroadEvent.EventName.pedalPressed) and
           not event.softDisable and not event.immediateDisable for event in users))
-    from openpilot.starpilot.car.gm.aol import gm_physical_pedal_withdrawal
-    pedal = bool((cs.brakePressed or gm_physical_pedal_withdrawal(cp, cs)) and users and all(
+    from openpilot.starpilot.car.gm.aol import f1_conventional_lateral_owner, gm_physical_pedal_withdrawal
+    # F1 physical withdrawal belongs to the receipt-bound GM owner below.
+    pedal = bool(not f1_conventional_lateral_owner(cp) and
+      (cs.brakePressed or gm_physical_pedal_withdrawal(cp, cs)) and users and all(
       event.name == log.OnroadEvent.EventName.pedalPressed and
       not event.softDisable and not event.immediateDisable for event in users) and not faults)
     if axis.longitudinalActive and not location_fault or not (temporary or eps_recovery or pedal):
