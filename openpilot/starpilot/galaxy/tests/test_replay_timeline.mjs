@@ -29,25 +29,25 @@ assert.throws(() => {
 }, /History unavailable/, 'a late page cannot change the declared total')
 
 const painted = []
-let height = 27, tick = 5
+let height = 31, tick = 5
 globalThis.getComputedStyle = () => ({getPropertyValue: key => key === '--replay-tick' ? String(tick) : '2'})
 const canvas = {getBoundingClientRect: () => ({width: 100, height}), getContext: () => ({
   setTransform() {}, set fillStyle(value) { this.color = value }, fillRect(x, y, w, h) { painted.push({x, y, w, h, color: this.color}) },
 })}
 drawReplayTimeline(canvas, status, history, 2)
 assert.equal(canvas.width, 200)
-assert.equal(canvas.height, 54)
+assert.equal(canvas.height, 62)
 const red = painted.findIndex(row => row.color === 'rgb(13 20 30)')
 const mark = painted.findIndex(row => row.color === 'rgb(14 20 30)')
 assert.ok(red > painted.findIndex(row => row.color === 'rgb(12 20 30)'), 'red is painted after all mode blocks')
 assert.ok(mark > red && painted[mark].y < painted[red].y, 'bookmark occupies its own lane')
 assert.ok(painted[red].w >= .5, 'a brief error occupies at least one physical pixel at DPR2')
 assert.equal(painted[mark].w, 3, 'bookmark remains three CSS pixels wide at DPR2')
-assert.equal(painted[red].h, 20)
-height = 22; tick = 4
+assert.equal(painted[red].h, 24)
+height = 26; tick = 4
 drawReplayTimeline(canvas, status, history, 1)
-assert.equal(canvas.height, 22)
-assert.equal(painted.at(-2).h, 16)
+assert.equal(canvas.height, 26)
+assert.equal(painted.at(-2).h, 20)
 console.log('Replay timeline: atomic pages, validation, independent alerts, gaps, pixel precedence and compact sizing passed')
 
 // A late page must not restore history after ownership or offroad authority disappears.

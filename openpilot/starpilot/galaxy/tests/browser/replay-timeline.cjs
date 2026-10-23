@@ -24,7 +24,9 @@ const assert = require('node:assert/strict')
     history.append({ schemaVersion: 1, ownerId, sessionId, rowOffset: 0, totalRows: 7, nextCursor: null, source: 'qlog', legend,
       rows: [[0, 20, 'chill'], [20, 40, 'aol'], [40, 70, 'experimental'], [55, 56, 'error'],
         [55.5, 55.5, 'bookmark'], [80, 120, 'chill'], [100, 100, 'bookmark']] }, status)
-    document.body.innerHTML = '<main class="gx-content"><div id="fixture"></div></main>'
+    document.body.innerHTML = `<main class="gx-content"><div id="workspace" class="gx-route-workspace">
+      <div class="gx-route-workspace__body"><section class="gx-card gx-route-workspace__viewer"><div id="fixture"></div></section>
+      <aside class="gx-card gx-route-workspace__files"><h3>Logs &amp; files</h3><p>Segment 0</p></aside></div></div></main>`
     window.replayControls = []
     window.fixtureVM = createApp({ ...ReplayViewer,
       data: () => ({ ...ReplayViewer.data(), replay: status, replayTimeline: markRaw(history), replayVideoReady: true,
@@ -38,22 +40,58 @@ const assert = require('node:assert/strict')
       },
       beforeUnmount() {},
     }, { clientId: 'c'.repeat(32), routeId: 'fixture', unauthorized() {} }).mount('#fixture')
+    window.loadLongReplay = () => {
+      const vm = window.fixtureVM, status = { ...vm.replay, end: 1968, position: 5, seekRanges: [[0, 1968]] }
+      const rows = Array.from({ length: 328 }, (_, i) => [i * 6, (i + 1) * 6, i % 3 ? 'chill' : 'aol'])
+      const history = new ReplayHistory(status.ownerId, status.sessionId)
+      for (let offset = 0; offset < rows.length; offset += 256) history.append({ schemaVersion: 1, ownerId: status.ownerId,
+        sessionId: status.sessionId, rowOffset: offset, totalRows: rows.length, source: 'qlog', legend,
+        rows: rows.slice(offset, offset + 256), nextCursor: offset + 256 < rows.length ? offset + 256 : null }, status)
+      vm.replay = status; vm.replayTimeline = markRaw(history)
+    }
   })
-  for (const width of [1280, 390]) {
-    await page.setViewportSize({ width, height: 900 })
+  const geometry = async () => page.locator('.gx-replay__media-controls').evaluate(media => {
+    const bounds = element => {
+      const { x, y, width, height } = element.getBoundingClientRect()
+      return { x, y, width, height }
+    }
+    const track = media.querySelector('.gx-replay__track'), canvas = track.querySelector('canvas'), style = getComputedStyle(media)
+    return { media: bounds(media), caption: bounds(media.querySelector('.gx-replay__timeline > span')),
+      track: bounds(track), canvas: bounds(canvas), input: bounds(track.querySelector('input')),
+      controls: bounds(media.querySelector('.gx-replay__controls')), pixels: canvas.width,
+      available: media.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+      overflow: document.documentElement.scrollWidth > innerWidth }
+  })
+  const assertLayout = async width => {
     await page.waitForFunction(width => {
-      const canvas = document.querySelector('.gx-replay__track canvas')
-      return canvas?.height === (width <= 600 ? 44 : 54)
+      const canvas = document.querySelector('.gx-replay__rail canvas')
+      return canvas?.height === (width <= 600 ? 52 : 62) && Math.abs(canvas.width - canvas.getBoundingClientRect().width * 2) <= 1
     }, width)
-    const geometry = await page.locator('.gx-replay__track').evaluate(track => {
-      const canvas = track.querySelector('canvas'), input = track.querySelector('input')
-      const bounds = element => ({ width: element.getBoundingClientRect().width, height: element.getBoundingClientRect().height })
-      return { canvas: bounds(canvas), input: bounds(input), pixels: canvas.width, overflow: document.documentElement.scrollWidth > innerWidth }
-    })
-    assert.equal(geometry.canvas.height, width <= 600 ? 22 : 27)
-    assert.ok(geometry.input.height >= 44, 'the rail keeps its generous seek hit area')
-    assert.ok(Math.abs(geometry.pixels - geometry.canvas.width * 2) <= 1)
-    assert.equal(geometry.overflow, false)
+    const g = await geometry()
+    assert.equal(g.canvas.height, width <= 600 ? 26 : 31)
+    assert.equal(g.input.height, 48)
+    assert.ok(Math.abs(g.track.width - g.available) <= 1, 'timeline uses the full control area')
+    assert.ok(Math.abs(g.canvas.width - (g.track.width - 16)) <= 1)
+    assert.ok(g.track.y >= g.caption.y + g.caption.height - 1, 'caption is above the track')
+    assert.ok(g.controls.y >= g.track.y + g.track.height - 1, 'buttons are below the track')
+    assert.ok(Math.abs(g.pixels - g.canvas.width * 2) <= 1)
+    assert.equal(g.overflow, false)
+  }
+  for (const [embedded, width] of [[false, 1280], [true, 1280], [true, 1000], [true, 390]]) {
+    await page.evaluate(embedded => {
+      const workspace = document.getElementById('workspace'), body = workspace.firstElementChild, viewer = body.firstElementChild
+      workspace.className = embedded ? 'gx-route-workspace' : ''
+      body.className = embedded ? 'gx-route-workspace__body' : ''
+      viewer.className = embedded ? 'gx-card gx-route-workspace__viewer' : ''
+      body.lastElementChild.hidden = !embedded
+    }, embedded)
+    await page.setViewportSize({ width, height: 900 })
+    await assertLayout(width)
+    if (embedded && width === 1280) {
+      const viewer = await page.locator('.gx-route-workspace__viewer').boundingBox()
+      const files = await page.locator('.gx-route-workspace__files').boundingBox()
+      assert.ok(files.x >= viewer.x + viewer.width, 'desktop fixture includes the real files sidebar')
+    }
     const slider = page.getByRole('slider', { name: 'Replay route position' })
     const box = await slider.boundingBox()
     const x = box.x + box.width * .5, y = box.y + box.height / 2
@@ -77,7 +115,7 @@ const assert = require('node:assert/strict')
     assert.ok(bounds.y + bounds.height < box.y - 20, 'preview stays above the touch target')
     assert.equal(await page.locator('.gx-replay__rail canvas').evaluate(canvas => canvas.toDataURL()), bitmap, 'scrubbing reuses the canvas')
     assert.equal(await page.evaluate(() => window.replayPaints), 0, 'scrubbing never repaints the history')
-    if (process.env.REPLAY_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.REPLAY_SCREENSHOT_DIR}/replay-web-scrub-${width}.png` })
+    if (process.env.REPLAY_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.REPLAY_SCREENSHOT_DIR}/replay-web-scrub-${embedded ? 'workspace' : 'standalone'}-${width}.png` })
     await page.mouse.up()
     assert.equal(await preview.count(), 0)
     assert.equal(await page.evaluate(() => window.replayControls.length), 1, 'release commits exactly once')
@@ -117,16 +155,16 @@ const assert = require('node:assert/strict')
     assert.match(await slider.getAttribute('aria-valuetext'), /Experimental/)
     await page.locator('summary', { hasText: 'Timeline colors' }).click()
     assert.equal(await page.locator('.gx-replay__legend span').count(), 5)
-    if (process.env.REPLAY_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.REPLAY_SCREENSHOT_DIR}/replay-web-${width}.png` })
+    if (process.env.REPLAY_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.REPLAY_SCREENSHOT_DIR}/replay-web-${embedded ? 'workspace' : 'standalone'}-${width}.png` })
     await page.locator('summary', { hasText: 'Timeline colors' }).click()
     await page.getByRole('button', { name: 'Fullscreen video' }).click()
-    await page.waitForFunction(() => document.fullscreenElement &&
-      document.querySelector('.gx-replay__track canvas').height === (innerWidth <= 600 ? 44 : 54))
+    await page.waitForFunction(() => document.fullscreenElement)
+    await assertLayout(width)
     const fullscreenHeight = await page.locator('.gx-replay__track canvas').evaluate(canvas => ({
-      actual: canvas.getBoundingClientRect().height, expected: innerWidth <= 600 ? 22 : 27,
+      actual: canvas.getBoundingClientRect().height, expected: innerWidth <= 600 ? 26 : 31,
     }))
     assert.equal(fullscreenHeight.actual, fullscreenHeight.expected, 'fullscreen preserves restrained rail sizing')
-    if (process.env.REPLAY_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.REPLAY_SCREENSHOT_DIR}/replay-web-fullscreen-${width}.png` })
+    if (process.env.REPLAY_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.REPLAY_SCREENSHOT_DIR}/replay-web-fullscreen-${embedded ? 'workspace' : 'standalone'}-${width}.png` })
     await page.evaluate(() => document.exitFullscreen())
   }
   await page.setViewportSize({ width: 390, height: 900 })
@@ -142,7 +180,19 @@ const assert = require('node:assert/strict')
     assert.equal(await page.locator('.gx-replay__preview').count(), 0)
     assert.equal(await page.evaluate(() => window.replayControls.length), cancel ? 0 : 1, 'touch end commits once; cancellation never commits')
   }
+  await page.evaluate(() => window.loadLongReplay())
+  for (const width of [1280, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 })
+    await assertLayout(width)
+    assert.match(await page.locator('.gx-replay__timeline').textContent(), /32:48/)
+    if (process.env.REPLAY_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.REPLAY_SCREENSHOT_DIR}/replay-long-route-${width}.png` })
+  }
+  await page.evaluate(() => {
+    window.fixtureVM.replayTimeline = null
+    window.fixtureVM.replayHistoryNotice = 'History unavailable; the recorded route can still be replayed.'
+  })
+  await assertLayout(320)
   assert.deepEqual(errors, [])
   await browser.close()
-  console.log('Replay timeline browser: sizing, cached drag preview, edges, touch, cancellation, authority changes, fullscreen and keyboard passed')
+  console.log('Replay timeline browser: embedded/standalone layout, dense long routes, cached dragging, touch, cancellation, fullscreen and keyboard passed')
 })().catch(error => { console.error(error); process.exit(1) })
