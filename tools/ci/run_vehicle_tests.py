@@ -294,6 +294,7 @@ RELEASE_TARGETS = (
   "openpilot/starpilot/aol/tests/test_sonata_irq_policy.py",
   "opendbc_repo/opendbc/car/hyundai/tests/test_classic_aol_dash.py",
   "opendbc_repo/opendbc/car/hyundai/tests/test_g90_continuity.py",
+  "opendbc_repo/opendbc/car/hyundai/tests/test_classic_deferred_takeover.py",
   "opendbc_repo/opendbc/car/hyundai/tests/test_disable_response.py",
   "openpilot/starpilot/aol/tests/test_angle_stop_native_feedback.py",
   "openpilot/starpilot/aol/tests/test_angle_stop_fault_guards.py",
