@@ -1,6 +1,7 @@
 #pragma once
 
 #include "opendbc/safety/declarations.h"
+#include "opendbc/safety/modes/rivian_stock_aol.h"
 
 static uint8_t rivian_get_counter(const CANPacket_t *msg) {
   // Signal: ESP_Status_Counter, VDM_PropStatus_Counter
@@ -42,14 +43,13 @@ static uint32_t rivian_compute_checksum(const CANPacket_t *msg) {
   if (msg->addr == 0x390U) {
     chksum = crc8_update(0U, 0x90U, 0x1DU);
     chksum = crc8_update(chksum, 0x03U, 0x1DU);
-    for (int i = 1; i < GET_LEN(msg); i++) {
+    const int len = GET_LEN(msg);
+    for (int i = 1; i < len; i++) {
       chksum = crc8_update(chksum, msg->data[i], 0x1DU);
     }
   }
   return chksum;
 }
-
-#include "opendbc/safety/modes/rivian_stock_aol.h"
 
 static bool rivian_get_quality_flag_valid(const CANPacket_t *msg) {
   bool valid = false;
@@ -157,11 +157,13 @@ static safety_config rivian_init(uint16_t param) {
     {0x162, 2, 8, .check_relay = true},
   };
   // 0x160 = ACM_longitudinalRequest
+#ifdef ALLOW_DEBUG
   static const CanMsg RIVIAN_LONG_TX_MSGS[] = {
     {0x120, 0, 8, .check_relay = true},
     {0x321, 2, 7, .check_relay = true},
     {0x160, 0, 5, .check_relay = true},
   };
+#endif
 
   static const RxCheck rivian_rx_descriptors[] = {
     {.msg = {{0x208, 0, 8, 50U, .max_counter = 14U}, { 0 }, { 0 }}},   // ESP_Status (speed)
@@ -183,18 +185,18 @@ static safety_config rivian_init(uint16_t param) {
     rivian_rx_checks[i] = rivian_rx_descriptors[i];
   }
 
-  bool rivian_longitudinal = false;
-
-  SAFETY_UNUSED(param);
-  #ifdef ALLOW_DEBUG
-    const uint16_t FLAG_RIVIAN_LONG_CONTROL = 1U;
-    rivian_longitudinal = GET_FLAG(param, FLAG_RIVIAN_LONG_CONTROL);
-  #endif
-
+  bool aol_param_supported = param == 0U;
+  safety_config ret = BUILD_SAFETY_CFG(rivian_rx_checks, RIVIAN_TX_MSGS);
   rivian_aol_reset();
+#ifdef ALLOW_DEBUG
+  const bool rivian_longitudinal = GET_FLAG(param, 1U);
   rivian_aol_longitudinal = rivian_longitudinal;
-  rivian_aol_enabled = ((unsigned int)alternative_experience == 32U) &&
-    ((param == 0U) || ((param == 1U) && rivian_longitudinal));
+  aol_param_supported |= param == 1U;
+  if (rivian_longitudinal) {
+    ret = BUILD_SAFETY_CFG(rivian_rx_checks, RIVIAN_LONG_TX_MSGS);
+  }
+#endif
+  rivian_aol_enabled = ((unsigned int)alternative_experience == 32U) && aol_param_supported;
   if (rivian_aol_enabled) {
     static const AolSafetyPolicy policy = {
       .reset = rivian_aol_reset,
@@ -205,8 +207,6 @@ static safety_config rivian_init(uint16_t param) {
     };
     aol_policy = &policy;
   }
-  safety_config ret = rivian_longitudinal ? BUILD_SAFETY_CFG(rivian_rx_checks, RIVIAN_LONG_TX_MSGS) :
-                                          BUILD_SAFETY_CFG(rivian_rx_checks, RIVIAN_TX_MSGS);
   if (!rivian_aol_enabled) {
     ret.rx_checks_len -= 1;  // Ordinary upstream RX catalog remains exactly five rows.
   }
