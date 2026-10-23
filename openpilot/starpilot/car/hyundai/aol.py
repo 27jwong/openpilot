@@ -317,6 +317,14 @@ def retain_on_native_denial(CP, native, state):
               native.requestedLateral and not native.lateralAllowed and temporary_restriction(CP, state))
 
 
+def source_deadline_supported(CP) -> bool:
+  """Admit only an already marked HKG axis owner to original-proof waits."""
+  config = aol_safety_config(CP)
+  policy = policy_for(CP)
+  return bool(policy.runtime_supported and policy.full_axis_runtime_required and config is not None and
+              native_accepts_cp(CP, int(config.safetyModel.raw), int(config.safetyParam)))
+
+
 def independent_cruise_buttons_supported(CP, *, marked_only=False) -> bool:
   # Dedicated EV6 LONG raw-button/optional-release behavior stays unchanged.
   if CP.carFingerprint == HyundaiCAR.KIA_EV6 and CP.openpilotLongitudinalControl:
@@ -362,13 +370,13 @@ def retained_shared_long_cancel_intent(CP, CS, sm, feedback, owner, *, cancel_so
   This returns no axis grant and changes no feedback/native/source deadline.
   The next actual LAT-only publication must establish its own normal baseline.
   """
-  from opendbc.car.hyundai.canfd_stock_aol import LONG_EV_CARS
+  from opendbc.car.hyundai.canfd_stock_aol import INDEPENDENT_LONG_BUTTON_CARS
   from openpilot.cereal import log
   from openpilot.starpilot.aol.runtime import AXIS_MAX_AGE_NS, SAFETY_MAX_AGE_NS
   from openpilot.starpilot.aol.transport_pause import cp_identity, independent_lateral_health
   try:
     if (not (qualified_sonata_independent(CP) or qualified_ccnc_long_aol(CP, marked_only=True) or
-             CP.carFingerprint in LONG_EV_CARS and qualified_canfd_long(CP, marked_only=True)) or
+             CP.carFingerprint in INDEPENDENT_LONG_BUTTON_CARS and qualified_canfd_long(CP, marked_only=True)) or
         owner is None or not owner.explicit_latch or not owner.independent_cruise_buttons or
         not owner.allowed_latch or owner.pause_lateral or owner.pause_longitudinal or owner._fault_inhibit):
       return False

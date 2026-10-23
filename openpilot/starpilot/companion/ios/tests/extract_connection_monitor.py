@@ -4,14 +4,14 @@ import sys
 source = Path('GalaxyBluetooth/GalaxyBluetoothApp.swift').read_text()
 
 def method(signature):
-    start = source.index(signature)
-    opening = source.index('{', start)
-    depth = 1
-    end = opening + 1
-    while depth:
-        depth += (source[end] == '{') - (source[end] == '}')
-        end += 1
-    return source[start:end]
+  start = source.index(signature)
+  opening = source.index('{', start)
+  depth = 1
+  end = opening + 1
+  while depth:
+    depth += (source[end] == '{') - (source[end] == '}')
+    end += 1
+  return source[start:end]
 
 stubs = r'''
 import Foundation

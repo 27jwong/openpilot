@@ -24,6 +24,7 @@ from tools.ci import vehicle_pytest
 # Representative production callers plus their source/native refusal cases.
 # The emitted selected_test_ids record exact parametrized configurations.
 AOL_LIFECYCLE_TARGETS = (
+  'opendbc_repo/opendbc/safety/tests/test_hkg_mode_parity.py',
   'opendbc_repo/opendbc/safety/tests/test_pe_stopped_callers.py',
   'opendbc_repo/opendbc/safety/tests/test_pe_combined_callers.py',
   'opendbc_repo/opendbc/safety/tests/test_pe_set_release_callers.py',
