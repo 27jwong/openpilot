@@ -155,6 +155,7 @@ AOL_LIFECYCLE_SCOPE = {
 }
 
 DEBUG_SAFETY_CLASS_TARGETS = {
+  'opendbc_repo/opendbc/safety/tests/test_hyundai_gv60_long.py': ('opendbc_repo/opendbc/safety/tests/test_hyundai_gv60_long.py::TestGV60LongDebug',),
   'opendbc_repo/opendbc/safety/tests/test_pe_combined_aol.py': ('opendbc_repo/opendbc/safety/tests/test_pe_combined_aol.py::TestPECombinedDebug',),
   "opendbc_repo/opendbc/safety/tests/test_ev9_combined_aol.py": ("opendbc_repo/opendbc/safety/tests/test_ev9_combined_aol.py::TestEV9CombinedDebug",),
   "opendbc_repo/opendbc/safety/tests/test_hyundai_ev9_long.py": (
@@ -175,6 +176,7 @@ DEBUG_SAFETY_CLASS_TARGETS = {
 
 
 RELEASE_TARGETS = (
+  'opendbc_repo/opendbc/safety/tests/test_hyundai_gv60_long.py::TestGV60LongReleaseDenied',
   'openpilot/starpilot/tests/test_ford_configuration_parity.py',
   'openpilot/starpilot/tests/test_ford_configuration_admission.py',
   'openpilot/starpilot/tests/test_ford_release_long_preferences.py',
