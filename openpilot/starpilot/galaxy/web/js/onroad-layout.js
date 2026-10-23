@@ -9,6 +9,7 @@ import { GalaxySelect } from "./galaxy-select.js"
 import { GxNotice } from "./notice.js"
 import { GxDialog } from "./dialog.js"
 import { GalaxySettingRow, switchRow } from "./galaxy-setting-row.js"
+import { showDraftChange } from "./save-feedback.js"
 import { snapTargets, snapMove, snapResize, snapThreshold } from "./layout-snap.js"
 
 import { PROFILES, ROAD_COLORS, PATH_MODES, HEX, PROJECTION_DISPLAY_SWITCHES, layoutDocument, previewDocument, withDisplay, orderedWidgetIds, widgetPalette, withAlpha, widgetSize, placementLimits, clampBox, clampPlacement, overlapsReserved, previewPoint, validDocument, validSnapshot } from "./onroad-layout-document.js"
@@ -856,6 +857,7 @@ export const OnroadLayoutPage = {
       this.state.draft.clock24Hour = event.target.checked
       this.recordChange(before)
       this.state.notice = ""
+      showDraftChange()
     },
     displayRow(key) { return this.state.data?.display?.find(row => row.key === key) },
     displayValue(key) { return this.state.draft?.display?.[key] },
@@ -881,6 +883,7 @@ export const OnroadLayoutPage = {
       this.state.draft.showMaxSpeed = event.target.checked
       this.recordChange(before)
       this.state.notice = ""
+      showDraftChange()
     },
     setSpeedSources(key, value) {
       if (!this.editable || this.state.drag || this.state.layerDrag || this.selectedWidget?.kind !== "cruise_limits" ||

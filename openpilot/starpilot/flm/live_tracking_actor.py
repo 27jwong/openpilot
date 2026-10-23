@@ -600,6 +600,18 @@ class LiveTrackingActor:
       # Missing/unsupported source-state reconstruction is no sensitivity proof.
       self.reason = 'genuine_native_sensitivity_unavailable'
 
+  def _advance_original_decoder(self, collector, now_ns):
+    # Historical verification is independent of current collection admission. At most64 original messages per4Hz tick;
+    # no skipped counter/checksum input, no endpoint or authority fabrication.
+    if now_ns - self.last_decode_ns >= 250_000_000:
+      self.last_decode_ns = now_ns
+      history = collector.adapter.replay.emissions
+      if history.events:
+        try:
+          history.decode(next(reversed(history.events.values())))
+        except (AttributeError, KeyError, TypeError, ValueError, OverflowError):
+          pass  # Pending/invalid bytes still fail their exact verification.
+
   def _retire_identified_history(self, collector):
     """Retain live prefixes after independent identification has completed.
 
@@ -699,6 +711,12 @@ class LiveTrackingActor:
     if self.probe_process is not None and self.ingress is None:
       # Continue actual reaping after a previous source change removed ingress.
       self.probe_process.poll(token=None, now_ns=now_ns)
+    if (self.source_tracking and collector is not None and
+        getattr(getattr(getattr(collector, 'adapter', None), 'replay', None), 'raw_mode', False) is True):
+      # A missing current pair withdraws learning; it must not suspend bounded
+      # historical decoding/retirement and grow the next collection pause.
+      self._advance_original_decoder(collector, now_ns)
+      self._retire_identified_history(collector)
     if collector is None or source is None or not collector.ready or current_native is not True:
       # A frozen response job describes ORIGINAL source/native observations,
       # not permission to apply a correction now. Temporary input/native gaps
@@ -757,17 +775,7 @@ class LiveTrackingActor:
       collector.live_tracking = None
       self.attempted_epoch = None
     self.seed, self.token = seed, token
-    # Keep the stateful CAN decoder current independently of which physical
-    # samples happen to be clipped. At most64 original messages per4Hz tick;
-    # no skipped counter/checksum input, no endpoint or authority fabrication.
-    if now_ns - self.last_decode_ns >= 250_000_000:
-      self.last_decode_ns = now_ns
-      history = collector.adapter.replay.emissions
-      if history.events:
-        try:
-          history.decode(next(reversed(history.events.values())))
-        except (AttributeError, KeyError, TypeError, ValueError, OverflowError):
-          pass  # Pending/invalid bytes still fail their exact verification.
+    self._advance_original_decoder(collector, now_ns)
     if self.ingress is not None and self.ingress.monitor.persistent_residual_failure(now_ns):
       # This is numeric-model withdrawal, never admission of a replacement.
       # Preserve the per-epoch attempt latch: no outcome-based cohort search.
@@ -826,7 +834,8 @@ class LiveTrackingActor:
           self.snapshot_process.submit(collector, seed, token=token, now_ns=now_ns)
           self.reason = self.snapshot_process.reason
       return None
-    self._retire_identified_history(collector)
+    if not self.source_tracking:
+      self._retire_identified_history(collector)
     self._probe_tick(collector, source, now_ns=now_ns)
     if self.restore_pending:
       return None
@@ -875,7 +884,7 @@ class LiveTrackingActor:
         offer = optimizer.offer(now_ns, publication=False)
         if offer is None:
           raise ValueError('current trial publication unavailable')
-        self.ingress.latest_offer = offer
+        cast(LiveTrackingIngress, self.ingress).latest_offer = offer
       validate_response_witness(offer.response_witness, self.certificate.binding, now_ns)
       return offer
     except (AttributeError, TypeError, ValueError):

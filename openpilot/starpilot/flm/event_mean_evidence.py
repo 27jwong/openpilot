@@ -1,7 +1,7 @@
 """Explicit event-only paired-mean evidence model; never native authority.
 
 Coverage is conditional on independent, approximately normal ORIGINAL whole-
-block gains. Source disjointness is checked; it does not establish independence.
+block gains. Source non-overlap is checked; it does not establish independence.
 """
 from dataclasses import asdict, dataclass
 import hashlib

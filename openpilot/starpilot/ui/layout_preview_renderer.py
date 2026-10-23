@@ -1,5 +1,7 @@
 """Parked onroad layout preview using the same native view as the driving UI."""
 
+from typing import cast
+
 from pathlib import Path
 import json
 import math
@@ -20,6 +22,7 @@ from openpilot.starpilot.ui.onroad_customization import (CAMERA_WIDGETS, PROFILE
 from openpilot.starpilot.ui.onroad_widget_style import draw_widget_frame
 from openpilot.starpilot.curve_speed.status import CurveObservation
 from openpilot.starpilot.ui.onroad_state import ConditionalLead
+from openpilot.starpilot.ui.unified_speed_presentation import resolve_unified_speed
 from openpilot.starpilot.ui.onroad_state import AlertSize, ObservationKind, OnroadAlert, OnroadState, SourceReading, SpeedLimitObservation
 from openpilot.starpilot.ui.appearance_preferences import CameraViewChoice, OnroadAppearance
 from openpilot.starpilot.ui.onroad_dm import draw_monitor_art, monitor_bounds, monitor_visible
@@ -225,7 +228,8 @@ class _Canvas:
         self.map = MapOverlay(reader=SampleTileReader(), fonts=self.fonts)
         self.view.map_layer = self._render_map
         from openpilot.starpilot.models.jetlink_status import JetlinkStatus
-        self.view.jetlink_status.status = JetlinkStatus('iPhone', 'active', 24.6, 'connected')
+        from openpilot.starpilot.ui.onroad_jetlink import JetlinkStatusWidget
+        cast(JetlinkStatusWidget, self.view.jetlink_status).status = JetlinkStatus('iPhone', 'active', 24.6, 'connected')
       self.monitor = _DriverMonitorArt(profile)
       self.view.driver_monitor_layer = self._render_driver_monitor
       self.view.preview_pip_layer = self._render_preview_pip
@@ -335,12 +339,19 @@ class _Canvas:
     captures = []
     for key in RUNTIME_PREVIEW_WIDGETS[str(self.profile)]:
       logical_width, logical_height = widget_size(state.customization, self.profile, key)
+      # The restored compact US sign adds an offset row beyond its saved base size.
+      compact_offset = (self.profile == Profile.COMPACT and key == 'speed_limit' and
+                        not state.appearance.use_vienna_sign and bool(resolve_unified_speed(state).offset_text))
+      if compact_offset:
+        logical_height += 44
       position = positions[key]
       widget = PROFILES[str(self.profile)]['widgets'][key]
       crop_x = max(0, math.floor(position['x'] - widget.get('visualInsetLeft', 0)))
       crop_y = max(0, math.floor(position['y'] - widget.get('visualInsetTop', 0)))
       offset_x, offset_y = crop_x - position['x'], crop_y - position['y']
       width, height = math.ceil(logical_width - offset_x), math.ceil(logical_height - offset_y)
+      if compact_offset and 0 <= crop_y < canvas_height:
+        height = min(height, canvas_height - crop_y)
       if x + width > 1024:
         x, y, row_height = 0, y + row_height, 0
       sprites[key] = {'x': x, 'y': y, 'width': width, 'height': height, 'offsetX': offset_x, 'offsetY': offset_y}

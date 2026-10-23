@@ -1,7 +1,9 @@
 """EV9 pending startup retains source UDS outcomes and waits for replacement controls."""
 import time
 
-from opendbc.car.hyundai.ev9_longitudinal import qualified
+from copy import deepcopy
+
+from opendbc.car.hyundai.ev9_longitudinal import qualified, copy_cp
 from opendbc.car.hyundai.ioniq5pe_startup import PEPendingStartup
 from opendbc.car.isotp_parallel_query import IsoTpParallelQuery
 
@@ -15,6 +17,19 @@ class EV9PendingStartup(PEPendingStartup):
     self.disable_response = None
     super().__init__(cp, callbacks, stock_cp=stock_cp,
                      exchange=self._ev9_exchange if exchange is None else exchange, **kwargs)
+
+  def finalize_aol_configuration(self, ci):
+    # Negotiate the exact marker before publication; all other CP bytes stay sealed.
+    if (self.pending_target and not self.owner.published and ci is self.configured_ci and
+        self.snapshot is not None and ci.CP.to_dict() != self.snapshot):
+      from opendbc.car.hyundai.ev9_long_aol import qualified as aol_qualified
+      expected = deepcopy(self.snapshot)
+      expected['alternativeExperience'] = 32
+      if not aol_qualified(ci.CP, marked_only=True) or ci.CP.to_dict() != expected:
+        raise RuntimeError('EV9 pending finalization changed outside the exact AOL marker')
+      self.owner.cp = copy_cp(ci.CP)
+      self.snapshot = expected
+    super().finalize_aol_configuration(ci)
 
   def _ev9_exchange(self, recv, send, request, response):
     attempts = 10 if request == b"\x10\x03" else 1

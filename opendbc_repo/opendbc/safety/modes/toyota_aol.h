@@ -6,7 +6,10 @@ static bool toyota_alt_cruise = false;
 
 static bool toyota_aol_secoc = false;
 static bool toyota_aol_stock = false;
+static bool toyota_aol_lta = false;
 static bool toyota_aol_rav4h_filter = false;
+static bool toyota_sdsu_status = false;
+static bool toyota_eps8_sdsu = false;
 static bool toyota_sdsu_control = false;
 static bool toyota_aol_main = false;
 static bool toyota_aol_drive = false;
@@ -50,7 +53,7 @@ static uint8_t toyota_aol_permission(void) {
   if (fresh && toyota_aol_main && toyota_aol_drive && toyota_aol_doors_closed && toyota_aol_eps) {
     permission = request & 1U;
     if (!toyota_aol_stock && controls_allowed && toyota_aol_belt && !gas_pressed && !brake_pressed &&
-        (!toyota_aol_rav4h_filter || toyota_sdsu_control)) {
+        (!toyota_sdsu_status || toyota_sdsu_control)) {
       permission |= request & 2U;
     }
   }
@@ -105,6 +108,11 @@ static void toyota_aol_observe(const CANPacket_t *msg) {
       const unsigned int state = (msg->data[3] >> 1U) & 0x7FU;
       toyota_aol_eps = (state != 0U) && (state != 9U) && (state != 11U) && (state != 21U) &&
                        (state != 25U) && (state != 3U) && (state != 17U);
+      if (toyota_aol_lta) {
+        const unsigned int lta_state = (msg->data[1] >> 3U) & 0x1FU;
+        toyota_aol_eps = toyota_aol_eps && (lta_state != 0U) && (lta_state != 9U) && (lta_state != 11U) && (lta_state != 21U) &&
+                          (lta_state != 25U) && (lta_state != 3U) && (lta_state != 17U);
+      }
     } else {
     }
     if (index < 4U) {
@@ -117,16 +125,19 @@ static void toyota_aol_observe(const CANPacket_t *msg) {
 
 static void toyota_aol_configure(uint16_t param) {
   toyota_aol_reset();
+  toyota_eps8_sdsu = (param == 0x8049U) || (param == 0x8249U) || (param == 0x8449U) || (param == 0x8649U);
   toyota_alt_cruise = param == 0x424DU;
+  toyota_aol_lta = (param == 0x449U) || (param == 0x649U) || (param == 0x1449U) || (param == 0x1649U) || (param == 0x8449U) || (param == 0x8649U);
   toyota_pedal = (param == 0x2049U) || (param == 0x2249U);
   toyota_aol_rav4h_filter = (param == 0x9049U) || (param == 0x9249U);
-  toyota_aol_stock = (param == 585U) || (param == 4681U) || (param == 0x9249U) || (param == 0x2249U) || toyota_alt_cruise;
+  toyota_sdsu_status = toyota_aol_rav4h_filter || toyota_eps8_sdsu;
+  toyota_aol_stock = (param == 585U) || (param == 4681U) || (param == 0x9249U) || (param == 0x2249U) || toyota_alt_cruise || (param == 0x649U) || (param == 0x1649U) || (param == 0x8249U) || (param == 0x8649U);
 #ifdef ALLOW_DEBUG
   toyota_aol_secoc = (param == 2121U);
 #else
   toyota_aol_secoc = false;
 #endif
-  toyota_aol_enabled = (toyota_aol_stock && (alternative_experience == 32)) ||
+  toyota_aol_enabled = (toyota_eps8_sdsu && (alternative_experience == 32)) || (toyota_aol_lta && (alternative_experience == 32)) || (toyota_aol_stock && (alternative_experience == 32)) ||
 #ifdef ALLOW_DEBUG
                        (toyota_aol_secoc && (alternative_experience == 32)) ||
 #endif

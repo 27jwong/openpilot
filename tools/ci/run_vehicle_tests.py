@@ -21,7 +21,118 @@ sys.path.insert(0, str(ROOT))
 from tools import test_runner
 from tools.ci import vehicle_pytest
 
+# Representative production callers plus their source/native refusal cases.
+# The emitted selected_test_ids record exact parametrized configurations.
+AOL_LIFECYCLE_TARGETS = (
+  'opendbc_repo/opendbc/safety/tests/test_pe_stopped_callers.py',
+  'opendbc_repo/opendbc/safety/tests/test_pe_combined_callers.py',
+  'opendbc_repo/opendbc/safety/tests/test_pe_set_release_callers.py',
+  'openpilot/starpilot/aol/tests/test_pe_combined_profile_contract.py',
+  'opendbc_repo/opendbc/safety/tests/test_palisade_stock_aol_status.py',
+  'opendbc_repo/opendbc/safety/tests/test_ev9_set_release_callers.py',
+  'openpilot/starpilot/aol/tests/test_ev6_source_deadline.py',
+  "openpilot/starpilot/car/rivian/tests/test_aol_policy.py",
+  "openpilot/starpilot/car/rivian/tests/test_aol_native.py",
+  "openpilot/starpilot/car/rivian/tests/test_aol_lifecycle.py",
+  "opendbc_repo/opendbc/safety/tests/test_ev9_combined_callers.py",
+  "openpilot/starpilot/aol/tests/test_ev9_main_withdrawal_guards.py",
+  "openpilot/starpilot/aol/tests/test_native_inventory_control_cadence.py",
+  "openpilot/starpilot/aol/tests/test_gm.py",
+  "openpilot/starpilot/aol/tests/test_gm_steering_receive_order.py",
+  "openpilot/starpilot/aol/tests/test_gm_main_response.py",
+  "openpilot/starpilot/aol/tests/test_gm_held_native.py",
+  "openpilot/starpilot/aol/tests/test_gm_ordinary_warning.py",
+  "openpilot/starpilot/aol/tests/test_gm_startup_main.py",
+  "openpilot/starpilot/aol/tests/test_gm_pedal_order.py",
+  "openpilot/starpilot/aol/tests/test_gm_cancel_remap.py",
+  "openpilot/starpilot/aol/tests/test_gm_held_brake_successor.py",
+  "openpilot/starpilot/aol/tests/test_gm_lag_episode_recovery.py",
+  "openpilot/starpilot/aol/tests/test_independent_lateral_soft_takeover.py",
+  "openpilot/starpilot/aol/tests/test_volt_lag_pedal_intent.py",
+  "openpilot/starpilot/aol/tests/test_gm_route18e_recovery.py",
+  "openpilot/starpilot/aol/tests/test_stock_lateral_honda.py",
+  "openpilot/starpilot/aol/tests/test_honda_reverse_join.py",
+  "openpilot/starpilot/aol/tests/test_honda_recovery_lifecycle.py",
+  "openpilot/starpilot/aol/tests/test_honda_classic_alpha_lifecycle.py",
+  "opendbc_repo/opendbc/car/honda/tests/test_classic_alpha_aol_parity.py",
+  "opendbc_repo/opendbc/car/honda/tests/test_manual_honda_port_aol.py",
+  "opendbc_repo/opendbc/car/honda/tests/test_selected_honda_topology.py",
+  "openpilot/starpilot/aol/tests/test_honda_pedal_lifecycle.py",
+  "openpilot/starpilot/aol/tests/test_honda_canfd_lifecycle.py",
+  "openpilot/starpilot/aol/tests/test_honda_alt_radar_lifecycle.py",
+  "openpilot/starpilot/aol/tests/test_fresh_inactive_transport.py",
+  "opendbc_repo/opendbc/car/mazda/tests/test_native_engagement_callers.py",
+  "openpilot/starpilot/car/mazda/tests/test_main_startup.py",
+  "opendbc_repo/opendbc/car/mazda/tests/test_dashboard_stop_sign.py",
+  "opendbc_repo/opendbc/safety/tests/test_mazda_stock_aol.py",
+  "openpilot/starpilot/aol/tests/test_temporary_lag_intent.py",
+  "openpilot/starpilot/aol/tests/test_stock_location_recovery.py",
+  "openpilot/starpilot/aol/tests/test_stock_eps_recovery.py",
+  "openpilot/starpilot/aol/tests/test_stock_lateral_lag_gap_sequence.py",
+  "openpilot/starpilot/aol/tests/test_chrysler.py",
+  "openpilot/starpilot/aol/tests/test_toyota.py",
+  "openpilot/starpilot/car/toyota/tests/test_lexus_is_caller_native.py",
+  "openpilot/starpilot/car/nissan/tests/test_aol.py",
+  "openpilot/starpilot/aol/tests/test_volkswagen.py",
+  "openpilot/starpilot/aol/tests/test_volkswagen_saved_intent.py",
+  "openpilot/starpilot/aol/tests/test_mqb_actual_callers.py",
+  "openpilot/starpilot/aol/tests/test_mqb_direct_callers.py",
+  "openpilot/starpilot/aol/tests/test_mqb_topology_callers.py",
+  "openpilot/starpilot/aol/tests/test_mqb_topology_contract.py",
+  "opendbc_repo/opendbc/car/volkswagen/tests/test_mqb_topology_discovery.py",
+  "opendbc_repo/opendbc/car/volkswagen/tests/test_mqb_aol_discovery.py",
+  "opendbc_repo/opendbc/safety/tests/test_volkswagen_stock_aol.py",
+  "opendbc_repo/opendbc/safety/tests/test_volkswagen_engagement_arm.py",
+  "opendbc_repo/opendbc/safety/tests/test_volkswagen_long_aol.py",
+  "opendbc_repo/opendbc/safety/tests/test_volkswagen_direct_aol.py",
+  "openpilot/starpilot/aol/tests/test_volkswagen_main_boot.py",
+  "openpilot/starpilot/car/subaru/tests/test_aol.py",
+  "openpilot/starpilot/car/subaru/tests/test_reverse_join.py",
+  "openpilot/starpilot/car/subaru/tests/test_stock_aol_callers.py",
+  "opendbc_repo/opendbc/safety/tests/test_subaru_stock_aol.py",
+  "openpilot/starpilot/car/subaru/tests/test_software_cruise.py",
+  "openpilot/starpilot/car/subaru/tests/test_software_cruise_callers.py",
+  "opendbc_repo/opendbc/safety/tests/test_subaru_software_cruise.py",
+  "openpilot/starpilot/car/subaru/tests/test_sng.py",
+  "openpilot/starpilot/car/subaru/tests/test_sng_callers.py",
+  "opendbc_repo/opendbc/safety/tests/test_subaru_sng.py",
+  "openpilot/starpilot/car/subaru/tests/test_stop_start.py",
+  "openpilot/starpilot/car/subaru/tests/test_stop_start_callers.py",
+  "opendbc_repo/opendbc/safety/tests/test_subaru_stop_start.py",
+  "openpilot/starpilot/car/subaru/tests/test_avh.py",
+  "openpilot/starpilot/car/subaru/tests/test_avh_callers.py",
+  "opendbc_repo/opendbc/safety/tests/test_subaru_avh_startup.py",
+  "openpilot/starpilot/car/subaru/tests/test_angle_tune.py",
+  "openpilot/starpilot/car/subaru/tests/test_forester_angle_callers.py",
+  "opendbc_repo/opendbc/safety/tests/test_subaru_forester_angle.py",
+  "openpilot/starpilot/car/subaru/tests/test_outback_angle_callers.py",
+  "openpilot/starpilot/car/subaru/tests/test_outback_startup_callers.py",
+  "openpilot/starpilot/car/subaru/tests/test_smoothing.py",
+  "openpilot/starpilot/car/subaru/tests/test_smoothing_factory.py",
+  "openpilot/starpilot/car/subaru/tests/test_smoothing_settings.py",
+  "openpilot/starpilot/car/subaru/tests/test_smoothing_model_join.py",
+  "opendbc_repo/opendbc/safety/tests/test_subaru_outback_angle.py",
+)
+
+AOL_LIFECYCLE_SCOPE = {
+  "rivian": ("GEN1 base stock/DEBUG Alpha: actual factory/Card/SD/Controls/native engagement, brake LAT-only, gas, standstill zero output, " +
+             "Reverse/Drive, temporary ToI recovery and physical UP_1 cancel; GEN2/unknown profiles refused"),
+  "mazda": ("CX5 2022/CX9 2021 GEN1 stock AE32: engagement/brake/Cancel pause/toggle/Reverse/standstill/EPS recovery; " +
+            "native permanent-fault rearm vetoes"),
+  "subaru": ("eleven stock global identities; automatic/manual and AOL on/off factory-to-native lifecycles, " +
+               "startup requests, frozen smoothing, brake, Reverse/Drive, EPS recovery, MAIN-off and refusal guards"),
+  "volkswagen": "stock MQB auto/manual, gateway/camera factory acquisition, MAIN/engagement/brake/Reverse joins, permanent EPS native rearm",
+  "gm": "Volt/Bolt factory profiles, MAIN boot, stock/Alpha, BE/C9, pedal/regen, Cancel mappings, RES, lag withdrawal/recovery",
+  "honda": "stock Civic source/native vetoes, native-first Reverse joins, and EPS-recovery/Reverse/Drive native TX lifecycle",
+  "hyundai": "Ioniq stock/OP host lag plus classic/CAN-FD stock source-gap and EPS/location recovery",
+  "ford_chrysler": "stock PCM-off EPS/location joins; Chrysler factory/parser/controller OFF and Cancel behavior",
+  "toyota": "stock torque/angle native-ack vetoes, source-gap recovery, Lexus IS DSU actual DEBUG/RELEASE native callers",
+  "nissan": "five stock identities, real acquisition/parser/controller/native optional paths",
+}
+
 DEBUG_SAFETY_CLASS_TARGETS = {
+  'opendbc_repo/opendbc/safety/tests/test_pe_combined_aol.py': ('opendbc_repo/opendbc/safety/tests/test_pe_combined_aol.py::TestPECombinedDebug',),
+  "opendbc_repo/opendbc/safety/tests/test_ev9_combined_aol.py": ("opendbc_repo/opendbc/safety/tests/test_ev9_combined_aol.py::TestEV9CombinedDebug",),
   "opendbc_repo/opendbc/safety/tests/test_hyundai_ev9_long.py": (
     "opendbc_repo/opendbc/safety/tests/test_hyundai_ev9_long.py::TestEv9LongDebugContract",
   ),
@@ -40,6 +151,13 @@ DEBUG_SAFETY_CLASS_TARGETS = {
 
 
 RELEASE_TARGETS = (
+  'opendbc_repo/opendbc/safety/tests/test_pe_combined_aol.py::TestPECombinedReleaseDenied',
+  'openpilot/starpilot/aol/tests/test_pe_combined_profile_contract.py',
+  'opendbc_repo/opendbc/safety/tests/test_palisade_stock_aol_status.py',
+  'openpilot/starpilot/aol/tests/test_ev6_source_deadline.py',
+  "openpilot/starpilot/aol/tests/test_ev9_main_withdrawal_guards.py",
+  "opendbc_repo/opendbc/safety/tests/test_ev9_combined_aol.py::TestEV9CombinedReleaseDenied",
+  "opendbc_repo/opendbc/car/hyundai/tests/test_ev9_combined_aol.py::TestEV9CombinedProfile",
   "opendbc_repo/opendbc/car/hyundai/tests/test_gv60_paired_startup.py",
   "opendbc_repo/opendbc/car/hyundai/tests/test_ev9_pending_protocol.py",
   "opendbc_repo/opendbc/car/hyundai/tests/test_ev9_pending_startup.py::TestEV9NormalSelection",
@@ -83,6 +201,14 @@ RELEASE_TARGETS = (
   "openpilot/starpilot/aol/tests/test_sonata_cruise_only_withdrawal.py",
   "openpilot/starpilot/aol/tests/test_classic_scc_mapped_buttons.py",
   "openpilot/starpilot/aol/tests/test_sonata_mapped_button_callers.py",
+  "openpilot/starpilot/aol/tests/test_sonata_temporary_withdrawals.py",
+  "openpilot/starpilot/aol/tests/test_expired_axis_zero_request.py",
+  "openpilot/starpilot/aol/tests/test_independent_lateral_soft_takeover.py",
+  "tools/ci/test_classic_startup_release.py",
+  "openpilot/starpilot/aol/tests/test_classic_startup_neutral_replacement.py::test_classic_initializing_never_bypasses_current_health",
+  "openpilot/starpilot/tests/test_ev6_startup.py",
+  "openpilot/starpilot/aol/tests/test_ev6_stock_parity.py",
+  "openpilot/starpilot/aol/tests/test_ev6_physical_authorization.py",
   "opendbc_repo/opendbc/safety/tests/test_classic_scc_main_ingress.py",
   "opendbc_repo/opendbc/car/hyundai/tests/test_classic_dash_late_configuration.py",
   "opendbc_repo/opendbc/car/toyota/tests/test_rav4h_filter.py",
@@ -185,6 +311,11 @@ RELEASE_TARGETS = (
   "opendbc_repo/opendbc/safety/tests/test_tesla_hw1.py",
   "opendbc_repo/opendbc/safety/tests/test_volvo_c1.py",
   "opendbc_repo/opendbc/safety/tests/test_volvo_cma.py",
+  "opendbc_repo/opendbc/safety/tests/test_volkswagen_stock_aol.py",
+  "opendbc_repo/opendbc/safety/tests/test_volkswagen_engagement_arm.py",
+  "opendbc_repo/opendbc/safety/tests/test_volkswagen_long_aol.py",
+  "opendbc_repo/opendbc/safety/tests/test_volkswagen_direct_aol.py",
+  "openpilot/starpilot/aol/tests/test_volkswagen_main_boot.py",
   "opendbc_repo/opendbc/safety/tests/test_mazda.py::TestMazdaSafety",
   "opendbc_repo/opendbc/safety/tests/test_toyota.py::TestToyotaStockLongitudinalTorque",
   "opendbc_repo/opendbc/safety/tests/test_toyota_auto_hold.py",
@@ -253,6 +384,14 @@ RELEASE_TARGETS = (
   "opendbc_repo/opendbc/safety/tests/test_subaru_ascent_angle.py",
   "opendbc_repo/opendbc/safety/tests/test_ford_three.py",
   "opendbc_repo/opendbc/safety/tests/test_hyundai_canfd_carnival.py",
+  "opendbc_repo/opendbc/safety/tests/test_subaru_stock_aol.py",
+  "opendbc_repo/opendbc/safety/tests/test_subaru_software_cruise.py",
+  "opendbc_repo/opendbc/safety/tests/test_subaru_sng.py",
+  "opendbc_repo/opendbc/safety/tests/test_subaru_stop_start.py",
+  "opendbc_repo/opendbc/safety/tests/test_subaru_avh_startup.py",
+  "opendbc_repo/opendbc/safety/tests/test_subaru_forester_angle.py",
+  "opendbc_repo/opendbc/safety/tests/test_subaru_receive_guards.py",
+  "opendbc_repo/opendbc/safety/tests/test_subaru_outback_angle.py",
 )
 
 # Vehicle tests import both the vendored car code and these host control owners.
@@ -290,16 +429,40 @@ def sha256(path):
 
 
 def targets_for(suite):
+  if suite == "aol-lifecycle":
+    return list(AOL_LIFECYCLE_TARGETS)
   if suite == "interfaces":
     car_root = ROOT / "opendbc_repo/opendbc/car"
     return [str(path.relative_to(ROOT)) for path in sorted(car_root.rglob("test_*.py"))
             if path != car_root / "tests/test_models.py"]
   if suite == "safety-debug":
     paths = [str(path.relative_to(ROOT)) for path in sorted((ROOT / "opendbc_repo/opendbc/safety/tests").glob("test_*.py"))]
-    return [selected for path in paths for selected in DEBUG_SAFETY_CLASS_TARGETS.get(path, (path,))]
+    return [selected for path in paths for selected in DEBUG_SAFETY_CLASS_TARGETS.get(path, (path,))] + [
+      "openpilot/starpilot/aol/tests/test_classic_startup_neutral_replacement.py",
+    ]
   if suite == "safety-release":
     return list(RELEASE_TARGETS)
   raise ValueError(f"Unknown vehicle test suite: {suite}")
+
+
+def interface_class_names(path, class_name):
+  """Resolve concrete parameterized classes without accepting unrelated name prefixes."""
+  concrete = set()
+  path = path.resolve()
+  for module in tuple(sys.modules.values()):
+    source = getattr(module, "__file__", None)
+    if not source or Path(source).resolve() != path:
+      continue
+    template = getattr(module, class_name, None)
+    if not isinstance(template, type) or template.__dict__.get("__test__") is not False:
+      continue
+    for name, candidate in vars(module).items():
+      if (isinstance(candidate, type) and candidate.__bases__ == (template,) and
+          candidate.__module__ == module.__name__ and candidate.__name__ == name and
+          name.startswith(class_name + "_") and len(name) > len(class_name) + 1 and
+          candidate.__dict__.get("__test__") is True):
+        concrete.add(name)
+  return sorted(concrete) or [class_name]
 
 
 def audit_interface_modules(targets, test_ids):
@@ -315,11 +478,13 @@ def audit_interface_modules(targets, test_ids):
       if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_"):
         functions.append(node.name)
       elif isinstance(node, ast.ClassDef):
+        class_names = interface_class_names(path, node.name)
         for method in node.body:
           if isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef)) and method.name.startswith("test_"):
-            expected = f"{module}.{node.name}.{method.name}"
-            if not any(test_id == expected or test_id.startswith((expected + "_", expected + "[")) for test_id in selected):
-              missing_methods.append(f"{node.name}.{method.name}")
+            for class_name in class_names:
+              expected = f"{module}.{class_name}.{method.name}"
+              if not any(test_id == expected or test_id.startswith((expected + "_", expected + "[")) for test_id in selected):
+                missing_methods.append(f"{class_name}.{method.name}")
     if not selected:
       errors.append(f"Interface test module collected zero tests: {target}")
     for function in functions:
@@ -412,6 +577,16 @@ def build_safety_library(release, output):
           "loader_sha256": sha256(libsafety_py.__file__)}
 
 
+def build_aol_protocol(output):
+  """The existing C++ protocol contract is part of the same lifecycle gate."""
+  executable = output / "test_aol_protocol"
+  command = ["c++", "-std=c++17", "-I.", "-Iopenpilot", "-Iopendbc_repo",
+             "openpilot/selfdrive/pandad/tests/test_aol_protocol.cc", "-o", str(executable)]
+  subprocess.check_call(command, cwd=ROOT)
+  subprocess.check_call([str(executable)], cwd=ROOT)
+  return {"command": command, "path": str(executable), "sha256": sha256(executable)}
+
+
 def run(suite, output, collect_only=False):
   output = Path(output).resolve()
   output.mkdir(parents=True, exist_ok=True)
@@ -426,6 +601,12 @@ def run(suite, output, collect_only=False):
                         "independent lateral/longitudinal feature transitions", "device firmware execution"],
           "targets": [], "selected_test_ids": [], "collection_errors": [],
           "fuzz_seed": os.environ.get("FUZZ_SEED"), "max_examples_override": os.environ.get("MAX_EXAMPLES")}
+  if suite == "aol-lifecycle":
+    plan["scope"] = "selected actual vehicle callers with synthetic receive/readiness timelines; native hooks where exercised by the selected suites"
+    plan["lifecycle_rows"] = AOL_LIFECYCLE_SCOPE
+    plan["uncovered"] = ["complete recorded routes and real-time device deadlines", "physical firmware/harness acceptance",
+                         "unselected exact variants, including new G90/GV70 report configurations",
+                         "unselected Mazda/Volkswagen profiles; Rivian, Subaru and Tesla complete joined lifecycles"]
   if suite == "safety-release":
     plan["uncovered"].append("full release-mode behavioral safety suite; only explicit selected classes run")
   (output / "plan.json").write_text(json.dumps(plan, sort_keys=True, indent=2) + "\n")
@@ -436,6 +617,8 @@ def run(suite, output, collect_only=False):
     plan["native"] = native_provenance()
     if suite != "interfaces" and not collect_only:
       plan["native"]["safety"] = build_safety_library(suite == "safety-release", output)
+    if suite == "aol-lifecycle" and not collect_only:
+      plan["native"]["aol_protocol"] = build_aol_protocol(output)
     phase = "collection"
     unittest_targets, pytest_targets = vehicle_pytest.split_targets(ROOT, plan["targets"])
     plan["runners"] = {"unittest": unittest_targets, "pytest": pytest_targets}
@@ -474,6 +657,13 @@ def run(suite, output, collect_only=False):
   records = test_runner.account_for_tests(ids, records, tests)
   if not errors and suite == "interfaces":
     gate_errors.extend(interface_execution_errors(platform_tests, records))
+  if not collect_only and suite == "aol-lifecycle":
+    gate_errors.extend(f"Required lifecycle case did not pass: {record['id']} ({record['status']})"
+                       for record in records if record["status"] != "passed")
+    for target in plan["targets"]:
+      prefix = Path(target).with_suffix("").as_posix().replace("/", ".") + "."
+      if not any(identity.startswith(prefix) for identity in ids):
+        gate_errors.append(f"Required lifecycle module collected no cases: {target}")
   elapsed = time.monotonic() - started
   exit_code = test_runner.report(records, errors + gate_errors, 10, elapsed)
   status = "error" if errors else "failed" if exit_code else "completed"
@@ -497,7 +687,7 @@ def run(suite, output, collect_only=False):
 
 def main():
   parser = argparse.ArgumentParser(description=__doc__)
-  parser.add_argument("--suite", choices=("interfaces", "safety-debug", "safety-release"), required=True)
+  parser.add_argument("--suite", choices=("interfaces", "safety-debug", "safety-release", "aol-lifecycle"), required=True)
   parser.add_argument("--output", type=Path, required=True)
   parser.add_argument("--collect-only", action="store_true")
   args = parser.parse_args()

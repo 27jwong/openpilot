@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from collections.abc import Callable
+from typing import TYPE_CHECKING, cast
 import base64
 import ctypes
 import gc
@@ -15,6 +16,8 @@ from tinygrad.engine.realize import lower_and_compile
 from tinygrad.tensor import Tensor
 from tinygrad.helpers import all_int, round_up
 from tinygrad.uop.ops import UOp
+if TYPE_CHECKING:
+  from openpilot.starpilot.models.runtime_bridge.legacy_types import LegacyBuffer, LegacyUOpFactory
 import math
 import pickle
 import threading
@@ -158,8 +161,8 @@ class FrameMeta:
 def input_view(buffer: Buffer, shape: tuple[int, ...], dtype: DType, offset: int) -> Tensor:
   from openpilot.starpilot.models.runtime_bridge.runtime import selected_legacy
   if selected_legacy():
-    view = buffer.view(math.prod(shape), dtype, offset).ensure_allocated()
-    return Tensor(UOp.from_buffer(view)).reshape(shape)
+    view = cast("LegacyBuffer", buffer).view(math.prod(shape), dtype, offset).ensure_allocated()
+    return Tensor(cast("LegacyUOpFactory", UOp).from_buffer(view)).reshape(shape)
   view = buffer.view(math.prod(shape) * dtype.itemsize, offset).ensure_allocated()
   return Tensor(UOp.from_buffer(view, dtype)).reshape(shape)
 
@@ -237,7 +240,8 @@ class ModelState:
     self.input_device.copy_from(self.input_host)
     self.input_queues['new_img'] = self.run_warp(**self.warp_inputs)
     self.run_model(output_buffers=self.outputs, **self.input_queues)
-    if self.chestnut and not selected_legacy() and (err := Device[self.outputs['outputs'].device].error_state.host.view(fmt='q')[0]):
+    if (self.chestnut and not selected_legacy() and
+        (err := Device[cast(str, self.outputs['outputs'].device)].error_state.host.view(fmt='q')[0])):
       raise RuntimeError(f"chestnut failed with {err}")
     if after_enqueue is not None:
       after_enqueue()
@@ -329,6 +333,8 @@ def main(demo=False):
   else:
     CP = messaging.log_from_bytes(params.get("CarParams", block=True), car.CarParams)
   cloudlog.info("modeld got CarParams: %s", CP.brand)
+  from openpilot.starpilot.car.subaru.smoothing import read_frozen, seconds as subaru_smooth_seconds, filter_action
+  subaru_smoothing = read_frozen(CP, params)
 
   st = time.monotonic()
   cloudlog.warning("loading model")
@@ -457,7 +463,7 @@ def main(demo=False):
   initial_mono_ns, initial_boot_ns, initial_skew_ns = paired_clocks_ns()
   lane_clock_guard = ClockEpochGuard(initial_mono_ns, initial_boot_ns, initial_skew_ns)
   DH = DesireHelper(runtime_lane_policy)
-  navigation_turn = TurnIntent()
+  navigation_turn = TurnIntent(params, CP)
   lane_status_session = uuid.uuid4().hex
   lane_status_sequence = 0
 
@@ -501,7 +507,8 @@ def main(demo=False):
     is_rhd = sm["driverMonitoringState"].isRHD
     frame_id = sm["narrowRoadCameraState"].frameId
     v_ego = max(sm["carState"].vEgo, 0.)
-    lat_delay = sm["lateralDelay"].lateralDelay + LAT_SMOOTH_SECONDS
+    subaru_tau = subaru_smooth_seconds(v_ego, subaru_smoothing)
+    lat_delay = sm["lateralDelay"].lateralDelay + LAT_SMOOTH_SECONDS + subaru_tau
     if sm.updated["extrinsicsCalibration"] and sm.seen['narrowRoadCameraState'] and sm.seen['deviceState']:
       device_from_calib_euler = np.array(sm["extrinsicsCalibration"].rpyCalib, dtype=np.float32)
       dc = DEVICE_CAMERAS[(str(sm['deviceState'].deviceType), str(sm['narrowRoadCameraState'].sensor))]
@@ -591,6 +598,7 @@ def main(demo=False):
       posenet_send = messaging.new_message('cameraOdometry')
 
       action = model.get_action_from_model(model_output, prev_action, lat_action_t, long_action_t, v_ego)
+      filter_action(action, prev_action, v_ego, subaru_tau)
       prev_action = action
       fill_model_msg(modelv2_send, model_output, action,
                      publish_state, meta_main.frame_id, meta_extra.frame_id, frame_id,

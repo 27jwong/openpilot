@@ -1,4 +1,6 @@
 """Actual typed retainer/history path on synthetic qualified physical evidence."""
+from typing import Any
+
 from dataclasses import replace
 from types import SimpleNamespace
 import pytest
@@ -20,7 +22,7 @@ def setup(monkeypatch):
     '7'*64, 1, old, response_basis=basis(old))
   history = _LiveHistoryRestore((prior,))
   process = PollProcess()
-  actor = LiveTrackingActor(process)
+  actor: Any = LiveTrackingActor(process)
   class SnapshotPreparation:
     pid=epoch=token=None
     reason='snapshot_submitted'

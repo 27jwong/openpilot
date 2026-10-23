@@ -297,7 +297,7 @@ class TestEV9Startup(unittest.TestCase):
   def test_malformed_long_cp_cannot_bypass_required_startup_owner(self):
     from openpilot.starpilot.vehicle_startup import VehicleStartupOwner
 
-    for field, value in (("brand", "other"), ("pcmCruise", True), ("alternativeExperience", 32)):
+    for field, value in (("brand", "other"), ("pcmCruise", True), ("alternativeExperience", 1)):
       stock, owner, sent, requests, query = self.owner()
       setattr(owner.cp, field, value)
       self.assertFalse(qualified(owner.cp))

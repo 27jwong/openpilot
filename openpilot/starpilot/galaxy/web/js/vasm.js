@@ -166,7 +166,8 @@ export const VasmPage = {
     <section class="gx-settings gx-vasm" aria-label="V-ASM saved settings" :inert="busy" :aria-busy="busy || undefined">
       <header class="gx-settings__header gx-page-header"><div><h2>V-ASM Spot Monitoring</h2>
         <p>Highlight the side windows a driver would check in the cabin camera, and tune visual spot-monitoring options.</p></div>
-        <div class="gx-actions"><button type="button" class="gx-btn gx-btn--tonal" :disabled="bluetooth || state.cameraWarming" @click="liveCamera.refresh()"><i class="bi bi-camera" aria-hidden="true"></i> Take new snapshot</button></div></header>
+        <div class="gx-actions"><a class="gx-btn gx-btn--tonal" href="https://wiki.firestar.link/exclusive/cameras-and-monitoring/" target="_blank" rel="noopener noreferrer"><i class="bi bi-book" aria-hidden="true"></i> Cameras &amp; Monitoring guide</a>
+          <button type="button" class="gx-btn gx-btn--tonal" :disabled="bluetooth || state.cameraWarming" @click="liveCamera.refresh()"><i class="bi bi-camera" aria-hidden="true"></i> Take new snapshot</button></div></header>
       <GxNotice v-if="mode === 'local' && state.data && !state.data.parked" tone="warn">Turn the vehicle off to change these settings.</GxNotice>
       <GxState v-if="mode !== 'local'">Local saved settings are unavailable in preview.</GxState>
       <template v-else>

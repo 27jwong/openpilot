@@ -185,7 +185,7 @@ class LaneChangeFeatureTests(unittest.TestCase):
     self.parked = True
     self.assertTrue(self.owner.apply(auto))
     self.assertTrue(read_saved(self.params).policy.auto_lane_change)
-    self.assertEqual(to_value(read_saved(self.params).policy)["version"], 4)
+    self.assertEqual(to_value(read_saved(self.params).policy)["version"], 5)
     self.assertTrue(self.owner.apply(self.request(self.row(DELAY))))
     self.assertEqual(read_saved(self.params).policy.auto_delay_s, 1.1)
     self.assertTrue(self.owner.apply(self.request(self.row(WIDTH))))
@@ -311,7 +311,7 @@ class LaneChangeFeatureTests(unittest.TestCase):
         self.assertIsNone(decode(raw))
         if len(raw) > 512:
           self.assertFalse(self.row(RESET).available)
-    self.assertEqual(to_value(LaneChangePolicy())["version"], 4)
+    self.assertEqual(to_value(LaneChangePolicy())["version"], 5)
     self.assertFalse(decode(b'{"version":1,"enabled":true,"minimumSpeedMps":8.9408,"onePerSignal":false}').auto_lane_change)
     with self.assertRaises(ValueError):
       to_value(LaneChangePolicy(minimum_speed_mps=int("9" * 350)))

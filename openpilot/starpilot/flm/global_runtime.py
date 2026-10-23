@@ -86,6 +86,7 @@ class GlobalRuntime:
     self.snapshot_sequence = 0
     self.frame_sequence = 0
     self.snapshot_ns = 0
+    self.last_capture_frame = 0
     self.replay_inputs = ()
     self.observation = None
     self.prior_policy_output = self.prior_policy_ff = 0.0
@@ -197,6 +198,8 @@ class GlobalRuntime:
             if pending is not None and generation == pending[0]:
               tracker.blocks = pending[1]
             self._calibration_pending = None
+      if (not sm.valid['extrinsicsCalibration'] or stamp > now_ns or receipt > now_ns):
+        tracker.reject(now_ns=now_ns)
       tracker.observe(sm['extrinsicsCalibration'], current=current_calibration, now_ns=now_ns)
     except (AttributeError, KeyError, TypeError, ValueError, OverflowError):
       if not tracker.generation:
@@ -268,7 +271,7 @@ class GlobalRuntime:
         receipt = int(sm.recv_time[service] * 1e9)
         if not (sm.seen[service] and 0 < stamp <= now_ns <= stamp + maximum and 0 < receipt <= now_ns <= receipt + maximum):
           if service == 'extrinsicsCalibration' and hasattr(self, '_calibration_lifecycle'):
-            self._calibration_lifecycle.reject()
+            self._calibration_lifecycle.unavailable(now_ns=now_ns)
           raise ValueError('stale_original_source')
       if self.controller.sat_time > 0:
         raise ValueError('controller_saturation')
@@ -553,7 +556,8 @@ class GlobalRuntime:
       from openpilot.starpilot.flm.controller_replay import capture_snapshot, frame_input
 
       self.snapshot = ()
-      if self.identity and self.descriptor.domain != 'ford_curvature' and (not self.snapshot_ns or self.now_ns - self.snapshot_ns >= 1_000_000_000):
+      if self.identity and self.descriptor.domain != 'ford_curvature' and (not self.snapshot_ns or self.frame_sequence != self.last_capture_frame + 1 or
+          self.now_ns - self.snapshot_ns >= 1_000_000_000):
         if self.descriptor.domain in ('torque', 'torque_pid'):
           self.snapshot = capture_snapshot(self.controller, vm).values
         else:
@@ -921,6 +925,7 @@ class GlobalRuntime:
     if live_owner is not None and self.controller.automatic_flm_effects is live_owner and not live_values:
       # A consumed but unqualified live map is unknown, never legacy neutral.
       return None
+    self.last_capture_frame = self.frame_sequence
     return ControlEvidence(
       self.identity,
       self.generation,

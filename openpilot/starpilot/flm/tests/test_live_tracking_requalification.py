@@ -1,4 +1,6 @@
 """Synthetic numerical/protocol tests; never actual native or road proof."""
+from typing import Any
+
 
 from dataclasses import replace
 from openpilot.starpilot.flm.runtime_adapter_registry import digest
@@ -564,7 +566,7 @@ def test_unfinished_restore_retries_only_input_scope_with_no_monitor_or_permissi
   local, _ = owner.qualified(10_350_000_000)
   assert not feed(owner, 8, command=0.020)
   assert owner.reason == 'response_command_outside_identified_range'
-  h = _LiveHistoryRestore(())
+  h: Any = _LiveHistoryRestore(())
   h.prior = SimpleNamespace(certificate=old, response_basis=basis(old))
   h.requalifier = owner
   h.offer = object()
@@ -607,7 +609,7 @@ def test_restore_scope_retry_never_reclassifies_faults_as_input_departure(reason
   from types import SimpleNamespace
   from openpilot.starpilot.flm.steerlearnerd import _LiveHistoryRestore
 
-  h = _LiveHistoryRestore(())
+  h: Any = _LiveHistoryRestore(())
   h.prior = object()
   h.requalifier = object()
   actor = SimpleNamespace(

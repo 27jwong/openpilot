@@ -571,7 +571,14 @@ def run(
 
       drain(control_socket, control, messaging.recv_one_or_none, sink, now)
       drain(applied_socket, output, messaging.recv_one_or_none, sink, now)
-      source_valid, now = source_current()
+      if collector is not None:
+        # Decoding queued frames may outlast the sampled shared inputs. Consume
+        # real pending deliveries before pose/native checks; keep their original
+        # headers and receipts for the next iteration instead of polling twice.
+        source_delivery.refresh(sm)
+      source_valid, now = source_current(read=collector is not None)
+      if tracking_pose_header < source_delivery.pose_header <= now:
+        tracking_pose_header = source_delivery.pose_header
       current_native = False
       if source_valid and collector is not None and collector.ready:
         current_native = current_native_health(sm, CP, collector.ready[-1][0], now)
@@ -662,6 +669,14 @@ def run(
               native_key = native_identity_key(actual_native)
           else:
             hardware_inventory = tuple((index, str(panda.pandaType)) for index, panda in enumerate(sm['pandaStates']))
+        # Collection status carries no trial or restore authority. Send its
+        # genuine new-pose source receipt before optional snapshot work can
+        # delay delivery; its original lease is never renewed here.
+        if (source_valid and live_offer is None and live_history.offer is None and
+            tracking_pose_header > previous_tracking_pose_header):
+          pm.send('starpilotSteeringTracking', tracking_message(source, now_ns=now,
+            current_native=False, offer=None, restore=None))
+          previous_tracking_pose_header = tracking_pose_header
         prior_restore_offer = live_history.offer
         if live_offer is None:
           live_history.advance(live_actor, collector, source if source_valid else None, now_ns=now,
@@ -684,6 +699,12 @@ def run(
         new_raw_pose = tracking_pose_header > previous_tracking_pose_header
         if new_raw_pose:
           previous_tracking_pose_header = tracking_pose_header
+        # Optional work may have consumed the original witness/permission
+        # deadline. A proposal must face the actual post-work clock and native
+        # checks, never the time captured before that work started.
+        source_valid, now = source_current()
+        current_native = bool(source_valid and collector is not None and collector.ready and
+                              current_native_health(sm, CP, collector.ready[-1][0], now))
         new_restore = live_history.offer is not None and live_history.offer is not prior_restore_offer
         # The transport/source status has its own20Hz cadence. Waiting for a
         # new admitted offer can starve service health and prevent fresh raw
@@ -880,6 +901,8 @@ def main():
     current = bool(sm.all_checks(['extrinsicsCalibration']) and
       0 < stamp <= now <= stamp + 500_000_000 and
       0 < receipt <= now <= receipt + 500_000_000)
+    if not sm.valid['extrinsicsCalibration'] or stamp > now or receipt > now:
+      return calibration_lifecycle.observe(None, current=False)
     return calibration_lifecycle.observe(sm['extrinsicsCalibration'], current=current)
 
   def current_source(now, frame):

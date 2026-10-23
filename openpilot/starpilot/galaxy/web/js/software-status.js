@@ -1,3 +1,4 @@
+import { DriveStatePanel } from "./drive-state.js"
 import { GxDialog } from "./dialog.js"
 import { GxState } from "./state.js"
 import { GxNotice } from "./notice.js"
@@ -185,14 +186,24 @@ export class SoftwareStatusFeed {
         this.unauthorized()
         return null
       }
-      if (!response.ok) {
+      // A tunnel may return its own JSON error page with a successful HTTP status.
+      const deviceUnreachable = !payload?.code && [payload?.error, payload?.message].some(message =>
+        typeof message === "string" && /^Your comma cannot be reached(?:\. Check your connection and try again\.?)?$/i.test(message.trim()))
+      if (!response.ok || deviceUnreachable) {
         const error = new Error(payload?.error || payload?.message || "Software request failed. Refresh to try again.")
-        error.rejected = response.status >= 400 && response.status < 500
+        error.connectionLost = deviceUnreachable || [502, 504].includes(response.status) ||
+          response.status === 503 && !payload?.code &&
+          !["Software status is unavailable", "Updater status is unavailable"].includes(payload?.error)
+        error.rejected = !error.connectionLost && response.status >= 400 && response.status < 500
         error.startupUnavailable = body === null && response.status === 503 &&
           ["Software status is unavailable", "Updater status is unavailable"].includes(payload?.error)
         throw error
       }
-      if (!validSoftwareSnapshot(payload)) throw new Error("Software response is unavailable. Refresh to try again.")
+      if (!validSoftwareSnapshot(payload)) {
+        const error = new Error("Software response is unavailable. Refresh to try again.")
+        error.connectionLost = payload === null
+        throw error
+      }
       this.data = payload.operations === undefined ? { ...payload, operations: unavailableOperations() } : payload
       this.attempted = true
       this.blocked = false
@@ -229,6 +240,7 @@ export class SoftwareStatusFeed {
             ["complete", "failed"].includes(observed.state)) {
           if (observed.state === "failed" || observed.outcome === "up_to_date") {
             this.installBaseline = null
+            this.cancelPreparation()
             this.notice = observed.state === "failed" ? "" : "Installed branch is already up to date. No restart needed."
           } else this.notice = "Update installed. Waiting to reconnect and verify the installed build."
         }
@@ -240,6 +252,7 @@ export class SoftwareStatusFeed {
           this.uncertain = false
           this.uncertainAction = null
           this.actionPriorRequestId = null
+          this.cancelPreparation()
           this.notice = "Installed build verified after reconnect."
         }
         if (this.installBaseline && payload.operations.updaterAvailable === false && payload.operations.progress?.stage === "unavailable")
@@ -258,7 +271,7 @@ export class SoftwareStatusFeed {
         this.attempted = true
         this.blocked = true
         this.waitingForStatus = false
-        this.connectionLost = !reachedServer
+        this.connectionLost = !reachedServer || error?.connectionLost === true
         if (body !== null) {
           this.uncertain = !error?.rejected
           this.uncertainAction = this.uncertain ? body : null
@@ -316,7 +329,7 @@ export class SoftwareStatusFeed {
 }
 
 export const SoftwarePage = {
-  components: { GxDialog, GxState, GxNotice, GalaxySelect, GalaxySettingRow, ToggleBackup },
+  components: { DriveStatePanel, GxDialog, GxState, GxNotice, GalaxySelect, GalaxySettingRow, ToggleBackup },
   name: "SoftwarePage",
   props: { mode: { type: String, required: true }, unauthorized: { type: Function, required: true }, restarting: { type: Function, default: () => {} },
     preparing: { type: Function, default: () => {} }, cancelPreparation: { type: Function, default: () => {} } },
@@ -531,7 +544,7 @@ export const SoftwarePage = {
             :index="0" :busy="busy" :disabled="uncertain || !!error || !operations.canConfigure"
             :save-value="(index, value) => feed.configureAutomaticDownloads(value === 'On')" />
           <p v-if="operations?.automaticDownloads === null" class="gx-note">The download preference could not be read. Choose a setting while parked to repair it.</p>
-          <details v-if="data" class="gx-software-options"><summary>Advanced options</summary><div class="gx-stack">
+          <details v-if="data" class="gx-software-options"><summary>Advanced options</summary><div class="gx-stack"><DriveStatePanel offroad-only />
             <div class="gx-software-branch"><label class="gx-field-group gx-grow"><span class="gx-row__label">Branch</span>
               <GalaxySelect v-model="primaryChoice" class="gx-field gx-field--full" aria-label="Target branch" :disabled="actionUnavailable || !operations.canSelect" @change="onPrimaryBranchChange">
                 <option value="" disabled>Choose a branch</option>
