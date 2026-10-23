@@ -432,3 +432,21 @@ def retained_shared_long_cancel_intent(CP, CS, sm, feedback, owner, *, cancel_so
     return True
   except (AttributeError, KeyError, IndexError, TypeError, ValueError, OverflowError):
     return False
+
+
+def expected_stopped_lateral_denial(CP, CS, native, *, sm, axis_session_id, now_ns):
+  """A healthy angle stop retains intent while native steering stays withdrawn."""
+  import math
+  from openpilot.starpilot.aol.transport_pause import _configured_transport_native
+
+  try:
+    return bool(qualified_angle_aol(CP, marked_only=True) and
+      CS.canValid and not CS.canTimeout and not CS.steerFaultTemporary and not CS.steerFaultPermanent and
+      not CS.accFaulted and CS.gearShifter == car.CarState.GearShifter.drive and
+      math.isfinite(CS.vEgoRaw) and 0.0 <= CS.vEgoRaw <= 0.3 and
+      native is not None and native.requestedLateral and not native.lateralAllowed and
+      native.pandaInventory and
+      _configured_transport_native(sm, CP, axis_session_id, now_ns, native,
+                                   allow_restricted_lateral=True) == native)
+  except (AttributeError, KeyError, IndexError, TypeError, ValueError, OverflowError):
+    return False

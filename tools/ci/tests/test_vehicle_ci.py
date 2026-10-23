@@ -16,6 +16,11 @@ from tools.ci.record_firmware import compile_commands
 
 
 class TestVehicleCollection(unittest.TestCase):
+
+  def test_pe_real_stop_caller_is_required_by_vehicle_ci(self):
+    path = 'opendbc_repo/opendbc/safety/tests/test_pe_stopped_callers.py'
+    self.assertIn(path, targets_for('aol-lifecycle'))
+    self.assertIn(path, targets_for('safety-debug'))
   def test_pe_combined_native_callers_and_refusals_keep_debug_release_separate(self):
     for target in (
       'opendbc_repo/opendbc/safety/tests/test_pe_combined_callers.py',

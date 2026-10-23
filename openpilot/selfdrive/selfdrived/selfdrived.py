@@ -1879,9 +1879,14 @@ class SelfdriveD:
       ordinary_long_withdrawal = bool(native is not None and not native.longitudinalAllowed and
         self.ordinary_native_long_withdrawal(
           CS, native, previous, requested, intent, source_current=source_current, now_ns=now_ns))
+      from openpilot.starpilot.car.hyundai.aol import expected_stopped_lateral_denial
+      stopped_lateral_withdrawal = bool(source_current and requested.desired_lateral and
+        expected_stopped_lateral_denial(self.CP, CS, native, sm=self.sm,
+          axis_session_id=self.aol_session_id, now_ns=now_ns))
       lost_permission = bool(lost_honda_lateral_grant or native is not None and not driver_override and (
         previous.lateral_active and requested.desired_lateral and native.requestedLateral and
-        not native.lateralAllowed and not CS.steeringPressed and not self.events.contains(ET.OVERRIDE_LATERAL) or
+        not native.lateralAllowed and not stopped_lateral_withdrawal and
+        not CS.steeringPressed and not self.events.contains(ET.OVERRIDE_LATERAL) or
         previous.longitudinal_active and requested.desired_longitudinal and native.requestedLongitudinal and
         not native.longitudinalAllowed and not ordinary_long_withdrawal and
         not self.events.contains(ET.OVERRIDE_LONGITUDINAL)))
