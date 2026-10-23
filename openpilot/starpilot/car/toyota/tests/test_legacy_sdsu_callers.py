@@ -10,7 +10,7 @@ source_matched_native = helpers.source_matched_native
 daemon_gc_scope = helpers.daemon_gc_scope
 
 
-def run(candidate, stock, bridge, scenario='nominal', aol=True, alpha=False, hybrid=False, main_fault=None):
+def run(candidate, stock, bridge, scenario='nominal', aol=True, alpha=False, hybrid=False, main_fault=None, camera_messages=False):
   tick = 0
 
   def physical(packer, **fields):
@@ -62,6 +62,7 @@ def run(candidate, stock, bridge, scenario='nominal', aol=True, alpha=False, hyb
     firmware_override=fw,
     assert_hybrid_release=hybrid,
     on_sample=observe,
+    camera_messages=camera_messages,
   )
 
 

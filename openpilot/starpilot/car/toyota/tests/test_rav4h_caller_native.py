@@ -226,7 +226,7 @@ def control_inputs(controls, published, state, sd_events, native, now):
 
 def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H, bridge=None, input_clock=False, brake_stop_check_start=350,
              sdsu_words=(0x9049, 0x9249), alpha_long=False, disable_setting=None, physical_frames=None, angle=False,
-             firmware_override=None, assert_hybrid_release=False, sdsu_mirror=False, on_sample=None):
+             firmware_override=None, assert_hybrid_release=False, sdsu_mirror=False, on_sample=None, camera_messages=False):
   SYNTHETIC_LAST.clear()
   NATIVE_LAST.clear()
   safety = libsafety_py.libsafety
@@ -249,6 +249,8 @@ def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H,
     fp[0][0x2FF] = 8
     if sdsu_mirror:
       fp[2][0x2FF] = 8
+    if camera_messages:
+      fp[2].update({0x343: 8, 0x4CB: 8})
     observed = (candidate, fp, '0' * 17, fw, structs.CarParams.FingerprintSource.fw, True)
     with (
       patch.object(car_helpers, 'fingerprint', return_value=observed),
@@ -349,6 +351,10 @@ def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H,
         elif scenario == 'off' and tick == 250:
           params.put_bool('DisableOpenpilotLongitudinal', not stock, block=True)
         frames = (physical if physical_frames is None else physical_frames)(packer, **fields)
+        if camera_messages:
+          frames += [packer.make_can_msg('ACC_CONTROL', 2, {}), (0x4CB, bytes(8), 2)]
+          assert safety.safety_fwd_hook(2, 0x343) == 0
+          assert safety.safety_fwd_hook(2, 0x4CB) == 0
         if sdsu_mirror:
           # Bus2 remains active even while the required bus0 source disappears.
           # Its conflicting state7 must also never replace bus0 state0.

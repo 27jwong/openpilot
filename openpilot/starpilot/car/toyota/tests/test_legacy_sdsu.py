@@ -39,7 +39,7 @@ def test_full_configuration_and_tune_preserved(candidate, alpha, hybrid):
 
 
 @pytest.mark.parametrize('candidate', sorted(legacy_sdsu.PROFILES))
-@pytest.mark.parametrize('bad', ['source7', 'copy7', 'only_copy', 'bus1', 'pedal', 'mixed', 'bypass', 'firmware'])
+@pytest.mark.parametrize('bad', ['source7', 'copy7', 'only_copy', 'bus1', 'pedal', 'mixed', 'malformed_camera', 'firmware'])
 def test_hardware_boundaries(candidate, bad):
   fp = gen_empty_fingerprint()
   fp[0][0x2FF] = fp[2][0x2FF] = 8
@@ -56,8 +56,8 @@ def test_hardware_boundaries(candidate, bad):
     fp[0][0x201] = 6
   elif bad == 'mixed':
     fp[0][0x2AA] = 8
-  elif bad == 'bypass':
-    fp[2][0x343] = 8
+  elif bad == 'malformed_camera':
+    fp[2][0x343] = 7
   else:
     fw = []
   assert not legacy_sdsu.hardware_supported(candidate, fp, fw)
