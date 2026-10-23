@@ -85,7 +85,20 @@ def matrix_stock_qualified(cp, *, marked_only=False):
   return config.safetyModel == structs.CarParams.SafetyModel.toyota and config.safetyParam == 856
 
 
+def stock_prius_retrofit_qualified(cp, *, marked_only=False):
+  if (cp is None or cp.brand != 'toyota' or cp.carFingerprint != CAR.TOYOTA_PRIUS_RETROFIT or
+      cp.notCar or cp.passive or cp.dashcamOnly or cp.secOcRequired or not cp.pcmCruise or
+      cp.openpilotLongitudinalControl or cp.steerControlType != structs.CarParams.SteerControlType.torque or
+      len(cp.safetyConfigs) != 1 or cp.flags & ~int(ToyotaFlags.ZSS) != int(ToyotaFlags.HYBRID) or
+      cp.alternativeExperience not in ((32,) if marked_only else (0, 32))):
+    return False
+  config = cp.safetyConfigs[0]
+  return config.safetyModel == structs.CarParams.SafetyModel.toyota and config.safetyParam == 585
+
+
 def qualified(cp, *, marked_only=False):
+  if stock_prius_retrofit_qualified(cp, marked_only=marked_only):
+    return True
   if matrix_stock_qualified(cp, marked_only=marked_only):
     return True
   if angle_qualified(cp, marked_only=marked_only):

@@ -248,8 +248,13 @@ def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H,
       params.put('AolBrakePauseSpeedMps', float(brake_pause_mps), block=True)
     fw = firmware(candidate) if firmware_override is None else firmware_override
     if manual_selection:
-      assert candidate == CAR.TOYOTA_MATRIX_RETROFIT and stock and not fw
-      assert firmware_override == [] and fingerprint_frames == []
+      assert stock and fingerprint_frames == []
+      if candidate == CAR.TOYOTA_MATRIX_RETROFIT:
+        assert not fw and firmware_override == []
+      else:
+        assert candidate == CAR.TOYOTA_PRIUS_RETROFIT and len(fw) == 1
+        assert fw[0].ecu == structs.CarParams.Ecu.eps and fw[0].address == 0x7A1 and fw[0].bus == 0
+        assert bytes(fw[0].fwVersion) == b'8965B47070' + bytes(6)
     else:
       exact, found = match_fw_to_car(fw, '', log=False)
       assert exact and found == {candidate}
