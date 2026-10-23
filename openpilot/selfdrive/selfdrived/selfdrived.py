@@ -854,9 +854,11 @@ class SelfdriveD:
     previous_native = getattr(self, 'aol_published_input_native', None)
     held_brake, held_gas = self.held_axis_override_wait(CS, proof, now_ns) if final_held_override else (False, False)
     from opendbc.car.hyundai.canfd_stock_aol import qualified as qualified_stock_hkg
+    from opendbc.car.hyundai.canfd_angle_aol import qualified as qualified_angle_aol
     stock_cruise_off = bool(proof is not None and proof[8] and not proof[9] and
       not self.enabled and not self.active and not CS.cruiseState.enabled and
-      qualified_stock_hkg(self.CP, marked_only=True) and
+      (qualified_stock_hkg(self.CP, marked_only=True) or
+       qualified_angle_aol(self.CP, marked_only=True) and self.CP.pcmCruise and not self.CP.openpilotLongitudinalControl) and
       EventName.pcmDisable in self.events_prev and self.events.names == self.events_prev)
     user_disable = any(event.userDisable and
       not (held_brake and event.name == EventName.pedalPressed) and
