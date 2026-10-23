@@ -571,7 +571,14 @@ def run(
 
       drain(control_socket, control, messaging.recv_one_or_none, sink, now)
       drain(applied_socket, output, messaging.recv_one_or_none, sink, now)
-      source_valid, now = source_current()
+      if collector is not None:
+        # Decoding queued frames may outlast the sampled shared inputs. Consume
+        # real pending deliveries before pose/native checks; keep their original
+        # headers and receipts for the next iteration instead of polling twice.
+        source_delivery.refresh(sm)
+      source_valid, now = source_current(read=collector is not None)
+      if tracking_pose_header < source_delivery.pose_header <= now:
+        tracking_pose_header = source_delivery.pose_header
       current_native = False
       if source_valid and collector is not None and collector.ready:
         current_native = current_native_health(sm, CP, collector.ready[-1][0], now)
