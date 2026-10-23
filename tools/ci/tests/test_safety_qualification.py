@@ -92,6 +92,92 @@ class TestSafetyQualificationRunner(TestCase):
         with self.assertRaises(FileNotFoundError):
           qualification.imported_module_hashes(log)
 
+  def test_coverage_catalog_includes_native_pytest_and_external_callers(self):
+    from tools.ci import safety_pytest_coverage as coverage
+    selected = coverage.targets_for_coverage(qualification.ROOT)
+    for name in ('opendbc_repo/opendbc/safety/tests/test_tesla_preap_pedal.py::test_actual_registered_priming_rate_absolute_bus_and_counter_bounds',
+                 'openpilot/starpilot/car/nissan/tests/test_aol.py',
+                 'openpilot/starpilot/car/rivian/tests/test_aol_native.py'):
+      self.assertIn(name, selected)
+    import ast
+    plan = ast.parse((qualification.ROOT / 'tools/ci/run_vehicle_tests.py').read_text())
+    release = next(ast.literal_eval(node.value) for node in plan.body if isinstance(node, ast.Assign) and
+                   any(isinstance(target, ast.Name) and target.id == 'RELEASE_TARGETS' for target in node.targets))
+    self.assertEqual(len(coverage.RELEASE_ONLY), 2)
+    for nodeid in coverage.RELEASE_ONLY:
+      self.assertIn(nodeid, release)
+      self.assertNotIn(nodeid, selected)
+    with tempfile.TemporaryDirectory() as td:
+      root = Path(td)
+      native = root / 'opendbc_repo/opendbc/safety/tests'
+      external = root / 'openpilot/starpilot/car/nissan/tests'
+      native.mkdir(parents=True)
+      external.mkdir(parents=True)
+      (native / 'test_function.py').write_text('def test_native(): pass\n')
+      (native / 'test_ordinary.py').write_text('class TestOrdinary(unittest.TestCase): pass\n')
+      (external / 'test_aol.py').write_text('from opendbc.safety.tests.libsafety import libsafety_py\nclass TestCaller(unittest.TestCase): pass\n')
+      (external / 'test_unrelated.py').write_text('def test_settings(): pass\n')
+      self.assertEqual(coverage.targets_for_coverage(root),
+                       ['opendbc_repo/opendbc/safety/tests/test_function.py::test_native',
+                        'openpilot/starpilot/car/nissan/tests/test_aol.py'])
+
+  def test_native_pytest_coverage_requires_complete_accounting_and_same_library(self):
+    from tools.ci import safety_pytest_coverage as coverage
+    targets = ['native.py']
+    report = {'schema_version': 1, 'full_catalog': True, 'targets': targets, 'native_sha256': 'pinned',
+              'native_bound_before': True, 'native_bound_after': True, 'collection_errors': [], 'execution_errors': [],
+              'nodeids': ['native.py::test_one'], 'records': [{'id': 'native.test_one', 'status': 'passed'}]}
+    self.assertTrue(coverage.report_complete(report, targets, 'pinned'))
+    changes = ({'schema_version': True}, {'full_catalog': False}, {'targets': []}, {'native_sha256': 'other'},
+               {'native_bound_before': False}, {'native_bound_after': False}, {'collection_errors': ['bad']},
+               {'execution_errors': ['bad']}, {'nodeids': []}, {'nodeids': ['native.py::test_one'] * 2},
+               {'records': []}, {'records': [{'id': 'other', 'status': 'passed'}]},
+               {'records': [{'id': 'native.test_one', 'status': 'skipped'}]},
+               {'records': [{'id': 'native.test_one', 'status': 'xfailed'}]},
+               {'records': [{'id': 'native.test_one', 'status': 'failed'}]})
+    for changed in changes:
+      with self.subTest(changed=changed):
+        self.assertFalse(coverage.report_complete(dict(report, **changed), targets, 'pinned'))
+
+  def test_coverage_runs_pytest_before_unchanged_full_coverage_requirement(self):
+    from tools.ci import safety_pytest_coverage as coverage
+    for pytest_code, report_present, expected in ((0, True, True), (1, True, False), (0, False, False)):
+      with self.subTest(code=pytest_code, report=report_present), tempfile.TemporaryDirectory() as td:
+        directory = Path(td)
+        original = directory / 'built.so'
+        original.write_bytes(b'instrumented fixture')
+        gate = qualification.Gate('coverage', directory, sys.executable)
+        targets = ['native.py']
+        labels = []
+        def execute(label, argv, labels=labels, original=original, directory=directory,
+                    report_present=report_present, targets=targets, pytest_code=pytest_code, **kwargs):
+          labels.append(label)
+          if label == 'build-libsafety':
+            return 0, str(original) + '\n'
+          if label == 'unittest':
+            return 0, 'Safety qualification collected 1 tests\nRan 1 test in 0.01s\n\nOK\nSafety qualification suppressed 0 methods\n'
+          if label == 'pytest-coverage':
+            self.assertEqual(Path(argv[1]), qualification.ROOT / 'tools/ci/safety_pytest_coverage.py')
+            self.assertIn(str(directory / 'libsafety-debug.so'), argv)
+            if report_present:
+              (directory / 'pytest-coverage-results.json').write_text(json.dumps(
+                {'schema_version': 1, 'full_catalog': True, 'targets': targets,
+                 'native_sha256': qualification.hashlib.sha256(original.read_bytes()).hexdigest(),
+                 'native_bound_before': True, 'native_bound_after': True, 'collection_errors': [], 'execution_errors': [],
+                 'nodeids': ['native.py::test_one'], 'records': [{'id': 'native.test_one', 'status': 'passed'}]}))
+            return pytest_code, ''
+          if label == 'coverage':
+            self.assertIn('--fail-under-line=100', argv)
+          return 0, ''
+        with patch.object(gate, 'run', side_effect=execute), patch.object(coverage, 'targets_for_coverage', return_value=targets):
+          self.assertEqual(gate.execute(), expected)
+        self.assertLess(labels.index('unittest'), labels.index('pytest-coverage'))
+        self.assertLess(labels.index('pytest-coverage'), labels.index('coverage'))
+        self.assertEqual(gate.summary['ran'], 1)
+        pytest_summary = gate.summary['pytest_coverage']
+        assert isinstance(pytest_summary, dict)
+        self.assertEqual(pytest_summary['complete'], report_present)
+
   def test_source_identity_includes_gate_and_workflow_inputs(self):
     identity = qualification.source_identity()
     self.assertFalse(any("/obj/" in path or "/gen/" in path for path in identity))
