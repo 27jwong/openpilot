@@ -716,8 +716,7 @@ def run(
         # collection from recovering after a withdrawal. A cached offer keeps
         # its ORIGINAL observed time, sequence, witness and expiry; the writer
         # omits it when expired or current permission is absent.
-        source_withdrawal = not source_valid and (source is None or
-          type(getattr(source, 'expires_ns', None)) is int and now <= source.expires_ns)
+        source_withdrawal = not source_valid and _source_config_known(source, now)
         publish_tracking = (latest is not None or new_restore or
                             new_raw_pose and (source_withdrawal or live_offer is not None or live_history.offer is not None))
         if publish_tracking:
