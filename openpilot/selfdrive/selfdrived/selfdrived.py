@@ -506,11 +506,10 @@ class SelfdriveD:
         self.events.add(EventName.radarFault)
     hardware_events_added = len(self.events) - num_events
 
-    from opendbc.car.hyundai.ev6_aol import qualified as ev6_deadline_qualified
+    from openpilot.starpilot.car.hyundai.aol import source_deadline_supported
     input_proof = getattr(self, 'aol_step_input_proof', None)
     reconcile_input = bool(input_proof is not None and not REPLAY and self.aol_replay and self.axis_transport_required and
-                           self.CP.openpilotLongitudinalControl and
-                           (qualified_ioniq6(self.CP) or ev6_deadline_qualified(self.CP, marked_only=True)) and
+                           source_deadline_supported(self.CP) and
                            input_proof[0] == self.aol_session_id and
                            (input_proof[8] or input_proof[9]))
     self.aol_event_input_reconcile = reconcile_input
@@ -811,8 +810,8 @@ class SelfdriveD:
     return CS
 
   def source_deadline_deferral_supported(self):
-    from opendbc.car.hyundai.ev6_aol import qualified as ev6_qualified
-    return qualified_ioniq6(self.CP) or qualified_gm(self.CP) or ev6_qualified(self.CP, marked_only=True)
+    from openpilot.starpilot.car.hyundai.aol import source_deadline_supported
+    return qualified_ioniq6(self.CP) or qualified_gm(self.CP) or source_deadline_supported(self.CP)
 
   def held_axis_override_wait(self, CS, proof, now_ns, *, fresh_successor=False):
     """Recognize an already applied override; never admit a new physical edge."""
@@ -854,8 +853,14 @@ class SelfdriveD:
     intent = getattr(self, 'aol_last_intent', None)
     previous_native = getattr(self, 'aol_published_input_native', None)
     held_brake, held_gas = self.held_axis_override_wait(CS, proof, now_ns) if final_held_override else (False, False)
-    user_disable = (any(event.userDisable and event.name != EventName.pedalPressed for event in self.events.to_msg())
-                    if held_brake else self.events.contains(ET.USER_DISABLE))
+    from opendbc.car.hyundai.canfd_stock_aol import qualified as qualified_stock_hkg
+    stock_cruise_off = bool(proof is not None and proof[8] and not proof[9] and
+      not self.enabled and not self.active and not CS.cruiseState.enabled and
+      qualified_stock_hkg(self.CP, marked_only=True) and
+      EventName.pcmDisable in self.events_prev and self.events.names == self.events_prev)
+    user_disable = any(event.userDisable and
+      not (held_brake and event.name == EventName.pedalPressed) and
+      not (stock_cruise_off and event.name == EventName.pcmDisable) for event in self.events.to_msg())
     if (proof is None or companion is None or intent is None or previous_native is None or
         self.aol_authority_lost or
         user_disable or any(self.events.contains(kind) for kind in (ET.SOFT_DISABLE, ET.IMMEDIATE_DISABLE)) or
@@ -983,8 +988,8 @@ class SelfdriveD:
       now_ns = time.monotonic_ns()
     source = self.aol_car_state_log_ns
     source_valid = self.conditional_car_state_valid
-    from opendbc.car.hyundai.ev6_aol import qualified as ev6_qualified
-    if (ev6_qualified(self.CP, marked_only=True) and source == 0 and not source_valid and
+    from openpilot.starpilot.car.hyundai.aol import source_deadline_supported
+    if (source_deadline_supported(self.CP) and source == 0 and not source_valid and
         getattr(self, 'aol_expired_healthy_source', False) and
         not getattr(self, 'car_state_samples', ()) and not getattr(self, 'car_state_queue_invalid', False) and
         getattr(self, 'car_state_retained_valid', False)):
