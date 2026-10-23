@@ -283,7 +283,9 @@ class SelfdriveD:
     source_ns = self.aol_car_state_log_ns
     source_current = bool(getattr(self, 'conditional_car_state_valid', False) and CS.canValid and not CS.canTimeout and
                           0 < source_ns <= now_ns and now_ns - source_ns <= INTENT_MAX_AGE_NS)
-    pair = companion.current(self.sm, source_ns=source_ns, now_ns=now_ns, drain=False) if drained else None
+    from openpilot.starpilot.car.gm.aol import sdgm_alpha_lateral_owner
+    pair = companion.current(self.sm, source_ns=source_ns, now_ns=now_ns, drain=False,
+                             allow_raw_projection=sdgm_alpha_lateral_owner(self.CP)) if drained else None
     if not source_current:
       pair = None
     previous_axes = self.aol_axis_decision

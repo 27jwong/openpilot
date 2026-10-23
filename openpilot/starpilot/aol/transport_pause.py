@@ -317,6 +317,8 @@ class TransportPauseFeedback:
     from opendbc.car import structs
     ev9 = ev9_qualified(cp, marked_only=True)
     early_long = gm or cp.openpilotLongitudinalControl and qualified_ioniq6(cp) or ev9
+    from openpilot.starpilot.car.gm.aol import sdgm_alpha_pedal_withdrawal
+    sdgm_pedal = sdgm_alpha_pedal_withdrawal(cp, cs)
     event_ns = int(sm.logMonoTime['onroadEvents'])
     main_off_recovery = bool(0 < event_ns <= self.ccnc_main_off_source_ns <= now_ns and
       now_ns - self.ccnc_main_off_source_ns <= AXIS_MAX_AGE_NS)
@@ -340,7 +342,8 @@ class TransportPauseFeedback:
         not 0 < int(sm.logMonoTime['onroadEvents']) <= now_ns or
         now_ns - int(sm.logMonoTime['onroadEvents']) > 1_500_000_000 or
         any(event.immediateDisable or event.softDisable or
-            event.userDisable and not (ev9_main_off and event.name == log.OnroadEvent.EventName.wrongCarMode)
+            event.userDisable and not (ev9_main_off and event.name == log.OnroadEvent.EventName.wrongCarMode or
+              sdgm_pedal and event.name == log.OnroadEvent.EventName.pedalPressed)
             for event in sm['onroadEvents'])):
       return None
     native = independent_lateral_health(sm, cp, cs, self.session, now_ns)
@@ -411,7 +414,9 @@ class TransportPauseFeedback:
       not axis.desiredLongitudinal and not axis.longitudinalActive and
       all(event.name in (stock_user, log.OnroadEvent.EventName.pedalPressed) and
           not event.softDisable and not event.immediateDisable for event in users))
-    pedal = bool(cs.brakePressed and users and all(event.name == log.OnroadEvent.EventName.pedalPressed and
+    from openpilot.starpilot.car.gm.aol import sdgm_alpha_pedal_withdrawal
+    pedal = bool((cs.brakePressed or sdgm_alpha_pedal_withdrawal(cp, cs)) and users and all(
+      event.name == log.OnroadEvent.EventName.pedalPressed and
       not event.softDisable and not event.immediateDisable for event in users) and not faults)
     if axis.longitudinalActive and not location_fault or not (temporary or eps_recovery or pedal):
       return False
@@ -1103,6 +1108,11 @@ class TransportPauseFeedback:
                      cp_identity(cp) == self.cp)
       continuity = bool(not self.session or axis.sessionId == self.session and
                         (axis.sequence > self.sequence or axis.sequence == self.sequence and signature == self.signature))
+      from openpilot.starpilot.car.gm.aol import sdgm_alpha_lateral_owner
+      if (sdgm_alpha_lateral_owner(cp) and latched and current and continuity and self.signature is not None and
+          signature[14:16] != self.signature[14:16]):
+        self.failed = True
+        return True
       if ((self.cold_main_wait_ns or self.cold_park_waiting) and current and continuity and self.signature is not None and
           signature[14:16] != self.signature[14:16]):
         self.failed = True
