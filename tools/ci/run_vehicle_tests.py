@@ -24,6 +24,14 @@ from tools.ci import vehicle_pytest
 # Representative production callers plus their source/native refusal cases.
 # The emitted selected_test_ids record exact parametrized configurations.
 AOL_LIFECYCLE_TARGETS = (
+  'openpilot/starpilot/tests/test_ford_configuration_parity.py',
+  'openpilot/starpilot/tests/test_ford_configuration_admission.py',
+  'openpilot/starpilot/tests/test_ford_release_long_preferences.py',
+  'openpilot/selfdrive/car/tests/test_registered_ford_discovery.py',
+  'openpilot/starpilot/tests/test_ford_ci_registration.py',
+  'opendbc_repo/opendbc/safety/tests/test_ford_configuration_parity.py',
+  'opendbc_repo/opendbc/safety/tests/test_ford_alpha_aol.py',
+  'opendbc_repo/opendbc/safety/tests/test_ford_full_engagement.py',
   'opendbc_repo/opendbc/safety/tests/test_hkg_mode_parity.py',
   'opendbc_repo/opendbc/safety/tests/test_pe_stopped_callers.py',
   'opendbc_repo/opendbc/safety/tests/test_pe_combined_callers.py',
@@ -122,6 +130,7 @@ AOL_LIFECYCLE_TARGETS = (
 )
 
 AOL_LIFECYCLE_SCOPE = {
+  "ford": "14 stock/Alpha identities, RELEASE CAN-FD Alpha, auto/manual, one/two Pandas; actual acquisition and caller/native lifecycle guards",
   "rivian": ("GEN1 base stock/DEBUG Alpha: actual factory/Card/SD/Controls/native engagement, brake LAT-only, gas, standstill zero output, " +
              "Reverse/Drive, temporary ToI recovery and physical UP_1 cancel; GEN2/unknown profiles refused"),
   "mazda": ("CX5 2022/CX9 2021 GEN1 stock AE32: engagement/brake/Cancel pause/toggle/Reverse/standstill/EPS recovery; " +
@@ -158,6 +167,14 @@ DEBUG_SAFETY_CLASS_TARGETS = {
 
 
 RELEASE_TARGETS = (
+  'openpilot/starpilot/tests/test_ford_configuration_parity.py',
+  'openpilot/starpilot/tests/test_ford_configuration_admission.py',
+  'openpilot/starpilot/tests/test_ford_release_long_preferences.py',
+  'openpilot/selfdrive/car/tests/test_registered_ford_discovery.py',
+  'openpilot/starpilot/tests/test_ford_ci_registration.py',
+  'opendbc_repo/opendbc/safety/tests/test_ford_configuration_parity.py',
+  'opendbc_repo/opendbc/safety/tests/test_ford_alpha_aol.py',
+  'opendbc_repo/opendbc/safety/tests/test_ford_full_engagement.py',
   'opendbc_repo/opendbc/safety/tests/test_pe_combined_aol.py::TestPECombinedReleaseDenied',
   'openpilot/starpilot/aol/tests/test_pe_combined_profile_contract.py',
   'opendbc_repo/opendbc/safety/tests/test_palisade_stock_aol_status.py',
@@ -267,7 +284,7 @@ RELEASE_TARGETS = (
   "openpilot/starpilot/tests/test_ford_aol_intent.py",
   "opendbc_repo/opendbc/safety/tests/test_ford_aol.py",
   "opendbc_repo/opendbc/safety/tests/test_ford_mach_e_extended.py::TestFordMachEExtended",
-  "opendbc_repo/opendbc/safety/tests/test_ford_mach_e_extended.py::TestFordMachELongReleaseDenied",
+  "opendbc_repo/opendbc/safety/tests/test_ford_mach_e_extended.py::TestFordMachELongReleaseExtended",
   "opendbc_repo/opendbc/car/ford/tests/test_added_firmware_identity.py",
   "opendbc_repo/opendbc/car/ford/tests/test_required_source_health.py",
   "opendbc_repo/opendbc/car/ford/tests/test_blend_settings.py",

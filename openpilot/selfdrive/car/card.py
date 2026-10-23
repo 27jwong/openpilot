@@ -295,6 +295,8 @@ class Car:
             cp, long_cp, enabled=eligible, is_release=is_release)
           self.ioniq6_long_selected = self.ioniq6_long_pending
         cp = startup_preferences.prepare(cp, fingerprints=fingerprints)
+        from openpilot.starpilot.car.ford.longitudinal_preferences import prepare_release_long as prepare_ford_release_long
+        cp = prepare_ford_release_long(cp, self.params, is_release=is_release, enabled=openpilot_enabled_toggle)
         return self.vehicle_startup.prepare(cp, interfaces[candidate], self.can_callbacks,
                                             requested=alpha_long_allowed and not is_release and openpilot_enabled_toggle,
                                             admission=self.startup_diagnostic_admission)
@@ -387,8 +389,12 @@ class Car:
     self.aol_sequence = 0
     self.aol_process_fault_context = AolProcessFaultContext() if self.aol_replay else None
     if self.aol_qualified:
-      config = (volkswagen_aol_safety_config(self.CP) if self.CP.brand == 'volkswagen' else
-                (hyundai_aol_safety_config(self.CP) if self.CP.brand == 'hyundai' else self.CP.safetyConfigs[0]))
+      if self.CP.brand == 'ford':
+        from opendbc.car.ford.aol import aol_safety_config as ford_aol_safety_config
+        config = ford_aol_safety_config(self.CP)
+      else:
+        config = (volkswagen_aol_safety_config(self.CP) if self.CP.brand == 'volkswagen' else
+                  (hyundai_aol_safety_config(self.CP) if self.CP.brand == 'hyundai' else self.CP.safetyConfigs[0]))
       if config is None:
         raise RuntimeError('AOL requires the exact vehicle safety configuration')
       config.safetyParam |= aol_policy.safety_param_addition
