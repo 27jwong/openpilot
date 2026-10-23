@@ -239,6 +239,10 @@ static bool ford_tx_hook(const CANPacket_t *msg) {
 
   bool tx = true;
 
+  if ((msg->addr == FORD_ACCDATA_3) || (msg->addr == FORD_IPMA_Data)) {
+    tx = ford_aol_display_tx_allowed();
+  }
+
   // Safety check for ACCDATA accel and brake requests
   if (msg->addr == FORD_ACCDATA) {
     // Signal: AccPrpl_A_Rq
