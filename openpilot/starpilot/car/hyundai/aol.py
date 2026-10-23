@@ -431,11 +431,13 @@ def retained_shared_long_cancel_intent(CP, CS, sm, feedback, owner, *, cancel_so
             event.userDisable and event.name != log.OnroadEvent.EventName.buttonCancel for event in sm['onroadEvents'])):
       return False
     native = independent_lateral_health(sm, CP, CS, feedback.session, now_ns)
+    owner_index = 0 if len(CP.safetyConfigs) == 1 else config_index(CP)
     if (native is None or not native.pandaInventory or not native.requestedLateral or not native.lateralAllowed or
         not native.requestedLongitudinal or native.longitudinalAllowed or
         native.observedMonoTime < feedback.healthy_native_ns or
         (native.pandaSerial, tuple(slot.hardwareSerial for slot in native.pandaInventory)) != feedback.healthy_inventory or
-        len(native.pandaInventory) != 1 or native.pandaInventory[0].controlsAllowed):
+        owner_index is None or len(native.pandaInventory) != len(CP.safetyConfigs) or
+        native.pandaInventory[owner_index].controlsAllowed):
       return False
     return True
   except (AttributeError, KeyError, IndexError, TypeError, ValueError, OverflowError):
