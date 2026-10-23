@@ -1,4 +1,4 @@
-"""Actual SD.step/Controls.publish/Card.controls_update + native TX. Root runtime only.
+"""Actual SD.step/Controls.publish/Card.controls_update + native TX.
 
 Synthetic physical CAN/transport; no native/axis/CarParams permission is fabricated.
 The shared actual-caller harness serializes measured native booleans/inventory and
@@ -47,8 +47,7 @@ def test_meb_full_engagement_brake_reverse_drive_actual_callers(identity, stock,
     cp = CarInterface.get_params(identity, fp, [], False, False, False)
     VehicleStartupPreferences.read(params, enabled=True).prepare(cp, fingerprints=fp)
     cp.fingerprintSource = structs.CarParams.FingerprintSource.fixed if fixed else structs.CarParams.FingerprintSource.fw
-    # Root preloads the matching compiled library. This runner never invokes a compiler.
-    assert 'libsafety' in libsafety_py.__dict__, 'Root must preload the source-matched native library'
+    # Use the standard source-built loader in fresh pytest processes; private runners may preload it.
     native = libsafety_py.libsafety
     quiet = None
     if offset:
