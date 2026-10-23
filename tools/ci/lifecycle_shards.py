@@ -93,7 +93,8 @@ def workload_policy():
   if policy['version'] != 1 or set(policy['function_groups']) != {
       'openpilot/starpilot/car/toyota/tests/test_legacy_advert_callers.py',
       'openpilot/starpilot/car/toyota/tests/test_camera_2aa_callers.py',
-      'openpilot/starpilot/car/toyota/tests/test_prius_sdsu_callers.py'}:
+      'openpilot/starpilot/car/toyota/tests/test_prius_sdsu_callers.py',
+      'openpilot/starpilot/car/toyota/tests/test_prius_advert_callers.py'}:
     raise ValueError('Unreviewed lifecycle function grouping policy')
   if type(policy['independent_function_max_cases']) is not int or not 1 <= policy['independent_function_max_cases'] <= 60:
     raise ValueError('Invalid independent function group size')

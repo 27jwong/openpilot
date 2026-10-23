@@ -100,6 +100,10 @@ AOL_LIFECYCLE_TARGETS = (
   "openpilot/starpilot/car/toyota/tests/test_prius_sdsu_filter.py",
   "openpilot/starpilot/car/toyota/tests/test_prius_sdsu_callers.py",
   "opendbc_repo/opendbc/safety/tests/test_toyota_prius_sdsu.py",
+  "openpilot/starpilot/car/toyota/tests/test_prius_advert_filter.py",
+  "openpilot/starpilot/car/toyota/tests/test_prius_advert_callers.py",
+  "opendbc_repo/opendbc/safety/tests/test_toyota_prius_advert.py",
+  "openpilot/starpilot/car/toyota/tests/test_prius_advert_ci.py",
   "openpilot/starpilot/car/toyota/tests/test_legacy_advert_filter.py",
   "openpilot/starpilot/car/toyota/tests/test_legacy_advert_callers.py",
   "openpilot/starpilot/car/toyota/tests/test_legacy_advert_native.py",
@@ -191,6 +195,7 @@ DEBUG_SAFETY_CLASS_TARGETS = {
 
 
 RELEASE_TARGETS = (
+  "opendbc_repo/opendbc/safety/tests/test_toyota_prius_advert.py",
   'opendbc_repo/opendbc/safety/tests/test_hyundai_gv60_long.py::TestGV60LongReleaseDenied',
   'openpilot/starpilot/tests/test_ford_configuration_parity.py',
   'openpilot/starpilot/tests/test_ford_configuration_admission.py',
