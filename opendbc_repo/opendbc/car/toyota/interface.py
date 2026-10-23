@@ -235,6 +235,10 @@ class CarInterface(CarInterfaceBase):
       if ret.flags & ToyotaFlags.HYBRID.value:
         ret.longitudinalActuatorDelay = 0.05
 
+    # Classify the original rack after generic tuning so current numerical CP fields stay exact.
+    from opendbc.car.toyota import prius_sdsu
+    if prius_sdsu.hardware_supported(candidate, fingerprint, car_fw):
+      prius_sdsu.apply(ret)
     from opendbc.car.toyota import pedal
     if pedal.hardware_supported(candidate, fingerprint, car_fw):
       ret.flags |= int(ToyotaFlags.GAS_INTERCEPTOR)

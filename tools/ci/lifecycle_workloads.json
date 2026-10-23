@@ -9,6 +9,11 @@
       "basis": "Scheduling estimate: observed72cases213s in6ebshard3; incomplete module, not a full measured runtime",
       "estimated_seconds_per_case": 4.0,
       "independent_parameters": true
+    },
+    "openpilot/starpilot/car/toyota/tests/test_prius_sdsu_callers.py": {
+      "basis": "90 actual DEBUG/RELEASE caller cases passed in four bounded phases (186.885s combined wall time including startup). Scheduling estimate 3s/case; fresh per-case Params, raw CAN, native configuration and C++ host reset; no shared outcome dependence.",
+      "estimated_seconds_per_case": 3.0,
+      "independent_parameters": true
     }
   },
   "independent_function_max_cases": 60,

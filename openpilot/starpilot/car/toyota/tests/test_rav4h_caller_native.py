@@ -510,8 +510,9 @@ def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H,
             assert not host.CP.openpilotLongitudinalControl and not cc.longActive
             assert host.CP.safetyConfigs[0].safetyParam == sdsu_words[1]
           else:
-            preference = host.CI.CC.advert_filter_input if filter_advert or fingerprint_frames is not None and any(
-              address == 0x2AA for address, _, _ in fingerprint_frames) else host.CI.CC.rav4h_filter_input
+            preference = host.CI.CC.prius_filter_input if candidate == CAR.TOYOTA_PRIUS else (
+              host.CI.CC.advert_filter_input if filter_advert or fingerprint_frames is not None and any(
+                address == 0x2AA for address, _, _ in fingerprint_frames) else host.CI.CC.rav4h_filter_input)
             assert preference is not None and not preference.update(time.monotonic_ns())
             for f in outgoing.sendcan:
               if f.address == 0x343:

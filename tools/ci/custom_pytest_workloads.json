@@ -149,6 +149,10 @@
     "openpilot/starpilot/car/toyota/tests/test_legacy_sdsu_callers.py": {
       "basis": "6d hosted shard8: 205/240 cases completed in587.445481209 phase seconds before whole-shard900s cutoff; Fresh per-case caller/native state and cleanup source-verified; full in-case timeline remains unchanged.",
       "seconds_per_case": 4.0
+    },
+    "openpilot/starpilot/car/toyota/tests/test_prius_sdsu_callers.py": {
+      "basis": "90 actual DEBUG/RELEASE caller cases passed in four bounded phases (186.885s combined wall time including startup). Scheduling estimate 3s/case; fresh per-case Params, raw CAN, native configuration and C++ host reset; no shared outcome dependence.",
+      "seconds_per_case": 3.0
     }
   },
   "independent_max_cases": 60,
