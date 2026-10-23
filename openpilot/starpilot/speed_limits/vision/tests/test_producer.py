@@ -294,57 +294,65 @@ class TestVisionProducer(unittest.TestCase):
     self.assertEqual(messages[0].speedMps, 0)
 
   def test_followup_confirms_brief_candidate_without_changing_thresholds(self):
-    core = VisionModelCore.__new__(VisionModelCore)
-    core.is_metric = False
-    core.history = deque()
-    core.reset()
-    client = Mock()
-    client.is_connected.return_value = True
-    camera = Mock(return_value=client)
-    road = {VisionStreamType.VISION_STREAM_NARROW_ROAD}
-    camera.available_streams.side_effect = [road] * 3 + [EndProducer()]
-    sources = (1_000_000_000, 1_100_000_000, 1_300_000_000)
-    buffers = [(object(), t + 4_000_000_000, i) for i, t in enumerate(sources)]
-    frames = [(np.full((2, 2, 3), i), b[1], b[2]) for i, b in enumerate(buffers)]
-    current = [0, 0]
-    pending = iter(buffers)
-    messages = []
+    for conversion_ns, sources, expected in (
+      (0, (1_000_000_000, 1_100_000_000, 1_300_000_000), ['unknown', 'valid', 'valid']),
+      (80_000_000, (1_000_000_000, 1_200_000_000, 1_400_000_000), ['unknown', 'unknown']),
+    ):
+      with self.subTest(conversion_ns=conversion_ns):
+        core = VisionModelCore.__new__(VisionModelCore)
+        core.is_metric = False
+        core.history = deque()
+        core.reset()
+        client = Mock()
+        client.is_connected.return_value = True
+        camera = Mock(return_value=client)
+        road = {VisionStreamType.VISION_STREAM_NARROW_ROAD}
+        camera.available_streams.side_effect = [road] * 3 + [EndProducer()]
+        buffers = [(object(), t + 4_000_000_000, i) for i, t in enumerate(sources)]
+        frames = [(np.full((2, 2, 3), i), b[1], b[2]) for i, b in enumerate(buffers)]
+        current = [0, 0]
+        pending = iter(buffers)
+        messages = []
 
-    def receive(_client):
-      buffer = next(pending)
-      current[:] = [buffer[2], 0]
-      return buffer
+        def receive(_client, pending=pending, current=current):
+          buffer = next(pending)
+          current[:] = [buffer[2], 0]
+          return buffer
 
-    def clock_pair():
-      now = sources[current[0]] + (10_000_000 if current[1] >= 2 else 0)
-      current[1] += 1
-      self.sm.logMonoTime['drivingModelData'] = now
-      return now, now + 4_000_000_000
+        def clock_pair(sources=sources, current=current, conversion_ns=conversion_ns):
+          now = sources[current[0]] + (0, conversion_ns, conversion_ns + 10_000_000)[min(current[1], 2)]
+          current[1] += 1
+          self.sm.logMonoTime['drivingModelData'] = now
+          return now, now + 4_000_000_000
 
-    def send(_service, event):
-      messages.append(messaging.log_from_bytes(event.to_bytes()).slcVisionObservation.vision)
+        def send(_service, event, messages=messages):
+          messages.append(messaging.log_from_bytes(event.to_bytes()).slcVisionObservation.vision)
 
-    with patch('msgq.visionipc.VisionIpcClient', camera), \
-         patch('openpilot.common.params.Params', return_value=SimpleNamespace(get_bool=lambda _: False)), \
-         patch.object(messaging, 'PubMaster', return_value=SimpleNamespace(send=send)), \
-         patch.object(producer, 'VisionModelCore', return_value=core), \
-         patch.object(producer, '_camera_buffer', side_effect=receive), \
-         patch.object(producer, '_convert_camera_buffer', side_effect=lambda buffer: frames[buffer[2]]), \
-         patch.object(producer, 'clock_pair_ns', side_effect=clock_pair), \
-         patch.object(producer.time, 'sleep'), \
-         patch.object(core, 'infer', side_effect=lambda frame: Detection(55, 0.60) if frame[0, 0, 0] < 2 else None), \
-         self.assertRaises(EndProducer):
-      producer.main()
+        with patch('msgq.visionipc.VisionIpcClient', camera), \
+             patch('openpilot.common.params.Params', return_value=SimpleNamespace(get_bool=lambda _: False)), \
+             patch.object(messaging, 'PubMaster', return_value=SimpleNamespace(send=send)), \
+             patch.object(producer, 'VisionModelCore', return_value=core), \
+             patch.object(producer, '_camera_buffer', side_effect=receive), \
+             patch.object(producer, '_convert_camera_buffer', side_effect=lambda buffer, frames=frames: frames[buffer[2]]), \
+             patch.object(producer, 'clock_pair_ns', side_effect=clock_pair), \
+             patch.object(producer.time, 'sleep'), \
+             patch.object(core, 'infer', side_effect=lambda frame: Detection(55, 0.60) if frame[0, 0, 0] < 2 else None), \
+             self.assertRaises(EndProducer):
+          producer.main()
 
-    self.assertEqual([str(message.status) for message in messages], ['unknown', 'valid', 'valid'])
-    self.assertEqual([message.frameId for message in messages], [0, 1, 2])
-    self.assertEqual(messages[1].supportCount, 2)
-    self.assertEqual(messages[1].observedMonoTime, 1_100_000_000)
-    self.assertEqual(messages[2].observedMonoTime, 1_100_000_000)
-    self.assertEqual(messages[1].validUntilMonoTime, 3_100_000_000)
-    self.assertEqual(messages[2].validUntilMonoTime, 3_300_000_000)
-    self.assertEqual(core.last_detection_at, 1.1)
-    self.assertEqual(messages[1].confidence, messages[2].confidence)
+        self.assertEqual([str(message.status) for message in messages], expected)
+        if conversion_ns:
+          self.assertEqual([message.frameId for message in messages], [0, 2])
+          self.assertEqual(core.last_detection_at, 1.)
+          continue
+        self.assertEqual([message.frameId for message in messages], [0, 1, 2])
+        self.assertEqual(messages[1].supportCount, 2)
+        self.assertEqual(messages[1].observedMonoTime, 1_100_000_000)
+        self.assertEqual(messages[2].observedMonoTime, 1_100_000_000)
+        self.assertEqual(messages[1].validUntilMonoTime, 3_100_000_000)
+        self.assertEqual(messages[2].validUntilMonoTime, 3_300_000_000)
+        self.assertEqual(core.last_detection_at, 1.1)
+        self.assertEqual(messages[1].confidence, messages[2].confidence)
 
   def test_followup_preserves_processing_cost_and_expires(self):
     interval = producer._inference_interval_ns

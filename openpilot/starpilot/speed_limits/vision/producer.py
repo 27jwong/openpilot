@@ -247,7 +247,8 @@ def main() -> None:
       inference_interval_ns = _inference_interval_ns(processing_interval_ns, int(core.last_detection_at * 1e9), pair[0])
       if pair[0] - last_inference_ns < inference_interval_ns:
         continue
-      last_inference_ns = pair[0]
+      # Budget camera conversion together with inference, as in the original Dom loop.
+      last_inference_ns = admission_pair[0]
       try:
         # The observation belongs to the original camera frame, not the end of
         # CPU inference. Completion never restamps an older camera observation.
