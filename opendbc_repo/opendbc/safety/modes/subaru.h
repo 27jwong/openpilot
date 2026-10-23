@@ -404,16 +404,12 @@ static safety_config subaru_init(uint16_t param) {
     static RxCheck subaru_gen2_angle_rx_checks[] = {
       SUBARU_GEN2_ANGLE_RX_CHECKS()
     };
-    static RxCheck subaru_forester_angle_rx_checks[] = {
-      {.msg = {{MSG_SUBARU_Throttle, SUBARU_MAIN_BUS, 8, 100U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},
-      {.msg = {{MSG_SUBARU_Steering_Torque, SUBARU_MAIN_BUS, 8, 50U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},
-      {.msg = {{MSG_SUBARU_Steering_2, SUBARU_MAIN_BUS, 8, 50U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},
-      {.msg = {{MSG_SUBARU_Wheel_Speeds, SUBARU_MAIN_BUS, 8, 50U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},
-      {.msg = {{MSG_SUBARU_Brake_Status, SUBARU_MAIN_BUS, 8, 50U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},
-      {.msg = {{MSG_SUBARU_ES_Status, SUBARU_CAM_BUS, 8, 20U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},
-      {.msg = {{MSG_SUBARU_ES_DashStatus, SUBARU_CAM_BUS, 8, 10U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},
-    };
-    ret = subaru_forester_angle ? BUILD_SAFETY_CFG(subaru_forester_angle_rx_checks, SUBARU_FORESTER_ANGLE_TX_MSGS) :
+    // Only one Subaru angle profile is active. Rebind the complete topology
+    // on every init; the safety selector resets all seven RX statuses afterward.
+    subaru_gen2_angle_rx_checks[3].msg[0].bus = subaru_forester_angle ? SUBARU_MAIN_BUS : SUBARU_ALT_BUS;
+    subaru_gen2_angle_rx_checks[4].msg[0].bus = subaru_forester_angle ? SUBARU_MAIN_BUS : SUBARU_ALT_BUS;
+    subaru_gen2_angle_rx_checks[5].msg[0].bus = subaru_forester_angle ? SUBARU_CAM_BUS : SUBARU_ALT_BUS;
+    ret = subaru_forester_angle ? BUILD_SAFETY_CFG(subaru_gen2_angle_rx_checks, SUBARU_FORESTER_ANGLE_TX_MSGS) :
           avh ? (stop_start ? BUILD_SAFETY_CFG(subaru_gen2_angle_rx_checks, SUBARU_AVH_STOP_START_TX_MSGS) :
                               BUILD_SAFETY_CFG(subaru_gen2_angle_rx_checks, SUBARU_AVH_TX_MSGS)) :
           stop_start ? BUILD_SAFETY_CFG(subaru_gen2_angle_rx_checks, SUBARU_STOP_START_TX_MSGS) :

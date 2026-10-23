@@ -292,3 +292,24 @@ class TestSubaruForesterAngle(unittest.TestCase):
                    if (ecu, addr, sub) in FW_VERSIONS[car] and value not in FW_VERSIONS[car][(ecu, addr, sub)])
     _, matches = match_fw_to_car(records([*rows, foreign]), '00000000000000000', log=False)
     self.assertNotIn(car, matches)
+
+  def test_profile_switch_rebinds_every_required_angle_bus(self):
+    from opendbc.safety.tests.test_subaru_gen2_angle_pair import TestSubaruGen2AnglePair
+    required = {0x40, 0x119, 0x11A, 0x13A, 0x13C, 0x222, 0x321}
+    sequence = (CAR.SUBARU_FORESTER_2022, CAR.SUBARU_CROSSTREK_2025, CAR.SUBARU_LEGACY_2025,
+                CAR.SUBARU_FORESTER_2022, CAR.SUBARU_ASCENT_2023, CAR.SUBARU_CROSSTREK_2025,
+                CAR.SUBARU_FORESTER_2022)
+    for candidate in sequence:
+      cp = self.params(candidate)
+      _, frames = TestSubaruGen2AnglePair.sources(candidate)
+      self.arm(cp, frames)
+      for missing in (frame for frame in frames if frame[0] in required):
+        with self.subTest(candidate=candidate, wrong_bus=hex(missing[0])):
+          self.mode(cp)
+          for frame in frames:
+            if frame[0] in required:
+              bad = (frame[0], frame[1], (frame[2] + 1) % 3) if frame is missing else frame
+              self.safety.safety_rx_hook(self.packet(bad))
+          self.safety.safety_tick()
+          self.assertFalse(self.safety.safety_config_valid())
+      self.arm(cp, frames)
