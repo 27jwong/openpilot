@@ -298,7 +298,8 @@ class FeatureSettingsOwner:
     from opendbc.car.gm.startup_preferences import disable_long_supported
     cp = self.vehicle_params()
     try:
-      if cp is None or not (bolt_disable_supported(cp) or disable_long_supported(cp)):
+      from opendbc.car.volkswagen.meb_modes import supported as meb_stock_supported
+      if cp is None or not (bolt_disable_supported(cp) or disable_long_supported(cp) or meb_stock_supported(cp)):
         return None
       return (str(cp.carFingerprint), str(cp.brand), bool(cp.openpilotLongitudinalControl),
               bool(cp.pcmCruise), int(cp.flags),
@@ -306,12 +307,18 @@ class FeatureSettingsOwner:
     except (AttributeError, TypeError, ValueError, OverflowError):
       return None
 
+  def _vw_alpha_off(self) -> bool:
+    from opendbc.car.volkswagen.meb_modes import supported as meb_stock_supported
+    from openpilot.starpilot.car.volkswagen.preferences import stock_long_requested
+    return meb_stock_supported(self.vehicle_params()) and stock_long_requested(self.params)
+
   def _apply_bolt_disable(self, request: FeatureSettingsRequest) -> bool:
     if not request.confirmation or request.value not in ("Off", "On") or request.dependencies:
       return False
     def authorized() -> bool:
       return (bool(request.vehicle_fingerprint) and self.vehicle_fingerprint() == request.vehicle_fingerprint and
               request.capability is not None and request.capability == self._bolt_disable_capability() and
+              not (request.value == "Off" and self._vw_alpha_off()) and
               self.authority("parked_preferences") and request.expected in (None, b"0", b"1"))
     return commit_exact(self.params, key="DisableOpenpilotLongitudinal", max_bytes=8,
                         raw=b"1" if request.value == "On" else b"0", expected=request.expected,
@@ -871,6 +878,9 @@ class FeatureSettingsOwner:
         row = self._bool_row("DisableOpenpilotLongitudinal", "Disable StarPilot Speed Control",
                              parked and self.authority("parked_preferences"),
                              "StarPilot does not control speed in this mode. Steering remains available after the next startup")
+        if self._vw_alpha_off():
+          row = replace(row, value="On", available=False,
+                        reason="Speed control is off in driving settings. Enable Alpha Longitudinal there to restore it")
         if bolt_capability[-1] == (("noOutput", 0),):
           row = replace(row, reason="Factory camera not detected. Turn this setting off and restart to restore StarPilot speed control.")
         rows.append(replace(row, available=row.available and self._readable("DisableOpenpilotLongitudinal"),

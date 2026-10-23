@@ -8,3 +8,9 @@ inline bool volkswagen_long_aol_param(uint16_t param) {
 }
 inline constexpr AolSafetyProfile VOLKSWAGEN_LONG_AOL_PROFILE{15U, volkswagen_long_aol_param, true};
 inline constexpr AolSafetyProfile VOLKSWAGEN_STOCK_AOL_PROFILE{15U, volkswagen_stock_aol_param, true};
+
+inline bool volkswagen_meb_aol_param(uint16_t param) {
+  return (param == 8U) || (param == 10U) || (param == 12U) || (param == 14U) ||
+         (param == 24U) || (param == 26U) || (param == 28U) || (param == 30U);
+}
+inline constexpr AolSafetyProfile VOLKSWAGEN_MEB_AOL_PROFILE{34U, volkswagen_meb_aol_param, true};

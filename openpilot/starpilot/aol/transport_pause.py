@@ -450,6 +450,7 @@ class TransportPauseFeedback:
     from openpilot.starpilot.car.nissan.aol import qualified as nissan_qualified
     from opendbc.car.ford.aol import qualified as ford_qualified
     from opendbc.car.rivian.stock_aol import qualified as rivian_qualified
+    from openpilot.starpilot.car.volkswagen.aol import qualified as volkswagen_qualified
     from opendbc.car.mazda.stock_aol import qualified as mazda_qualified
     from opendbc.car.subaru.stock_aol import qualified as subaru_qualified
     from opendbc.car.hyundai.canfd_angle_aol import qualified as angle_qualified
@@ -466,7 +467,8 @@ class TransportPauseFeedback:
     stock_user = stock_lateral_user_event(cp)
     stock_temporary_user = bool((location_fault or eps_recovery) and (stock_hkg or chrysler_qualified(cp, marked_only=True) or
       ford_qualified(cp, marked_only=True) or nissan_qualified(cp, marked_only=True)
-      or subaru_qualified(cp, marked_only=True) or mazda_qualified(cp, marked_only=True) or rivian_qualified(cp, marked_only=True)) and users and
+      or subaru_qualified(cp, marked_only=True) or mazda_qualified(cp, marked_only=True) or rivian_qualified(cp, marked_only=True)
+      or volkswagen_qualified(cp, marked_only=True)) and users and
       not axis.desiredLongitudinal and not axis.longitudinalActive and
       cs.cruiseState.available and not cs.cruiseState.enabled and
       cs.gearShifter in (gears.drive, gears.low, gears.sport, gears.brake) and
@@ -726,7 +728,12 @@ class TransportPauseFeedback:
     stock_rivian_eps = bool(rivian_temporary_eps_restriction(cp, cs) and
       all(not event.userDisable or event.name == log.OnroadEvent.EventName.pcmDisable and
           not event.softDisable and not event.immediateDisable for event in events))
-    restricted_eps = bool((temporary_eps_restriction(cp, cs) or stock_ford_eps or stock_mazda_eps or stock_rivian_eps) and self.lateral_only_baseline and
+    from openpilot.starpilot.car.volkswagen.aol import temporary_eps_restriction as volkswagen_temporary_eps_restriction
+    stock_volkswagen_eps = bool(volkswagen_temporary_eps_restriction(cp, cs) and
+      all(not event.userDisable or event.name == log.OnroadEvent.EventName.pcmDisable and
+          not event.softDisable and not event.immediateDisable for event in events))
+    restricted_eps = bool((temporary_eps_restriction(cp, cs) or stock_ford_eps or stock_mazda_eps or stock_rivian_eps or
+                          stock_volkswagen_eps) and self.lateral_only_baseline and
       not axis.desiredLongitudinal and not axis.longitudinalActive)
     native = _configured_transport_native(sm, cp, self.session, now_ns, allow_restricted_lateral=restricted_eps)
     if (native is None or not native.pandaInventory or
@@ -736,6 +743,8 @@ class TransportPauseFeedback:
         native.observedMonoTime < self.lateral_native_ns or
         (native.pandaSerial, tuple(p.hardwareSerial for p in native.pandaInventory)) != self.lateral_inventory):
       return False
+    if stock_volkswagen_eps and matched_withdrawal:
+      self.volkswagen_eps_source_ns = int(axis.sourceCarStateMonoTime)
     if cs.steerFaultTemporary and matched_withdrawal:
       self.temporary_eps_event_ns = int(axis.faultEventMonoTime)
     if pending_withdrawal:
@@ -1264,6 +1273,11 @@ class TransportPauseFeedback:
           axis.desiredLateral and not axis.lateralActive):
         self.failed = True
         return True
+      if cp.brand == 'volkswagen' and current and continuity:
+        from openpilot.starpilot.car.volkswagen.aol import retain_eps_recovery
+        if retain_eps_recovery(self, sm, cp, cs, axis, now_ns, latched=latched, producer=intent_producer_session):
+          self.sequence, self.signature = int(axis.sequence), signature
+          return False
       if current and continuity and self._ordinary_warning_intent_current(sm, cp, cs, axis, stamp, now_ns,
           latched=latched, producer=intent_producer_session):
         self.ordinary_warning_qualified = any(event.softDisable for event in sm['onroadEvents'])

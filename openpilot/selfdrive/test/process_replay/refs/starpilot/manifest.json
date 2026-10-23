@@ -380,42 +380,27 @@
       "official_baseline_bytes": 368030,
       "official_baseline_sha256": "a987635c68085a9c9c25dbb92e23dc859d6a1644cd84f4b968a047b95a1c9033",
       "car_fingerprint": "TOYOTA_COROLLA_TSS2",
-      "bytes": 368039,
-      "sha256": "7025bbc80ccfc8be3b48d73cce929a19a68415cb90f208511a3ec188e5cfdbcd",
+      "bytes": 341545,
+      "sha256": "0ba8b7d4a23fa2f22e7354dc5dda6e07bbfdd2ae21c0a4f205e34e5b4fe567ae",
       "input_sha256": "876100021b13ddd1a39efad5fdb4e7376ad5b298f64bf390b5f58742ffc6e429",
       "input_bytes": 9272538,
       "config_sha256": "560c1060f4d2e43810e7bbd55d5f361a828bdb027d60f308b2e1d614222a2078",
-      "contract": "Toyota lanes follow applied lateral activity; only LKAS_HUD 0x412 bus0 length8 byte0 mask0x14 lanes1 to0 differs from the prior reviewed comparison. Prior platform and safety contract remains.",
-      "producing_source_snapshot": "root-actual-4ca263696691268a5ed229a6e65f743e435b9d5d-ec59971db14d-toyota-hud-replay",
+      "contract": "Toyota EPS lateral availability extends to zero speed: steerAtStandstill equals minSteerSpeed<=0. Exactly two CarParams publications change false totrue; all other fields/messages and prior HUD/safety/tune contracts are retained.",
+      "producing_source_snapshot": "CI-1fdc8b89e8016be62df8e289d1f5f67561fdd6d7-CP-only-two-event-substitution",
       "review_evidence": {
-        "ci_run": 38207706213,
-        "ci_job": 114674772155,
-        "head": "4ca263696691268a5ed229a6e65f743e435b9d5d",
-        "comparison_reference_sha256": "c6bbd05f9b77701618101cc689c3eee6c0c9e8642eb0fd4ef0f7ed8a442df32e",
-        "difference_count": 20,
-        "difference_fields": {
-          "sendcan.1.dat": 7,
-          "sendcan.2.dat": 9,
-          "sendcan.3.dat": 4
-        },
-        "actual_paired_proof": {
-          "path": "/audit/oct12-toyota-replay-root-output-v1/focused/profile/regen1455E3B4BDF_2025-04-09--03-26-06--0/actual-paired-proof.json",
-          "sha256": "6de5981bf3103f857a5f35a1a76fb18115daffaf6e08eea453912b0a33e17966",
-          "mode": 420,
-          "kind": "file"
-        },
-        "source_sha256": {
-          "opendbc_repo/opendbc/car/toyota/carcontroller.py": "a9c15c2fb31cf713216525ac6bc30648e489cfb2b853ef41dd678db8e8d7d6f7",
-          "opendbc_repo/opendbc/car/toyota/toyotacan.py": "64ba30a26411341b0b5ca8c62c6ae413e9a6713a1b24cc1ae711d3cbd31bb2fc",
-          "opendbc_repo/opendbc/car/toyota/tests/test_toyota.py": "e6a3ef017a3a6582e8ab771ab1db33f4f0edcc091ebad5f081c1ce8e0f4a024a",
-          "opendbc_repo/opendbc/dbc/generator/toyota/_toyota_2017.dbc": "818872b1c1034983f61a51460a9b175b4bfe01f3d34f537c3d21f420991a8a48",
-          "tools/ci/replay_fixture_cache.py": "f165d1d228f5e4600760ea41996b923c095964550b3ced6c3135a59ec7625821",
-          "tools/ci/replay-fixture-cache.json": "99fd6ddc839ae2f779c4e3ef0f529359cd6e19fc20f953da1c591b3af8456e15",
-          "tools/ci/replay_references.py": "75267bb70fc6391bb3a1bc2c9f36af2807cf838b2ffcd72c522ae861fd431832",
-          "openpilot/selfdrive/test/process_replay/test_processes.py": "559f228029d430f1c6d30ea0ccc9c60ebb98cf48df0fe1a7f80ef5a7c23394d1",
-          "openpilot/selfdrive/test/process_replay/compare_logs.py": "fb923cff883974dcdf2d701a0b8484c9d3c4d2192b018ef2d17aeac39dd24202",
-          "openpilot/selfdrive/test/process_replay/process_replay.py": "a6f18da56ba8521328d5a2ac57de5426ef2a3bf62f9e7887ff76ba1c52491c09"
-        }
+        "ci_run": 39895639195,
+        "ci_artifact": 12476424903,
+        "head": "1fdc8b89e8016be62df8e289d1f5f67561fdd6d7",
+        "causal_commit": "4e27abda7d",
+        "causal_assignment": "ret.steerAtStandstill = ret.minSteerSpeed <= 0.",
+        "full_CP_other_fields_exact": true,
+        "non_CP_message_payloads_byte_exact": true,
+        "only_changed_field": "carParams.steerAtStandstill",
+        "difference_count": 2,
+        "actual_CI_sha256": "79baa812dc2681c021965eaceedf721e7fcb85e315c1b855697ec62b9800656f",
+        "previous_reference_sha256": "7025bbc80ccfc8be3b48d73cce929a19a68415cb90f208511a3ec188e5cfdbcd",
+        "proof_sha256": "2ba6c13414ba96e6b64d96398022d232650e9e58c6a739cab39dc8952c067acf",
+        "no_new_ignores_or_tolerances": true
       },
       "previous_reviewed_expectation": {
         "segment": "regen1455E3B4BDF|2025-04-09--03-26-06--0",
@@ -427,28 +412,76 @@
         "official_baseline_bytes": 368030,
         "official_baseline_sha256": "a987635c68085a9c9c25dbb92e23dc859d6a1644cd84f4b968a047b95a1c9033",
         "car_fingerprint": "TOYOTA_COROLLA_TSS2",
-        "bytes": 368011,
-        "sha256": "c6bbd05f9b77701618101cc689c3eee6c0c9e8642eb0fd4ef0f7ed8a442df32e",
+        "bytes": 368039,
+        "sha256": "7025bbc80ccfc8be3b48d73cce929a19a68415cb90f208511a3ec188e5cfdbcd",
         "input_sha256": "876100021b13ddd1a39efad5fdb4e7376ad5b298f64bf390b5f58742ffc6e429",
         "input_bytes": 9272538,
         "config_sha256": "560c1060f4d2e43810e7bbd55d5f361a828bdb027d60f308b2e1d614222a2078",
-        "contract": "Finalized Corolla native full-axis profile uses word 73 and alternative experience 32; every other compared Card output field remains unchanged.",
-        "producing_source_snapshot": "3dfea-production",
+        "contract": "Toyota lanes follow applied lateral activity; only LKAS_HUD 0x412 bus0 length8 byte0 mask0x14 lanes1 to0 differs from the prior reviewed comparison. Prior platform and safety contract remains.",
+        "producing_source_snapshot": "root-actual-4ca263696691268a5ed229a6e65f743e435b9d5d-ec59971db14d-toyota-hud-replay",
         "review_evidence": {
-          "ci_run": 37730163667,
-          "ci_job": 113157245274,
-          "comparison_reference_sha256": "a987635c68085a9c9c25dbb92e23dc859d6a1644cd84f4b968a047b95a1c9033",
-          "difference_count": 2,
+          "ci_run": 38207706213,
+          "ci_job": 114674772155,
+          "head": "4ca263696691268a5ed229a6e65f743e435b9d5d",
+          "comparison_reference_sha256": "c6bbd05f9b77701618101cc689c3eee6c0c9e8642eb0fd4ef0f7ed8a442df32e",
+          "difference_count": 20,
           "difference_fields": {
-            "carParams.alternativeExperience": 2
+            "sendcan.1.dat": 7,
+            "sendcan.2.dat": 9,
+            "sendcan.3.dat": 4
           },
-          "difference_sha256": "46a4645f5d6fda6b02a81909ee5aa24cf427c4753ae7e8db7495985a1592e473",
-          "behavior_proof": {
-            "factory_safety_param": 73,
-            "factory_alternative_experience": 32
+          "actual_paired_proof": {
+            "path": "/audit/oct12-toyota-replay-root-output-v1/focused/profile/regen1455E3B4BDF_2025-04-09--03-26-06--0/actual-paired-proof.json",
+            "sha256": "6de5981bf3103f857a5f35a1a76fb18115daffaf6e08eea453912b0a33e17966",
+            "mode": 420,
+            "kind": "file"
           },
-          "regression_tests": {
-            "openpilot/starpilot/aol/tests/test_toyota.py": "6cb1fddc0a6f5f603f909481dca2c97260bcb60fbbee388e461cc58f4cf053fe"
+          "source_sha256": {
+            "opendbc_repo/opendbc/car/toyota/carcontroller.py": "a9c15c2fb31cf713216525ac6bc30648e489cfb2b853ef41dd678db8e8d7d6f7",
+            "opendbc_repo/opendbc/car/toyota/toyotacan.py": "64ba30a26411341b0b5ca8c62c6ae413e9a6713a1b24cc1ae711d3cbd31bb2fc",
+            "opendbc_repo/opendbc/car/toyota/tests/test_toyota.py": "e6a3ef017a3a6582e8ab771ab1db33f4f0edcc091ebad5f081c1ce8e0f4a024a",
+            "opendbc_repo/opendbc/dbc/generator/toyota/_toyota_2017.dbc": "818872b1c1034983f61a51460a9b175b4bfe01f3d34f537c3d21f420991a8a48",
+            "tools/ci/replay_fixture_cache.py": "f165d1d228f5e4600760ea41996b923c095964550b3ced6c3135a59ec7625821",
+            "tools/ci/replay-fixture-cache.json": "99fd6ddc839ae2f779c4e3ef0f529359cd6e19fc20f953da1c591b3af8456e15",
+            "tools/ci/replay_references.py": "75267bb70fc6391bb3a1bc2c9f36af2807cf838b2ffcd72c522ae861fd431832",
+            "openpilot/selfdrive/test/process_replay/test_processes.py": "559f228029d430f1c6d30ea0ccc9c60ebb98cf48df0fe1a7f80ef5a7c23394d1",
+            "openpilot/selfdrive/test/process_replay/compare_logs.py": "fb923cff883974dcdf2d701a0b8484c9d3c4d2192b018ef2d17aeac39dd24202",
+            "openpilot/selfdrive/test/process_replay/process_replay.py": "a6f18da56ba8521328d5a2ac57de5426ef2a3bf62f9e7887ff76ba1c52491c09"
+          }
+        },
+        "previous_reviewed_expectation": {
+          "segment": "regen1455E3B4BDF|2025-04-09--03-26-06--0",
+          "process": "card",
+          "file": "regen1455E3B4BDF_2025-04-09--03-26-06--0_card.zst",
+          "official_baseline_commit": "ec95db3f1fa19f76940497fedfdb62e09ea19912",
+          "official_artifact_commit": "9ae451c262c7402c9623f3baa1580c6242d6777b",
+          "official_baseline_url": "https://raw.githubusercontent.com/commaai/ci-artifacts/9ae451c262c7402c9623f3baa1580c6242d6777b/regen1455E3B4BDF_2025-04-09--03-26-06--0_card_ec95db3f1fa19f76940497fedfdb62e09ea19912.zst",
+          "official_baseline_bytes": 368030,
+          "official_baseline_sha256": "a987635c68085a9c9c25dbb92e23dc859d6a1644cd84f4b968a047b95a1c9033",
+          "car_fingerprint": "TOYOTA_COROLLA_TSS2",
+          "bytes": 368011,
+          "sha256": "c6bbd05f9b77701618101cc689c3eee6c0c9e8642eb0fd4ef0f7ed8a442df32e",
+          "input_sha256": "876100021b13ddd1a39efad5fdb4e7376ad5b298f64bf390b5f58742ffc6e429",
+          "input_bytes": 9272538,
+          "config_sha256": "560c1060f4d2e43810e7bbd55d5f361a828bdb027d60f308b2e1d614222a2078",
+          "contract": "Finalized Corolla native full-axis profile uses word 73 and alternative experience 32; every other compared Card output field remains unchanged.",
+          "producing_source_snapshot": "3dfea-production",
+          "review_evidence": {
+            "ci_run": 37730163667,
+            "ci_job": 113157245274,
+            "comparison_reference_sha256": "a987635c68085a9c9c25dbb92e23dc859d6a1644cd84f4b968a047b95a1c9033",
+            "difference_count": 2,
+            "difference_fields": {
+              "carParams.alternativeExperience": 2
+            },
+            "difference_sha256": "46a4645f5d6fda6b02a81909ee5aa24cf427c4753ae7e8db7495985a1592e473",
+            "behavior_proof": {
+              "factory_safety_param": 73,
+              "factory_alternative_experience": 32
+            },
+            "regression_tests": {
+              "openpilot/starpilot/aol/tests/test_toyota.py": "6cb1fddc0a6f5f603f909481dca2c97260bcb60fbbee388e461cc58f4cf053fe"
+            }
           }
         }
       }
@@ -466,36 +499,69 @@
       "input_bytes": 10846201,
       "input_sha256": "6c028c0d40328fc00fa12acf91dba30d9f152e89d99a7089aadac62f6c7d5d64",
       "config_sha256": "560c1060f4d2e43810e7bbd55d5f361a828bdb027d60f308b2e1d614222a2078",
-      "bytes": 305683,
-      "sha256": "ca61046afe52ed7707ccb39752471d6ae0e377151e4075c9a39c01e07b18c6bf",
-      "contract": "Toyota lanes follow applied lateral activity; only LKAS_HUD 0x412 bus0 length8 byte0 mask0x14 lanes1 to0 differs from the prior reviewed comparison. Prior platform and safety contract remains.",
-      "producing_source_snapshot": "root-actual-4ca263696691268a5ed229a6e65f743e435b9d5d-ec59971db14d-toyota-hud-replay",
+      "bytes": 285508,
+      "sha256": "f36d45ae9966c8705b529137a0cc183e35de68269f65ab2fab4a2c1b3e3ed95b",
+      "contract": "Toyota EPS lateral availability extends to zero speed: steerAtStandstill equals minSteerSpeed<=0. Exactly two CarParams publications change false totrue; all other fields/messages and prior HUD/safety/tune contracts are retained.",
+      "producing_source_snapshot": "CI-1fdc8b89e8016be62df8e289d1f5f67561fdd6d7-CP-only-two-event-substitution",
       "review_evidence": {
-        "ci_run": 38207706213,
-        "ci_job": 114674772155,
-        "head": "4ca263696691268a5ed229a6e65f743e435b9d5d",
-        "comparison_reference_sha256": "9688b1b72e3c992cb6c72e41e1607d2a38625e141caed9b356fadea5ee53aea2",
-        "difference_count": 222,
-        "difference_fields": {
-          "sendcan.1.dat": 222
-        },
-        "actual_paired_proof": {
-          "path": "/audit/oct12-toyota-replay-root-output-v1/focused/profile/regen218A4DCFAA1_2025-04-08--22-57-51--0/actual-paired-proof.json",
-          "sha256": "2530635df4b9014ce3fd4e70fe59b8d6655196f4fc2eddc5736fb87721d8c381",
-          "mode": 420,
-          "kind": "file"
-        },
-        "source_sha256": {
-          "opendbc_repo/opendbc/car/toyota/carcontroller.py": "a9c15c2fb31cf713216525ac6bc30648e489cfb2b853ef41dd678db8e8d7d6f7",
-          "opendbc_repo/opendbc/car/toyota/toyotacan.py": "64ba30a26411341b0b5ca8c62c6ae413e9a6713a1b24cc1ae711d3cbd31bb2fc",
-          "opendbc_repo/opendbc/car/toyota/tests/test_toyota.py": "e6a3ef017a3a6582e8ab771ab1db33f4f0edcc091ebad5f081c1ce8e0f4a024a",
-          "opendbc_repo/opendbc/dbc/generator/toyota/_toyota_2017.dbc": "818872b1c1034983f61a51460a9b175b4bfe01f3d34f537c3d21f420991a8a48",
-          "tools/ci/replay_fixture_cache.py": "f165d1d228f5e4600760ea41996b923c095964550b3ced6c3135a59ec7625821",
-          "tools/ci/replay-fixture-cache.json": "99fd6ddc839ae2f779c4e3ef0f529359cd6e19fc20f953da1c591b3af8456e15",
-          "tools/ci/replay_references.py": "75267bb70fc6391bb3a1bc2c9f36af2807cf838b2ffcd72c522ae861fd431832",
-          "openpilot/selfdrive/test/process_replay/test_processes.py": "559f228029d430f1c6d30ea0ccc9c60ebb98cf48df0fe1a7f80ef5a7c23394d1",
-          "openpilot/selfdrive/test/process_replay/compare_logs.py": "fb923cff883974dcdf2d701a0b8484c9d3c4d2192b018ef2d17aeac39dd24202",
-          "openpilot/selfdrive/test/process_replay/process_replay.py": "a6f18da56ba8521328d5a2ac57de5426ef2a3bf62f9e7887ff76ba1c52491c09"
+        "ci_run": 39895639195,
+        "ci_artifact": 12476424903,
+        "head": "1fdc8b89e8016be62df8e289d1f5f67561fdd6d7",
+        "causal_commit": "4e27abda7d",
+        "causal_assignment": "ret.steerAtStandstill = ret.minSteerSpeed <= 0.",
+        "full_CP_other_fields_exact": true,
+        "non_CP_message_payloads_byte_exact": true,
+        "only_changed_field": "carParams.steerAtStandstill",
+        "difference_count": 2,
+        "actual_CI_sha256": "77c1ae09380fd6ae657b96dc89b1391fa1552b98de1adc4a284bdea2dee38bc4",
+        "previous_reference_sha256": "ca61046afe52ed7707ccb39752471d6ae0e377151e4075c9a39c01e07b18c6bf",
+        "proof_sha256": "2ba6c13414ba96e6b64d96398022d232650e9e58c6a739cab39dc8952c067acf",
+        "no_new_ignores_or_tolerances": true
+      },
+      "previous_reviewed_expectation": {
+        "segment": "regen218A4DCFAA1|2025-04-08--22-57-51--0",
+        "process": "card",
+        "file": "regen218A4DCFAA1_2025-04-08--22-57-51--0_card.zst",
+        "official_baseline_commit": "ec95db3f1fa19f76940497fedfdb62e09ea19912",
+        "official_artifact_commit": "9ae451c262c7402c9623f3baa1580c6242d6777b",
+        "official_baseline_url": "https://raw.githubusercontent.com/commaai/ci-artifacts/9ae451c262c7402c9623f3baa1580c6242d6777b/regen218A4DCFAA1_2025-04-08--22-57-51--0_card_ec95db3f1fa19f76940497fedfdb62e09ea19912.zst",
+        "official_baseline_bytes": 305708,
+        "official_baseline_sha256": "9688b1b72e3c992cb6c72e41e1607d2a38625e141caed9b356fadea5ee53aea2",
+        "car_fingerprint": "TOYOTA_PRIUS",
+        "input_bytes": 10846201,
+        "input_sha256": "6c028c0d40328fc00fa12acf91dba30d9f152e89d99a7089aadac62f6c7d5d64",
+        "config_sha256": "560c1060f4d2e43810e7bbd55d5f361a828bdb027d60f308b2e1d614222a2078",
+        "bytes": 305683,
+        "sha256": "ca61046afe52ed7707ccb39752471d6ae0e377151e4075c9a39c01e07b18c6bf",
+        "contract": "Toyota lanes follow applied lateral activity; only LKAS_HUD 0x412 bus0 length8 byte0 mask0x14 lanes1 to0 differs from the prior reviewed comparison. Prior platform and safety contract remains.",
+        "producing_source_snapshot": "root-actual-4ca263696691268a5ed229a6e65f743e435b9d5d-ec59971db14d-toyota-hud-replay",
+        "review_evidence": {
+          "ci_run": 38207706213,
+          "ci_job": 114674772155,
+          "head": "4ca263696691268a5ed229a6e65f743e435b9d5d",
+          "comparison_reference_sha256": "9688b1b72e3c992cb6c72e41e1607d2a38625e141caed9b356fadea5ee53aea2",
+          "difference_count": 222,
+          "difference_fields": {
+            "sendcan.1.dat": 222
+          },
+          "actual_paired_proof": {
+            "path": "/audit/oct12-toyota-replay-root-output-v1/focused/profile/regen218A4DCFAA1_2025-04-08--22-57-51--0/actual-paired-proof.json",
+            "sha256": "2530635df4b9014ce3fd4e70fe59b8d6655196f4fc2eddc5736fb87721d8c381",
+            "mode": 420,
+            "kind": "file"
+          },
+          "source_sha256": {
+            "opendbc_repo/opendbc/car/toyota/carcontroller.py": "a9c15c2fb31cf713216525ac6bc30648e489cfb2b853ef41dd678db8e8d7d6f7",
+            "opendbc_repo/opendbc/car/toyota/toyotacan.py": "64ba30a26411341b0b5ca8c62c6ae413e9a6713a1b24cc1ae711d3cbd31bb2fc",
+            "opendbc_repo/opendbc/car/toyota/tests/test_toyota.py": "e6a3ef017a3a6582e8ab771ab1db33f4f0edcc091ebad5f081c1ce8e0f4a024a",
+            "opendbc_repo/opendbc/dbc/generator/toyota/_toyota_2017.dbc": "818872b1c1034983f61a51460a9b175b4bfe01f3d34f537c3d21f420991a8a48",
+            "tools/ci/replay_fixture_cache.py": "f165d1d228f5e4600760ea41996b923c095964550b3ced6c3135a59ec7625821",
+            "tools/ci/replay-fixture-cache.json": "99fd6ddc839ae2f779c4e3ef0f529359cd6e19fc20f953da1c591b3af8456e15",
+            "tools/ci/replay_references.py": "75267bb70fc6391bb3a1bc2c9f36af2807cf838b2ffcd72c522ae861fd431832",
+            "openpilot/selfdrive/test/process_replay/test_processes.py": "559f228029d430f1c6d30ea0ccc9c60ebb98cf48df0fe1a7f80ef5a7c23394d1",
+            "openpilot/selfdrive/test/process_replay/compare_logs.py": "fb923cff883974dcdf2d701a0b8484c9d3c4d2192b018ef2d17aeac39dd24202",
+            "openpilot/selfdrive/test/process_replay/process_replay.py": "a6f18da56ba8521328d5a2ac57de5426ef2a3bf62f9e7887ff76ba1c52491c09"
+          }
         }
       }
     },

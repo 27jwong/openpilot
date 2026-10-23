@@ -10,15 +10,13 @@ from opendbc.safety.tests.libsafety import libsafety_py
 
 @contextmanager
 def direct_owner():
-  owner = stock.TestVolkswagenStockAol()
+  class DirectOwner(stock.TestVolkswagenStockAol):
+    def packet(self, name, fields, bus=0):
+      if name == 'Gateway_73':
+        return super().packet('Motor_EV_01', {'MO_Waehlpos': 5 if fields['GE_Fahrstufe'] == 8 else 3}, bus)
+      return super().packet(name, fields, bus)
+  owner = DirectOwner()
   owner.configure(40)
-  original = owner.packet
-
-  def packet(name, fields, bus=0):
-    if name == 'Gateway_73':
-      return original('Motor_EV_01', {'MO_Waehlpos': 5 if fields['GE_Fahrstufe'] == 8 else 3}, bus)
-    return original(name, fields, bus)
-  owner.packet = packet
   try:
     yield owner
   finally:
