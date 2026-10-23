@@ -226,7 +226,7 @@ def control_inputs(controls, published, state, sd_events, native, now):
 
 def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H, bridge=None, input_clock=False, brake_stop_check_start=350,
              sdsu_words=(0x9049, 0x9249), alpha_long=False, disable_setting=None, physical_frames=None, angle=False,
-             firmware_override=None, assert_hybrid_release=False, sdsu_mirror=False, on_sample=None, camera_messages=False):
+             firmware_override=None, assert_hybrid_release=False, sdsu_mirror=False, on_sample=None, camera_messages=False, filter_advert=False):
   SYNTHETIC_LAST.clear()
   NATIVE_LAST.clear()
   safety = libsafety_py.libsafety
@@ -246,7 +246,7 @@ def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H,
     exact, found = match_fw_to_car(fw, '', log=False)
     assert exact and found == {candidate}
     fp = gen_empty_fingerprint()
-    fp[0][0x2FF] = 8
+    fp[0][0x2FF] = 4 if filter_advert else 8
     if sdsu_mirror:
       fp[2][0x2FF] = 8
     if camera_messages:
@@ -351,6 +351,10 @@ def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H,
         elif scenario == 'off' and tick == 250:
           params.put_bool('DisableOpenpilotLongitudinal', not stock, block=True)
         frames = (physical if physical_frames is None else physical_frames)(packer, **fields)
+        if filter_advert:
+          advertisements = [f for f in frames if f[0] == 0x2FF and len(f[1]) == 4]
+          frames = [f for f in frames if f[0] != 0x2FF]
+          frames += advertisements or [(0x2FF, bytes.fromhex('00000409'), 0)]
         if camera_messages:
           frames += [packer.make_can_msg('ACC_CONTROL', 2, {}), (0x4CB, bytes(8), 2)]
           assert safety.safety_fwd_hook(2, 0x343) == 0
@@ -491,7 +495,8 @@ def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H,
             assert not host.CP.openpilotLongitudinalControl and not cc.longActive
             assert host.CP.safetyConfigs[0].safetyParam == sdsu_words[1]
           else:
-            assert not host.CI.CC.rav4h_filter_input.update(time.monotonic_ns())
+            preference = host.CI.CC.advert_filter_input if filter_advert else host.CI.CC.rav4h_filter_input
+            assert preference is not None and not preference.update(time.monotonic_ns())
             for f in outgoing.sendcan:
               if f.address == 0x343:
                 acc = decode(host.CP, (f.address, bytes(f.dat), f.src), 'ACC_CONTROL')

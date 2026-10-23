@@ -74,6 +74,9 @@ def angle_qualified(cp, *, marked_only=False):
 def qualified(cp, *, marked_only=False):
   if angle_qualified(cp, marked_only=marked_only):
     return True
+  from opendbc.car.toyota.advert_filter import configured as advert_filter_configured
+  if advert_filter_configured(cp):
+    return cp.alternativeExperience in ((32,) if marked_only else (0, 32))
   if radar_filter_qualified(cp, marked_only=marked_only):
     return True
   if lexus_is_qualified(cp, marked_only=marked_only):

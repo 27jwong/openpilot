@@ -8,7 +8,7 @@ from opendbc.car.common.pid import PIDController
 from opendbc.car.secoc import add_mac, build_sync_mac
 from opendbc.car.interfaces import CarControllerBase
 from opendbc.car.toyota import toyotacan
-from opendbc.car.toyota import prius_longitudinal, rav4h_filter, pedal, eps8_sdsu, legacy_sdsu
+from opendbc.car.toyota import prius_longitudinal, rav4h_filter, pedal, eps8_sdsu, legacy_sdsu, advert_filter
 from opendbc.car.toyota.door_locks import DoorLocks
 from opendbc.car.toyota.values import CAR, CarControllerParams, ToyotaFlags, TOYOTA_AUTO_HOLD_CARS, uses_toyota_auto_hold_aeb
 from opendbc.can import CANPacker
@@ -75,6 +75,7 @@ class CarController(CarControllerBase):
     self.prius_filter_input = None
     self.pedal_input = None
     self.rav4h_filter_input = None
+    self.advert_filter_input = None
     self.params = CarControllerParams(self.CP)
     self.last_torque = 0
     self.last_angle = 0
@@ -149,6 +150,12 @@ class CarController(CarControllerBase):
         # The native owner requires fresh physical DSU MAIN independently of
         # status. Neutral output must also withdraw its standstill release.
         filter_allowed = filter_allowed and bool(CS.out.cruiseState.available)
+    advert_owner = advert_filter.configured(self.CP)
+    advert_long = advert_owner and self.CP.openpilotLongitudinalControl
+    if advert_long:
+      filter_allowed = bool(self.advert_filter_input is not None and self.advert_filter_input.update(now_nanos) and
+                            CS.out.canValid and not CS.out.canTimeout and CS.out.cruiseState.available and
+                            not CS.out.steerFaultTemporary and not CS.out.steerFaultPermanent and not CS.out.accFaulted and not CS.out.stockAeb)
     pedal_owner = pedal.configured(self.CP)
     if pedal_owner:
       filter_allowed = bool(self.pedal_input is not None and self.pedal_input.update(now_nanos) and CS.pedal_ready)
@@ -157,9 +164,12 @@ class CarController(CarControllerBase):
     stopping = actuators.longControlState == LongCtrlState.stopping
     hud_control = CC.hudControl
     pcm_cancel_cmd = CC.cruiseControl.cancel
-    if (rav4h_long or pedal_owner) and not filter_allowed and CS.out.cruiseState.enabled:
+    if (rav4h_long or pedal_owner or advert_long) and not filter_allowed and CS.out.cruiseState.enabled:
       pcm_cancel_cmd = True
     lat_active = CC.latActive and abs(CS.out.steeringTorque) < MAX_USER_TORQUE
+    if advert_owner:
+      lat_active = lat_active and CS.out.canValid and not CS.out.canTimeout and CS.out.cruiseState.available and not (
+        CS.out.steerFaultTemporary or CS.out.steerFaultPermanent)
     CS.zss_lateral_active = bool(CC.latActive)
 
     if len(CC.orientationNED) == 3:
@@ -276,7 +286,7 @@ class CarController(CarControllerBase):
         self.last_standstill = CS.out.standstill
         if not long_active and CS.out.standstill:
           self.standstill_req = True
-      elif self.sdsu_hybrid:
+      elif self.sdsu_hybrid or advert_long and bool(self.CP.flags & ToyotaFlags.HYBRID):
         # Retain the existing hybrid resume behavior while active. The shared
         # owner guard below still holds neutral when LONG or its source is lost.
         self.standstill_req = not long_active and CS.out.standstill
@@ -288,7 +298,7 @@ class CarController(CarControllerBase):
         if not should_resume and CS.out.cruiseState.standstill:
           self.standstill_req = True
 
-      if (rav4h_long or pedal_owner) and (not filter_allowed or not long_active and CS.out.standstill):
+      if (rav4h_long or pedal_owner or advert_long) and (not filter_allowed or not long_active and CS.out.standstill):
         self.standstill_req = True
 
       if self.frame % 3 == 0:
@@ -302,7 +312,7 @@ class CarController(CarControllerBase):
 
         # internal PCM gas command can get stuck unwinding from negative accel so we apply a generous rate limit
         pcm_accel_cmd = actuators.accel if filter_allowed else 0.
-        if (self.prius_longitudinal or rav4h_long) and not long_active:
+        if (self.prius_longitudinal or rav4h_long or advert_long) and not long_active:
           pcm_accel_cmd = 0.
         if long_active:
           pcm_accel_cmd = rate_limit(pcm_accel_cmd, self.prev_accel, ACCEL_WINDDOWN_LIMIT, ACCEL_WINDUP_LIMIT)
@@ -373,7 +383,7 @@ class CarController(CarControllerBase):
           self.permit_braking = True
           self.standstill_req = True
 
-        if (rav4h_long or pedal_owner) and not long_active:
+        if (rav4h_long or pedal_owner or advert_long) and not long_active:
           pcm_accel_cmd = 0.
         main_accel_cmd = 0. if self.CP.flags & ToyotaFlags.SECOC.value else pcm_accel_cmd
         can_sends.append(toyotacan.create_accel_command(self.packer, main_accel_cmd, pcm_cancel_cmd, self.permit_braking, self.standstill_req, lead,

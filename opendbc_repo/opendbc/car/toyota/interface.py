@@ -197,13 +197,18 @@ class CarInterface(CarInterfaceBase):
     legacy_filter = legacy_sdsu.hardware_supported(candidate, fingerprint, car_fw)
     if legacy_filter:
       legacy_sdsu.apply(ret)
+    from opendbc.car.toyota import advert_filter
+    advertised_filter = advert_filter.hardware_supported(candidate, fingerprint, car_fw)
+    if advertised_filter:
+      advert_filter.apply(ret)
     # Toyota EPS accepts lateral commands down to zero. Keep the existing
     # native/axis/fault gates; a stock cruise stop does not withdraw steering.
     ret.steerAtStandstill = ret.minSteerSpeed <= 0.
     ret.autoResumeSng = ret.openpilotLongitudinalControl and (
       (rav4h_sdsu and candidate in (CAR.TOYOTA_RAV4H, CAR.TOYOTA_HIGHLANDER, CAR.TOYOTA_SIENNA)) or
       (eps8_filter and bool(ret.flags & ToyotaFlags.TSS2)) or
-      (legacy_filter and candidate == CAR.TOYOTA_PRIUS_V) or not ret.flags & ToyotaFlags.LONG_FILTER)
+      (legacy_filter and candidate == CAR.TOYOTA_PRIUS_V) or
+      (advertised_filter and bool(ret.flags & ToyotaFlags.TSS2)) or not ret.flags & ToyotaFlags.LONG_FILTER and not advertised_filter)
 
     if radar_filter and not ret.flags & ToyotaFlags.TSS2:
       ret.autoResumeSng = False  # Preserve the pre-TSS2 stock stop timer.

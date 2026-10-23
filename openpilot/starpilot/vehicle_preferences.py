@@ -195,6 +195,8 @@ class VehicleStartupPreferences:
       prepare_pedal_stock(cp)
       from opendbc.car.toyota.radar_filter import prepare_stock as prepare_radar_filter_stock
       prepare_radar_filter_stock(cp)
+      from opendbc.car.toyota.advert_filter import prepare_stock as prepare_advert_filter_stock
+      prepare_advert_filter_stock(cp)
       from opendbc.car.toyota.angle_control import prepare_stock as prepare_angle_stock
       prepare_angle_stock(cp)
     self._prepare_bolt(cp, fingerprints)
@@ -232,6 +234,8 @@ class VehicleStartupPreferences:
       prepare_pedal_stock(cp)
       from opendbc.car.toyota.radar_filter import prepare_stock as prepare_radar_filter_stock
       prepare_radar_filter_stock(cp)
+      from opendbc.car.toyota.advert_filter import prepare_stock as prepare_advert_filter_stock
+      prepare_advert_filter_stock(cp)
       from opendbc.car.toyota.angle_control import prepare_stock as prepare_angle_stock
       prepare_angle_stock(cp)
     self._prepare_bolt(cp)
