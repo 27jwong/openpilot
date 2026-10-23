@@ -118,7 +118,7 @@ def _hkg_family_callers(self, full_op=True):
   os.environ['SIMULATION'] = '0'
   cp = self.family_cp.as_builder()
   startup = None
-  if CarInterface.startup_required(cp):
+  if cp.brand == 'hyundai' and CarInterface.startup_required(cp):
     from types import SimpleNamespace
     from opendbc.car.hyundai.ordinary_classic_startup import OrdinaryClassicStartup
     from opendbc.car.hyundai.ecu_startup import Outcome
