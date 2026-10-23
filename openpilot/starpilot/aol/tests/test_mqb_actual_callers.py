@@ -130,11 +130,13 @@ def test_mqb_full_engagement_brake_reverse_drive_actual_callers(gearbox, alpha, 
     for prime in range(-110, 0):
       ambient_update((10_000_000_000 + prime * 10_000_000) / 1e9, [])
     card.slc_producer_session = 'authority-card'
-    class Publisher:
+    class Publisher(messaging.PubMaster):
       def __init__(self):
         self.messages = {}
-      def send(self, service, message):
-        self.messages[service] = messaging.log_from_bytes(message.to_bytes())
+      def send(self, s, dat):
+        if not isinstance(dat, bytes):
+          dat = dat.to_bytes()
+        self.messages[s] = messaging.log_from_bytes(dat)
     card.pm = Publisher()
     native = libsafety_py.libsafety
     cleanup.callback(native.init_tests)
@@ -180,7 +182,7 @@ def test_mqb_full_engagement_brake_reverse_drive_actual_callers(gearbox, alpha, 
           if isinstance(name, str) and name in dbc.name_to_msg:
             if tick < 3 and name in ('TSK_06', 'LH_EPS_03'):
               continue  # Real startup may receive other CAN sources before cruise and EPS.
-            fields = dict(overrides.get(name, {}))
+            fields: dict[str, float] = dict(overrides.get(name, {}))
             if 'COUNTER' in dbc.name_to_msg[name].sigs:
               fields['COUNTER'] = tick % 16
             incoming.append(packer.make_can_msg(name, parser.bus, fields))

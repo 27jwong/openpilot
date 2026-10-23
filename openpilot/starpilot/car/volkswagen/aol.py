@@ -1,5 +1,5 @@
 from opendbc.car import structs
-from opendbc.car.volkswagen.stock_aol import qualified as stock_qualified, AOL_WORD, MANUAL_WORD, AOL_WORDS
+from opendbc.car.volkswagen.stock_aol import qualified as stock_qualified, safety_config as aol_safety_config, AOL_WORD, MANUAL_WORD, AOL_WORDS
 from opendbc.car.volkswagen.long_aol import qualified as long_qualified, WORDS as LONG_WORDS
 from openpilot.starpilot.aol.intent import AolCardIntent, AOL_TOGGLE, ButtonType
 from openpilot.starpilot.aol.policy import AolVehiclePolicy
@@ -31,7 +31,7 @@ def native_profile_supported(model, param):
 
 
 def native_accepts_cp(cp, model, param):
-  return qualified(cp, marked_only=True) and native_profile_supported(model, param) and param == cp.safetyConfigs[0].safetyParam
+  return qualified(cp, marked_only=True) and native_profile_supported(model, param) and param == aol_safety_config(cp).safetyParam
 
 
 def native_latch_rejected(cp, native):

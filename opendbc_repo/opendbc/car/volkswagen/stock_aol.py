@@ -1,4 +1,4 @@
-"""Exact MQB stock-ACC capability; direct drive/system-long remain ordinary."""
+"""Exact MQB stock-ACC capability; direct drive remains ordinary."""
 from opendbc.car import Bus, structs
 from opendbc.car.volkswagen.values import CAR, DBC, VolkswagenFlags
 
@@ -10,20 +10,33 @@ MQB_CARS = frozenset(car for car in CAR if DBC[car].get(Bus.pt) == "vw_mqb" and
 KNOWN_FLAGS = int(VolkswagenFlags.STOCK_HCA_PRESENT | VolkswagenFlags.KOMBI_PRESENT | VolkswagenFlags.HAS_BSM)
 
 
+def safety_config(cp):
+  """One owner, optionally preceded by one quiet noOutput board."""
+  try:
+    configs = cp.safetyConfigs
+    if len(configs) == 1:
+      return configs[0]
+    if (len(configs) == 2 and configs[0].safetyModel == structs.CarParams.SafetyModel.noOutput and
+        configs[0].safetyParam == 0):
+      return configs[1]
+  except (AttributeError, TypeError, ValueError, OverflowError, IndexError):
+    pass
+  return None
+
+
 def _qualified(cp, *, marked_only=False, longitudinal=False):
   if (cp is None or cp.brand != "volkswagen" or cp.carFingerprint not in MQB_CARS or
       cp.passive or cp.notCar or cp.dashcamOnly or cp.flags & ~KNOWN_FLAGS or
       cp.steerControlType != structs.CarParams.SteerControlType.torque or
       cp.transmissionType not in (structs.CarParams.TransmissionType.automatic, structs.CarParams.TransmissionType.manual) or
       cp.networkLocation not in (structs.CarParams.NetworkLocation.gateway, structs.CarParams.NetworkLocation.fwdCamera) or
-      cp.fingerprintSource == structs.CarParams.FingerprintSource.fixed or
-      bool(cp.openpilotLongitudinalControl) != longitudinal or bool(cp.pcmCruise) == longitudinal or len(cp.safetyConfigs) != 1 or
+      bool(cp.openpilotLongitudinalControl) != longitudinal or bool(cp.pcmCruise) == longitudinal or
       (longitudinal and (cp.networkLocation != structs.CarParams.NetworkLocation.gateway or not cp.alphaLongitudinalAvailable))):
     return False
   word = AOL_WORD | (MANUAL_WORD if cp.transmissionType == structs.CarParams.TransmissionType.manual else 0)
   word |= int(longitudinal)
-  safety = cp.safetyConfigs[0]
-  return (safety.safetyModel == structs.CarParams.SafetyModel.volkswagen and
+  safety = safety_config(cp)
+  return (safety is not None and safety.safetyModel == structs.CarParams.SafetyModel.volkswagen and
           (cp.alternativeExperience == 32 and safety.safetyParam == word or
            not marked_only and cp.alternativeExperience == 0 and safety.safetyParam == int(longitudinal)))
 

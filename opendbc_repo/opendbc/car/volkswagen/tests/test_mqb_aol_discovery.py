@@ -20,7 +20,7 @@ from openpilot.starpilot.aol.vehicle import policy_for
 
 @pytest.mark.parametrize('manual', (False, True))
 @pytest.mark.parametrize('gateway,alpha', ((False, False), (True, False), (True, True)))
-def test_normal_golf_discovery_and_card_stock_aol_owner(manual, gateway, alpha):
+def test_normal_golf_discovery_and_card_stock_aol_owner(manual, gateway, alpha, offset=0, fixed=False):
   fixture = {'kind': 'EXPLICIT_SYNTHETIC_FULL_ECU_DISCOVERY_INPUT_FROM_REUSED_INVENTORY_NOT_ROUTE_OR_PHYSICAL',
    'identity': 'VOLKSWAGEN_GOLF_MK7',
    'vin': 'WVWZZZAUZGW000000',
@@ -47,15 +47,15 @@ def test_normal_golf_discovery_and_card_stock_aol_owner(manual, gateway, alpha):
    'origin': 'Synthetic ECU bytes from configuration-matrix.json; actual matcher must verify uniqueness.'}
   fw = [structs.CarParams.CarFw(ecu=getattr(structs.CarParams.Ecu, r['ecu']),
         address=r['address'], subAddress=r['subAddress'] or 0, fwVersion=bytes.fromhex(r['fwVersion']),
-        brand='volkswagen', bus=0) for r in fixture['firmware']]
+        brand='volkswagen', bus=offset) for r in fixture['firmware']]
   exact, candidates = match_fw_to_car(fw, fixture['vin'], log=False)
   assert exact and candidates == {CAR.VOLKSWAGEN_GOLF_MK7}, (exact, candidates)
   packer = CANPacker('vw_mqb')
-  incoming = [packer.make_can_msg('GRA_ACC_01', 0, {'GRA_Hauptschalter': 1})]
+  incoming = [packer.make_can_msg('GRA_ACC_01', offset, {'GRA_Hauptschalter': 1})]
   if not manual:
-    incoming.append(packer.make_can_msg('Getriebe_11', 0, {}))
+    incoming.append(packer.make_can_msg('Getriebe_11', offset, {}))
   if gateway:
-    incoming.append(packer.make_can_msg('ESP_21', 1, {}))
+    incoming.append(packer.make_can_msg('ESP_21', offset + 1, {}))
   frames = [CanData(address=address, dat=data, src=bus) for address, data, bus in incoming]
 
   def receive(wait_for_one=False):
@@ -77,10 +77,12 @@ def test_normal_golf_discovery_and_card_stock_aol_owner(manual, gateway, alpha):
           mock.patch.object(car_helpers, 'get_present_ecus', return_value=set()),
           mock.patch.object(car_helpers, 'get_fw_versions_ordered', return_value=fw)):
       # Normal public get_car: do NOT stub fingerprint, match_fw_to_car or candidate selection.
-      ci = car_helpers.get_car(receive, lambda *args, **kwargs: None, lambda _: None, alpha, False)
+      ci = car_helpers.get_car(receive, lambda *args, **kwargs: None, lambda _: None, alpha, False,
+                               forced_candidate=CAR.VOLKSWAGEN_GOLF_MK7 if fixed else None)
     cp = ci.CP
     assert cp.carFingerprint == CAR.VOLKSWAGEN_GOLF_MK7
-    assert cp.fingerprintSource == structs.CarParams.FingerprintSource.fw and not cp.fuzzyFingerprint
+    assert cp.fingerprintSource == (structs.CarParams.FingerprintSource.fixed if fixed else
+                                    structs.CarParams.FingerprintSource.fw) and not cp.fuzzyFingerprint
     assert cp.carVin == fixture['vin'] and len(cp.carFw) == len(fw)
     assert cp.transmissionType == (structs.CarParams.TransmissionType.manual if manual else
                                   structs.CarParams.TransmissionType.automatic)
@@ -92,7 +94,11 @@ def test_normal_golf_discovery_and_card_stock_aol_owner(manual, gateway, alpha):
     card = Car(CI=ci, RI=ci.RadarInterface(cp))
     try:
       assert card.aol_qualified and card.aol_card_intent is not None
-      assert card.CP.safetyConfigs[0].safetyParam == ((24 if manual else 8) | int(alpha))
+      assert card.CP.safetyConfigs[-1].safetyParam == ((24 if manual else 8) | int(alpha))
+      assert len(card.CP.safetyConfigs) == (2 if offset else 1)
+      if offset:
+        assert card.CP.safetyConfigs[0].safetyModel == structs.CarParams.SafetyModel.noOutput
+        assert card.CP.safetyConfigs[0].safetyParam == 0
       assert card.CP.alternativeExperience == 32
       with structs.CarParams.from_bytes(params.get('CarParams')) as published:
         assert published.to_dict() == card.CP.to_dict()

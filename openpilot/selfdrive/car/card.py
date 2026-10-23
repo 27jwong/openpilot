@@ -40,7 +40,8 @@ from opendbc.car.honda.stock_aol import (
   qualified as qualified_honda_stock_aol, native_observation as honda_native_observation,
   temporary_restriction as honda_temporary_restriction,
 )
-from opendbc.car.volkswagen.stock_aol import native_observation as volkswagen_native_observation
+from opendbc.car.volkswagen.stock_aol import (native_observation as volkswagen_native_observation,
+  safety_config as volkswagen_aol_safety_config)
 from openpilot.starpilot.car.volkswagen.aol import (qualified as qualified_volkswagen_aol,
   temporary_restriction as volkswagen_temporary_restriction)
 from openpilot.starpilot.car.rivian.aol import retained_brake_lateral_intent as rivian_brake_intent_retained
@@ -386,7 +387,8 @@ class Car:
     self.aol_sequence = 0
     self.aol_process_fault_context = AolProcessFaultContext() if self.aol_replay else None
     if self.aol_qualified:
-      config = hyundai_aol_safety_config(self.CP) if self.CP.brand == 'hyundai' else self.CP.safetyConfigs[0]
+      config = (volkswagen_aol_safety_config(self.CP) if self.CP.brand == 'volkswagen' else
+                (hyundai_aol_safety_config(self.CP) if self.CP.brand == 'hyundai' else self.CP.safetyConfigs[0]))
       if config is None:
         raise RuntimeError('AOL requires the exact vehicle safety configuration')
       config.safetyParam |= aol_policy.safety_param_addition

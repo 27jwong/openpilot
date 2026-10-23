@@ -110,7 +110,7 @@ def test_gateway_long_profile_rejects_changed_identity_bus_and_safety_context(ma
   changes = (
     ('passive', True), ('notCar', True), ('dashcamOnly', True), ('flags', 1 << 20),
     ('networkLocation', structs.CarParams.NetworkLocation.fwdCamera),
-    ('fingerprintSource', structs.CarParams.FingerprintSource.fixed),
+    ('brand', 'toyota'),
     ('transmissionType', structs.CarParams.TransmissionType.direct),
     ('steerControlType', structs.CarParams.SteerControlType.angle),
     ('openpilotLongitudinalControl', False), ('pcmCruise', True),
@@ -126,7 +126,8 @@ def test_gateway_long_profile_rejects_changed_identity_bus_and_safety_context(ma
     altered.safetyConfigs[0].safetyParam = word
     assert not long_qualified(altered)
   altered = structs.CarParams(**cp.to_dict())
-  altered.safetyConfigs = [structs.CarParams.SafetyConfig(safetyModel=structs.CarParams.SafetyModel.noOutput), *altered.safetyConfigs]
+  altered.safetyConfigs = [structs.CarParams.SafetyConfig(safetyModel=structs.CarParams.SafetyModel.noOutput, safetyParam=1),
+                           *altered.safetyConfigs]
   assert not long_qualified(altered)
   altered = structs.CarParams(**cp.to_dict())
   altered.safetyConfigs[0].safetyModel = structs.CarParams.SafetyModel.volkswagenMeb
