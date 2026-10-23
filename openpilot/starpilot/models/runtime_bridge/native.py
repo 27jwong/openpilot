@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 
 from openpilot.starpilot.models.runtime_selection import NATIVE_REVISION
 from openpilot.starpilot.models.runtime_bridge.bootstrap import (
-  IMPORT_FAMILIES, _check_source_package, _namespace, _private_cache,
+  IMPORT_FAMILIES, _check_source_package, _namespace, _private_cache, _pin_source_imports,
 )
 
 if TYPE_CHECKING:
@@ -199,6 +199,7 @@ def prepare(role, plan):
   os.environ.update(CACHEDB=str(cache / 'tinygrad.db'), XDG_CACHE_HOME=str(cache / 'xdg'), PYTHONDONTWRITEBYTECODE='1')
   sys.modules['tinygrad_repo'] = _namespace('tinygrad_repo', tg_root)
   sys.modules['extra'] = _namespace('extra', tg_root / 'extra')
+  _pin_source_imports(tg_root)
   importlib.invalidate_caches()
   _check_source_package('tinygrad', tg_root / 'tinygrad/__init__.py')
   _check_source_package('examples', tg_root / 'examples/__init__.py')
