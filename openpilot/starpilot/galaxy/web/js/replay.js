@@ -4,6 +4,7 @@ import { BluetoothNotice, bluetoothConnection } from "./bluetooth-notice.js"
 import { GxState } from "./state.js"
 import { GxIconButton } from "./icon-button.js"
 import { markRaw } from "../vendor/vue/vue.esm-browser.js"
+import { ReplayHistory, drawReplayTimeline } from "./replay-timeline.js"
 
 const ID = /^[a-f0-9]{32}$/
 const STATES = new Set(["idle", "preparing", "buffering", "playing", "paused", "seeking", "stopping", "ended", "failed"])
@@ -65,8 +66,12 @@ export class ReplayClient {
     this.error = ""
     this.detail = null
     this.ownedSession = null
+    this.timeline = null
+    this.historyError = ""
+    this.historyGeneration = 0
   }
   emit() { this.publish({ replay: this.status, replayBusy: this.busy, replayError: this.error, replayDetail: this.detail,
+    replayTimeline: this.timeline?.rows ? this.timeline : null, replayHistoryNotice: this.historyError,
     replayVideoReady: !!this.buffer?.buffered.length, replayBuffering: this.needsBuffer() }) }
   async json(path, body = null) {
     const request = new AbortController(), generation = this.generation
@@ -121,6 +126,12 @@ export class ReplayClient {
     if (prior?.ownerId === status.ownerId && prior.sessionId === status.sessionId && status.revision < prior.revision) return
     if (!this.ownedSession && status.purpose !== "export" && status.owned && ID.test(status.sessionId) && status.routeId === this.routeId) { this.ownedSession = status.sessionId; this.error = "" }
     this.status = status
+    if (prior?.ownerId !== status.ownerId || prior?.sessionId !== status.sessionId || !status.owned || !status.offroad || ["idle", "failed", "stopping"].includes(status.state)) this.resetTimeline()
+    if (status.timelineState === "unavailable") { this.resetTimeline(); this.historyError = "History unavailable" }
+    else if (status.timelineState === "ready" && status.owned && status.offroad && !["idle", "failed", "stopping"].includes(status.state) && !this.timeline && !this.historyError) {
+      this.timeline = new ReplayHistory(status.ownerId, status.sessionId)
+    }
+    this.loadTimeline()
     if (status.lastRequestId === this.pendingAction || TERMINAL.has(status.state) || !status.offroad) { this.pendingAction = null; this.busy = false }
     if (this.ownedSession && (status.purpose === "export" || status.sessionId !== this.ownedSession || !status.owned)) { this.ownedSession = null; this.retireMedia() }
     if (!status.offroad || TERMINAL.has(status.state) || ["preparing", "seeking", "stopping"].includes(status.state) || status.mediaReady === false) this.retireMedia()
@@ -141,6 +152,30 @@ export class ReplayClient {
       this.mediaDemand = true; this.cancelTimer(this.mediaTimer); this.loadMedia(this.mediaGeneration, status.sessionId, status.epoch)
     }
     this.emit()
+  }
+  resetTimeline() {
+    this.historyGeneration++
+    this.timeline = null; this.historyError = ""
+    this.cancelTimer(this.historyTimer)
+  }
+  async loadTimeline() {
+    const history = this.timeline, generation = this.historyGeneration
+    if (!this.active || !history || history.rows || this.historyReading || this.busy) return
+    this.historyReading = true
+    try {
+      const page = await this.json(`timeline?sessionId=${history.sessionId}&clientId=${this.clientId}&cursor=${history.cursor}`)
+      if (!page || generation !== this.historyGeneration || this.timeline !== history) return
+      history.append(page, this.status)
+      if (history.rows) this.timeline = markRaw(history)
+      this.emit()
+    } catch {
+      if (generation === this.historyGeneration) { this.timeline = null; this.historyError = "History unavailable"; this.emit() }
+    } finally {
+      this.historyReading = false
+      if (this.active && generation === this.historyGeneration && history === this.timeline && !history.rows) {
+        this.cancelTimer(this.historyTimer); this.historyTimer = this.later(() => this.loadTimeline(), 50)
+      }
+    }
   }
   playVideo() {
     const generation = this.mediaGeneration, video = this.video()
@@ -378,6 +413,7 @@ export class ReplayClient {
       headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId, clientId: this.clientId, requestId: replayToken() }) }).catch(() => {})
   }
   close(stop = true) {
+    this.resetTimeline()
     if (stop && this.active && this.ownedSession) this.sendStop(this.ownedSession)
     this.active = this.reading = this.autoplay = this.startAttempted = false; this.generation++
     this.cancelTimer(this.timer)
@@ -390,12 +426,13 @@ export const ReplayViewer = {
   components: { GxNotice, BluetoothNotice, GxState, GxIconButton },
   props: { clientId: { type: String, required: true }, routeId: { type: String, required: true }, startSegment: { type: Number, default: null }, unauthorized: { type: Function, required: true } },
   emits: ["segment", "busy"],
-  data: () => ({ bluetooth: bluetoothConnection(), client: null, replay: null, replayBusy: false, replayError: "", replayDetail: null, replayVideoReady: false, replayBuffering: false, seekPosition: null }),
+  data: () => ({ bluetooth: bluetoothConnection(), client: null, replay: null, replayBusy: false, replayError: "", replayDetail: null, replayVideoReady: false, replayBuffering: false, seekPosition: null, replayTimeline: null, replayHistoryNotice: "" }),
   computed: {
     playing() { return this.client?.ownedSession === this.replay?.sessionId && !!this.replay?.sessionId && !TERMINAL.has(this.replay.state) },
     controlsBusy() { return this.replayBusy || !this.replay?.offroad || ["preparing", "seeking", "stopping"].includes(this.replay.state) },
     seekGaps() { return replaySeekGaps(this.replay) },
     canStart() { return this.replay?.offroad && TERMINAL.has(this.replay.state) && !this.replayBusy && this.replayDetail?.playable === true },
+    historyLabel() { return this.replayTimeline?.label(this.seekPosition ?? this.replay?.position) || this.replayHistoryNotice || "Loading history" },
   },
   mounted() {
     if (this.bluetooth) return
@@ -407,11 +444,23 @@ export const ReplayViewer = {
     } }))
     this.visibility = () => { if (document.hidden) { this.client.close() } }
     document.addEventListener("visibilitychange", this.visibility)
+    this.resizeRail = () => this.drawRail(true)
+    this.railObserver = new ResizeObserver(this.resizeRail)
+    this.railObserver.observe(this.$refs.player)
+    window.addEventListener("resize", this.resizeRail)
     this.client.open(this.routeId, this.startSegment)
   },
-  beforeUnmount() { document.removeEventListener("visibilitychange", this.visibility); this.client?.close() },
+  beforeUnmount() { document.removeEventListener("visibilitychange", this.visibility); window.removeEventListener("resize", this.resizeRail); this.railObserver?.disconnect(); this.client?.close() },
   methods: {
     replayTime,
+    drawRail(force = false) {
+      const canvas = this.$refs.timeline
+      if (!canvas || !this.replay) return
+      const key = JSON.stringify([this.replay.start, this.replay.end, this.replay.seekRanges])
+      if (!force && this.railHistory === this.replayTimeline && this.railRange === key) return
+      this.railHistory = this.replayTimeline; this.railRange = key
+      drawReplayTimeline(canvas, this.replay, this.replayTimeline)
+    },
     stopAndWait() { return this.client.stopAndWait() },
     close() { return this.client?.stop() },
     seek(value) { this.seekPosition = null; this.client.control("seek", Number(value)) },
@@ -422,6 +471,9 @@ export const ReplayViewer = {
     fullscreen() { return document.fullscreenElement === this.$refs.player ? document.exitFullscreen() : this.$refs.player.requestFullscreen?.() },
   },
   watch: {
+    replayTimeline() { this.$nextTick(() => this.drawRail(true)) },
+    playing() { this.$nextTick(() => this.drawRail(true)) },
+    'replay.seekRanges'() { this.$nextTick(() => this.drawRail()) },
     startSegment(value) {
       if (!this.client) return
       this.client.startSegment = value
@@ -439,7 +491,7 @@ export const ReplayViewer = {
     <GxIconButton v-if="playing" class="gx-replay__fullscreen" label="Fullscreen video" icon="bi-fullscreen" @click="fullscreen" />
     </div>
     <div v-if="playing" class="gx-replay__media-controls">
-      <label class="gx-replay__timeline"><span>{{ replayTime((seekPosition ?? replay.position)-replay.start) }} / {{ replayTime(replay.end-replay.start) }}</span><input type="range" aria-label="Replay route position" :min="replay.start" :max="replay.end" step="0.05" :value="seekPosition ?? replay.position" :disabled="controlsBusy" @input="seekPosition=Number($event.target.value)" @change="seek($event.target.value)" /></label>
+      <label class="gx-replay__timeline"><span>{{ replayTime((seekPosition ?? replay.position)-replay.start) }} / {{ replayTime(replay.end-replay.start) }} · {{ historyLabel }}</span><span class="gx-replay__track"><canvas ref="timeline" aria-hidden="true"></canvas><input type="range" aria-label="Replay route position" :aria-valuetext="replayTime((seekPosition ?? replay.position)-replay.start) + ', ' + historyLabel" :min="replay.start" :max="replay.end" step="0.05" :value="seekPosition ?? replay.position" :disabled="controlsBusy" @input="seekPosition=Number($event.target.value)" @change="seek($event.target.value)" /></span></label>
       <div class="gx-replay__controls">
         <button type="button" class="gx-btn" aria-label="Back ten seconds" :disabled="controlsBusy" @click="seek(replay.position-10)">-10 s</button>
         <button v-if="replay.state === 'ended'" type="button" class="gx-btn" aria-label="Return to start" :disabled="controlsBusy" @click="seek(replay.start)">Restart</button>
@@ -455,6 +507,7 @@ export const ReplayViewer = {
     <GxNotice v-if="replay?.errorCode" tone="warn">Replay stopped: {{ replay.errorCode.replaceAll('_', ' ') }}</GxNotice>
     <GxNotice v-if="replay?.sessionId && !playing && !canStart" tone="info">Another replay is active. Close it in its viewer before starting this route.</GxNotice>
     <p v-if="replayDetail?.reason" class="gx-note">{{ replayDetail.reason }}</p>
+    <details v-if="replayTimeline" class="gx-route-workspace__help"><summary>Timeline colors</summary><p class="gx-replay__legend"><span v-for="(item, kind) in replayTimeline.legend" :key="kind"><i :style="{backgroundColor: 'rgb(' + item.rgb.join(' ') + ')'}" aria-hidden="true"></i>{{ item.label }}</span></p><p v-if="replayTimeline.source !== 'rlog'" class="gx-note">Sampled history; brief events may be missing.</p></details>
     <details v-if="playing && seekGaps.length" class="gx-route-workspace__help gx-replay__gaps"><summary>{{ seekGaps.length }} missing recording {{ seekGaps.length === 1 ? 'range' : 'ranges' }}</summary><p class="gx-note">Missing recordings: <span v-for="(gap, i) in seekGaps" :key="i">{{ i ? ", " : "" }}{{ replayTime(gap[0]-replay.start) }}–{{ replayTime(gap[1]-replay.start) }}</span>. Seeks move to the nearest recorded position.</p></details>
     <button v-if="canStart && !replayError" class="gx-btn gx-btn--tonal" @click="client.open(routeId, startSegment)">Play replay</button>
     </template>

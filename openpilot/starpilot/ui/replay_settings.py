@@ -17,6 +17,7 @@ from openpilot.starpilot.ui.feature_settings_state import (FEATURE_ROW_HEIGHT, F
                                                          FeatureUiAction, feature_scroll)
 from openpilot.starpilot.ui.onroad_customization import read_customization
 from openpilot.starpilot.ui.presentation import FontRole, Profile
+from openpilot.starpilot.replay.timeline import LEGEND, TimelineHistory
 from openpilot.starpilot.ui.settings_geometry import (ACCENT, CONTROL_BG, CONTROL_BORDER, CONTROL_PRESSED_BG,
                                                      PANEL_BG, ROW_SEPARATOR, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, draw_rounded_fill,
                                                      draw_rounded_stroke, draw_settings_header, elide_text)
@@ -95,6 +96,9 @@ class ReplayController:
     self.catalog_loaded = False
     self.next_status = self.next_catalog = self.next_frame = 0.0
     self.status_at = None
+    self.timeline = None
+    self.timeline_error = ''
+    self.next_timeline = 0.0
 
   @property
   def busy(self):
@@ -114,7 +118,7 @@ class ReplayController:
     if self.closed:
       return False
     if self.pending is not None:
-      if self.pending_op in ('frame', 'status', 'catalog') and self.queued is None:
+      if self.pending_op in ('frame', 'status', 'catalog', 'timeline') and self.queued is None:
         self.queued = payload
         return True
       return False
@@ -207,8 +211,12 @@ class ReplayController:
               self.frame = None
               self.next_status = 0.0
         elif response.get('ok') is not True:
-          self.error = response.get('error', {}).get('message', 'Replay unavailable')
-          self.next_status = 0.0
+          if operation == 'timeline':
+            self.timeline_error = 'History unavailable'
+            self.timeline = None
+          else:
+            self.error = response.get('error', {}).get('message', 'Replay unavailable')
+            self.next_status = 0.0
         else:
           result = response['result']
           if operation == 'catalog':
@@ -216,6 +224,9 @@ class ReplayController:
             self.catalog_loaded = True
           elif operation == 'detail':
             self.detail = result
+          elif operation == 'timeline':
+            if self.timeline is not None:
+              self.timeline.append(result, self.status.get('seekRanges') or [[self.status['start'], self.status['end']]])
           else:
             if result.get('schemaVersion') != 1 or type(result.get('revision')) is not int:
               raise ValueError('Invalid replay status')
@@ -225,17 +236,32 @@ class ReplayController:
                 self.status.get('sessionId'), self.status.get('epoch'), self.status.get('frameReady')):
               self.frame = None
               self.reader_generation += 1
+            prior_identity = self.status.get('ownerId'), self.status.get('sessionId')
             self.status, self.status_at = result, now
+            if (prior_identity != (result['ownerId'], result['sessionId']) or
+                not self.active or not result.get('owned') or not result.get('offroad') or result.get('state') == 'stopping' or
+                self.timeline is not None and (self.timeline.owner, self.timeline.session) != (result['ownerId'], result['sessionId'])):
+              self.timeline = None
+              self.timeline_error = ''
+            if self.active and result.get('owned') and result.get('offroad') and result.get('timelineState') == 'unavailable':
+              self.timeline = None
+              self.timeline_error = 'History unavailable'
+            elif (self.active and result.get('owned') and result.get('offroad') and result.get('state') != 'stopping' and
+                  result.get('timelineState') == 'ready' and self.timeline is None and not self.timeline_error):
+              self.timeline = TimelineHistory(result['ownerId'], result['sessionId'])
             self.error = result.get('errorCode') or ''
             if result.get('paused') is False or result.get('state') in ('ended', 'failed'):
               self.autoplay_at = None
             if not self.active or result.get('offroad') is not True or not result.get('frameReady'):
               self.frame = None
       except Exception as error:
-        self.error = 'Replay frame unavailable' if operation == 'frame' else str(error) or 'Replay service unavailable'
-        if operation == 'frame':
+        if operation == 'timeline':
+          self.timeline, self.timeline_error = None, 'History unavailable'
+        elif operation == 'frame':
+          self.error = 'Replay frame unavailable'
           self.frame = None
         else:
+          self.error = str(error) or 'Replay service unavailable'
           self.status_at = None
     if self.pending is not None:
       return
@@ -251,6 +277,9 @@ class ReplayController:
     elif now >= self.next_status:
       self.next_status = now + 0.25
       self.submit({'op': 'status', 'clientId': self.client_id})
+    elif self.active and self.timeline is not None and self.timeline.rows is None and now >= self.next_timeline:
+      self.next_timeline = now + .05
+      self.submit({'op': 'timeline', 'clientId': self.client_id, 'sessionId': self.own_session, 'cursor': self.timeline.cursor})
     elif self.active and self.status.get('frameReady') and self.status.get('framePath') and now >= self.next_frame:
       # Poll below the 60 Hz UI interval to avoid skipping frames.
       self.next_frame = now + 0.01
@@ -278,6 +307,7 @@ class ReplayController:
     self.executor.submit(self._close_reader)
     self.executor.shutdown(wait=False)
     self.frame = None
+    self.timeline = None
 
 
 class ReplayPage(Widget):
@@ -303,6 +333,7 @@ class ReplayPage(Widget):
     self.detail_text = ('Recorded route', 'Date unavailable', '')
     self.detail_message = ''
     self.texture = None
+    self.rail_texture = self.rail_key = None
     self.frame_key = None
     self.press = None
     self.seek_preview = None
@@ -315,11 +346,14 @@ class ReplayPage(Widget):
   def show_event(self):
     super().show_event()
     gui_app.add_nav_stack_tick(self._tick)
+    gui_app.add_render_prepare(self._prepare_rail, self._clear_rail)
 
   def hide_event(self):
     gui_app.remove_nav_stack_tick(self._tick)
+    gui_app.remove_render_prepare(self._prepare_rail)
     self.controller.close()
     self._clear_frame()
+    self._clear_rail()
     self.input.cancel()
     self.press = self.seek_preview = None
     super().hide_event()
@@ -335,6 +369,59 @@ class ReplayPage(Widget):
     if self.texture is not None:
       rl.unload_texture(self.texture)
     self.texture = self.frame_key = None
+
+  def _clear_rail(self):
+    if getattr(self, 'rail_texture', None) is not None:
+      rl.unload_render_texture(self.rail_texture)
+    self.rail_texture = self.rail_key = None
+
+  def _prepare_rail(self):
+    history = getattr(self.controller, 'timeline', None)
+    large = self.profile == Profile.LARGE
+    (_, _, width, _), _buttons = self._transport()
+    start, end = (self.controller.status.get(key) or 0 for key in ('start', 'end'))
+    ranges = self.controller.status.get('seekRanges') or ((start, end),)
+    rail, tick, gap = (12, 4, 2) if large else (8, 3, 2)
+    if history is None or history.rows is None or end <= start:
+      self._clear_rail()
+      return
+    scale = max(.1, gui_app._scale)
+    pixels = max(1, round(width * scale))
+    paint_h = max(1, round((rail + tick + gap) * scale))
+    key = id(history), start, end, tuple(map(tuple, ranges)), pixels, paint_h, large
+    if getattr(self, 'rail_key', None) != key:
+      self._clear_rail()
+      target = rl.load_render_texture(pixels, paint_h)
+      if not target.id:
+        return
+      self.rail_texture, self.rail_key = target, key
+      rl.begin_texture_mode(target)
+      rl.clear_background(rl.BLANK)
+      line_y, line_h = round((tick + gap) * scale), max(1, round(rail * scale))
+      def rect(left, right, color, bookmark=False):
+        lo = max(0, min(pixels - 1, math.floor(pixels * (left - start) / (end - start))))
+        hi = min(pixels, max(lo + (2 if bookmark else 1), math.ceil(pixels * (right - start) / (end - start))))
+        rl.draw_rectangle(lo, 0 if bookmark else line_y, hi - lo, max(1, round(tick * scale)) if bookmark else line_h, color)
+      for left, right in ranges:
+        rect(left, right, CONTROL_BORDER)
+      for layer in ('mode', 'error', 'bookmark'):
+        for left, right, kind in history.rows:
+          if (kind if kind in ('error', 'bookmark') else 'mode') == layer:
+            rect(left, right, rl.Color(*LEGEND[kind]['rgb'], 255), layer == 'bookmark')
+      rl.end_texture_mode()
+
+  def _timeline_rail(self, x, y, width, height, start, end, ranges, large):
+    history = getattr(self.controller, 'timeline', None)
+    rail, tick, gap = (12, 4, 2) if large else (8, 3, 2)
+    top = y + (height - rail - tick - gap) / 2
+    target = getattr(self, 'rail_texture', None)
+    if target is not None and history is not None and self.rail_key is not None and self.rail_key[0] == id(history):
+      rl.draw_texture_pro(target.texture, rl.Rectangle(0, 0, target.texture.width, -target.texture.height),
+                          rl.Rectangle(x, top, width, rail + tick + gap), rl.Vector2(0, 0), 0, rl.WHITE)
+    elif end > start:
+      for left, right in ranges:
+        rl.draw_rectangle(round(x + width * (left - start) / (end - start)), round(top + tick + gap),
+                          max(1, round(width * (right - left) / (end - start))), rail, CONTROL_BORDER)
 
   def _update_state(self):
     self.controller.tick()
@@ -535,12 +622,10 @@ class ReplayPage(Widget):
     if not reason and route.get('segments') is not None and len(self._segments()) != count:
       reason = f'{len(self._segments())} of {count} available to play'
     reason = reason or ''
-    lines, remaining = self._detail_lines(reason, 512)
-    self.detail_message = reason if remaining else ''
-    if self.detail_message:
-      lines, _ = self._detail_lines(reason, 392)
+    self.detail_message = reason.rstrip() + '\n\nReplay timeline: green Chill; cyan AOL; orange Experimental; red alerts; yellow bookmarks.'
+    lines, _ = self._detail_lines(reason, 392)
     for index, line in enumerate(lines[:2]):
-      if index == 1 and self.detail_message:
+      if index == 1:
         line = elide_text(self.fonts, line + ' ...', FontRole.NORMAL, 18, 392)
       self.fonts.draw(line, FontRole.NORMAL, 18, 12, 114 + index * 21, TEXT_PRIMARY)
     for label, bounds, enabled, _ in self._detail_buttons():
@@ -717,17 +802,15 @@ class ReplayPage(Widget):
     start, end, position = (owner.status.get(key) or 0 for key in ('start', 'end', 'position'))
     displayed = self.seek_preview if self.seek_preview is not None else position
     amount = max(0, min(1, (displayed - start) / (end - start))) if end > start else 0
-    rl.draw_rectangle(round(x), round(y + height / 2 - 3), round(width), 6, CONTROL_BG)
     ranges = owner.status.get('seekRanges') or ((start, end),)
-    if end > start:
-      for left, right in ranges:
-        left_x = round(x + width * (left - start) / (end - start))
-        rl.draw_rectangle(left_x, round(y + height / 2 - 3),
-                          max(1, round(width * (right - left) / (end - start))), 6, CONTROL_BORDER)
-        progress = max(0, min(right, displayed) - left)
-        rl.draw_rectangle(left_x, round(y + height / 2 - 3), round(width * progress / (end - start)), 6, ACCENT)
-    rl.draw_circle(round(x + width * amount), round(y + height / 2), 9 if large else 7, ACCENT)
+    self._timeline_rail(x, y, width, height, start, end, ranges, large)
+    rl.draw_circle(round(x + width * amount), round(y + height / 2 + 3 if large else y + height / 2 + 2.5), 9 if large else 7, rl.WHITE)
     timing = f'{duration(displayed)} / {duration(end)}' if end > start else ''
+    history = getattr(owner, 'timeline', None)
+    if history is not None:
+      timing += ' - ' + history.label(displayed)
+    elif owner.status.get('timelineState'):
+      timing += ' - ' + (getattr(owner, 'timeline_error', '') or 'Loading history')
     if end > start and not any(left <= displayed <= right for left, right in ranges):
       timing += ' - Unavailable gap'
     if not large and timing:
@@ -736,6 +819,11 @@ class ReplayPage(Widget):
       draw_rounded_fill(rl.Rectangle(8, 30, width, 30), rl.Color(8, 8, 10, 235))
     self.fonts.draw(timing, FontRole.MEDIUM, 26 if large else 18,
                     x, y - 26 if large else 36, TEXT_PRIMARY)
+    if large:
+      for index, item in enumerate(LEGEND.values()):
+        left = 1130 + index * 184
+        rl.draw_rectangle(left, 890, 8, 18, rl.Color(*item['rgb'], 255))
+        self.fonts.draw(item['label'], FontRole.MEDIUM, 22, left + 14, 888, TEXT_SECONDARY)
     enabled = owner.available and not owner.busy and owner.status.get('state') in ('playing', 'paused', 'buffering', 'ended')
     for label, button in buttons:
       self._button(label, button, not owner.busy if label == 'Stop' else enabled)
