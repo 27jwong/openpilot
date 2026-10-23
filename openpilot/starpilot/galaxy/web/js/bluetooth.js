@@ -1,5 +1,6 @@
 import { GxState } from "./state.js"
 import { GxNotice } from "./notice.js"
+import { reportSave } from "./save-feedback.js"
 import { connectionError } from "./polling.js"
 import { ControllersPage } from "./controllers.js"
 import { BluetoothDeviceList } from "./bluetooth-devices.js"
@@ -148,6 +149,7 @@ export class BluetoothFeed {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
     }, operation === "power" ? 35000 : ["connect", "disconnect"].includes(operation) ? 30000 : 15000)
     if (result) await this.refresh()
+    return !!result
   }
 }
 
@@ -172,6 +174,7 @@ export const BluetoothPage = {
     canAllowPair() { return validPairInput(this.status?.pairing?.prompt, this.pairValue) },
   },
   methods: {
+    reportSave,
     bluetoothError,
     refresh() { return this.feed.refresh() },
     action(operation, fields) { return this.feed.action(operation, fields) },
@@ -196,7 +199,7 @@ export const BluetoothPage = {
               <GxNotice v-if="status.errorCode" tone="danger">{{ bluetoothError(status.errorCode) }}</GxNotice>
               <GxNotice v-else-if="!status.parked" tone="warn">Park to restart the Bluetooth radio.</GxNotice>
               <div class="gx-row gx-row--borderless"><div class="gx-row__info"><span class="gx-row__label">Power</span></div>
-                <label class="gx-switch"><input type="checkbox" role="switch" aria-label="Bluetooth power" :checked="status.powered" :disabled="!status.parked || !status.available" @change="$event.target.checked=status.powered; action('power', {enabled: !status.powered})"><span class="gx-switch__track"></span><span class="gx-switch__thumb"></span></label></div>
+                <label class="gx-switch"><input type="checkbox" role="switch" aria-label="Bluetooth power" :checked="status.powered" :disabled="!status.parked || !status.available" @change="$event.target.checked=status.powered; reportSave(() => action('power', {enabled: !status.powered}))"><span class="gx-switch__track"></span><span class="gx-switch__thumb"></span></label></div>
             </div></section>
           <section v-if="status.pairing" class="gx-card" role="status"><div class="gx-section__header"><i class="bi bi-link-45deg" aria-hidden="true"></i><span class="gx-section__title">Pairing</span><span class="gx-chip">{{ status.pairing.address }}</span></div>
             <div class="gx-panel gx-stack"><p v-if="status.pairing.state === 'pairing'">Waiting for the device and any confirmation below.</p>
