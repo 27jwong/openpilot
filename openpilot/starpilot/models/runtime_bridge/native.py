@@ -247,7 +247,6 @@ def _verified(path):
 
 def _load_driving(stream, unchanged):
   import io
-  import mmap
   import pickle
   import struct
   from tinygrad import Device
@@ -262,21 +261,25 @@ def _load_driving(stream, unchanged):
   if stream.tell() == os.fstat(stream.fileno()).st_size:
     unchanged()
     return pickle.loads(opcodes)
-  # Map the already authenticated inode. Do not reopen a path or use a cached
-  # DISK:/proc/self/fd device whose descriptor number can be reused later.
-  mapping = mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_COPY)
-  view = memoryview(mapping)[stream.tell():]
-  buffers = Buffer(HCQ_RUNTIME_DEV.device, len(view), opaque=view)
-  arena, chunk_size = Buffer(Device.DEFAULT, buffers.nbytes, preallocate=True), 8 << 20
+  # Copy from the authenticated descriptor with bounded host staging. Reserving
+  # a private mapping for every weight can fail even when GPU memory is free.
+  length = os.fstat(stream.fileno()).st_size - stream.tell()
+  arena = Buffer(Device.DEFAULT, length, preallocate=True)
+  chunk_size = min(length, 8 << 20)
+  staging = bytearray(chunk_size)
+  view = memoryview(staging)
+  buffers = Buffer(HCQ_RUNTIME_DEV.device, chunk_size, opaque=view)
   unchanged()
-  for off in range(0, buffers.nbytes, chunk_size):
-    size = min(chunk_size, buffers.nbytes - off)
-    arena.view(size, off).ensure_allocated().copy_from(buffers.view(size, off).ensure_allocated())
-  Device.default.synchronize()
+  for off in range(0, length, chunk_size):
+    size = min(chunk_size, length - off)
+    if stream.readinto(view[:size]) != size:
+      raise ValueError('Truncated native OOB payload')
+    arena.view(size, off).ensure_allocated().copy_from(buffers.view(size, 0).ensure_allocated())
+    # A staging window must remain unchanged until its transfer completes.
+    Device.default.synchronize()
   unchanged()
   del buffers
   view.release()
-  mapping.close()
   unpickler = pickle.Unpickler(io.BytesIO(opcodes))
   cast("PersistentLoad", unpickler).persistent_load = lambda record: arena.view(*record)
   return unpickler.load()
