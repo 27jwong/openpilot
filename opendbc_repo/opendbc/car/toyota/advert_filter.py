@@ -12,6 +12,9 @@ STOCK_WORD = 0x1249
 
 
 def hardware_supported(candidate, fingerprint, car_fw):
+  from opendbc.car.toyota import camera_2aa_filter
+  if camera_2aa_filter.hardware_supported(candidate, fingerprint, car_fw):
+    return True
   from opendbc.car.toyota import legacy_advert_filter
   if candidate in legacy_advert_filter.PROFILES:
     return legacy_advert_filter.hardware_supported(candidate, fingerprint, car_fw)
@@ -38,7 +41,10 @@ def hardware_supported(candidate, fingerprint, car_fw):
   return True
 
 
-def apply(cp):
+def apply(cp, *, camera_twoaa=False):
+  if camera_twoaa:
+    from opendbc.car.toyota import camera_2aa_filter
+    return camera_2aa_filter.apply(cp)
   from opendbc.car.toyota import legacy_advert_filter
   if cp is not None and cp.carFingerprint in legacy_advert_filter.PROFILES:
     return legacy_advert_filter.apply(cp)
@@ -51,6 +57,9 @@ def apply(cp):
 
 
 def configured(cp):
+  from opendbc.car.toyota import camera_2aa_filter
+  if camera_2aa_filter.configured(cp):
+    return True
   from opendbc.car.toyota import legacy_advert_filter
   if cp is not None and cp.carFingerprint in legacy_advert_filter.PROFILES:
     return legacy_advert_filter.configured(cp)
@@ -85,6 +94,9 @@ def enabled(cp):
 
 
 def prepare_stock(cp):
+  from opendbc.car.toyota import camera_2aa_filter
+  if camera_2aa_filter.configured(cp):
+    return camera_2aa_filter.prepare_stock(cp)
   from opendbc.car.toyota import legacy_advert_filter
   if cp is not None and cp.carFingerprint in legacy_advert_filter.PROFILES:
     return legacy_advert_filter.prepare_stock(cp)

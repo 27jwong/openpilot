@@ -227,7 +227,7 @@ def control_inputs(controls, published, state, sd_events, native, now):
 def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H, bridge=None, input_clock=False, brake_stop_check_start=350,
              sdsu_words=(0x9049, 0x9249), alpha_long=False, disable_setting=None, physical_frames=None, angle=False,
              firmware_override=None, assert_hybrid_release=False, sdsu_mirror=False, on_sample=None, camera_messages=False, filter_advert=False,
-             brake_pause_mps=None, native_rx_expected=None, on_state=None):
+             brake_pause_mps=None, native_rx_expected=None, on_state=None, fingerprint_frames=None):
   SYNTHETIC_LAST.clear()
   NATIVE_LAST.clear()
   safety = libsafety_py.libsafety
@@ -249,7 +249,11 @@ def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H,
     exact, found = match_fw_to_car(fw, '', log=False)
     assert exact and found == {candidate}
     fp = gen_empty_fingerprint()
-    fp[0][0x2FF] = 4 if filter_advert else 8
+    if fingerprint_frames is None:
+      fp[0][0x2FF] = 4 if filter_advert else 8
+    else:
+      for address, data, bus in fingerprint_frames:
+        fp[bus][address] = len(data)
     if sdsu_mirror:
       fp[2][0x2FF] = 8
     if camera_messages:
@@ -319,7 +323,7 @@ def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H,
     try:
       duration = {
         'nominal': 251, 'physical': 601, 'faults': 801, 'bad_dlc': 801,
-        'off': 401, 'cold_low': 251, 'hybrid_stop': 251, 'main_lease': 501,
+        'off': 401, 'cold_low': 251, 'hybrid_stop': 251, 'main_lease': 501, 'identity_refusal': 501,
       }[scenario]
       for tick in range(1, duration):
         if deterministic:
@@ -465,6 +469,7 @@ def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H,
         )
         nominal = tick >= 220 and (
           scenario in ('nominal', 'cold_low', 'hybrid_stop')
+          or scenario == 'identity_refusal' and tick < 250
           or scenario == 'main_lease' and (tick < 250 or tick >= 480)
           or scenario == 'off'
           and tick < 250
@@ -480,6 +485,8 @@ def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H,
           assert cc.latActive, trace[-1]
           assert cc.longActive == (not stock and scenario != 'cold_low'), trace[-1]
           seen_active = True
+        if scenario == 'identity_refusal' and tick >= 270:
+          assert not cc.latActive and not cc.longActive and safety.aol_get_permission_mask() == 0, trace[-1]
         if scenario == 'physical':
           if 340 <= tick < 366:
             assert not cc.longActive, trace[-1]
@@ -503,7 +510,8 @@ def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H,
             assert not host.CP.openpilotLongitudinalControl and not cc.longActive
             assert host.CP.safetyConfigs[0].safetyParam == sdsu_words[1]
           else:
-            preference = host.CI.CC.advert_filter_input if filter_advert else host.CI.CC.rav4h_filter_input
+            preference = host.CI.CC.advert_filter_input if filter_advert or fingerprint_frames is not None and any(
+              address == 0x2AA for address, _, _ in fingerprint_frames) else host.CI.CC.rav4h_filter_input
             assert preference is not None and not preference.update(time.monotonic_ns())
             for f in outgoing.sendcan:
               if f.address == 0x343:
