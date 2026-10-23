@@ -74,6 +74,23 @@ class LifecycleShardTests(unittest.TestCase):
     self.assertFalse(helper.matches(prefix + 'test_nominal[10]', heavy + '::test_nominal[1]'))
     self.assertTrue(helper.matches(prefix + 'test_nominal[::complex/parameter]', heavy + '::test_nominal[::complex/parameter]'))
 
+  def test_current_ford_and_stock_location_cases_split_without_omission(self):
+    for module, size in (('openpilot/starpilot/tests/test_ford_configuration_parity.py', 112),
+                         ('openpilot/starpilot/aol/tests/test_stock_location_recovery.py', 135)):
+      with self.subTest(module=module):
+        prefix = module.removesuffix('.py').replace('/', '.') + '.'
+        full = [prefix + f'test_actual_lifecycle[{index}]' for index in range(size)]
+        full += [prefix + 'test_neighbor']
+        shards = helper.partition([module], full, 8)
+        selected = [[identity for identity in full if any(helper.matches(identity, target) for target in shard)]
+                    for shard in shards]
+        self.assertEqual(sorted(identity for shard in selected for identity in shard), sorted(full))
+        self.assertEqual(len({identity for shard in selected for identity in shard}), len(full))
+        self.assertTrue(all(len(shard) >= 1 for shard in selected))
+        selectors = [target for shard in shards for target in shard]
+        self.assertEqual(len(selectors), len(full))
+        self.assertEqual(shards, helper.partition([module], list(reversed(full)), 8))
+
   def test_heavy_function_rule_never_splits_classes_or_accepts_forged_targets(self):
     heavy = 'openpilot/starpilot/car/toyota/tests/test_legacy_advert_callers.py'
     prefix = heavy.removesuffix('.py').replace('/', '.') + '.'
