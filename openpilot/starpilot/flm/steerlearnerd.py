@@ -711,14 +711,16 @@ def run(
         current_native = bool(source_valid and collector is not None and collector.ready and
                               current_native_health(sm, CP, collector.ready[-1][0], now))
         new_restore = live_history.offer is not None and live_history.offer is not prior_restore_offer
-        # The transport/source status has its own20Hz cadence. Waiting for a
-        # new admitted offer can starve service health and prevent fresh raw
-        # collection from recovering after a withdrawal. A cached offer keeps
-        # its ORIGINAL observed time, sequence, witness and expiry; the writer
-        # omits it when expired or current permission is absent.
+        # A genuinely newer qualified witness must reach its consumer now,
+        # preserving its original short lease. Raw-pose delivery alone does not
+        # renew that witness and must not create a second publication stream.
+        # After a proposal expires, independently paced neutral status keeps
+        # source health recoverable without granting any current correction.
+        current_proposal = any(value is not None and value.observed_ns <= now <= value.expires_ns
+          for value in (live_offer, live_history.offer))
+        idle_status = source_valid and not current_proposal and now + 10_000_000 >= next_tracking_status_ns
         source_withdrawal = not source_valid and _source_config_known(source, now)
-        publish_tracking = (latest is not None or new_restore or
-                            new_raw_pose and (source_withdrawal or live_offer is not None or live_history.offer is not None))
+        publish_tracking = latest is not None or new_restore or idle_status or new_raw_pose and source_withdrawal
         if publish_tracking:
           message = tracking_message(source, now_ns=now, current_native=current_native,
             offer=live_offer, restore=live_history.offer)
@@ -726,6 +728,12 @@ def run(
               hasattr(live_actor, 'mark_publication')):
             live_actor.mark_publication(live_offer)
           pm.send('starpilotSteeringTracking', message)
+          if latest is not None or new_restore:
+            next_tracking_status_ns = now + 50_000_000
+          else:
+            if next_tracking_status_ns == 0:
+              next_tracking_status_ns = now
+            next_tracking_status_ns += max(1, (now - next_tracking_status_ns) // 50_000_000 + 1) * 50_000_000
         if live_persistence is not None:
           inputs = live_actor.persistence_inputs(now)
           if inputs is not None:
