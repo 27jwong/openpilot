@@ -25,7 +25,7 @@ class PersistentLoad(Protocol):
   persistent_load: Callable[[tuple[int, int]], "Buffer"]
 
 # Deliberately unpublishable until native source/guard and model evidence is sealed.
-POLICY_SHA256 = '0e7f10493ea8a3b35eade831debe3f16e2ae6a70018cc6190c6599f01a26ec7a'
+POLICY_SHA256 = 'a0754c58d0372f4973c39323165c8acec7b15a42e7700c776144ad1b78d7c31d'
 ROOT = Path(__file__).resolve().parents[4]
 BRIDGE = Path(__file__).parent
 _LIBRARIES = {
