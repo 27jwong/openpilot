@@ -327,7 +327,8 @@ def test_each_original_capability_skip_remains_unavailable_never_passed(capabili
   result = shards.validate_outcomes([node], skipped_reports(node, row['reason']), state)
   assert result == [{'id': node, 'status': 'skipped', 'disposition': 'capability-unavailable',
                      'reason': row['reason'], 'source_blob': row['source_blob'], 'guard': row['guard'],
-                     'observation': unavailable_observation(row['guard'])}]
+                     'observation': unavailable_observation(row['guard']),
+                     **({key: row[key] for key in ('guard_source_path', 'guard_source_blob')} if node in shards.MAP_CAPABILITY_NODES else {})}]
   assert shards.validate_outcomes([node], reports([node]), state) == []
 
 
@@ -365,7 +366,7 @@ def test_forged_capability_node_and_condition_denied(capability_guards):
     shards.validate_capabilities([node], state)
 
 
-def test_audited16_counts_are_skipped_not_passed_in_exact_aggregate(tmp_path, monkeypatch, capability_guards):
+def test_audited20_counts_are_skipped_not_passed_in_exact_aggregate(tmp_path, monkeypatch, capability_guards):
   monkeypatch.setattr(shards, 'source_snapshot', lambda root=shards.ROOT: source())
   monkeypatch.setattr(shards, 'same_build_inputs', lambda a, b: a == b)
   catalog = sorted(capability_guards) + ['required.py::test_required']
@@ -383,10 +384,10 @@ def test_audited16_counts_are_skipped_not_passed_in_exact_aggregate(tmp_path, mo
     junit_hash = shards.checksum((path / 'diagnostics/pytest.xml').read_bytes())
     rewrite(path, 'receipt.json', lambda d, caps=state, digest=junit_hash: d.update(capabilities=caps, junit_sha256=digest))
   result = shards.aggregate(tmp_path, 2)
-  assert result['cases_collected'] == 17
+  assert result['cases_collected'] == 21
   assert result['cases_passed'] == 1
-  assert result['cases_audited_skipped'] == 16
-  assert len(result['audited_skips']) == 16
+  assert result['cases_audited_skipped'] == 20
+  assert len(result['audited_skips']) == 20
   assert all(row['status'] == 'skipped' for row in result['audited_skips'])
 
 
@@ -431,7 +432,7 @@ def test_junit_false_success_and_unaudited_skips_denied(jobs, change):
     shards.aggregate(directory, 2)
 
 
-def test_real_pytest_all16_audited_guards_have_skipped_junit_not_passes(tmp_path):
+def test_real_pytest_all20_audited_guards_have_skipped_junit_not_passes(tmp_path):
   """Real pytest phases/JUnit with controlled guard witnesses; no graphics or private APK is tested."""
   import shutil
   package = tmp_path / 'tools/ci'
@@ -469,6 +470,9 @@ def test_real_pytest_all16_audited_guards_have_skipped_junit_not_passes(tmp_path
     source_path.write_text('\n'.join(lines) + '\n')
     for node in nodes:
       config['capability_skips'][node]['source_blob'] = shards.blob_id(source_path)
+  for node in shards.MAP_CAPABILITY_NODES:
+    row = config['capability_skips'][node]
+    row['guard_source_blob'] = shards.blob_id(tmp_path / row['guard_source_path'])
   shards.write_json(package / 'custom_pytest_workloads.json', config)
   (tmp_path / 'guard_witness.py').write_text('''def pytest_configure(config):
   from tools.ci import custom_pytest_shards as s
@@ -488,7 +492,7 @@ def test_real_pytest_all16_audited_guards_have_skipped_junit_not_passes(tmp_path
   outcome = json.loads((output / 'outcomes.json').read_text())
   assert child.returncode == 0, child.stdout.decode() + child.stderr.decode()
   assert outcome['status'] == 'completed'
-  assert len(outcome['catalog']) == len(outcome['audited_skips']) == 16
+  assert len(outcome['catalog']) == len(outcome['audited_skips']) == 20
   assert all(row['status'] == 'skipped' for row in outcome['audited_skips'])
   shards.validate_junit(output / 'diagnostics/pytest.xml', outcome['selected'], outcome['audited_skips'])
   progress = json.loads((output / 'diagnostics/pytest-collection.json').read_text())
@@ -552,3 +556,34 @@ print(json.dumps({'parent': parent, 'worker': worker}))
   aggregate_line = next(line for line in workflow.splitlines() if 'tools.ci.custom_pytest_shards aggregate ' in line)
   assert aggregate_line.split('run: ', 1)[1].startswith('python3 -m ')
   assert 'passed or audited capability-unavailable' in workflow
+
+
+@pytest.mark.parametrize('node', sorted(shards.MAP_CAPABILITY_NODES))
+def test_map_skip_requires_both_consumer_and_shared_fixture_blobs(capability_guards, node):
+  row = capability_guards[node]
+  state = shards.capability_state([node])
+  shards.validate_capabilities([node], state)
+  state[node]['guard_source_blob'] = '0' * 40
+  with pytest.raises(ValueError, match='Shared GPU'):
+    shards.validate_capabilities([node], state)
+  with pytest.raises(ValueError):
+    shards.validate_outcomes([node], skipped_reports(node, row['reason']), state)
+
+
+def test_reviewed_advert_filter_functions_preserve_272_independent_nodes():
+  module = 'openpilot/starpilot/car/toyota/tests/test_advert_filter_callers.py'
+  counts = {'test_each_advertised_filter_actual_callers': 64,
+            'test_physical_saved_off_and_cold_lateral': 48,
+            'test_ordinary_cruise_without_aol': 16,
+            'test_alpha_does_not_remove_default_long': 16,
+            'test_active_hybrid_resume': 8,
+            'test_required_sources_withdraw_and_recover_through_actual_can': 120}
+  catalog = [f'{module}::{name}[{index}]' for name, count in counts.items() for index in range(count)]
+  assignment, loads = shards.partition(catalog, 24)
+  assert len(catalog) == 272
+  assert sorted(node for group in assignment for node in group) == sorted(catalog)
+  assert sorted(len(group) for group in assignment if group) == [4, 8, 16, 16, 48, 60, 60, 60]
+  assert max(loads) <= 240
+  reversed_assignment, reversed_loads = shards.partition(list(reversed(catalog)), 24)
+  assert [set(group) for group in reversed_assignment] == [set(group) for group in assignment]
+  assert reversed_loads == loads

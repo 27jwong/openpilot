@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 HEAVY_MODULES = {
   'openpilot/starpilot/car/toyota/tests/test_legacy_advert_callers.py',
   'openpilot/starpilot/car/toyota/tests/test_camera_2aa_callers.py',
+  'openpilot/starpilot/car/toyota/tests/test_advert_filter_callers.py',
 }
 
 CAPABILITY_NODES = {
@@ -36,6 +37,16 @@ CAPABILITY_NODES = {
   'openpilot/starpilot/system/android_auto/tests/test_gpu_nv12.py::test_fused_projection_conversion_matches_rgba_composition[True-32-18-0-0]',
   'openpilot/starpilot/system/android_auto/tests/test_gpu_nv12.py::test_fused_projection_conversion_matches_rgba_composition[True-32-18-4-2]',
   'openpilot/starpilot/system/android_auto/tests/test_gpu_nv12.py::test_fused_projection_conversion_matches_rgba_composition[True-32-20-3-5]',
+  'openpilot/starpilot/ui/tests/test_onroad_map.py::test_overlay_draws_heading_up_roads_route_and_soft_edges',
+  'openpilot/starpilot/ui/tests/test_onroad_map.py::test_overlay_opacity_fades_map_background',
+  'openpilot/starpilot/ui/tests/test_onroad_map.py::test_overlay_without_gps_waits_without_drawing_roads',
+  'openpilot/starpilot/ui/tests/test_onroad_map.py::test_route_stays_bright_at_minimum_map_opacity',
+}
+MAP_CAPABILITY_NODES = {
+  'openpilot/starpilot/ui/tests/test_onroad_map.py::test_overlay_draws_heading_up_roads_route_and_soft_edges',
+  'openpilot/starpilot/ui/tests/test_onroad_map.py::test_overlay_opacity_fades_map_background',
+  'openpilot/starpilot/ui/tests/test_onroad_map.py::test_overlay_without_gps_waits_without_drawing_roads',
+  'openpilot/starpilot/ui/tests/test_onroad_map.py::test_route_stays_bright_at_minimum_map_opacity',
 }
 
 
@@ -56,6 +67,11 @@ def policy():
   if (value['version'] != 1 or set(value['independent_functions']) != HEAVY_MODULES or
       set(value['capability_skips']) != CAPABILITY_NODES):
     raise ValueError('Unreviewed custom pytest grouping policy')
+  for node in MAP_CAPABILITY_NODES:
+    row = value['capability_skips'][node]
+    if (row.get('guard_source_path') != 'openpilot/starpilot/system/android_auto/tests/test_gpu_nv12.py' or
+        len(row.get('guard_source_blob', '')) != 40 or row['guard'] != 'gpu_env'):
+      raise ValueError('Map capability requires exact shared GPU fixture definition')
   if type(value['independent_max_cases']) is not int or not 1 <= value['independent_max_cases'] <= 60:
     raise ValueError('Invalid independent parameter group bound')
   numbers = [value['unknown_seconds_per_case'], value['independent_max_seconds']]
@@ -161,6 +177,8 @@ def capability_state(selected, root=ROOT):
       row = inventory[node]
       state[node] = {'source_blob': blob_id(Path(root) / node.split('::')[0]),
                      'guard': row['guard'], 'observation': guard_observation(row['guard'], root)}
+      if node in MAP_CAPABILITY_NODES:
+        state[node]['guard_source_blob'] = blob_id(Path(root) / row['guard_source_path'])
   return state
 
 
@@ -170,10 +188,13 @@ def validate_capabilities(selected, state, root=ROOT):
     raise ValueError('Missing or forged audited capability nodes')
   for node, record in state.items():
     row = inventory[node]
-    if set(record) != {'source_blob', 'guard', 'observation'} or record['guard'] != row['guard']:
+    fields = {'source_blob', 'guard', 'observation'} | ({'guard_source_blob'} if node in MAP_CAPABILITY_NODES else set())
+    if set(record) != fields or record['guard'] != row['guard']:
       raise ValueError('Forged audited capability guard')
     if record['source_blob'] != blob_id(Path(root) / node.split('::')[0]):
       raise ValueError('Audited capability source differs from checkout')
+    if node in MAP_CAPABILITY_NODES and record['guard_source_blob'] != blob_id(Path(root) / row['guard_source_path']):
+      raise ValueError('Shared GPU capability guard source differs from checkout')
     guard_unavailable(record['guard'], record['observation'])
 
 
@@ -191,6 +212,7 @@ def validate_outcomes(selected, reports, capabilities=None):
     row = inventory.get(node)
     record = capabilities.get(node)
     if (row is None or record is None or record['source_blob'] != row['source_blob'] or
+        (node in MAP_CAPABILITY_NODES and record.get('guard_source_blob') != row['guard_source_blob']) or
         record['guard'] != row['guard'] or not guard_unavailable(record['guard'], record['observation'])):
       raise ValueError('Failed, skipped or erroneous nonexempt custom pytest node')
     if Counter(report['phase'] for report in phases) != Counter({'setup': 1, 'teardown': 1}):
@@ -199,9 +221,10 @@ def validate_outcomes(selected, reports, capabilities=None):
     teardown = next(report for report in phases if report['phase'] == 'teardown')
     if setup['status'] != 'skipped' or setup.get('reason') != row['reason'] or teardown['status'] != 'passed':
       raise ValueError('Audited capability skip has wrong reason or outcome')
+    shared_guard = {key: row[key] for key in ('guard_source_path', 'guard_source_blob')} if node in MAP_CAPABILITY_NODES else {}
     skipped.append({'id': node, 'status': 'skipped', 'disposition': 'capability-unavailable',
                     'reason': row['reason'], 'source_blob': row['source_blob'], 'guard': row['guard'],
-                    'observation': record['observation']})
+                    'observation': record['observation'], **shared_guard})
   return skipped
 
 

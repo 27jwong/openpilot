@@ -95,9 +95,45 @@
       "guard": "gpu_env",
       "reason": "Skipped: STARPILOT_AUTO_GL_TEST=1 enables tests requiring a real graphics context",
       "source_blob": "d9d6f940a5c752a14e861c954c765f450a2953d6"
+    },
+    "openpilot/starpilot/ui/tests/test_onroad_map.py::test_overlay_draws_heading_up_roads_route_and_soft_edges": {
+      "basis": "Existing map fixture alias gl=test_gpu_nv12.gpu; both consumer and shared guard definition pinned; unavailable remains SKIPPED, never passed",
+      "guard": "gpu_env",
+      "guard_source_blob": "d9d6f940a5c752a14e861c954c765f450a2953d6",
+      "guard_source_path": "openpilot/starpilot/system/android_auto/tests/test_gpu_nv12.py",
+      "reason": "Skipped: STARPILOT_AUTO_GL_TEST=1 enables tests requiring a real graphics context",
+      "source_blob": "e0098c87f63d8f56ebdfa84faa6e49d7811e6e51"
+    },
+    "openpilot/starpilot/ui/tests/test_onroad_map.py::test_overlay_opacity_fades_map_background": {
+      "basis": "Existing map fixture alias gl=test_gpu_nv12.gpu; both consumer and shared guard definition pinned; unavailable remains SKIPPED, never passed",
+      "guard": "gpu_env",
+      "guard_source_blob": "d9d6f940a5c752a14e861c954c765f450a2953d6",
+      "guard_source_path": "openpilot/starpilot/system/android_auto/tests/test_gpu_nv12.py",
+      "reason": "Skipped: STARPILOT_AUTO_GL_TEST=1 enables tests requiring a real graphics context",
+      "source_blob": "e0098c87f63d8f56ebdfa84faa6e49d7811e6e51"
+    },
+    "openpilot/starpilot/ui/tests/test_onroad_map.py::test_overlay_without_gps_waits_without_drawing_roads": {
+      "basis": "Existing map fixture alias gl=test_gpu_nv12.gpu; both consumer and shared guard definition pinned; unavailable remains SKIPPED, never passed",
+      "guard": "gpu_env",
+      "guard_source_blob": "d9d6f940a5c752a14e861c954c765f450a2953d6",
+      "guard_source_path": "openpilot/starpilot/system/android_auto/tests/test_gpu_nv12.py",
+      "reason": "Skipped: STARPILOT_AUTO_GL_TEST=1 enables tests requiring a real graphics context",
+      "source_blob": "e0098c87f63d8f56ebdfa84faa6e49d7811e6e51"
+    },
+    "openpilot/starpilot/ui/tests/test_onroad_map.py::test_route_stays_bright_at_minimum_map_opacity": {
+      "basis": "Existing map fixture alias gl=test_gpu_nv12.gpu; both consumer and shared guard definition pinned; unavailable remains SKIPPED, never passed",
+      "guard": "gpu_env",
+      "guard_source_blob": "d9d6f940a5c752a14e861c954c765f450a2953d6",
+      "guard_source_path": "openpilot/starpilot/system/android_auto/tests/test_gpu_nv12.py",
+      "reason": "Skipped: STARPILOT_AUTO_GL_TEST=1 enables tests requiring a real graphics context",
+      "source_blob": "e0098c87f63d8f56ebdfa84faa6e49d7811e6e51"
     }
   },
   "independent_functions": {
+    "openpilot/starpilot/car/toyota/tests/test_advert_filter_callers.py": {
+      "basis": "7d2 hosted shard 2: 272 cases took 800.08457733 seconds; Toyota owner verified fresh per-case Params/native hooks/bridge/peer state and teardown.",
+      "seconds_per_case": 4.0
+    },
     "openpilot/starpilot/car/toyota/tests/test_camera_2aa_callers.py": {
       "basis": "Owner estimate164cases274s; only actual collected IDs when present",
       "seconds_per_case": 2.0
