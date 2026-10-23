@@ -60,6 +60,8 @@ class Controls:
     cloudlog.info("controlsd is waiting for CarParams")
     self.CP = messaging.log_from_bytes(self.params.get("CarParams", block=True), car.CarParams)
     cloudlog.info("controlsd got CarParams")
+    from openpilot.starpilot.car.subaru.smoothing import read_frozen
+    self.subaru_smoothing = read_frozen(self.CP, self.params)
 
     self.CI = interfaces[self.CP.carFingerprint](self.CP)
     self.hyundai_lateral_fault = LateralFaultLatch(self.CP.carFingerprint)
@@ -356,7 +358,8 @@ class Controls:
     if self.last_lane_centering_result is not None and self.last_lane_centering_result.correction != 0.0:
       baseline_curvature, _ = clip_curvature(CS.vEgo, previous_curvature, limit_rate(CS.vEgo, previous_curvature, lane_base_curvature, factor), lp.roll)
       self.lane_centering_applied = self.desired_curvature - baseline_curvature
-    lat_delay = self.sm["lateralDelay"].lateralDelay + LAT_SMOOTH_SECONDS
+    from openpilot.starpilot.car.subaru.smoothing import seconds as subaru_smooth_seconds, control_maximum
+    lat_delay = self.sm["lateralDelay"].lateralDelay + LAT_SMOOTH_SECONDS + subaru_smooth_seconds(CS.vEgo, control_maximum(self))
 
     actuators.curvature = self.desired_curvature
     automatic = getattr(self, 'global_learning', None)

@@ -24,6 +24,7 @@ from tools.ci import vehicle_pytest
 # Representative production callers plus their source/native refusal cases.
 # The emitted selected_test_ids record exact parametrized configurations.
 AOL_LIFECYCLE_TARGETS = (
+  'opendbc_repo/opendbc/safety/tests/test_pe_stopped_callers.py',
   'opendbc_repo/opendbc/safety/tests/test_pe_combined_callers.py',
   'opendbc_repo/opendbc/safety/tests/test_pe_set_release_callers.py',
   'openpilot/starpilot/aol/tests/test_pe_combined_profile_contract.py',
@@ -40,6 +41,7 @@ AOL_LIFECYCLE_TARGETS = (
   "openpilot/starpilot/aol/tests/test_gm_steering_receive_order.py",
   "openpilot/starpilot/aol/tests/test_gm_main_response.py",
   "openpilot/starpilot/aol/tests/test_gm_held_native.py",
+  "openpilot/starpilot/aol/tests/test_gm_ordinary_warning.py",
   "openpilot/starpilot/aol/tests/test_gm_startup_main.py",
   "openpilot/starpilot/aol/tests/test_gm_pedal_order.py",
   "openpilot/starpilot/aol/tests/test_gm_cancel_remap.py",
@@ -74,6 +76,7 @@ AOL_LIFECYCLE_TARGETS = (
   "openpilot/starpilot/aol/tests/test_volkswagen.py",
   "openpilot/starpilot/aol/tests/test_volkswagen_saved_intent.py",
   "openpilot/starpilot/aol/tests/test_mqb_actual_callers.py",
+  "openpilot/starpilot/aol/tests/test_mqb_direct_callers.py",
   "openpilot/starpilot/aol/tests/test_mqb_topology_callers.py",
   "openpilot/starpilot/aol/tests/test_mqb_topology_contract.py",
   "opendbc_repo/opendbc/car/volkswagen/tests/test_mqb_topology_discovery.py",
@@ -81,6 +84,7 @@ AOL_LIFECYCLE_TARGETS = (
   "opendbc_repo/opendbc/safety/tests/test_volkswagen_stock_aol.py",
   "opendbc_repo/opendbc/safety/tests/test_volkswagen_engagement_arm.py",
   "opendbc_repo/opendbc/safety/tests/test_volkswagen_long_aol.py",
+  "opendbc_repo/opendbc/safety/tests/test_volkswagen_direct_aol.py",
   "openpilot/starpilot/aol/tests/test_volkswagen_main_boot.py",
   "openpilot/starpilot/car/subaru/tests/test_aol.py",
   "openpilot/starpilot/car/subaru/tests/test_reverse_join.py",
@@ -99,6 +103,15 @@ AOL_LIFECYCLE_TARGETS = (
   "openpilot/starpilot/car/subaru/tests/test_avh_callers.py",
   "opendbc_repo/opendbc/safety/tests/test_subaru_avh_startup.py",
   "openpilot/starpilot/car/subaru/tests/test_angle_tune.py",
+  "openpilot/starpilot/car/subaru/tests/test_forester_angle_callers.py",
+  "opendbc_repo/opendbc/safety/tests/test_subaru_forester_angle.py",
+  "openpilot/starpilot/car/subaru/tests/test_outback_angle_callers.py",
+  "openpilot/starpilot/car/subaru/tests/test_outback_startup_callers.py",
+  "openpilot/starpilot/car/subaru/tests/test_smoothing.py",
+  "openpilot/starpilot/car/subaru/tests/test_smoothing_factory.py",
+  "openpilot/starpilot/car/subaru/tests/test_smoothing_settings.py",
+  "openpilot/starpilot/car/subaru/tests/test_smoothing_model_join.py",
+  "opendbc_repo/opendbc/safety/tests/test_subaru_outback_angle.py",
 )
 
 AOL_LIFECYCLE_SCOPE = {
@@ -106,7 +119,8 @@ AOL_LIFECYCLE_SCOPE = {
              "Reverse/Drive, temporary ToI recovery and physical UP_1 cancel; GEN2/unknown profiles refused"),
   "mazda": ("CX5 2022/CX9 2021 GEN1 stock AE32: engagement/brake/Cancel pause/toggle/Reverse/standstill/EPS recovery; " +
             "native permanent-fault rearm vetoes"),
-  "subaru": "nine stock global identities; five actual factory-to-native lifecycles, brake, Reverse/Drive, EPS recovery, MAIN-off and refusal guards",
+  "subaru": ("eleven stock global identities; automatic/manual and AOL on/off factory-to-native lifecycles, " +
+               "startup requests, frozen smoothing, brake, Reverse/Drive, EPS recovery, MAIN-off and refusal guards"),
   "volkswagen": "stock MQB auto/manual, gateway/camera factory acquisition, MAIN/engagement/brake/Reverse joins, permanent EPS native rearm",
   "gm": "Volt/Bolt factory profiles, MAIN boot, stock/Alpha, BE/C9, pedal/regen, Cancel mappings, RES, lag withdrawal/recovery",
   "honda": "stock Civic source/native vetoes, native-first Reverse joins, and EPS-recovery/Reverse/Drive native TX lifecycle",
@@ -300,6 +314,7 @@ RELEASE_TARGETS = (
   "opendbc_repo/opendbc/safety/tests/test_volkswagen_stock_aol.py",
   "opendbc_repo/opendbc/safety/tests/test_volkswagen_engagement_arm.py",
   "opendbc_repo/opendbc/safety/tests/test_volkswagen_long_aol.py",
+  "opendbc_repo/opendbc/safety/tests/test_volkswagen_direct_aol.py",
   "openpilot/starpilot/aol/tests/test_volkswagen_main_boot.py",
   "opendbc_repo/opendbc/safety/tests/test_mazda.py::TestMazdaSafety",
   "opendbc_repo/opendbc/safety/tests/test_toyota.py::TestToyotaStockLongitudinalTorque",
@@ -374,6 +389,9 @@ RELEASE_TARGETS = (
   "opendbc_repo/opendbc/safety/tests/test_subaru_sng.py",
   "opendbc_repo/opendbc/safety/tests/test_subaru_stop_start.py",
   "opendbc_repo/opendbc/safety/tests/test_subaru_avh_startup.py",
+  "opendbc_repo/opendbc/safety/tests/test_subaru_forester_angle.py",
+  "opendbc_repo/opendbc/safety/tests/test_subaru_receive_guards.py",
+  "opendbc_repo/opendbc/safety/tests/test_subaru_outback_angle.py",
 )
 
 # Vehicle tests import both the vendored car code and these host control owners.

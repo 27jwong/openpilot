@@ -1879,9 +1879,14 @@ class SelfdriveD:
       ordinary_long_withdrawal = bool(native is not None and not native.longitudinalAllowed and
         self.ordinary_native_long_withdrawal(
           CS, native, previous, requested, intent, source_current=source_current, now_ns=now_ns))
+      from openpilot.starpilot.car.hyundai.aol import expected_stopped_lateral_denial
+      stopped_lateral_withdrawal = bool(source_current and requested.desired_lateral and
+        expected_stopped_lateral_denial(self.CP, CS, native, sm=self.sm,
+          axis_session_id=self.aol_session_id, now_ns=now_ns))
       lost_permission = bool(lost_honda_lateral_grant or native is not None and not driver_override and (
         previous.lateral_active and requested.desired_lateral and native.requestedLateral and
-        not native.lateralAllowed and not CS.steeringPressed and not self.events.contains(ET.OVERRIDE_LATERAL) or
+        not native.lateralAllowed and not stopped_lateral_withdrawal and
+        not CS.steeringPressed and not self.events.contains(ET.OVERRIDE_LATERAL) or
         previous.longitudinal_active and requested.desired_longitudinal and native.requestedLongitudinal and
         not native.longitudinalAllowed and not ordinary_long_withdrawal and
         not self.events.contains(ET.OVERRIDE_LONGITUDINAL)))
@@ -1972,9 +1977,8 @@ class SelfdriveD:
       cold_park_wait = self.cold_gm_park_readiness(CS, intent, now_ns)
       self.aol_fault_reason = ('none' if cold_park_wait else
                                'availabilityPause' if ordinary_availability or cold_main_wait else
-                               'critical' if self.aol_authority_lost or self.events.contains(ET.IMMEDIATE_DISABLE) or
-                               aol_hard_soft_fault and not availability else
-                               'availabilityPause' if availability else 'transportPause' if pause else 'none')
+                               'critical' if self.aol_authority_lost or self.events.contains(ET.IMMEDIATE_DISABLE) else
+                               'availabilityPause' if availability or aol_hard_soft_fault else 'transportPause' if pause else 'none')
       if self.aol_authority_lost or pause:
         self.events.add(EventName.controlsMismatch)
         lost_active_aol |= pause
@@ -2045,7 +2049,7 @@ class SelfdriveD:
       self.aol_lag_takeover_alert = True
     if (self.aol_replay and source_current and not was_enabled and not self.enabled and
         previous.lateral_active and previous.native_acknowledged and not self.aol_axis_decision.lateral_active and
-        self.aol_fault_reason == 'critical' and not self.aol_authority_lost and
+        self.aol_fault_reason in ('critical', 'availabilityPause') and not self.aol_authority_lost and
         intent is not None and intent.allowedLatch and self.events.contains(ET.SOFT_DISABLE) and
         not self.events.contains(ET.IMMEDIATE_DISABLE)):
       self.aol_soft_takeover_alert = True

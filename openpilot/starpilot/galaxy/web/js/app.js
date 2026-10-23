@@ -19,6 +19,7 @@ const LaboratoryPage = page(() => import("./model-laboratory.js").then((module) 
 import { SettingsPage } from "./settings.js"
 import { SettingsRecoveryPage } from "./settings-recovery.js"
 import { ToggleSearch } from "./toggle-search.js"
+import { SaveFeedback } from "./save-feedback.js"
 const PlotsPage = page(() => import("./plots.js").then((module) => module.PlotsPage))
 const FlmPage = page(() => import("./flm.js").then((module) => module.FlmPage))
 import { LocalAuth } from "./auth-client.js"
@@ -85,7 +86,7 @@ const auth = new LocalAuth({ publish: (update) => {
 
 
 createApp({
-  components: { BottomNav, Home, LocalAccess, Tools, Logs, SoftwarePage, NavigationPage, ModelsPage, LaboratoryPage, SettingsPage, SettingsRecoveryPage, ToggleSearch, PlotsPage, FlmPage, LocalRecordingsPage, CamerasPage, SentryEventsPage, VasmPage, PipPage, DrivingPage, DevicePreferencesPage, BluetoothPage, AndroidAutoPage, LongitudinalCurvesPage, VehicleControlsPage, OnroadLayoutPage, GalaxyPage, DevicePicker, DeviceState, MenuTile },
+  components: { BottomNav, Home, LocalAccess, Tools, Logs, SoftwarePage, NavigationPage, ModelsPage, LaboratoryPage, SettingsPage, SettingsRecoveryPage, ToggleSearch, SaveFeedback, PlotsPage, FlmPage, LocalRecordingsPage, CamerasPage, SentryEventsPage, VasmPage, PipPage, DrivingPage, DevicePreferencesPage, BluetoothPage, AndroidAutoPage, LongitudinalCurvesPage, VehicleControlsPage, OnroadLayoutPage, GalaxyPage, DevicePicker, DeviceState, MenuTile },
   data: () => ({ state, authState, authForm, route, NAV, routeDirection: 1, updateRestart, deviceRestart, nextLayoutLeavePresentation: "inline" }),
   computed: {
     visibleTools() { return state.tools.filter(tool => tool.visibility !== "authenticated" ||
@@ -127,7 +128,7 @@ createApp({
       this.nextLayoutLeavePresentation = "modal"
       this.go(path)
     },
-    openSearchHit(hit) { navigate("/settings", () => { state.drawerOpen = false; state.searchPage = hit.page }) },
+    openSearchHit(hit) { navigate(hit.path || "/settings", () => { state.drawerOpen = false; state.searchPage = hit.page || "" }) },
     returnFromSearch() { state.searchPage = "" },
     returnToDriving() { this.go("/driving") },
     returnToDevice() { this.go("/device-preferences") },
@@ -186,7 +187,8 @@ createApp({
         <button type="button" class="gx-icon-btn gx-appbar__back gx-back-btn" aria-label="Back" @click="routeBack"><i class="bi bi-arrow-left"></i></button>
         <div class="gx-appbar__pill">
           <button type="button" class="gx-appbar__home" aria-label="Galaxy Home" @click="go('/')"><span class="gx-brand" aria-hidden="true"></span><span class="gx-appbar__title">Galaxy</span></button>
-          <ToggleSearch :enabled="state.monitorMode === 'local' && authState.status === 'authenticated'" :unauthorized="sessionExpired" :open-page="openSearchHit" />
+          <ToggleSearch :enabled="!state.loading" :settings-enabled="state.monitorMode === 'local' && authState.status === 'authenticated'"
+            :tools="visibleTools" :unauthorized="sessionExpired" :open-page="openSearchHit" />
           <div class="gx-appbar__right">
             <DeviceState v-if="state.monitorMode === 'local' && authState.status === 'authenticated'" :unauthorized="sessionExpired" :connection="connectionLabel" />
             <span v-else class="gx-status-pill"><span class="gx-status-dot offline"></span>{{ connectionLabel }}</span>
@@ -231,7 +233,7 @@ createApp({
           <GxState title="Local connection required">Routes are unavailable through the Galaxy tunnel. Open Galaxy locally to access Routes.</GxState>
           <LocalAccess :mode="state.monitorMode" :on-unauthorized="sessionExpired" />
         </div>
-        <CamerasPage v-else-if="route.path === '/cameras'" :mode="state.monitorMode" :go="go" :unauthorized="sessionExpired" />
+        <CamerasPage v-else-if="route.path === '/cameras'" :mode="state.monitorMode" :go="go" :unauthorized="sessionExpired" :tools="currentTool?.children || []" />
         <SentryEventsPage v-else-if="['/cameras/events', '/cameras/sentry-settings'].includes(route.path)" :mode="state.monitorMode" :unauthorized="sessionExpired" :go="go" />
         <PipPage v-else-if="route.path === '/cameras/pip'" :mode="state.monitorMode" :unauthorized="sessionExpired" :go="go" />
         <VasmPage v-else-if="route.path === '/cameras/vasm'" :mode="state.monitorMode" :unauthorized="sessionExpired" :go="go" />
@@ -240,10 +242,10 @@ createApp({
         <GalaxyPage v-else-if="route.path === '/galaxy'" :mode="state.monitorMode" :unauthorized="sessionExpired" />
         <OnroadLayoutPage ref="activeLayout" v-else-if="['/theme_maker', '/theme_maker/android_auto', '/appearance'].includes(route.path)" :key="route.path" :projection="route.path === '/theme_maker/android_auto'" :initial-panel="route.path === '/appearance' ? 'display' : 'widgets'" :mode="state.monitorMode" :unauthorized="sessionExpired" @target="go($event === 'projection' ? '/theme_maker/android_auto' : '/theme_maker')" @close="routeBack" />
         <SettingsRecoveryPage v-else-if="route.path === '/settings/recovery'" :mode="state.monitorMode" :unauthorized="sessionExpired" />
-        <Logs v-else-if="route.path === '/logs' || route.path.startsWith('/logs/') || ['/troubleshoot', '/manage_tmux'].includes(route.path)" :path="route.path === '/troubleshoot' ? '/logs/troubleshoot' : route.path === '/manage_tmux' ? '/logs/tmux' : route.path" :mode="state.monitorMode" :unauthorized="sessionExpired" />
+        <Logs v-else-if="route.path === '/logs' || route.path.startsWith('/logs/') || ['/troubleshoot', '/manage_tmux'].includes(route.path)" :path="route.path === '/troubleshoot' ? '/logs/troubleshoot' : route.path === '/manage_tmux' ? '/logs/tmux' : route.path" :mode="state.monitorMode" :unauthorized="sessionExpired" :tools="currentTool?.children || []" />
         <SoftwarePage v-else-if="route.path === '/system'" :mode="state.monitorMode" :unauthorized="sessionExpired" :restarting="baseline => updateRestart.start({ ...baseline, instance: deviceRestart.instance })"
           :preparing="baseline => updateRestart.prepare({ ...baseline, instance: deviceRestart.instance })" :cancel-preparation="() => updateRestart.cancelPreparation()" />
-        <NavigationPage v-else-if="['/navigation', '/navigation/maps', '/navigation/setup'].includes(route.path)" :mode="state.monitorMode" :unauthorized="sessionExpired" :go="go"
+        <NavigationPage v-else-if="['/navigation', '/navigation/maps', '/navigation/setup'].includes(route.path)" :mode="state.monitorMode" :unauthorized="sessionExpired" :go="go" :tabs="currentTool?.children || []"
           :initial-tab="route.path === '/navigation/maps' ? 'maps' : route.path === '/navigation/setup' ? 'setup' : 'route'" />
         <ModelsPage v-else-if="route.path === '/manage_models'" :mode="state.monitorMode" :unauthorized="sessionExpired" />
         <LaboratoryPage v-else-if="route.path === '/model_laboratory'" :mode="state.monitorMode" :unauthorized="sessionExpired" />
@@ -264,6 +266,7 @@ createApp({
         <GxState v-else :title="pageName">This capability is unavailable in this build. No operation was attempted.</GxState>
       </div></Transition></div></main>
       <BottomNav :path="route.path" @navigate="go" />
+      <SaveFeedback />
     </div>
   `,
 }).component("GxState", GxState).component("GxNotice", GxNotice).mount("#galaxy-app")

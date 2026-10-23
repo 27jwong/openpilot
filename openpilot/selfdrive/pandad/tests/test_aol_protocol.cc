@@ -94,16 +94,16 @@ int main() {
     subaru.safety_mode = 11U;
     subaru.safety_param = static_cast<uint16_t>(word);
     subaru.capability_flags = 1U;
-    const bool expected = (word == 0U) || (word == 1U) || (word == 17U) ||
-                          (word == 145U) || (word == 1169U) || (word == 1425U) || (word == 401U) || (word == 177U) || (word == 8U) || (word == 520U) || (word == 512U) || (word == 2225U);
+    const bool expected = (word == 16U) || (word == 0U) || (word == 1U) || (word == 17U) ||
+                          (word == 209U) || (word == 465U) || (word == 145U) || (word == 1169U) || (word == 1425U) || (word == 401U) || (word == 177U) || (word == 8U) || (word == 520U) || (word == 512U) || (word == 2225U);
     assert(aol_capable(subaru, 11U, VEHICLE_REGISTRY) == expected);
     subaru.capability_flags = 0U;
     assert(!aol_capable(subaru, 11U, VEHICLE_REGISTRY));
   }
 
   for (uint32_t word = 0U; word <= 65535U; ++word) {
-    const bool stock = (word == 8U) || (word == 24U);
-    const bool longitudinal = (word == 9U) || (word == 25U);
+    const bool stock = (word == 8U) || (word == 24U) || (word == 40U);
+    const bool longitudinal = (word == 9U) || (word == 25U) || (word == 41U);
     const bool expected = stock || longitudinal;
     auto vw = status();
     vw.safety_mode = 15U;
