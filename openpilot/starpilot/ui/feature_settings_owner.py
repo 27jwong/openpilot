@@ -134,6 +134,7 @@ class FeatureSettingsOwner:
                galaxy: Callable[[], bool] = lambda: False,
                maps_available: Callable[[], bool] | None = None):
     self.params = params
+    self._galaxy = galaxy
     self._snapshot_reads: ContextVar[dict[tuple[str, int], tuple[bytes | None, bool]] | None] = ContextVar(
       "feature_snapshot_reads", default=None)
     self.authority = authority
@@ -188,6 +189,56 @@ class FeatureSettingsOwner:
       if configured is not None:
         return configured
     return aol_policy_for(cp)
+
+  def _alpha_long_capability(self):
+    cp = self.vehicle_params()
+    release, readable = read_saved(self.params, 'IsReleaseBranch', 8)
+    try:
+      from opendbc.car.values import PLATFORMS
+      from openpilot.starpilot.car.hyundai.aol import ioniq6_settings_capable
+      platform = PLATFORMS.get(str(cp.carFingerprint))
+      if (not self._galaxy() or platform is None or platform.__class__.__module__.split('.')[-2] != str(cp.brand) or
+          not readable or release not in (None, b'0', b'1') or cp.notCar or cp.passive or cp.dashcamOnly or
+          not (cp.alphaLongitudinalAvailable or ioniq6_settings_capable(cp)) or
+          release == b'1'):
+        return None
+      return (str(cp.carFingerprint), str(cp.brand), int(cp.flags), int(cp.alternativeExperience),
+              bool(cp.alphaLongitudinalAvailable), bool(cp.openpilotLongitudinalControl), bool(cp.pcmCruise),
+              tuple((int(item.safetyModel.raw), int(item.safetyParam)) for item in cp.safetyConfigs), release)
+    except (AttributeError, TypeError, ValueError, OverflowError):
+      return None
+
+  def _alpha_long_rows(self, parked):
+    capability = self._alpha_long_capability()
+    if capability is None:
+      return ()
+    raw, readable = read_saved(self.params, 'AlphaLongitudinalEnabled', 8)
+    valid = readable and raw in (None, b'0', b'1')
+    return (FeatureRow('AlphaLongitudinalEnabled', 'Alpha Longitudinal',
+      ('On' if raw == b'1' else 'Off') if valid else 'Invalid saved choice', raw,
+      ('Off', 'On') if valid else (), default_value='Off', capability=capability, vehicle_fingerprint=self.vehicle_fingerprint(),
+      available=valid and parked and self.authority('parked_preferences') and self.authority('preferences'),
+      reason='Request StarPilot speed control instead of factory ACC. May disable Automatic Emergency Braking. ' +
+             'Applies after the next startup; exact vehicle takeover checks remain required.'),)
+
+  def _apply_alpha_long(self, request):
+    from openpilot.starpilot.saved_document import commit_exact
+    if (request.key != 'AlphaLongitudinalEnabled' or request.value not in ('Off', 'On') or
+        request.expected not in (None, b'0', b'1') or not request.confirmation or request.dependencies or
+        request.related_source is not None or request.display_unit or request.direction):
+      return False
+    def authorized():
+      return (self.authority('parked_preferences') and self.authority('preferences') and
+              request.capability is not None and request.capability == self._alpha_long_capability() and
+              request.vehicle_fingerprint == self.vehicle_fingerprint())
+    result = commit_exact(self.params, key=request.key, max_bytes=8, expected=request.expected,
+                          raw=b'1' if request.value == 'On' else b'0', authorized=authorized,
+                          temp_prefix='.alpha-long-')
+    if not result.committed or not result.verified:
+      return False
+    if authorized():
+      self.params.put_bool('OnroadCycleRequested', True, block=True)
+    return True
 
   def _capability(self, group: str) -> tuple | None:
     cp = self.vehicle_params()
@@ -768,12 +819,13 @@ class FeatureSettingsOwner:
                   for name in (*PROFILE_NAMES, "traffic"))
     elif page == FeaturePage.VEHICLE:
       title = "Vehicle Settings"
+      rows = list(self._alpha_long_rows(parked))
       capability = self._auto_hold_capability()
       allowed = configurable and capability is not None and self.authority("vehicle")
       row = self._bool_row("ToyotaAutoHold", "Automatic Brake Hold", allowed,
                            "Hold the brake for over one second at a complete stop with cruise main on and cruise disengaged. " +
                            "Holds until you press the gas; normal cruise stop-and-go is unchanged. Applies after the next startup.")
-      rows = [replace(row, available=row.available and self._readable("ToyotaAutoHold"), capability=capability)] if capability is not None else []
+      rows.extend([replace(row, available=row.available and self._readable("ToyotaAutoHold"), capability=capability)] if capability is not None else [])
       radar_capability = self._toyota_radar_capability()
       if radar_capability is not None:
         from openpilot.starpilot.car.toyota.radar_preferences import CHOICES, KEY
@@ -1290,6 +1342,8 @@ class FeatureSettingsOwner:
       return self._apply_long_pitch(request)
     if key == "JeepBrakeHold":
       return self._apply_jeep_hold(request)
+    if key == "AlphaLongitudinalEnabled":
+      return self._apply_alpha_long(request)
     if key == "ToyotaAutoHold":
       return self._apply_auto_hold(request)
     if key == "ToyotaRadarMode":
