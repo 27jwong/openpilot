@@ -202,6 +202,7 @@ DEBUG_SAFETY_CLASS_TARGETS = {
 
 
 RELEASE_TARGETS = (
+  'opendbc_repo/opendbc/car/hyundai/tests/test_long_cp_copy.py',
   'opendbc_repo/opendbc/car/ford/tests/test_mache_display_handoff.py',
   'opendbc_repo/opendbc/safety/tests/test_ford_mache_display.py',
   "opendbc_repo/opendbc/safety/tests/test_toyota_prius_advert.py",
