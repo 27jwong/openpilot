@@ -585,14 +585,14 @@ class VisionModelCore:
       predictions = predictions.T
 
     candidates = []
-    for prediction in predictions:
-      class_scores = prediction[4:]
-      class_id = int(np.argmax(class_scores))
-      confidence = float(class_scores[class_id])
-      if class_id not in US_DETECTOR_CLASSES:
-        continue
-      if confidence < min_confidence:
-        continue
+    class_scores = predictions[:, 4:]
+    class_ids = np.argmax(class_scores, axis=1)
+    confidences = class_scores[np.arange(len(predictions)), class_ids].astype(np.float64)
+    selected = np.flatnonzero(np.isin(class_ids, tuple(US_DETECTOR_CLASSES)) & ~(confidences < min_confidence))
+    for index in selected:
+      prediction = predictions[index]
+      class_id = int(class_ids[index])
+      confidence = float(confidences[index])
 
       center_x, center_y, width, height = prediction[:4]
       x1 = max(int((center_x - width / 2 - pad_width) / ratio), 0)

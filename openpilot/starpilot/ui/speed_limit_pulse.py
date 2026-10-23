@@ -18,21 +18,37 @@ class SpeedLimitPulse:
     self.last_limit = 0.0
     self.start_time = -math.inf
     self.manual_pending = False
+    self.display_pulsing = False
     self._started_frame: int | None = None
 
   def update(self, state: OnroadState, now: float, *, visible: bool = True) -> None:
     if state.drive_frame != self._started_frame:
       self.last_limit = 0.0
+      self.display_pulsing = False
       self.start_time = -math.inf
       self._started_frame = state.drive_frame
     observation = state.speed_limit
     limit = displayed_limit_mps(observation)
     pending = (observation.kind == ObservationKind.VALID and observation.pending_speed_limit_mps is not None and
                observation.pending_speed_limit_mps > 0)
-    if not visible or limit is None or not pending:
+    if not visible or limit is None:
       self.start_time = -math.inf
-      self.manual_pending = False
+      self.manual_pending = self.display_pulsing = False
+      if limit is not None:
+        self.last_limit = limit
       return
+    if not pending:
+      if (not observation.action_enabled and observation.kind == ObservationKind.VALID and
+          limit != self.last_limit):
+        self.start_time = now
+        self.display_pulsing = True
+      elif not self.display_pulsing or observation.action_enabled:
+        self.start_time = -math.inf
+        self.display_pulsing = False
+      self.manual_pending = False
+      self.last_limit = limit
+      return
+    self.display_pulsing = False
     manual = not observation.automatic_adoption_pending
     if observation.pending_since_ns > 0:
       self.start_time = observation.pending_since_ns / 1e9

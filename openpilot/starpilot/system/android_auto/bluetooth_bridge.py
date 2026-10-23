@@ -723,6 +723,8 @@ class SharedBluetoothOwner(BluetoothOwner):
       if operation in ('scan', 'stop_scan'):
         return super().request(operation, session=session)
       if operation == 'pair':
+        if address is None:
+          raise ValueError('Invalid Bluetooth address')
         address = normalized_address(address)
         if address == lease.receiver:
           raise BluetoothRejected('Use Android Auto to pair its receiver', code='projection_active')

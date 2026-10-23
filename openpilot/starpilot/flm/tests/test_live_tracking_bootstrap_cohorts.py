@@ -1,4 +1,6 @@
 """Outcome-blind availability tests, not original/native calibration proof."""
+from typing import Any
+
 
 from dataclasses import replace
 from types import SimpleNamespace
@@ -158,7 +160,7 @@ def test_one_real_submission_per_epoch_even_after_response_failure(monkeypatch):
 
   b = certificate().binding
   process = PollProcess()
-  actor = LiveTrackingActor(process)
+  actor: Any = LiveTrackingActor(process)
   monkeypatch.setattr(actor, 'binding_for', lambda collector, source: b)
   collector = SimpleNamespace(ready=[None], original_source_capture=SimpleNamespace(epoch=1), live_tracking=None)
   calls = []

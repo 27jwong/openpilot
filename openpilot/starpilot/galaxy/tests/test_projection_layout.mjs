@@ -32,6 +32,9 @@ const raw = { version: 1, document: doc, defaults: copy(doc), metadata,
   colors: { palette: native.document.palette, widgetColors: native.document.widgetColors.large, roadColors: {} } }
 const data = editorSnapshot(raw)
 assert.equal(validSnapshot(data), true)
+assert.equal(data.document.version, 8)
+assert.equal(validSnapshot({ ...data, document: { ...data.document, version: 9 } }), false)
+assert.equal(validSnapshot({ ...data, defaults: { ...data.defaults, version: 9 } }), false)
 assert.equal(validDocument(data.document, data.metadata), true)
 assert.equal(data.document.speedAlign, "center") // Legacy preferences still load after removing the editor control.
 assert.equal(data.document.layouts.large.jetlink_status.enabled, false)

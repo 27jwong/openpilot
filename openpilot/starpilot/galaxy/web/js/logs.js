@@ -12,7 +12,8 @@ import { BluetoothNotice, bluetoothConnection } from "./bluetooth-notice.js"
 export const Logs = {
   name: "Logs",
   components: { GxState, GxNotice, BluetoothNotice, SystemMonitor, TroubleshootPage, TmuxPage, MenuTile },
-  props: { path: { type: String, required: true }, mode: { type: String, required: true }, unauthorized: { type: Function, required: true } },
+  props: { path: { type: String, required: true }, mode: { type: String, required: true }, unauthorized: { type: Function, required: true },
+    tools: { type: Array, required: true } },
   data: () => ({ crashes: { reports: [], scanIncomplete: false, listLimited: false, status: "idle", error: "", selected: null, preview: null, previewStatus: "idle", deleting: false, storageBytes: 0, reportCount: 0 }, search: "",
     aaLogs: { sessions: [], others: [], status: "idle", error: "" }, bluetooth: bluetoothConnection() }),
   computed: {
@@ -38,11 +39,6 @@ export const Logs = {
   methods: {
     storedSize,
     go: navigate,
-    openTroubleshoot() { navigate("/logs/troubleshoot") },
-    openTmux() { navigate("/logs/tmux") },
-    openMonitor() { navigate("/logs/monitor") },
-    openCrashes() { if (this.mode === "local") navigate("/logs/crashes") },
-    openAndroidAuto() { if (this.mode === "local") navigate("/logs/android-auto") },
     bundleUrl: () => BUNDLE_URL,
     fileUrl,
     outcomeLabel,
@@ -59,16 +55,10 @@ export const Logs = {
       <h2 v-if="path === '/logs'">Logs & Diagnostics</h2>
       <p v-if="path === '/logs'" class="gx-note">Logs, diagnostics, drive state, and help.</p>
       <div v-if="path === '/logs'" class="gx-grid">
-        <MenuTile icon="bi-cpu" title="System Monitor" :description="mode === 'sample' ? 'Inspect a synthetic activity sample' : 'Inspect local system activity'" @select="openMonitor" />
-        <MenuTile icon="bi-file-text" title="Crash Reports" :description="mode === 'local' ? 'Read local reports' : ''"
-          :availability="mode === 'local' ? '' : 'Unavailable in preview'" :disabled="mode !== 'local'" @select="openCrashes" />
-        <MenuTile icon="bi-phone" title="Android Auto" :description="mode === 'local' ? 'Session logs and a download for bug reports' : ''"
-          :availability="mode === 'local' ? '' : 'Unavailable in preview'" :disabled="mode !== 'local'" @select="openAndroidAuto" />
-        <MenuTile icon="bi-terminal" title="tmux Live View" description="Read the launcher console tail" @select="openTmux" />
-        <MenuTile icon="bi-wrench" title="Troubleshoot" description="Read device and vehicle diagnostics" @select="openTroubleshoot" />
-        <MenuTile icon="bi-car-front" title="Force Drive State" description="Select a temporary drive state for this device"
-          :availability="mode === 'local' ? '' : 'Unavailable in preview'" :disabled="mode !== 'local'" @select="go('/device-preferences')" />
-        <MenuTile icon="bi-life-preserver" title="Help & Community" description="Guides and community help" @select="go('/logs/help')" />
+        <MenuTile v-for="tool in tools" :key="tool.path" :icon="tool.icon" :title="tool.name"
+          :description="mode === 'sample' && tool.sampleDescription || tool.description"
+          :availability="mode !== 'local' && tool.availability === 'local-only' ? 'Unavailable in preview' : ''"
+          :disabled="mode !== 'local' && tool.availability === 'local-only'" @select="go(tool.path)" />
       </div>
       <section v-else-if="path === '/logs/help'" class="gx-settings">
         <header class="gx-settings__header gx-page-header"><div><h2>Help & Community</h2><p>Guides and help from the community.</p></div></header>

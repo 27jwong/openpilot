@@ -11,6 +11,8 @@ from opendbc.car.hyundai.ev9_longitudinal import (
   BlindspotWarningOutput,
 )
 from opendbc.car.hyundai import ev9_long_sender
+from opendbc.car.hyundai.ev9_long_aol import qualified as ev9_long_aol_qualified
+from opendbc.car.hyundai.pe_long_aol import qualified as pe_long_aol_qualified
 from opendbc.car.common.filter_simple import FirstOrderFilter
 from opendbc.car.lateral import get_max_angle_vm, get_max_angle_delta_vm
 import numpy as np
@@ -32,7 +34,8 @@ from opendbc.car.hyundai.g90_lead import G90LeadState, eligible as g90_lead_elig
 from opendbc.car.hyundai.gv70_camera_lead import eligible as gv70_lead_eligible
 from opendbc.car.hyundai.canfd_lead import select_lead, ABSENT
 from opendbc.car.hyundai.torque_ev_scc import eligible as torque_ev_scc_eligible, options as torque_ev_scc_options, clock_boot_ns, fallback_lead
-from opendbc.car.hyundai.ccnc_ev_stock import replacement_requested
+from opendbc.car.hyundai.ccnc_ev_stock import replacement_requested, qualified as qualified_ccnc_ev_stock
+from opendbc.car.hyundai.angle_tx_recovery import AngleTxRecovery
 from opendbc.car.hyundai.values import is_blended, HyundaiFlags, HyundaiSafetyFlags, Buttons, CarControllerParams, CAR
 from opendbc.car.interfaces import CarControllerBase
 from opendbc.car.vehicle_model import VehicleModel
@@ -108,6 +111,9 @@ class CarController(CarControllerBase):
     self.angle_vm = VehicleModel(CP) if CP.flags & HyundaiFlags.CANFD_ANGLE_STEERING else None
     self.apply_angle_last = 0.0
     self.angle_gain_last = 0.0
+    self.angle_tx_recovery = (AngleTxRecovery(0x110, self.CAN.ACAN)
+      if CP.carFingerprint in (CAR.HYUNDAI_IONIQ_5_PE, CAR.KIA_EV9) and
+      (qualified_angle_aol(CP, marked_only=True) or qualified_ccnc_ev_stock(CP)) else None)
 
     self.accel_last = 0
     self.apply_torque_last = 0
@@ -277,6 +283,8 @@ class CarController(CarControllerBase):
       new_actuators.steeringAngleDeg = self.apply_angle_last
     new_actuators.accel = accel
 
+    if self.angle_tx_recovery is not None:
+      self.angle_tx_recovery.record(can_sends, self.frame)
     self.frame += 1
     if _projection is not None:
       _projection.finish(new_actuators.torque)
@@ -422,7 +430,9 @@ class CarController(CarControllerBase):
       safety_speed = max(CS.out.vEgoRaw - 1.0, 1.0)
       bound = min(get_max_angle_vm(safety_speed, self.ev9_legacy_envelope, self.params),
                   get_max_angle_vm(safety_speed, self.angle_vm, self.params))
-      ev9_lateral_allowed = lateral_request_allowed(CC, CS.out, CS.angle_steering_fault)
+      ev9_lateral_allowed = lateral_request_allowed(CC, CS.out, CS.angle_steering_fault,
+                                                   independent=(ev9_long_aol_qualified(self.CP, marked_only=True) or
+                                                                pe_long_aol_qualified(self.CP, marked_only=True)))
       active = bool(ev9_lateral_allowed and CC.latActive and abs(measured) <= bound and abs(self.apply_angle_last) <= bound)
       self.ev9_angle_filter.update_alpha(float(np.interp(CS.out.vEgo, [5.0, 10.0, 20.0], [0.2, 0.1, 0.0])))
       desired = self.ev9_angle_filter.update(float(np.clip(CC.actuators.steeringAngleDeg,
@@ -465,6 +475,9 @@ class CarController(CarControllerBase):
         angle_active = angle_aol_active
       if ccnc_ev_stock:
         angle_active = ccnc_ev_replacement
+      if self.angle_tx_recovery is not None and self.angle_tx_recovery.take_rejection(self.frame):
+        self.apply_angle_last = CS.out.steeringAngleDeg
+        self.angle_gain_last = 0.0
       desired_angle = float(np.clip(CC.actuators.steeringAngleDeg, -self.params.ANGLE_LIMITS.STEER_ANGLE_MAX,
                                     self.params.ANGLE_LIMITS.STEER_ANGLE_MAX))
       safety_speed = max(CS.out.vEgoRaw - 1.0, 1.0)

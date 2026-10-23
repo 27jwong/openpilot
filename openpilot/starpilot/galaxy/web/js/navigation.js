@@ -6,6 +6,7 @@ import { NavigationMap } from "./navigation-map.js"
 import { MapOperationsPanel } from "./map-operations.js"
 import { OfflineRoadMapsPanel } from "./offline-road-maps.js"
 import { GalaxySelect } from "./galaxy-select.js"
+import { reportSave } from "./save-feedback.js"
 
 export function searchUuid() {
   if (typeof crypto.randomUUID === "function") return crypto.randomUUID()
@@ -295,7 +296,7 @@ export const NavigationPage = {
   name: "NavigationPage",
   components: { GxNotice, BluetoothNotice, MapOperationsPanel, NavigationMap, OfflineRoadMapsPanel, FavoriteChoices, GalaxySelect },
   props: { mode: { type: String, required: true }, unauthorized: { type: Function, required: true },
-    go: { type: Function, default: null }, initialTab: { type: String, default: "route" } },
+    go: { type: Function, default: null }, initialTab: { type: String, default: "route" }, tabs: { type: Array, required: true } },
   data() { return { bluetooth: bluetoothConnection(), data: null, results: [], busy: false, error: "", stale: false, tab: this.initialTab, gpsGuide: "android", query: "", token: "", searched: false,
     suggestions: [], suggestOpen: false, savedSuggestionPlaces: {}, favoritePicker: null, searchPending: false } },
   watch: { initialTab(value) { this.tab = value } },
@@ -374,6 +375,7 @@ export const NavigationPage = {
   },
   beforeUnmount() { document.removeEventListener("visibilitychange", this.visibilityHandler); clearTimeout(this.suggestTimer); this.client.stop(); this.token = "" },
   methods: {
+    reportSave,
     async openGpsSetup() {
       this.selectTab('setup')
       await this.$nextTick()
@@ -469,8 +471,8 @@ export const NavigationPage = {
       <header class="gx-settings__header gx-page-header"><div><h2>Navigation</h2>
         <p>Set a destination, prepare offline maps, and configure navigation and Mapbox.</p></div></header>
       <div class="gx-tabs gx-actions" role="group" aria-label="Navigation tools">
-        <button v-for="item in [{id:'route',label:'Destination'},{id:'maps',label:'Offline Maps'},{id:'setup',label:'Setup'}]" :key="item.id"
-          type="button" class="gx-btn" :class="tab === item.id ? '' : 'gx-btn--tonal'" :aria-pressed="tab === item.id" @click="selectTab(item.id)">{{ item.label }}</button>
+        <button v-for="item in tabs" :key="item.tab"
+          type="button" class="gx-btn" :class="tab === item.tab ? '' : 'gx-btn--tonal'" :aria-pressed="tab === item.tab" @click="selectTab(item.tab)">{{ item.name }}</button>
         <button type="button" class="gx-btn gx-btn--tonal" @click="openGpsSetup">{{ gpsLabel }}</button>
       </div>
       <div v-if="tab === 'maps'" class="gx-navigation__offline">
@@ -485,7 +487,7 @@ export const NavigationPage = {
           <p>Show directions on your comma. Navigation works with every driving model. Route guidance helps prepare for turns; steering and speed control follow your normal engagement settings.</p>
           <div v-if="data" class="gx-row gx-row--borderless"><span class="gx-row__info gx-row__label">Navigation</span>
             <label class="gx-switch"><input type="checkbox" role="switch" aria-label="Navigation" :checked="data.enabled" :disabled="!controlsAvailable"
-              @change="$event.target.checked=data.enabled; client.action('configure', {patch: {enabled: !data.enabled}})"><span class="gx-switch__track"></span><span class="gx-switch__thumb"></span></label></div>
+              @change="$event.target.checked=data.enabled; reportSave(() => client.action('configure', {patch: {enabled: !data.enabled}}))"><span class="gx-switch__track"></span><span class="gx-switch__thumb"></span></label></div>
         </section>
         <section ref="gpsSetup" tabindex="-1" class="gx-card gx-navigation__section gx-navigation__gps" aria-labelledby="navigation-gps-heading">
           <h3 id="navigation-gps-heading">GPS Source</h3>
@@ -526,7 +528,7 @@ export const NavigationPage = {
           <div v-for="option in routeAvoidances" :key="option.key" class="gx-row">
             <span class="gx-row__info gx-row__label">{{ option.label }}</span>
             <label class="gx-switch"><input type="checkbox" role="switch" :aria-label="option.label" :checked="!!data?.[option.key]"
-              :disabled="!available" @change="client.action('configure', {patch: {[option.key]: $event.target.checked}})"><span class="gx-switch__track"></span><span class="gx-switch__thumb"></span></label>
+              :disabled="!available" @change="reportSave(() => client.action('configure', {patch: {[option.key]: $event.target.checked}}))"><span class="gx-switch__track"></span><span class="gx-switch__thumb"></span></label>
           </div>
         </section>
         <section class="gx-card gx-navigation__section">

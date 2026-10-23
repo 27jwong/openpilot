@@ -97,7 +97,17 @@ class SpeedLimitWidget:
       self.fonts.draw(text, role, size * self.text_scale, origin, ink_top - a, color)
       return origin + left, ink_top, origin + right, ink_top + b - a
 
-    if state.appearance.use_vienna_sign:
+    if self.profile == Profile.COMPACT and state.appearance.use_vienna_sign and not shown.offset_text:
+      cx, cy = x + 59, top + 67
+      rl.draw_circle(int(cx), int(cy), 59, rl.WHITE)
+      rl.draw_ring(rl.Vector2(cx, cy), 47, 59, 0, 360, 64, self.pulse.color(rl.Color(201, 34, 49, 255), now))
+      color = self.pulse.color(rl.BLACK, now)
+      size = 58 if len(shown.posted_text) <= 2 else 48
+      measured = self.fonts.measure(shown.posted_text, FontRole.BOLD, size)
+      origin, number_top = cx - measured.width / 2, cy - measured.height / 2
+      self.fonts.draw(shown.posted_text, FontRole.BOLD, size, origin, number_top, color)
+      number = origin, number_top, origin + measured.width, number_top + measured.height
+    elif state.appearance.use_vienna_sign:
       cx, cy = x + 59 * scale, top + 67 * scale
       self.shapes.circle(cx, cy, self.pulse.color(rl.Color(201, 34, 49, 255), now))
       # Keep black-on-white numerals stable; the ring carries manual confirmation pulses.
@@ -120,14 +130,33 @@ class SpeedLimitWidget:
           size -= 2
         centered(shown.offset_text, FontRole.MEDIUM, size, offset_top, color)
     else:
-      rect = rl.Rectangle(x + 2 * scale, top + 2 * scale, 114 * scale, 128 * scale)
-      rl.draw_rectangle_rounded(rect, .1, 16, rl.Color(10, 17, 19, 230))
-      rl.draw_rectangle_rounded_lines_ex(rect, .1, 16, 2 * scale, white)
-      for label, y in (('SPEED', top + 11 * scale), ('LIMIT', top + 27 * scale)):
-        centered(label, FontRole.SEMI_BOLD, 20, y, white, x + (53 if arrow_direction else 59) * scale)
-      number = centered(shown.posted_text, FontRole.BOLD, 58, top + (50 if shown.offset_text else 61) * scale, white)
-      if shown.offset_text:
-        centered(shown.offset_text, FontRole.MEDIUM, 36, top + 98 * scale, secondary)
+      if self.profile == Profile.COMPACT:
+        rect = rl.Rectangle(x + 2, top, 116, 132 + (44 if shown.offset_text else 0))
+        rl.draw_rectangle_rounded_lines_ex(rl.Rectangle(rect.x + 8, rect.y + 8, rect.width - 16, rect.height - 16),
+                                         .14, 16, 2, white)
+        for label, size, label_top, role in (('SPEED', 20, 18, FontRole.SEMI_BOLD),
+                                              ('LIMIT', 20, 36, FontRole.SEMI_BOLD),
+                                              (shown.posted_text, 50 if len(shown.posted_text) <= 2 else 42, 66, FontRole.BOLD)):
+          measured = self.fonts.measure(label, role, size)
+          origin = rect.x + (rect.width - measured.width) / 2
+          if arrow_direction and role == FontRole.SEMI_BOLD:
+            origin -= 6  # Keep four pixels between the measured header ink and the pending arrow.
+          self.fonts.draw(label, role, size, origin, rect.y + label_top, white)
+          if label == shown.posted_text:
+            number = origin, rect.y + label_top, origin + measured.width, rect.y + label_top + measured.height
+        if shown.offset_text:
+          measured = self.fonts.measure(shown.offset_text, FontRole.MEDIUM, 30)
+          self.fonts.draw(shown.offset_text, FontRole.MEDIUM, 30, rect.x + (rect.width - measured.width) / 2,
+                          rect.y + 118, secondary)
+      else:
+        rect = rl.Rectangle(x + 2 * scale, top + 2 * scale, 114 * scale, 128 * scale)
+        rl.draw_rectangle_rounded(rect, .1, 16, rl.Color(10, 17, 19, 230))
+        rl.draw_rectangle_rounded_lines_ex(rect, .1, 16, 2 * scale, white)
+        for label, y in (('SPEED', top + 11 * scale), ('LIMIT', top + 27 * scale)):
+          centered(label, FontRole.SEMI_BOLD, 20, y, white, x + (53 if arrow_direction else 59) * scale)
+        number = centered(shown.posted_text, FontRole.BOLD, 58, top + (50 if shown.offset_text else 61) * scale, white)
+        if shown.offset_text:
+          centered(shown.offset_text, FontRole.MEDIUM, 36, top + 98 * scale, secondary)
     if arrow_direction:
       ax, ay = ((x + 59 * scale, top + 29 * scale) if state.appearance.use_vienna_sign else (x + 99 * scale, top + 26 * scale))
       arrow_color = color if state.appearance.use_vienna_sign else white

@@ -3,6 +3,8 @@
 Slot counts are availability, never an identification/admission declaration.
 The child still verifies the complete authentic prefix/native/source experiment.
 """
+from typing import cast
+
 
 import base64
 from dataclasses import asdict
@@ -368,7 +370,7 @@ class ResponseSnapshotProcess:
     eof = False
     for _ in range(16):
       try:
-        part = os.read(self.fd, 65536)
+        part = os.read(cast(int, self.fd), 65536)
       except BlockingIOError:
         break
       if not part:
@@ -384,7 +386,7 @@ class ResponseSnapshotProcess:
     # Drain the bounded remainder after exit; never accept partial output.
     while not eof and len(self.output) <= 8 * 1024 * 1024:
       try:
-        part = os.read(self.fd, 65536)
+        part = os.read(cast(int, self.fd), 65536)
       except BlockingIOError:
         break
       if not part:
@@ -405,7 +407,7 @@ class ResponseSnapshotProcess:
         result = json.loads(self.output)
       except (ValueError, UnicodeError):
         pass
-    os.close(self.fd)
+    os.close(cast(int, self.fd))
     self.pid = self.fd = None
     self.output.clear()
     return result
@@ -416,7 +418,7 @@ class ResponseSnapshotProcess:
     self.cancel(reason)
     if self.pid is not None:
       os.waitpid(self.pid, 0)
-      os.close(self.fd)
+      os.close(cast(int, self.fd))
       self.pid = self.fd = None
       self.output.clear()
     return True

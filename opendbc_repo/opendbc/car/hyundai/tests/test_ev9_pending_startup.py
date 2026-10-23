@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 import unittest
 from types import SimpleNamespace
 from typing import cast
@@ -102,6 +103,19 @@ class EV9StartupFixture(unittest.TestCase):
 
   def commit(self, owner, ci):
     owner.commit_pending(ci, sources_current=owner.sources_current(ci, self.boot), control_current=True)
+
+
+@contextmanager
+def pending_startup_fixture():
+  fixture = EV9StartupFixture()
+  fixture.setUp()
+  try:
+    owner, ci, packer = fixture.instance()
+    assert owner.pending_target and owner.owner.published
+    assert fixture.queries == [] and fixture.sent == [] and owner.thread is None
+    yield fixture, owner, ci, packer
+  finally:
+    fixture.doCleanups()
 
 
 class TestEV9PendingStartup(EV9StartupFixture, unittest.TestCase):

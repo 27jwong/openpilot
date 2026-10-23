@@ -879,7 +879,7 @@ export const AndroidAutoPage = {
         </div>
         <div class="gx-aa-step__body">
           <div class="gx-driving__actions gx-actions">
-            <a class="gx-btn" href="https://wiki.firestar.link/usage/android-auto/" target="_blank" rel="noopener noreferrer">Read the Android Auto troubleshooting guide</a>
+            <a class="gx-btn" href="https://wiki.firestar.link/exclusive/android-auto/" target="_blank" rel="noopener noreferrer">Read the Android Auto troubleshooting guide</a>
             <a class="gx-btn gx-btn--tonal" href="#/logs/android-auto"><i class="bi bi-journal-text"></i> Connection Logs</a>
           </div>
         </div>

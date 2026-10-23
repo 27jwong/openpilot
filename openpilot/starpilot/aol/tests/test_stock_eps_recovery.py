@@ -3,6 +3,7 @@
 import pytest
 
 from opendbc.car import structs
+from opendbc.car.ford.values import CAR as Ford
 from openpilot.cereal import log
 from openpilot.starpilot.aol.tests.test_stock_location_recovery import established_stock as established_stock
 from openpilot.starpilot.tests.test_ford_reverse_intent import NOW, PRODUCER, change, native_change, sample
@@ -87,5 +88,45 @@ def test_eps_recovery_never_bypasses_independent_vetoes(established_stock, fault
     feedback.temporary_eps_event_ns = 0
   elif fault == 'different_anchor':
     change(sm, 'aolAxisState', lambda axis: setattr(axis, 'faultEventMonoTime', NOW + 11_000_000))
-  assert feedback.observe(sm, cp, state, now, latched=True, intent_producer_session=producer)
-  assert not feedback.temporary_host_qualified
+  before = (feedback.healthy_feedback_ns, feedback.healthy_native_ns, feedback.lateral_baseline_ns,
+            feedback.lateral_source_ns, feedback.lateral_native_ns)
+  rejected = feedback.observe(sm, cp, state, now, latched=True, intent_producer_session=producer)
+  if fault == 'brake' and cp.carFingerprint in (Ford.FORD_MUSTANG_MACH_E_MK1, Ford.FORD_ESCAPE_MK4):
+    # Stock Ford's qualified EPS/brake overlap preserves intent, never output.
+    assert not rejected and feedback.temporary_host_qualified
+    assert not native.lateralAllowed and not native.longitudinalAllowed
+    assert before == (feedback.healthy_feedback_ns, feedback.healthy_native_ns, feedback.lateral_baseline_ns,
+                      feedback.lateral_source_ns, feedback.lateral_native_ns)
+  else:
+    assert rejected and not feedback.temporary_host_qualified
+
+
+@pytest.mark.parametrize('fault', (None, 'missing_anchor', 'different_anchor', 'long_desired', 'long_active',
+                                  'belt_immediate', 'belt_user', 'belt_no_entry'))
+def test_unbelted_eps_recovery_keeps_exact_anchor_and_long_withdrawal(established_stock, fault):
+  cp, state, feedback = established_stock
+  sm, native, now = recovered_pause(cp, state, feedback)
+  state.seatbeltUnlatched = True
+  event = sm.messages['onroadEvents'].as_builder()
+  event.onroadEvents = [row.to_dict() for row in sm['onroadEvents']] + [
+    {'name': 'seatbeltNotLatched', 'softDisable': True, 'noEntry': True}]
+  sm.messages['onroadEvents'] = event.as_reader()
+  if fault == 'missing_anchor':
+    feedback.temporary_eps_event_ns = 0
+  elif fault == 'different_anchor':
+    change(sm, 'aolAxisState', lambda axis: setattr(axis, 'faultEventMonoTime', NOW + 11_000_000))
+  elif fault in ('long_desired', 'long_active'):
+    change(sm, 'aolAxisState', lambda axis: setattr(axis,
+      'desiredLongitudinal' if fault == 'long_desired' else 'longitudinalActive', True))
+  elif fault in ('belt_immediate', 'belt_user', 'belt_no_entry'):
+    field = {'belt_immediate': 'immediateDisable', 'belt_user': 'userDisable', 'belt_no_entry': 'noEntry'}[fault]
+    change(sm, 'onroadEvents', lambda events: setattr(events[2], field, fault != 'belt_no_entry'))
+  baseline = (feedback.healthy_feedback_ns, feedback.healthy_native_ns, feedback.lateral_baseline_ns,
+              feedback.lateral_source_ns, feedback.lateral_native_ns)
+  rejected = feedback.observe(sm, cp, state, now, latched=True, intent_producer_session=PRODUCER)
+  assert rejected == (fault is not None)
+  assert feedback.temporary_host_qualified == (fault is None)
+  assert baseline == (feedback.healthy_feedback_ns, feedback.healthy_native_ns, feedback.lateral_baseline_ns,
+                      feedback.lateral_source_ns, feedback.lateral_native_ns)
+  assert not native.requestedLateral and not native.lateralAllowed
+  assert not native.requestedLongitudinal and not native.longitudinalAllowed

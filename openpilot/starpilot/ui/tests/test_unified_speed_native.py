@@ -130,7 +130,7 @@ def test_compact_us_heading_stays_centered_without_an_arrow(reason, drawing):
   for call in font.draw.call_args_list:
     text, role, size, x, _, _ = call.args
     left, right = font.horizontal_ink(text, role, size)
-    assert x + (left + right) / 2 == 389
+    assert x + (left + right) / 2 == 390
 
 
 @pytest.mark.parametrize('profile', list(Profile))

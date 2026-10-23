@@ -16,7 +16,7 @@ from openpilot.starpilot.car.gm.steering_companion import SteeringCompanion
 @pytest.mark.parametrize('c9', [False, True])
 @pytest.mark.parametrize('full_op', [False, True])
 @pytest.mark.parametrize('condition', ['healthy', 'sm_fault', 'sm_invalid', 'sm_wrong_source',
-                                     'sm_expired', 'sm_future', 'missing_exact', 'raw_fault', 'raw_invalid'])
+                                     'sm_expired', 'sm_expired_fault', 'sm_expired_invalid', 'sm_future', 'missing_exact', 'raw_fault', 'raw_invalid'])
 def test_exact_card_raw_companion_survives_older_cached_projection(c9, full_op, condition):
   from openpilot.selfdrive.car.card import Car
   from openpilot.starpilot.aol.tests.test_gm_source_deadline import bind_steering_receipts
@@ -48,7 +48,7 @@ def test_exact_card_raw_companion_survives_older_cached_projection(c9, full_op, 
     card.v_cruise_helper = VCruiseHelper(card.CP)
     source = 10_010_000_000
     now = source + 8_000_000
-    older = source - (40_000_000 if condition == 'sm_expired' else 10_000_000)
+    older = source - (40_000_000 if condition.startswith('sm_expired') else 10_000_000)
     original_message = messaging.new_message
 
     def publish(stamp, *, fault=False, valid=True, enabled=True):
@@ -60,7 +60,7 @@ def test_exact_card_raw_companion_survives_older_cached_projection(c9, full_op, 
                  original_message(*a, **dict(kw, logMonoTime=stamp))):
         card.state_publish(cs, None)
 
-    publish(older, fault=condition == 'sm_fault', valid=condition != 'sm_invalid')
+    publish(older, fault=condition in ('sm_fault','sm_expired_fault'), valid=condition not in ('sm_invalid','sm_expired_invalid'))
     assert actual_recv(sd.car_state_sock).logMonoTime == older
     cached = actual_recv(latest).as_builder()
     assert cached.logMonoTime == older
@@ -94,7 +94,7 @@ def test_exact_card_raw_companion_survives_older_cached_projection(c9, full_op, 
          patch('openpilot.starpilot.car.gm.steering_companion.messaging.recv_one_or_none', side_effect=receive_raw), \
          patch('openpilot.selfdrive.selfdrived.selfdrived.time.monotonic_ns', return_value=now):
       axis, _, cc = step(1)
-    healthy = condition == 'healthy'
+    healthy = condition in ('healthy', 'sm_expired')
     assert axis.sourceCarStateMonoTime == source
     assert bool(axis.lateralActive) == healthy and bool(cc.latActive) == healthy
     assert bool(cc.longActive) == (healthy and full_op)
@@ -103,3 +103,28 @@ def test_exact_card_raw_companion_survives_older_cached_projection(c9, full_op, 
       assert sd.sm.logMonoTime['starpilotCarState'] == older
       assert sd.steering_companion.samples[source][0] == source
       assert axis.validUntilMonoTime == axis.observedMonoTime + 30_000_000
+
+
+def test_sdgm_alpha_owner_excludes_pedal_and_stock():
+  from opendbc.car.gm.values import GMFlags, apply_gm_auto_hold, camera_acc_pedal_profile, is_volt_sdgm_profile
+  from openpilot.starpilot.car.gm.aol import sdgm_alpha_lateral_owner
+  for c9 in (False, True):
+    for hold in (False, True):
+      cp = sdgm_params(alpha=True, brake_c9=c9)
+      cp.alternativeExperience = 32
+      apply_gm_auto_hold(cp, hold)
+      assert sdgm_alpha_lateral_owner(cp)
+      cp.alternativeExperience = 0
+      assert not sdgm_alpha_lateral_owner(cp)
+    for alpha, sascm in ((False, True), (True, False)):
+      cp = sdgm_params(alpha=alpha, sascm=sascm, brake_c9=c9)
+      cp.alternativeExperience = 32
+      assert not sdgm_alpha_lateral_owner(cp)
+  # A separately supported SDGM interceptor has its own withdrawal protocol.
+  cp = sdgm_params(alpha=True)
+  cp.alternativeExperience = 32
+  cp.flags |= int(GMFlags.PEDAL_LONG)
+  cp.safetyConfigs[0].safetyParam = 0xE500
+  assert camera_acc_pedal_profile(cp) is not None
+  assert is_volt_sdgm_profile(cp, longitudinal=True)
+  assert not sdgm_alpha_lateral_owner(cp)
