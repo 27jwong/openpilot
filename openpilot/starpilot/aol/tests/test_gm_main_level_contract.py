@@ -426,7 +426,7 @@ def test_gm_initial_main_waits_on_original_soft_occurrence(index, braking, varia
       stamp = NOW - (20 - tick) * 10_000_000
       card.CI.update([(stamp, packets(stamp, tick))])
 
-    def cycle(tick, age=None, mutate=False):
+    def cycle(tick, age=None, mutate=False, recovering=False):
       now = NOW + tick * 10_000_000
       source = now - 1
       config = card.CP.safetyConfigs[0]
@@ -445,7 +445,8 @@ def test_gm_initial_main_waits_on_original_soft_occurrence(index, braking, varia
       a = axis.aolAxisState
       a.sourceCarStateMonoTime = now - 31_000_000 if mutate and variation == 'source_expired' else source
       a.nativeAcknowledged = age is None
-      a.desiredLateral = a.lateralActive = a.desiredLongitudinal = a.longitudinalActive = False
+      a.desiredLateral = recovering
+      a.lateralActive = a.desiredLongitudinal = a.longitudinalActive = False
       a.faultReason = 'none' if age is None else 'availabilityPause'
       event_ns = now if age is None else now - age
       if mutate and variation == 'event_expired':
@@ -505,4 +506,6 @@ def test_gm_initial_main_waits_on_original_soft_occurrence(index, braking, varia
       assert card.aol_transport_feedback.healthy_feedback_ns == healthy
       assert not card.aol_transport_feedback.failed
     cycle(38)  # Healthy idle reply after a cold wait longer than native200ms.
+    assert card.aol_card_intent.allowed_latch and not card.aol_transport_feedback.failed
+    cycle(39, recovering=True)  # Native OFF while the fresh LAT request awaits acknowledgment.
     assert card.aol_card_intent.allowed_latch and not card.aol_transport_feedback.failed

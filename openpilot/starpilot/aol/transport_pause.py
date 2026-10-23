@@ -281,6 +281,7 @@ class TransportPauseFeedback:
     self.ever_lateral_active = False
     self.lag_withdrawal_ns = 0
     self.cold_main_wait_ns = 0
+    self.cold_main_sparse_waiting = False
     self.ccnc_main_off_source_ns = 0
     self.cold_park_waiting = False
     self.lateral_only_baseline = False
@@ -1210,6 +1211,7 @@ class TransportPauseFeedback:
         self.temporary_eps_event_ns = 0
         self.ccnc_main_off_source_ns = 0
         self.cold_park_waiting = False
+        self.cold_main_sparse_waiting = False
       stamp = int(sm.logMonoTime['aolAxisState'])
       reason = str(axis.faultReason)
       signature = (str(axis.sessionId), int(axis.sequence), stamp, int(axis.observedMonoTime),
@@ -1282,6 +1284,10 @@ class TransportPauseFeedback:
           # Every axis, source and native lease is validated independently.
           self.session = str(axis.sessionId)
           self.sequence, self.signature = int(axis.sequence), signature
+          event_ns = int(sm.logMonoTime['onroadEvents'])
+          if not self.cold_main_wait_ns:
+            self.cold_main_wait_ns = event_ns
+          self.cold_main_sparse_waiting |= now_ns - event_ns > AXIS_MAX_AGE_NS
           self.temporary_host_qualified = True
           return False
       if (cp.brand == 'gm' and current and continuity and latched and not self.failed and
@@ -1291,7 +1297,8 @@ class TransportPauseFeedback:
         event_ns = int(sm.logMonoTime['onroadEvents'])
         recovering = bool(reason == 'none' and axis.desiredLateral and not axis.desiredLongitudinal and
           not axis.lateralActive and not axis.longitudinalActive and axis.nativeAcknowledged and
-          0 < self.cold_main_wait_ns <= now_ns <= self.cold_main_wait_ns + SAFETY_MAX_AGE_NS and
+          0 < self.cold_main_wait_ns <= now_ns and
+          (self.cold_main_sparse_waiting or now_ns <= self.cold_main_wait_ns + SAFETY_MAX_AGE_NS) and
           0 < axis.sourceCarStateMonoTime <= stamp and now_ns - axis.sourceCarStateMonoTime <= AXIS_MAX_AGE_NS)
         if ((reason == 'availabilityPause' and not any(signature[9:13]) or recovering) and
             intent_producer_session and signature[14] == intent_producer_session and
@@ -1300,16 +1307,26 @@ class TransportPauseFeedback:
             sm.valid['onroadEvents'] and sm.alive['onroadEvents'] and 0 < event_ns <= stamp and
             now_ns - event_ns <= AXIS_MAX_AGE_NS and
             cold_main_readiness(cp, cs, native, sm['onroadEvents'], recovering=recovering)):
-          if not recovering:
+          if recovering:
+            self.cold_main_wait_ns = 0
+            self.cold_main_sparse_waiting = False
+          else:
             self.cold_main_wait_ns = event_ns
           self.session = str(axis.sessionId)
           self.sequence, self.signature = int(axis.sequence), signature
           self.temporary_host_qualified = True
           return False
       if (self.cold_main_wait_ns and current and continuity and reason == 'none' and
-          axis.desiredLateral and not axis.lateralActive):
-        self.failed = True
-        return True
+          axis.nativeAcknowledged and axis.desiredLateral and not axis.lateralActive):
+        # Separate sockets may deliver recovery before its matching event.
+        # This only retains intent; source and native checks still run below.
+        event_ns = int(sm.logMonoTime['onroadEvents'])
+        recovery_ahead = bool(sm.seen['onroadEvents'] and sm.valid['onroadEvents'] and
+          sm.alive['onroadEvents'] and 0 < event_ns < axis.faultEventMonoTime <= stamp and
+          now_ns - event_ns <= AXIS_MAX_AGE_NS)
+        if not recovery_ahead:
+          self.failed = True
+          return True
       if current and continuity and self._angle_stop_intent_current(sm, cp, cs, axis, stamp, now_ns,
           latched=latched, producer=intent_producer_session):
         self.sequence, self.signature = int(axis.sequence), signature
@@ -1618,6 +1635,7 @@ class TransportPauseFeedback:
           self.ever_lateral_active = True
           self.lag_withdrawal_ns = 0
           self.cold_main_wait_ns = 0
+          self.cold_main_sparse_waiting = False
           self.cold_park_waiting = False
           self.temporary_eps_event_ns = 0
           self.lateral_native_ns = int(native.observedMonoTime)
