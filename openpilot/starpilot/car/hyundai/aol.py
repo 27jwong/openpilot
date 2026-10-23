@@ -1,4 +1,5 @@
 from dataclasses import replace
+from functools import lru_cache
 
 from opendbc.car.hyundai.ev9_long_aol import qualified as qualified_ev9_long_aol, WORDS as EV9_LONG_AOL_WORDS
 from opendbc.car.hyundai.pe_long_aol import qualified as qualified_pe_long_aol, WORDS as PE_LONG_AOL_WORDS
@@ -324,7 +325,7 @@ def early_native_long_withdrawal_supported(CP) -> bool:
               (qualified_ioniq6(CP) or qualified_canfd_long(CP, marked_only=True)))
 
 
-def source_deadline_supported(CP) -> bool:
+def _source_deadline_supported_uncached(CP) -> bool:
   """Admit only an already marked HKG axis owner to original-proof waits."""
   from openpilot.starpilot.aol.vehicle import policy_for as vehicle_policy_for
 
@@ -332,6 +333,25 @@ def source_deadline_supported(CP) -> bool:
   policy = vehicle_policy_for(CP)
   return bool(policy.runtime_supported and policy.full_axis_runtime_required and config is not None and
               native_accepts_cp(CP, int(config.safetyModel.raw), int(config.safetyParam)))
+
+
+@lru_cache(maxsize=64)
+def _source_deadline_for_bytes(key: bytes) -> bool:
+  with car.CarParams.from_bytes(key) as CP:
+    return _source_deadline_supported_uncached(CP)
+
+
+def source_deadline_supported(CP) -> bool:
+  """Reuse only exact static eligibility; live source/native leases stay current."""
+  from openpilot.starpilot.aol.vehicle import _car_params_bytes
+
+  key = _car_params_bytes(CP)
+  if key is not None:
+    try:
+      return _source_deadline_for_bytes(key)
+    except Exception:
+      pass  # Snapshot/cache failures retain the complete original evaluation.
+  return _source_deadline_supported_uncached(CP)
 
 
 def independent_cruise_buttons_supported(CP, *, marked_only=False) -> bool:

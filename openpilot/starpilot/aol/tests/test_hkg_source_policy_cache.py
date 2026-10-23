@@ -40,6 +40,7 @@ def cp(request):
 def test_actual_selfdrive_eligibility_reuses_policy_without_changing_cp(cp):
   before = cp.to_dict()
   vehicle._policy_for_bytes.cache_clear()
+  aol._source_deadline_for_bytes.cache_clear()
   sd = SelfdriveD.__new__(SelfdriveD)
   sd.CP = cp
   with patch.object(aol, 'policy_for', wraps=aol.policy_for) as local:

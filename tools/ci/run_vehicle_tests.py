@@ -31,6 +31,7 @@ AOL_LIFECYCLE_TARGETS = (
   'openpilot/starpilot/car/toyota/tests/test_matrix_filter_callers.py',
   'openpilot/starpilot/aol/tests/test_crossmake_native_admission.py',
   'openpilot/starpilot/aol/tests/test_hkg_source_policy_cache.py',
+  'openpilot/starpilot/aol/tests/test_hkg_deadline_admission_cache.py',
   'openpilot/starpilot/aol/tests/test_hkg_native_admission.py',
   'openpilot/starpilot/aol/tests/test_native_observation_admission.py',
   'openpilot/starpilot/aol/tests/test_forte_physical_arm_join.py',
