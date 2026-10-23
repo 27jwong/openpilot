@@ -65,7 +65,8 @@ def test_big_default_disabled_and_explicit_download_preserved(tmp_path):
 
 def test_verified_download_precedes_shipped_default(tmp_path, monkeypatch):
   path = tmp_path / "download.pkl"
-  monkeypatch.setattr(manager, "catalog", lambda _: {DEFAULT_SMALL: {"artifact_sha256": "download-hash", "version": "v15"}})
+  monkeypatch.setattr(manager, "catalog", lambda _: {DEFAULT_SMALL: {"artifact_sha256": "download-hash", "version": "v15",
+                                                                  "_runtime_family": "native02e"}})
   monkeypatch.setattr(manager, "verified_artifact", lambda *args: path)
   fallback = tmp_path / "fallback.pkl"
   def verified_fallback(plan):
