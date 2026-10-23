@@ -18,6 +18,8 @@ HEAVY_MODULES = {
   'openpilot/starpilot/car/toyota/tests/test_legacy_advert_callers.py',
   'openpilot/starpilot/car/toyota/tests/test_camera_2aa_callers.py',
   'openpilot/starpilot/car/toyota/tests/test_advert_filter_callers.py',
+  'openpilot/starpilot/car/toyota/tests/test_legacy_sdsu_callers.py',
+  'openpilot/starpilot/car/toyota/tests/test_2aa_forwarded_copy_callers.py',
 }
 
 CAPABILITY_NODES = {

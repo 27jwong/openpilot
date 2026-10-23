@@ -229,21 +229,24 @@ def test_real_child_death_leaves_failed_receipt_and_durable_node(tmp_path, monke
   assert any(json.loads(path.read_text())['active_test'].endswith('::test_child_signal') for path in workers)
 
 
-def test_real_plugin_exact_parameter_assignment_across_shards(tmp_path):
-  path = tmp_path / 'openpilot/starpilot/car/toyota/tests/test_legacy_advert_callers.py'
+@pytest.mark.parametrize('module,cases,shard_count', [('test_legacy_advert_callers.py', 126, 3),
+                                                      ('test_legacy_sdsu_callers.py', 240, 3),
+                                                      ('test_2aa_forwarded_copy_callers.py', 60, 2)])
+def test_real_plugin_exact_parameter_assignment_across_shards(tmp_path, module, cases, shard_count):
+  path = tmp_path / 'openpilot/starpilot/car/toyota/tests' / module
   path.parent.mkdir(parents=True)
-  path.write_text('import pytest\n@pytest.mark.parametrize("value", range(126))\ndef test_independent(value):\n assert 0 <= value < 126\n')
+  path.write_text(f'import pytest\n@pytest.mark.parametrize("value", range({cases}))\ndef test_independent(value):\n assert 0 <= value < {cases}\n')
   outcomes = []
-  for index in range(3):
+  for index in range(shard_count):
     output = tmp_path / f'shard-{index}'
     env = dict(os.environ, PYTHONPATH=str(shards.ROOT), PYTEST_DISABLE_PLUGIN_AUTOLOAD='1')
     command = [sys.executable, '-m', 'pytest', '-q', '-p', 'tools.ci.custom_pytest_shards',
-               f'--custom-shard-index={index}', '--custom-shard-count=3', f'--custom-shard-output={output}', str(path)]
+               f'--custom-shard-index={index}', f'--custom-shard-count={shard_count}', f'--custom-shard-output={output}', str(path)]
     child = subprocess.run(command, cwd=tmp_path, env=env, capture_output=True, timeout=20, check=False)
     assert child.returncode == 0, child.stdout.decode() + child.stderr.decode()
     outcomes.append(json.loads((output / 'outcomes.json').read_text()))
   seen = [node for outcome in outcomes for node in outcome['selected']]
-  assert len(seen) == len(set(seen)) == 126
+  assert len(seen) == len(set(seen)) == cases
   assert set(seen) == set(outcomes[0]['catalog'])
   for outcome in outcomes:
     shards.validate_outcomes(outcome['selected'], outcome['reports'])
@@ -587,3 +590,27 @@ def test_reviewed_advert_filter_functions_preserve_272_independent_nodes():
   reversed_assignment, reversed_loads = shards.partition(list(reversed(catalog)), 24)
   assert [set(group) for group in reversed_assignment] == [set(group) for group in assignment]
   assert reversed_loads == loads
+
+
+@pytest.mark.parametrize('module,counts,expected_sizes,rate', [
+  ('test_legacy_sdsu_callers.py', {'test_each_legacy_sdsu_actual_callers': 32,
+                                'test_legacy_sdsu_faults_physical_and_saved_off': 80,
+                                'test_legacy_ordinary_cruise_without_aol': 32,
+                                'test_legacy_alpha_does_not_replace_nongated_owner': 12,
+                                'test_legacy_hybrid_active_resume': 16,
+                                'test_dsu_main_and_status_are_independent_sources': 36,
+                                'test_legacy_lateral_below_stock_engagement_speed': 32},
+   [12, 16, 20, 32, 32, 32, 36, 60], 4.),
+  ('test_2aa_forwarded_copy_callers.py', {'test_forwarded_advertisement_actual_callers': 60}, [12, 48], 5.),
+])
+def test_measured_slow_module_exact_function_and_leaf_groups(module, counts, expected_sizes, rate):
+  path = 'openpilot/starpilot/car/toyota/tests/' + module
+  catalog = [f'{path}::{name}[{index}]' for name, count in counts.items() for index in range(count)]
+  assignment, loads = shards.partition(catalog, 24)
+  assert sorted(node for group in assignment for node in group) == sorted(catalog)
+  assert sorted(len(group) for group in assignment if group) == expected_sizes
+  assert max(loads) <= 240
+  assert sum(loads) == len(catalog) * rate
+  reverse, reverse_loads = shards.partition(list(reversed(catalog)), 24)
+  assert [set(group) for group in reverse] == [set(group) for group in assignment]
+  assert reverse_loads == loads
