@@ -5,7 +5,7 @@ from opendbc.car.subaru.values import CAR, SubaruFlags, SubaruSafetyFlags
 AOL_EXPERIENCE = 32
 TORQUE_CARS = frozenset((CAR.SUBARU_ASCENT, CAR.SUBARU_OUTBACK, CAR.SUBARU_LEGACY,
                         CAR.SUBARU_IMPREZA, CAR.SUBARU_IMPREZA_2020, CAR.SUBARU_FORESTER))
-ANGLE_CARS = frozenset((CAR.SUBARU_CROSSTREK_2025, CAR.SUBARU_LEGACY_2025, CAR.SUBARU_ASCENT_2023))
+ANGLE_CARS = frozenset((CAR.SUBARU_CROSSTREK_2025, CAR.SUBARU_LEGACY_2025, CAR.SUBARU_ASCENT_2023, CAR.SUBARU_FORESTER_2022))
 
 
 def qualified(cp, *, marked_only=False):
@@ -26,7 +26,7 @@ def qualified(cp, *, marked_only=False):
   angle = cp.carFingerprint in ANGLE_CARS
   if angle:
     expected |= int(SubaruSafetyFlags.LKAS_ANGLE)
-    if cp.carFingerprint != CAR.SUBARU_CROSSTREK_2025:
+    if cp.carFingerprint in (CAR.SUBARU_LEGACY_2025, CAR.SUBARU_ASCENT_2023):
       expected |= int(SubaruSafetyFlags.FIXED_ANGLE_LIMITS)
     if cp.carFingerprint == CAR.SUBARU_ASCENT_2023:
       expected |= int(SubaruSafetyFlags.ANGLE_MAIN_BUS)

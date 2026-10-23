@@ -65,7 +65,7 @@ class TestSubaruStockAol(unittest.TestCase):
     self.assertTrue(self.safety.get_controls_allowed())
 
   def test_all_stock_profiles_full_engagement_brake_reverse_drive_main_off(self):
-    for param in (0, 1, 17, 145, 177, 2225):
+    for param in (0, 1, 16, 17, 145, 177, 2225):
       with self.subTest(param=param):
         self.configure(param)
         self.arm()
@@ -177,7 +177,7 @@ class TestSubaruStockAol(unittest.TestCase):
     self.assertEqual(self.feed(cruise=True), 1)
 
   def test_unrecognized_words_cannot_acquire_independent_permission(self):
-    for param in (2, 3, 16, 209, 65535):
+    for param in (2, 3, 48, 80, 209, 65535):
       self.configure(param)
       for _ in range(12):
         self.feed(cruise=False)

@@ -77,6 +77,7 @@
   {.msg = {{MSG_SUBARU_ES_DashStatus,   SUBARU_CAM_BUS,  8, 10U,  .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},  \
 
 static bool subaru_gen2 = false;
+static bool subaru_forester_angle = false;
 static bool subaru_lkas_angle = false;
 static bool subaru_fixed_angle_limits = false;
 static bool subaru_angle_main_bus = false;
@@ -123,7 +124,7 @@ static void subaru_rx_hook(const CANPacket_t *msg) {
     update_sample(&angle_meas, angle_meas_new);
   }
 
-  if (subaru_lkas_angle && (msg->addr == MSG_SUBARU_ES_Status) && (msg->bus == SUBARU_ALT_BUS)) {
+  if (subaru_lkas_angle && (msg->addr == MSG_SUBARU_ES_Status) && (msg->bus == (subaru_forester_angle ? SUBARU_CAM_BUS : SUBARU_ALT_BUS))) {
     pcm_cruise_check(GET_BIT(msg, 29U));
     subaru_aol_grant(GET_BIT(msg, 29U));
   }
@@ -200,6 +201,12 @@ static bool subaru_tx_hook(const CANPacket_t *msg) {
     .wheelbase = 2.6700000762939453,
   };
 
+  const AngleSteeringParams SUBARU_FORESTER_2022_ANGLE_PARAMS = {
+    .slip_factor = -0.0006281956135115129,
+    .steer_ratio = 17.0,
+    .wheelbase = 2.6700000762939453,
+  };
+
   const LongitudinalLimits SUBARU_LONG_LIMITS = {
     .min_gas = 808,       // appears to be engine braking
     .max_gas = 3400,      // approx  2 m/s^2 when maxing cruise_rpm and cruise_throttle
@@ -244,7 +251,7 @@ static bool subaru_tx_hook(const CANPacket_t *msg) {
       if (subaru_fixed_angle_limits) {
         violation |= steer_angle_cmd_checks(desired_angle, lkas_request, SUBARU_FIXED_ANGLE_STEERING_LIMITS);
       } else {
-        violation |= steer_angle_cmd_checks_vm(desired_angle, lkas_request, SUBARU_ANGLE_STEERING_LIMITS, SUBARU_CROSSTREK_2025_ANGLE_PARAMS);
+        violation |= steer_angle_cmd_checks_vm(desired_angle, lkas_request, SUBARU_ANGLE_STEERING_LIMITS, subaru_forester_angle ? SUBARU_FORESTER_2022_ANGLE_PARAMS : SUBARU_CROSSTREK_2025_ANGLE_PARAMS);
       }
     }
 
@@ -344,6 +351,11 @@ static safety_config subaru_init(uint16_t param) {
     {0x390U, SUBARU_ALT_BUS, 8, .check_relay = false},
   };
 
+  static const CanMsg SUBARU_FORESTER_ANGLE_TX_MSGS[] = {
+    SUBARU_BASE_TX_MSGS(SUBARU_MAIN_BUS, MSG_SUBARU_ES_LKAS_ANGLE)
+    SUBARU_COMMON_TX_MSGS(SUBARU_MAIN_BUS)
+  };
+
   const uint16_t SUBARU_PARAM_ASCENT_ALERT = 2048;
   const bool ascent_alert = param == (1U | 16U | 128U | 32U | SUBARU_PARAM_ASCENT_ALERT);
   const uint16_t SUBARU_PARAM_GEN2 = 1;
@@ -353,12 +365,14 @@ static safety_config subaru_init(uint16_t param) {
   const uint16_t SUBARU_PARAM_ANGLE_MAIN_BUS = 32;
   subaru_angle_main_bus = GET_FLAG(param, SUBARU_PARAM_ANGLE_MAIN_BUS);
 
+  subaru_forester_angle = (param == 16U) &&
+    (((unsigned int)alternative_experience == 0U) || ((unsigned int)alternative_experience == 32U));
   subaru_gen2 = GET_FLAG(param, SUBARU_PARAM_GEN2);
   subaru_lkas_angle = GET_FLAG(param, SUBARU_PARAM_LKAS_ANGLE);
   subaru_fixed_angle_limits = GET_FLAG(param, SUBARU_PARAM_FIXED_ANGLE);
   subaru_angle_invalid = (subaru_lkas_angle && (base_param != (SUBARU_PARAM_GEN2 | SUBARU_PARAM_LKAS_ANGLE)) &&
                           (base_param != (SUBARU_PARAM_GEN2 | SUBARU_PARAM_LKAS_ANGLE | SUBARU_PARAM_FIXED_ANGLE)) &&
-                          (base_param != (SUBARU_PARAM_GEN2 | SUBARU_PARAM_LKAS_ANGLE | SUBARU_PARAM_FIXED_ANGLE | SUBARU_PARAM_ANGLE_MAIN_BUS)) && !ascent_alert) ||
+                          (base_param != (SUBARU_PARAM_GEN2 | SUBARU_PARAM_LKAS_ANGLE | SUBARU_PARAM_FIXED_ANGLE | SUBARU_PARAM_ANGLE_MAIN_BUS)) && !ascent_alert && !subaru_forester_angle) ||
                          ((subaru_fixed_angle_limits || subaru_angle_main_bus) && !subaru_lkas_angle);
 
   // TODO: re-enable once more work is done on the limits
@@ -372,7 +386,7 @@ static safety_config subaru_init(uint16_t param) {
     ((unsigned int)alternative_experience == 32U)));
   subaru_aol_reset();
   subaru_aol_enabled = ((unsigned int)alternative_experience == 32U) &&
-    ((param == 0U) || (param == 1U) || (param == 17U) || (param == 145U) ||
+    ((param == 16U) || (param == 0U) || (param == 1U) || (param == 17U) || (param == 145U) ||
      avh || (param == 177U) || (param == 401U) || (param == 8U) || (param == 520U) || (param == 512U) || (param == 2225U));
   if (subaru_aol_enabled) {
     static const AolSafetyPolicy policy = {
@@ -390,7 +404,17 @@ static safety_config subaru_init(uint16_t param) {
     static RxCheck subaru_gen2_angle_rx_checks[] = {
       SUBARU_GEN2_ANGLE_RX_CHECKS()
     };
-    ret = avh ? (stop_start ? BUILD_SAFETY_CFG(subaru_gen2_angle_rx_checks, SUBARU_AVH_STOP_START_TX_MSGS) :
+    static RxCheck subaru_forester_angle_rx_checks[] = {
+      {.msg = {{MSG_SUBARU_Throttle, SUBARU_MAIN_BUS, 8, 100U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},
+      {.msg = {{MSG_SUBARU_Steering_Torque, SUBARU_MAIN_BUS, 8, 50U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},
+      {.msg = {{MSG_SUBARU_Steering_2, SUBARU_MAIN_BUS, 8, 50U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},
+      {.msg = {{MSG_SUBARU_Wheel_Speeds, SUBARU_MAIN_BUS, 8, 50U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},
+      {.msg = {{MSG_SUBARU_Brake_Status, SUBARU_MAIN_BUS, 8, 50U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},
+      {.msg = {{MSG_SUBARU_ES_Status, SUBARU_CAM_BUS, 8, 20U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},
+      {.msg = {{MSG_SUBARU_ES_DashStatus, SUBARU_CAM_BUS, 8, 10U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},
+    };
+    ret = subaru_forester_angle ? BUILD_SAFETY_CFG(subaru_forester_angle_rx_checks, SUBARU_FORESTER_ANGLE_TX_MSGS) :
+          avh ? (stop_start ? BUILD_SAFETY_CFG(subaru_gen2_angle_rx_checks, SUBARU_AVH_STOP_START_TX_MSGS) :
                               BUILD_SAFETY_CFG(subaru_gen2_angle_rx_checks, SUBARU_AVH_TX_MSGS)) :
           stop_start ? BUILD_SAFETY_CFG(subaru_gen2_angle_rx_checks, SUBARU_STOP_START_TX_MSGS) :
           ascent_alert ? BUILD_SAFETY_CFG(subaru_gen2_angle_rx_checks, SUBARU_ASCENT_ALERT_TX_MSGS) :
