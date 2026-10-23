@@ -102,8 +102,13 @@ def native_matches_cp(CP, model: int, param: int) -> bool:
 
 
 def native_admission_key(CP):
-  """Observation reuse is scoped to the exact Ioniq single-Panda contract."""
+  """Bind structural reuse to the complete mutable vehicle configuration."""
   try:
+    if CP.brand == 'hyundai' and CP.carFingerprint in (hyundai.HyundaiCAR.KIA_EV6, hyundai.HyundaiCAR.KIA_EV9):
+      # Cache only structural admission of one exact wire packet. Full CP bytes
+      # invalidate every mutable field; unknown types keep full validation.
+      key = _car_params_bytes(CP)
+      return ('hkg-full-cp', key) if key is not None else None
     return hyundai.native_admission_key(CP) if CP.brand == 'hyundai' else None
   except (AttributeError, TypeError, ValueError, OverflowError, IndexError):
     return None

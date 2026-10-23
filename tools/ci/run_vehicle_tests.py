@@ -24,6 +24,8 @@ from tools.ci import lifecycle_shards, vehicle_pytest
 # Representative production callers plus their source/native refusal cases.
 # The emitted selected_test_ids record exact parametrized configurations.
 AOL_LIFECYCLE_TARGETS = (
+  'openpilot/starpilot/aol/tests/test_hkg_native_admission.py',
+  'openpilot/starpilot/aol/tests/test_native_observation_admission.py',
   'openpilot/starpilot/aol/tests/test_forte_physical_arm_join.py',
   'opendbc_repo/opendbc/car/ford/tests/test_mache_display_handoff.py',
   'opendbc_repo/opendbc/safety/tests/test_ford_mache_display.py',
