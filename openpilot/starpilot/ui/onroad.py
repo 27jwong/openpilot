@@ -9,6 +9,7 @@ LICENSE, while the application owns all state and action transport.
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
+from typing import Protocol
 import hashlib
 import json
 
@@ -107,8 +108,13 @@ def axis_status_color(state: OnroadState) -> rl.Color:
   return rl.Color(18, 40, 57, 255)
 
 
+class JetlinkRenderLayer(Protocol):
+  def render(self, state: OnroadState) -> None: ...
+
+
 class OnroadView:
   preview_pip_layer: PipLayer | None
+  jetlink_status: JetlinkRenderLayer
 
   def __init__(self, fonts: BitmapFonts, asset_directory: Path, *, camera_layer: CameraLayer | None = None,
                extra_overlays: OverlayLayer | None = None, pip_layer: PipLayer | None = None,

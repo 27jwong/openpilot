@@ -44,6 +44,20 @@ class TestSafetyQualificationRunner(TestCase):
         else:
           self.assertNotIn("SAFETY_COVERAGE", gate.env)
 
+  def test_catalog_prerequisites_bind_visionipc_and_hash_all_import_lines(self):
+    for name in ("coverage", "mutation-full"):
+      paths = qualification.prerequisite_artifact_paths(["fixture.so"], name)
+      self.assertIn("msgq_repo/msgq/visionipc/visionipc_pyx.so", paths)
+      self.assertEqual(len(paths), len(set(paths)))
+    with tempfile.TemporaryDirectory() as td:
+      root = Path(td)
+      modules = {name: str(root / name) for name in ("ipc.so", "visionipc.so")}
+      for path in modules.values():
+        Path(path).write_bytes(b"native")
+      log = root / "imports.log"
+      log.write_text("\n".join(json.dumps({name: path}) for name, path in modules.items()) + "\n")
+      self.assertEqual(set(qualification.imported_module_hashes(log)), set(modules))
+
   def test_source_identity_includes_gate_and_workflow_inputs(self):
     identity = qualification.source_identity()
     self.assertFalse(any("/obj/" in path or "/gen/" in path for path in identity))
@@ -127,11 +141,12 @@ class TestSafetyQualificationRunner(TestCase):
           artifact.parent.mkdir(parents=True, exist_ok=True)
           artifact.write_bytes(b"built-native")
 
-        def execute_gate(case_name=name, case_root=root, case_artifacts=artifacts):
+        def execute_gate(case_name=name, case_root=root, case_artifacts=artifacts, solver_name="libacados_ocp_solver_long" + extension):
           if case_name == "native prerequisite changed during gate":
             (case_root / case_artifacts[2]).write_bytes(b"unexpected replacement")
           if case_name == "solver companion changed during gate":
-            (case_root / case_artifacts[3]).write_bytes(b"unexpected solver replacement")
+            solver_path = next(path for path in case_artifacts if path.endswith(solver_name))
+            (case_root / solver_path).write_bytes(b"unexpected solver replacement")
           return True
 
         with patch.object(sys, "argv", ["qualification", "--gate", "coverage", "--output", str(output)]), \
@@ -302,7 +317,7 @@ class TestSafetyQualificationRunner(TestCase):
       fake = Path(td) / "foreign"
       (fake / "panda").mkdir(parents=True)
       (fake / "panda/__init__.py").write_text("# second checkout shadow\n")
-      gate = qualification.Gate("mutation-list", Path(td), qualification.ROOT / ".venv/bin/python")
+      gate = qualification.Gate("mutation-list", Path(td), sys.executable)
       self.assertTrue(qualification.check_import_origins(gate.python, gate.env, Path(td) / "imports-baseline.log"))
       gate.env["PYTHONPATH"] = str(fake) + os.pathsep + gate.env["PYTHONPATH"]
       self.assertFalse(qualification.check_import_origins(gate.python, gate.env, Path(td) / "imports.log"))

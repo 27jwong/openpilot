@@ -256,7 +256,7 @@ def test_compact_preview_sprite_keeps_the_sign_offset_arrow_and_override_cross()
         rl.unload_image(image)
       assert np.array_equal(direct[..., 3], np.asarray(rebuilt)[..., 3])
       assert slot['offsetX'] == slot['offsetY'] == 0
-      assert (slot['width'], slot['height']) == (118, 132)
+      assert (slot['width'], slot['height']) == (118, 176)
   finally:
     canvas.close()
     if owns_context:
@@ -309,6 +309,7 @@ def test_both_sign_styles_contain_text_and_arrows_at_each_profile_scale():
     for size in ('large', 'compact'):
       sx, sy, sw, sh = SPRITES[f'arrow_{size}']
       bbox = atlas.crop((sx, sy, sx+sw, sy+sh)).getchannel('A').point(lambda alpha: 255 if alpha > 40 else 0).getbbox()
+      assert bbox is not None
       glyphs[size] = (bbox[0]-sw/2, bbox[1]-sh/2, bbox[2]-sw/2, bbox[3]-sh/2)
   owns_context = not rl.is_window_ready()
   if owns_context:
@@ -324,6 +325,7 @@ def test_both_sign_styles_contain_text_and_arrows_at_each_profile_scale():
             (0, 350_000_000, 2_100_000_000), positions, (-1, 1)):
           if not vienna and posted > 145:
             continue
+          case = (profile, vienna, posted, offset, elapsed, saved_x, y, direction)
           current = state(observed_ns=10_000_000_000+elapsed)
           key = 'cruise_limits' if profile == Profile.LARGE else 'speed_limit'
           current.customization['layouts'][profile][key].update(x=saved_x, y=y)
@@ -344,36 +346,50 @@ def test_both_sign_styles_contain_text_and_arrows_at_each_profile_scale():
             if vienna:
               cx, cy = x+59*scale, y+67*scale
               assert all((px-cx)**2+(py-cy)**2 <= (47*scale)**2
-                         for px, py in product((box[0], box[2]), (box[1], box[3])))
-              assert (color.r, color.g, color.b, color.a) == (0, 0, 0, 255)
+                         for px, py in product((box[0], box[2]), (box[1], box[3]))), case
+              # The original compact no-offset numeral carries the manual confirmation pulse.
+              # Other Vienna layouts keep black numerals while pulsing the ring.
+              expected_color = ((170, 115, 235, 255)
+                                if profile == Profile.COMPACT and not offset and elapsed == 350_000_000
+                                else (0, 0, 0, 255))
+              assert (color.r, color.g, color.b, color.a) == expected_color, case
             else:
-              assert x+7*scale <= box[0] < box[2] <= x+111*scale
-              assert y+7*scale <= box[1] < box[3] <= y+125*scale
+              assert x+7*scale <= box[0] < box[2] <= x+111*scale, case
+              sign_height = 176 if profile == Profile.COMPACT and offset else 132
+              assert y+7*scale <= box[1] < box[3] <= y+(sign_height-7)*scale, case
             ink.append((text, box))
             nominal_size = size/widget.text_scale
             if role == FontRole.BOLD:
-              assert 31.99 <= nominal_size <= (48.01 if len(text)>2 else 54.01) if vienna else nominal_size == 58
+              if profile == Profile.COMPACT and not vienna:
+                assert nominal_size == (50 if len(text) <= 2 else 42), case
+              elif profile == Profile.COMPACT and vienna and not offset:
+                assert nominal_size == (58 if len(text) <= 2 else 48), case
+              else:
+                assert 31.99 <= nominal_size <= (48.01 if len(text)>2 else 54.01) if vienna else nominal_size == 58, case
             elif role == FontRole.MEDIUM:
-              assert 23.99 <= nominal_size <= 36.01 if vienna else nominal_size == 36
+              if profile == Profile.COMPACT and not vienna:
+                assert nominal_size == 30, case
+              else:
+                assert 23.99 <= nominal_size <= 36.01 if vienna else nominal_size == 36, case
           arrow_draw.assert_called_once()
           size, ax, ay, arrow_direction, _ = arrow_draw.call_args.args
-          assert size == ('compact' if vienna else 'large')
-          assert arrow_direction == direction
+          assert size == ('compact' if vienna else 'large'), case
+          assert arrow_direction == direction, case
           glyph = glyphs[size]
           left, top, right, bottom = glyph if direction>0 else (-glyph[2], -glyph[3], -glyph[0], -glyph[1])
           arrow = ax+left*scale, ay+top*scale, ax+right*scale, ay+bottom*scale
           if vienna:
             assert all((px-cx)**2+(py-cy)**2 <= (47*scale)**2
-                       for px, py in product((arrow[0], arrow[2]), (arrow[1], arrow[3])))
+                       for px, py in product((arrow[0], arrow[2]), (arrow[1], arrow[3]))), case
           else:
-            assert x+7*scale <= arrow[0] < arrow[2] <= x+111*scale
-            assert y+7*scale <= arrow[1] < arrow[3] <= y+125*scale
-            assert all(box[2]+4*scale <= arrow[0] for text, box in ink if text in ('SPEED', 'LIMIT'))
+            assert x+7*scale <= arrow[0] < arrow[2] <= x+111*scale, case
+            assert y+7*scale <= arrow[1] < arrow[3] <= y+125*scale, case
+            assert all(box[2]+4*scale <= arrow[0] for text, box in ink if text in ('SPEED', 'LIMIT')), (case, ink, arrow)
             assert arrow[3]+6*scale <= next(box[1] for text, box in ink if text==str(posted))
           ink.append(('arrow', arrow))
           for index, (_, a) in enumerate(ink):
             for _, b in ink[index+1:]:
-              assert not (a[0]<b[2] and a[2]>b[0] and a[1]<b[3] and a[3]>b[1])
+              assert not (a[0]<b[2] and a[2]>b[0] and a[1]<b[3] and a[3]>b[1]), (case, a, b)
         widget.close()
   finally:
     if owns_context:

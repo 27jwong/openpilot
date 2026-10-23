@@ -823,7 +823,7 @@ class TrackingEpisodeBuilder:
     Optional counterfactual probes are not actual actuation permission and
     cannot delay an uncensored baseline or a later measured keep/revert score.
     """
-    if len(self.ready) + len(self.completed) > self.ready.maxlen:
+    if len(self.ready) + len(self.completed) > cast(int, self.ready.maxlen):
       self.interrupt('measured_episode_backlog')
       return False
     for key, row in tuple(self.completed.items()):

@@ -183,7 +183,7 @@ assert.match(FlmPage.template, /tracking\?\.label \|\| summary/)
 assert.match(FlmPage.template, /Future trial episodes/)
 assert.match(FlmPage.template, /Passing future checks does not itself confirm/)
 assert.doesNotMatch(FlmPage.template, /v-html/)
-console.log('Optional versioned FLM tracking report, paired observed metrics, honest trial acknowledgements and old report compatibility passed')
+console.log('Optional versioned FLM tracking report, paired observed metrics, honest trial acknowledgments and old report compatibility passed')
 
 const render = compile(FlmPage.template, { onError: e => { throw e }, decodeEntities: v => v.replaceAll('&amp;', '&') })
 const ctx = { ...FlmPage.data(), ...FlmPage.methods, mode:'local', embedded:true, unauthorized() {},

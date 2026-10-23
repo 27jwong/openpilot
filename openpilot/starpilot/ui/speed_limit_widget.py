@@ -139,6 +139,8 @@ class SpeedLimitWidget:
                                               (shown.posted_text, 50 if len(shown.posted_text) <= 2 else 42, 66, FontRole.BOLD)):
           measured = self.fonts.measure(label, role, size)
           origin = rect.x + (rect.width - measured.width) / 2
+          if arrow_direction and role == FontRole.SEMI_BOLD:
+            origin -= 6  # Keep four pixels between the measured header ink and the pending arrow.
           self.fonts.draw(label, role, size, origin, rect.y + label_top, white)
           if label == shown.posted_text:
             number = origin, rect.y + label_top, origin + measured.width, rect.y + label_top + measured.height

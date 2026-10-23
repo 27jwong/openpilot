@@ -884,7 +884,7 @@ class LiveTrackingActor:
         offer = optimizer.offer(now_ns, publication=False)
         if offer is None:
           raise ValueError('current trial publication unavailable')
-        self.ingress.latest_offer = offer
+        cast(LiveTrackingIngress, self.ingress).latest_offer = offer
       validate_response_witness(offer.response_witness, self.certificate.binding, now_ns)
       return offer
     except (AttributeError, TypeError, ValueError):

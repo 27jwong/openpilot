@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from opendbc.car.gm.startup_preferences import prepare_disable_longitudinal
 from opendbc.car.toyota.interface import apply_toyota_auto_hold
@@ -19,18 +19,18 @@ def bolt_disable_supported(cp) -> bool:
 @dataclass(frozen=True)
 class VehicleStartupPreferences:
   toyota_auto_hold: bool = False
-  jeep_brake_hold: bool = False
+  jeep_brake_hold: bool = field(default=False, kw_only=True)
   turn_assist: bool = False
   gm_long_pitch: bool = True
   disable_bolt_long: bool = False
   honda_bosch_a_radar: bool = True
   tesla_preap_stock: bool = True
-  tesla_preap_radar: RadarSettings | None = None
-  tesla_preap_pedal: PedalSettings | None = None
-  subaru_avh_startup: bool = False
-  subaru_stop_start_off: bool = False
-  subaru_sng: bool = False
-  subaru_software_cruise: bool = False
+  tesla_preap_radar: RadarSettings | None = field(default=None, kw_only=True)
+  tesla_preap_pedal: PedalSettings | None = field(default=None, kw_only=True)
+  subaru_avh_startup: bool = field(default=False, kw_only=True)
+  subaru_stop_start_off: bool = field(default=False, kw_only=True)
+  subaru_sng: bool = field(default=False, kw_only=True)
+  subaru_software_cruise: bool = field(default=False, kw_only=True)
   volt_sng: bool = False
   gm_auto_hold: bool = False
   volt_one_pedal: bool = False

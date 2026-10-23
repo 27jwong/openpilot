@@ -3,6 +3,8 @@
 Real controller probes, route joins, owner application and bootstrap remain
 independent qualification. Synthetic certificate contents test the protocol.
 """
+from typing import Any
+
 
 from dataclasses import replace
 import hashlib
@@ -327,7 +329,7 @@ def test_actual_probe_coordinator_only_suspends_work_for_measurement_only_discov
 
   calls = []
   probe = SimpleNamespace(child=None, poll_probe=lambda **kwargs: None, cancel=lambda reason: calls.append(('cancel_probe', reason)))
-  actor = LiveTrackingActor(probe_process=probe)
+  actor: Any = LiveTrackingActor(probe_process=probe)
   owner = optimizer()
   owner.discovery = {'recovery': recovery}
   actor.ingress = SimpleNamespace(optimizer=owner)
@@ -346,7 +348,7 @@ def test_actual_ingress_retains_required_native_endpoint_work_during_recovery(re
   from openpilot.starpilot.flm.live_tracking_ingress import LiveTrackingIngress
 
   # Scheduling seam only: no source/native/controller admission is asserted.
-  obj = object.__new__(LiveTrackingIngress)
+  obj: Any = object.__new__(LiveTrackingIngress)
   obj.last_pose_ns = 0
   obj.binding = fixture_certificate().binding
   obj.replay = None
