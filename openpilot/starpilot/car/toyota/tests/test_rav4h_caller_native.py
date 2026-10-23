@@ -226,7 +226,7 @@ def control_inputs(controls, published, state, sd_events, native, now):
 
 def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H, bridge=None, input_clock=False, brake_stop_check_start=350,
              sdsu_words=(0x9049, 0x9249), alpha_long=False, disable_setting=None, physical_frames=None, angle=False,
-             firmware_override=None, assert_hybrid_release=False):
+             firmware_override=None, assert_hybrid_release=False, sdsu_mirror=False):
   SYNTHETIC_LAST.clear()
   NATIVE_LAST.clear()
   safety = libsafety_py.libsafety
@@ -247,6 +247,8 @@ def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H,
     assert exact and found == {candidate}
     fp = gen_empty_fingerprint()
     fp[0][0x2FF] = 8
+    if sdsu_mirror:
+      fp[2][0x2FF] = 8
     observed = (candidate, fp, '0' * 17, fw, structs.CarParams.FingerprintSource.fw, True)
     with (
       patch.object(car_helpers, 'fingerprint', return_value=observed),
@@ -341,12 +343,16 @@ def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H,
         elif scenario == 'off' and tick == 250:
           params.put_bool('DisableOpenpilotLongitudinal', not stock, block=True)
         frames = (physical if physical_frames is None else physical_frames)(packer, **fields)
+        if sdsu_mirror:
+          # Bus2 remains active even while the required bus0 source disappears.
+          # Its conflicting state7 must also never replace bus0 state0.
+          frames.append(packer.make_can_msg('SDSU', 2, {'STATE': 0 if scenario in ('faults', 'bad_dlc') else 7}))
         if scenario == 'bad_dlc' and 630 <= tick < 665:
           malformed = packer.make_can_msg('SDSU', 0, {'STATE': 0})
           frames.append((malformed[0], malformed[1][:7], malformed[2]))
         for a, d, bus in frames:
           accepted = bool(safety.safety_rx_hook(libsafety_py.make_CANPacket(a, bus, d)))
-          assert accepted == (not (a == 0x2FF and 0 < (d[2] >> 4) < 7)), (tick, hex(a), d.hex(), accepted)
+          assert accepted == (not (a == 0x2FF and bus == 0 and 0 < (d[2] >> 4) < 7)), (tick, hex(a), d.hex(), accepted)
         safety.safety_tick()
         native = native_events(host, safety, now, sd.aol_session_id)
         deliver(host.sm, [*native, *prev.values()])
