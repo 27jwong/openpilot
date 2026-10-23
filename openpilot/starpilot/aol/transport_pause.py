@@ -919,6 +919,12 @@ class TransportPauseFeedback:
         return False
       events = [event for event in events if not (event.name == stock_user and
         event.userDisable and not event.softDisable and not event.immediateDisable)]
+    if cp.brand == 'gm':
+      from openpilot.starpilot.car.gm.aol import sdgm_lateral_pedal_source_zero
+      if sdgm_lateral_pedal_source_zero(self, cp, cs, axis, native, now_ns,
+          producer=intent_producer_session):
+        events = [event for event in events if not (event.name == log.OnroadEvent.EventName.pedalPressed and
+          event.userDisable and not event.softDisable and not event.immediateDisable)]
     event_ns = int(sm.logMonoTime['onroadEvents'])
     faults = [event for event in events if event.immediateDisable or event.softDisable]
     live_event = bool(sm.valid['onroadEvents'] and sm.alive['onroadEvents'] and
@@ -1265,6 +1271,18 @@ class TransportPauseFeedback:
           # This response predates the physical MAIN edge. It neither rejects
           # the new request nor renews any command, native or healthy lease.
           self.sequence, self.signature = int(axis.sequence), signature
+          return False
+      if cp.brand == 'gm' and current and continuity and latched:
+        from openpilot.starpilot.car.gm.aol import cold_sdgm_main_intent_current
+        native = (_healthy_transport_native(sm, cp, cs, str(axis.sessionId), now_ns)
+                  if cp.brand == 'gm' else None)
+        if cold_sdgm_main_intent_current(self, sm, cp, cs, axis, native, now_ns,
+            producer=intent_producer_session):
+          # Event publication has its own unchanged 1.5s freshness contract.
+          # Every axis, source and native lease is validated independently.
+          self.session = str(axis.sessionId)
+          self.sequence, self.signature = int(axis.sequence), signature
+          self.temporary_host_qualified = True
           return False
       if (cp.brand == 'gm' and current and continuity and latched and not self.failed and
           not self.ever_lateral_active and not self.pending_event):

@@ -427,6 +427,8 @@ export const SpotifyPage = {
         <p>Soloist expires 90 days after Spotify builds it, regardless of when you install it.</p>
         <template v-if="release.level === 'soon' || release.level === 'expired'">
           <p>{{ release.level === 'expired' ? 'Install a newer build to resume Spotify playback.' : 'Install a newer build before this one expires to keep Spotify playing.' }}</p>
+        </template>
+        <template #actions v-if="release.level === 'soon' || release.level === 'expired'">
           <button type="button" class="gx-btn" :disabled="busy || installBlocked" @click="openInstall">Update Soloist</button>
         </template>
       </GxNotice>
@@ -731,7 +733,7 @@ export const SpotifyPage = {
                   </ul>
                   <GxNotice v-if="installState === 'failed'" tone="danger">
                     <p>{{ problem }}</p>
-                    <button class="gx-btn gx-btn--tonal" @click="chooseAgain">Choose Another File</button>
+                    <template #actions><button class="gx-btn gx-btn--tonal" @click="chooseAgain">Choose Another File</button></template>
                   </GxNotice>
                   <p v-if="error && installState === 'choose' && installAttempted" class="gx-aa-bad" role="alert">{{ error }}</p>
                 </div>

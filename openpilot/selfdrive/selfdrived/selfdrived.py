@@ -283,7 +283,7 @@ class SelfdriveD:
     source_ns = self.aol_car_state_log_ns
     source_current = bool(getattr(self, 'conditional_car_state_valid', False) and CS.canValid and not CS.canTimeout and
                           0 < source_ns <= now_ns and now_ns - source_ns <= INTENT_MAX_AGE_NS)
-    from openpilot.starpilot.car.gm.aol import steering_raw_projection_owner
+    from openpilot.starpilot.car.gm.aol import steering_raw_projection_owner, steering_source_gap_intent_only
     pair = companion.current(self.sm, source_ns=source_ns, now_ns=now_ns, drain=False,
                              allow_raw_projection=steering_raw_projection_owner(self.CP)) if drained else None
     if not source_current:
@@ -292,7 +292,7 @@ class SelfdriveD:
     expected_active = self.active or previous_axes.lateral_active or previous_axes.longitudinal_active
     if pair is not None:
       self.steering_authority_unavailable = pair
-    elif expected_active:
+    elif expected_active and not (drained and steering_source_gap_intent_only(self, CS, companion, now_ns)):
       self.steering_authority_unavailable = True
     if getattr(self, 'steering_authority_unavailable', False):
       self.events.add(EventName.controlsMismatch)

@@ -291,7 +291,7 @@ jobs:
   custom_pytest_complete:
     name: complete custom pytest catalog
     needs: custom_pytest
-    if: always()
+    if: ${{ always() && !cancelled() }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -342,7 +342,7 @@ jobs:
   aol_lifecycle_complete:
     name: complete AOL lifecycle catalog
     needs: aol_lifecycles
-    if: always()
+    if: ${{ always() && !cancelled() }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read

@@ -24,6 +24,13 @@ from tools.ci import lifecycle_shards, vehicle_pytest
 # Representative production callers plus their source/native refusal cases.
 # The emitted selected_test_ids record exact parametrized configurations.
 AOL_LIFECYCLE_TARGETS = (
+  'openpilot/starpilot/aol/tests/test_forte_physical_arm_join.py',
+  'opendbc_repo/opendbc/car/ford/tests/test_mache_display_handoff.py',
+  'opendbc_repo/opendbc/safety/tests/test_ford_mache_display.py',
+  'openpilot/starpilot/aol/tests/test_hkg_cancel_joined.py',
+  'openpilot/starpilot/aol/tests/test_gv70_two_panda_long.py',
+  'openpilot/starpilot/longitudinal/tests/test_gv70_stopping_parity.py',
+
   'opendbc_repo/opendbc/safety/tests/test_hyundai_angle_tx_recovery.py',
   'openpilot/starpilot/aol/tests/test_stock_angle_physical_recovery.py',
   'openpilot/starpilot/tests/test_ford_configuration_parity.py',
@@ -50,6 +57,9 @@ AOL_LIFECYCLE_TARGETS = (
   "openpilot/starpilot/aol/tests/test_native_inventory_control_cadence.py",
   "openpilot/starpilot/aol/tests/test_gm.py",
   "openpilot/starpilot/aol/tests/test_gm_steering_receive_order.py",
+  "openpilot/starpilot/aol/tests/test_gm_card_source_gap.py",
+  "openpilot/starpilot/aol/tests/test_gm_sdgm_cold_main.py",
+  "openpilot/starpilot/aol/tests/test_gm_sdgm_source_wait.py",
   "openpilot/starpilot/aol/tests/test_gm_ascm_receive_order.py",
   "openpilot/starpilot/aol/tests/test_gm_main_response.py",
   "openpilot/starpilot/aol/tests/test_gm_held_native.py",
@@ -95,6 +105,10 @@ AOL_LIFECYCLE_TARGETS = (
   "openpilot/starpilot/car/toyota/tests/test_prius_sdsu_filter.py",
   "openpilot/starpilot/car/toyota/tests/test_prius_sdsu_callers.py",
   "opendbc_repo/opendbc/safety/tests/test_toyota_prius_sdsu.py",
+  "openpilot/starpilot/car/toyota/tests/test_prius_advert_filter.py",
+  "openpilot/starpilot/car/toyota/tests/test_prius_advert_callers.py",
+  "opendbc_repo/opendbc/safety/tests/test_toyota_prius_advert.py",
+  "openpilot/starpilot/car/toyota/tests/test_prius_advert_ci.py",
   "openpilot/starpilot/car/toyota/tests/test_legacy_advert_filter.py",
   "openpilot/starpilot/car/toyota/tests/test_legacy_advert_callers.py",
   "openpilot/starpilot/car/toyota/tests/test_legacy_advert_native.py",
@@ -145,6 +159,8 @@ AOL_LIFECYCLE_TARGETS = (
   "openpilot/starpilot/car/subaru/tests/test_smoothing_settings.py",
   "openpilot/starpilot/car/subaru/tests/test_smoothing_model_join.py",
   "opendbc_repo/opendbc/safety/tests/test_subaru_outback_angle.py",
+  'openpilot/starpilot/car/toyota/tests/test_matrix_stock_caller_native.py',
+  'opendbc_repo/opendbc/safety/tests/test_toyota_matrix_stock_aol.py',
 )
 
 AOL_LIFECYCLE_SCOPE = {
@@ -186,6 +202,10 @@ DEBUG_SAFETY_CLASS_TARGETS = {
 
 
 RELEASE_TARGETS = (
+  'opendbc_repo/opendbc/car/hyundai/tests/test_long_cp_copy.py',
+  'opendbc_repo/opendbc/car/ford/tests/test_mache_display_handoff.py',
+  'opendbc_repo/opendbc/safety/tests/test_ford_mache_display.py',
+  "opendbc_repo/opendbc/safety/tests/test_toyota_prius_advert.py",
   'opendbc_repo/opendbc/safety/tests/test_hyundai_gv60_long.py::TestGV60LongReleaseDenied',
   'openpilot/starpilot/tests/test_ford_configuration_parity.py',
   'openpilot/starpilot/tests/test_ford_configuration_admission.py',
@@ -437,6 +457,8 @@ RELEASE_TARGETS = (
   "opendbc_repo/opendbc/safety/tests/test_subaru_forester_angle.py",
   "opendbc_repo/opendbc/safety/tests/test_subaru_receive_guards.py",
   "opendbc_repo/opendbc/safety/tests/test_subaru_outback_angle.py",
+  'openpilot/starpilot/car/toyota/tests/test_matrix_stock_caller_native.py',
+  'opendbc_repo/opendbc/safety/tests/test_toyota_matrix_stock_aol.py',
 )
 
 # Vehicle tests import both the vendored car code and these host control owners.

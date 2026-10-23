@@ -23,7 +23,7 @@ def test_host_backend_reports_python_without_attempting_native():
     assert soundd.Soundd.get_stream.__wrapped__(obj, sd) is sd.OutputStream.return_value
   assert (obj.audio_backend, obj.audio_fallback_reason) == ('python', 'host')
   ctor.assert_not_called()
-  assert sd.OutputStream.call_args.kwargs == dict(channels=1, samplerate=48000, callback=obj.callback, blocksize=4096)
+  assert sd.OutputStream.call_args.kwargs == {'channels': 1, 'samplerate': 48000, 'callback': obj.callback, 'blocksize': 4096}
 
 
 def test_native_backend_reports_native_without_python_stream():

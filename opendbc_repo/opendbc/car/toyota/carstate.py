@@ -2,7 +2,7 @@ import copy
 import math
 
 from opendbc.can import CANDefine, CANParser
-from opendbc.car.toyota import pedal, legacy_sdsu, advert_filter, legacy_advert_filter, prius_sdsu
+from opendbc.car.toyota import pedal, legacy_sdsu, advert_filter, legacy_advert_filter, prius_sdsu, prius_advert_filter
 from opendbc.car.toyota.lexus_is import LexusIsCANParser
 from opendbc.car import Bus, DT_CTRL, create_button_events, structs
 from opendbc.car.common.conversions import Conversions as CV
@@ -33,7 +33,8 @@ class CarState(CarStateBase):
   def __init__(self, CP):
     super().__init__(CP)
     can_define = CANDefine(DBC[CP.carFingerprint][Bus.pt])
-    self.eps_torque_scale = (.73 if prius_filter_configured(CP) and not prius_sdsu.configured(CP) else EPS_SCALE[CP.carFingerprint] / 100.)
+    original_prius = prius_sdsu.configured(CP) or prius_advert_filter.configured(CP)
+    self.eps_torque_scale = (.73 if prius_filter_configured(CP) and not original_prius else EPS_SCALE[CP.carFingerprint] / 100.)
     self.cluster_speed_hyst_gap = CV.KPH_TO_MS / 2.
     self.cluster_min_speed = CV.KPH_TO_MS / 2.
 
@@ -244,7 +245,7 @@ class CarState(CarStateBase):
     if (self.CP.carFingerprint in (CAR.TOYOTA_PRIUS, CAR.TOYOTA_PRIUS_RETROFIT) or
         self.CP.flags & ToyotaFlags.LONG_FILTER or advert_filter.configured(self.CP)):
       prev_distance_button = self.distance_button
-      if advert_filter.configured(self.CP):
+      if advert_filter.configured(self.CP) or prius_advert_filter.configured(self.CP):
         fresh = cp.advert_button_ns > 0 and 0 <= cp._last_update_nanos - cp.advert_button_ns <= 200_000_000
         self.distance_button = cp.advert_distance_button if fresh else 0
       else:
@@ -285,7 +286,7 @@ class CarState(CarStateBase):
       sdsu_fresh = source_ns > 0 and source_ns <= cp._last_update_nanos <= valid_until_ns
       ret.accFaulted = ret.accFaulted or not sdsu_fresh or self.sdsu_state not in (0, 7)
       ret.stockAeb = ret.stockAeb or self.sdsu_state == 7
-    if original_prius_sdsu:
+    if original_prius_sdsu or prius_advert_filter.configured(self.CP):
       main_current = cp.main_valid and prius_sdsu.source_current(cp, 'PCM_CRUISE_2', 'MAIN_ON')
       eps_current = cp.eps_valid and prius_sdsu.source_current(cp, 'EPS_STATUS', 'LKA_STATE')
       ret.cruiseState.available = ret.cruiseState.available and main_current and not cp.hardware_ambiguous
@@ -325,18 +326,19 @@ class CarState(CarStateBase):
     if CP.carFingerprint == CAR.LEXUS_IS or alternate_sdsu_main:
       pt_messages.append(("DSU_CRUISE", 10))
 
-    if (advert_filter.configured(CP) and not alternate_sdsu_main) or prius_sdsu.configured(CP):
+    if (advert_filter.configured(CP) and not alternate_sdsu_main) or prius_sdsu.configured(CP) or prius_advert_filter.configured(CP):
       pt_messages.append(("PCM_CRUISE_2", 10))
-    if prius_sdsu.configured(CP):
+    if prius_sdsu.configured(CP) or prius_advert_filter.configured(CP):
       pt_messages.append(("EPS_STATUS", 25))
-    if CP.flags & ToyotaFlags.LONG_FILTER:
+    if CP.flags & ToyotaFlags.LONG_FILTER and not prius_advert_filter.configured(CP):
       pt_messages.append(("SDSU", 50))
     if CP.flags & ToyotaFlags.ZSS:
       pt_messages.append(("SECONDARY_STEER_ANGLE", math.nan))
 
     if pedal.configured(CP):
       pt_messages.append(("GAS_SENSOR", 50))
-    pt_parser = (prius_sdsu.PriusSDSUCANParser if prius_sdsu.configured(CP) else
+    pt_parser = (prius_advert_filter.PriusAdvertCANParser if prius_advert_filter.configured(CP) else
+                 prius_sdsu.PriusSDSUCANParser if prius_sdsu.configured(CP) else
                  camera_2aa_filter.CameraTwoAACANParser if camera_twoaa else
                  legacy_advert_filter.LegacyAdvertCANParser if legacy_advert else
                  legacy_sdsu.AlternateMainSDSUCANParser if alternate_sdsu_main else

@@ -9,7 +9,7 @@ from opendbc.car.secoc import add_mac, build_sync_mac
 from opendbc.car.interfaces import CarControllerBase
 from opendbc.car.toyota import toyotacan
 from opendbc.car.toyota import prius_longitudinal, rav4h_filter, pedal, eps8_sdsu, legacy_sdsu, advert_filter, legacy_stop_timer, legacy_advert_filter
-from opendbc.car.toyota import camera_2aa_filter, prius_sdsu
+from opendbc.car.toyota import camera_2aa_filter, prius_sdsu, prius_advert_filter
 from opendbc.car.toyota.door_locks import DoorLocks
 from opendbc.car.toyota.values import CAR, CarControllerParams, ToyotaFlags, TOYOTA_AUTO_HOLD_CARS, uses_toyota_auto_hold_aeb
 from opendbc.can import CANPacker
@@ -75,6 +75,7 @@ class CarController(CarControllerBase):
     self.reverse_cruise_input = None
     self.prius_filter_input = None
     self.original_prius_sdsu = prius_sdsu.configured(CP)
+    self.original_prius_filter = self.original_prius_sdsu or prius_advert_filter.configured(CP)
     self.pedal_input = None
     self.rav4h_filter_input = None
     self.advert_filter_input = None
@@ -146,10 +147,10 @@ class CarController(CarControllerBase):
       _projection.begin(CC.actuators.torque, self.frame)
     filter_allowed = (not self.prius_longitudinal or self.prius_filter_input is not None and
                       self.prius_filter_input.update(now_nanos))
-    original_prius_long = self.original_prius_sdsu and self.CP.openpilotLongitudinalControl
-    if self.original_prius_sdsu:
+    original_prius_long = self.original_prius_filter and self.CP.openpilotLongitudinalControl
+    if self.original_prius_filter:
       filter_allowed = filter_allowed and bool(
-        CS.out.canValid and not CS.out.canTimeout and CS.out.cruiseState.available and CS.sdsu_state == 0 and
+        CS.out.canValid and not CS.out.canTimeout and CS.out.cruiseState.available and (not self.original_prius_sdsu or CS.sdsu_state == 0) and
         not CS.out.accFaulted and not CS.out.stockAeb and not CS.out.steerFaultTemporary and not CS.out.steerFaultPermanent and
         CS.out.gearShifter in (structs.CarState.GearShifter.drive, structs.CarState.GearShifter.sport) and not CS.out.doorOpen and
         not CS.out.seatbeltUnlatched and not CS.out.gasPressed and not CS.out.brakePressed)
@@ -186,7 +187,7 @@ class CarController(CarControllerBase):
     if (rav4h_long or pedal_owner or advert_long or original_prius_long) and not filter_allowed and CS.out.cruiseState.enabled:
       pcm_cancel_cmd = True
     lat_active = CC.latActive and abs(CS.out.steeringTorque) < MAX_USER_TORQUE
-    if self.original_prius_sdsu:
+    if self.original_prius_filter:
       lat_active = lat_active and CS.out.canValid and not CS.out.canTimeout and CS.out.cruiseState.available and not (
         CS.out.accFaulted or CS.out.steerFaultTemporary or CS.out.steerFaultPermanent or CS.out.doorOpen)
     if advert_owner:
