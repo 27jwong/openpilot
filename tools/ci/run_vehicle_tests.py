@@ -442,7 +442,7 @@ SOURCE_INPUT_PATHS = (
 
 def source_input_snapshot():
   def git(*args):
-    return subprocess.check_output(["git", *args], cwd=ROOT)
+    return subprocess.check_output(["git", "--no-optional-locks", "-c", "gc.auto=0", "-c", "maintenance.auto=false", *args], cwd=ROOT)
 
   untracked = {}
   for raw_path in git("ls-files", "--others", "--exclude-standard", "-z", "--", *SOURCE_INPUT_PATHS).split(b"\0"):
@@ -451,7 +451,7 @@ def source_input_snapshot():
       path = ROOT / name
       data = os.fsencode(os.readlink(path)) if path.is_symlink() else path.read_bytes()
       untracked[name] = hashlib.sha256(data).hexdigest()
-  patch_bytes = git("diff", "--no-ext-diff", "--no-textconv", "--binary", "HEAD", "--", *SOURCE_INPUT_PATHS)
+  patch_bytes = git("diff", "--no-renames", "--no-ext-diff", "--no-textconv", "--binary", "HEAD", "--", *SOURCE_INPUT_PATHS)
   return {"revision": git("rev-parse", "HEAD").decode().strip(), "paths": list(SOURCE_INPUT_PATHS),
           "tracked_patch_sha256": hashlib.sha256(patch_bytes).hexdigest(), "untracked_sha256": untracked}
 
@@ -557,10 +557,10 @@ def vehicle_inventory():
 
 def source_provenance():
   def git(*args):
-    return subprocess.check_output(["git", *args], cwd=ROOT).decode().strip()
+    return subprocess.check_output(["git", "--no-optional-locks", "-c", "gc.auto=0", "-c", "maintenance.auto=false", *args], cwd=ROOT).decode().strip()
   manifest = ROOT / "upstream-sync.json"
   return {"revision": git("rev-parse", "HEAD"), "status": git("status", "--porcelain"),
-          "inputs": source_input_snapshot(),
+          "inputs": source_input_snapshot(), "build_identity": lifecycle_shards.build_identity(ROOT),
           "manifest_sha256": sha256(manifest), "dependencies": json.loads(manifest.read_text())["dependencies"],
           "runner_sha256": sha256(ROOT / "tools/test_runner.py"), "suite_runner_sha256": sha256(__file__),
           "pytest_runner_sha256": sha256(ROOT / "tools/ci/vehicle_pytest.py"),
@@ -654,6 +654,10 @@ def run(suite, output, collect_only=False, shard_index=None, shard_count=4):
       plan["native"]["safety"] = build_safety_library(suite == "safety-release", output)
     if suite == "aol-lifecycle" and not collect_only:
       plan["native"]["aol_protocol"] = build_aol_protocol(output)
+    build_input_digest = hashlib.sha256(json.dumps(plan["source"]["build_identity"]["inputs"], sort_keys=True).encode()).hexdigest()
+    for name in ('safety', 'aol_protocol'):
+      if name in plan["native"]:
+        plan["native"][name]["build_inputs_sha256"] = build_input_digest
     phase = "collection"
     unittest_targets, pytest_targets = vehicle_pytest.split_targets(ROOT, plan["targets"])
     plan["runners"] = {"unittest": unittest_targets, "pytest": pytest_targets}
