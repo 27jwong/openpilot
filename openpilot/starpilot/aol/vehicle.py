@@ -104,12 +104,17 @@ def native_matches_cp(CP, model: int, param: int) -> bool:
 def native_admission_key(CP):
   """Bind structural reuse to the complete mutable vehicle configuration."""
   try:
-    if CP.brand == 'hyundai' and CP.carFingerprint in (hyundai.HyundaiCAR.KIA_EV6, hyundai.HyundaiCAR.KIA_EV9):
-      # Cache only structural admission of one exact wire packet. Full CP bytes
-      # invalidate every mutable field; unknown types keep full validation.
+    if CP.brand == 'hyundai':
+      existing = hyundai.native_admission_key(CP)
+      if existing is not None:
+        return existing
+    if CP.brand in _PORTS:
+      # Reuse only one exact packet's structural admission, for every owner.
+      # Full CP bytes invalidate every mutable field; live gates stay per call.
       key = _car_params_bytes(CP)
-      return ('hkg-full-cp', key) if key is not None else None
-    return hyundai.native_admission_key(CP) if CP.brand == 'hyundai' else None
+      if key is not None:
+        return ('vehicle-full-cp', key)
+    return None
   except (AttributeError, TypeError, ValueError, OverflowError, IndexError):
     return None
 
