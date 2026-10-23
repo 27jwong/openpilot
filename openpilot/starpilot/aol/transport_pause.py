@@ -299,6 +299,8 @@ class TransportPauseFeedback:
     self.availability_producer = ''
     self.availability_epoch = None
     self.source_retention_started_ns = 0
+    self.ordinary_warning_retained = False
+    self.ordinary_warning_qualified = False
     self.healthy_feedback_ns = 0
     self.healthy_native_ns = 0
     self.healthy_inventory = None
@@ -357,6 +359,69 @@ class TransportPauseFeedback:
                                not sm['pandaStates'][owners[0]].controlsAllowed)):
       return None
     return native
+
+  def _ordinary_warning_intent_current(self, sm, cp, cs, axis, stamp, now_ns, *, latched, producer):
+    """Retain armed intent through a fresh SOFT withdrawal; grant no output."""
+    from openpilot.starpilot.aol.vehicle import policy_for
+    from openpilot.starpilot.nostalgia import physical_cancel
+    from opendbc.car import structs
+
+    if (not latched or self.failed or self.paused or self.pending_event or self.retention_started_ns or
+        not self.session or not self.lateral_baseline_ns or not self.lateral_inventory or
+        not policy_for(cp).intent_supported or
+        policy_for(cp).cruise_main_required and not cs.cruiseState.available or
+        str(axis.sessionId) != self.session or
+        not producer or producer != self.availability_producer or axis.intentProducerSessionId != producer or
+        axis.intentIntegrityEpoch != self.availability_epoch or
+        not cs.canValid or cs.canTimeout or cs.steerFaultPermanent or cs.accFaulted or cs.doorOpen or
+        cs.steeringDisengage or
+        cs.gearShifter not in (structs.CarState.GearShifter.drive, structs.CarState.GearShifter.sport,
+                              structs.CarState.GearShifter.low, structs.CarState.GearShifter.brake) or
+        not 0 < self.lateral_source_ns <= axis.sourceCarStateMonoTime <= stamp <= now_ns or
+        now_ns - axis.sourceCarStateMonoTime > AXIS_MAX_AGE_NS or
+        str(axis.faultReason) not in ('none', 'availabilityPause') or
+        not sm.seen['onroadEvents'] or not sm.valid['onroadEvents'] or not sm.alive['onroadEvents']):
+      return False
+    event_ns = int(sm.logMonoTime['onroadEvents'])
+    events = sm['onroadEvents']
+    if (not 0 < event_ns <= now_ns or now_ns - event_ns > 1_500_000_000 or
+        any(event.immediateDisable for event in events)):
+      return False
+    warning = any(event.softDisable for event in events)
+    recovering = bool(getattr(self, 'ordinary_warning_retained', False) and not warning)
+    if not warning and not recovering:
+      return False
+    stock_user = stock_lateral_user_event(cp)
+    # Physical withdrawals still go through the family button/pedal owner.
+    # This helper cannot rearm a latch that that owner explicitly clears.
+    if any(event.userDisable and event.name != stock_user and not (
+        event.name == log.OnroadEvent.EventName.pedalPressed and (cs.brakePressed or cs.regenBraking) or
+        event.name == log.OnroadEvent.EventName.buttonCancel and (physical_cancel(cs, cp) or
+          cp.brand == 'gm' and 0 < self.gm_withdrawal_ns == event_ns <= now_ns and
+          now_ns - event_ns <= SAFETY_MAX_AGE_NS)) for event in events):
+      return False
+    prior = self.signature
+    active_join = bool(warning and prior is not None and str(axis.faultReason) == 'none' and
+      axis.lateralActive and axis.desiredLateral and axis.nativeAcknowledged and
+      prior[9] and prior[11] and prior[13] and prior[14:16] == (producer, self.availability_epoch) and
+      0 < prior[8] <= now_ns <= prior[4] and now_ns - prior[8] <= AXIS_MAX_AGE_NS and
+      0 < axis.faultEventMonoTime < event_ns and now_ns - event_ns <= AXIS_MAX_AGE_NS)
+    withdrawn = bool(not axis.lateralActive and not axis.longitudinalActive and
+      not axis.desiredLongitudinal and
+      (warning and str(axis.faultReason) == 'availabilityPause' and axis.faultEventMonoTime == event_ns <= stamp or
+       recovering and str(axis.faultReason) == 'none'))
+    if not active_join and not withdrawn:
+      return False
+    native = _configured_transport_native(sm, cp, self.session, now_ns,
+      allow_restricted_lateral=withdrawn or bool(cs.steerFaultTemporary),
+      require_longitudinal=not withdrawn)
+    if (native is None or not native.pandaInventory or
+        (native.pandaSerial, tuple(slot.hardwareSerial for slot in native.pandaInventory)) != self.lateral_inventory or
+        native.observedMonoTime < self.lateral_native_ns or
+        active_join and not (native.requestedLateral and native.lateralAllowed)):
+      return False
+    self.ordinary_warning_retained = True
+    return True
 
   def _temporary_host_intent_current(self, sm, cp, cs, axis, stamp, now_ns, *, latched, producer):
     """A fresh inactive proof may retain intent, never native/output authority."""
@@ -1083,6 +1148,7 @@ class TransportPauseFeedback:
 
   def observe(self, sm, cp, cs, now_ns, *, latched=True, cancel_source_ns=0, brake_source_ns=0,
               gm_withdrawal_source_ns=0, intent_producer_session='', main_arm_ns=0, startup_calibration_pending=False, intent_paused=False):
+    self.ordinary_warning_qualified = False
     self.temporary_host_qualified = False
     self.qualified = False
     self.awaiting = False
@@ -1091,6 +1157,7 @@ class TransportPauseFeedback:
     try:
       axis = sm['aolAxisState']
       if not latched or cp_identity(cp) != self.cp or self.session and str(axis.sessionId) != self.session:
+        self.ordinary_warning_retained = False
         self.temporary_eps_event_ns = 0
         self.ccnc_main_off_source_ns = 0
         self.cold_park_waiting = False
@@ -1197,6 +1264,11 @@ class TransportPauseFeedback:
           axis.desiredLateral and not axis.lateralActive):
         self.failed = True
         return True
+      if current and continuity and self._ordinary_warning_intent_current(sm, cp, cs, axis, stamp, now_ns,
+          latched=latched, producer=intent_producer_session):
+        self.ordinary_warning_qualified = any(event.softDisable for event in sm['onroadEvents'])
+        self.sequence, self.signature = int(axis.sequence), signature
+        return False
       if current and continuity and self._temporary_host_intent_current(sm, cp, cs, axis, stamp, now_ns,
           latched=latched, producer=intent_producer_session):
         self.sequence, self.signature = int(axis.sequence), signature
@@ -1469,6 +1541,7 @@ class TransportPauseFeedback:
         self.lateral_only_baseline = bool(lateral_baseline and self.availability_producer and
           not axis.desiredLongitudinal and not axis.longitudinalActive and not native.requestedLongitudinal)
         if lateral_baseline and native is not None:
+          self.ordinary_warning_retained = False
           self.ever_lateral_active = True
           self.lag_withdrawal_ns = 0
           self.cold_main_wait_ns = 0
