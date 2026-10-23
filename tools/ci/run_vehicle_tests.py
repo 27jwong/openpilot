@@ -561,7 +561,7 @@ def source_provenance():
     return subprocess.check_output(["git", "--no-optional-locks", "-c", "gc.auto=0", "-c", "maintenance.auto=false", *args], cwd=ROOT).decode().strip()
   manifest = ROOT / "upstream-sync.json"
   return {"revision": git("rev-parse", "HEAD"), "status": git("status", "--porcelain"),
-          "inputs": source_input_snapshot(), "build_identity": lifecycle_shards.build_identity(ROOT),
+          "inputs": source_input_snapshot(),
           "manifest_sha256": sha256(manifest), "dependencies": json.loads(manifest.read_text())["dependencies"],
           "runner_sha256": sha256(ROOT / "tools/test_runner.py"), "suite_runner_sha256": sha256(__file__),
           "pytest_runner_sha256": sha256(ROOT / "tools/ci/vehicle_pytest.py"),
@@ -649,16 +649,19 @@ def run(suite, output, collect_only=False, shard_index=None, shard_count=4):
   try:
     plan["targets"] = targets_for(suite)
     plan["source"] = source_provenance()
+    if suite == "aol-lifecycle":
+      plan["source"]["build_identity"] = lifecycle_shards.build_identity(ROOT)
     plan.update(vehicle_inventory())
     plan["native"] = native_provenance()
     if suite != "interfaces" and not collect_only:
       plan["native"]["safety"] = build_safety_library(suite == "safety-release", output)
     if suite == "aol-lifecycle" and not collect_only:
       plan["native"]["aol_protocol"] = build_aol_protocol(output)
-    build_input_digest = hashlib.sha256(json.dumps(plan["source"]["build_identity"]["inputs"], sort_keys=True).encode()).hexdigest()
-    for name in ('safety', 'aol_protocol'):
-      if name in plan["native"]:
-        plan["native"][name]["build_inputs_sha256"] = build_input_digest
+    if suite == "aol-lifecycle":
+      build_input_digest = hashlib.sha256(json.dumps(plan["source"]["build_identity"]["inputs"], sort_keys=True).encode()).hexdigest()
+      for name in ('safety', 'aol_protocol'):
+        if name in plan["native"]:
+          plan["native"][name]["build_inputs_sha256"] = build_input_digest
     phase = "collection"
     unittest_targets, pytest_targets = vehicle_pytest.split_targets(ROOT, plan["targets"])
     plan["runners"] = {"unittest": unittest_targets, "pytest": pytest_targets}
@@ -698,6 +701,10 @@ def run(suite, output, collect_only=False, shard_index=None, shard_count=4):
       errors.extend(pytest_errors)
       phase = "source verification"
       plan["source_after"] = source_provenance()
+      if suite == "aol-lifecycle":
+        plan["source_after"]["build_identity"] = lifecycle_shards.build_identity(ROOT)
+        if plan["source"]["build_identity"] != plan["source_after"]["build_identity"]:
+          gate_errors.append("Lifecycle source/build identity changed during the suite")
       if plan["source"].get("inputs") != plan["source_after"].get("inputs"):
         gate_errors.append("Vehicle/control source inputs changed during the suite; rerun against stable source")
   except Exception:
