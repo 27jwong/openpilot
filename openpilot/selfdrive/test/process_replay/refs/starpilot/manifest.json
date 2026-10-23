@@ -860,6 +860,58 @@
         },
         "qualification_sha256": "13e06f54ce9c53bf91d815b933d27b85716d58aebf44ac31ae66d1f68f220ef9"
       }
+    },
+    {
+      "segment": "regen7366F13F6A1|2025-04-08--23-07-07--0",
+      "process": "card",
+      "file": "regen7366F13F6A1_2025-04-08--23-07-07--0_card.zst",
+      "bytes": 243224,
+      "sha256": "ac34decedc3aa9ae6f15991ceb1ebadbcbb5616e09599a45b225aa645b860408",
+      "input_sha256": "f501c1c99bae27ca710f40f723a1960ea4e898836d7edfb57ea6397591e5aff2",
+      "input_bytes": 9393878,
+      "official_baseline_commit": "ec95db3f1fa19f76940497fedfdb62e09ea19912",
+      "official_artifact_commit": "9ae451c262c7402c9623f3baa1580c6242d6777b",
+      "official_baseline_url": "https://raw.githubusercontent.com/commaai/ci-artifacts/9ae451c262c7402c9623f3baa1580c6242d6777b/regen7366F13F6A1_2025-04-08--23-07-07--0_card_ec95db3f1fa19f76940497fedfdb62e09ea19912.zst",
+      "official_baseline_bytes": 243288,
+      "official_baseline_sha256": "0da8d89136f8eb1a2870b269a90837c3f892eaac832b076a7029d4f68c1cb758",
+      "config_sha256": "560c1060f4d2e43810e7bbd55d5f361a828bdb027d60f308b2e1d614222a2078",
+      "car_fingerprint": "SUBARU_OUTBACK",
+      "contract": "Card marks the qualified immutable Subaru smoothing startup binding with host-only SMOOTHING_BOUND(bit8192). This2020-22 torque Outback retains default0s smoothing. Only two CarParams.flags fields change141->8333; native safety word1, longitudinal authority, all CAN and all other compared fields are unchanged. Clearing exactly this marker from the completed CI output restores zero full-comparator differences.",
+      "producing_source_snapshot": "989-subaru-frozen-smoothing-card",
+      "intentional_contract_source_commit": "c6a366b013f5e0ea84562a836d7065f1917922e3",
+      "review_evidence": {
+        "ci_run": 39899971746,
+        "ci_outputs_artifact_id": 12478711382,
+        "ci_outputs_archive_sha256": "df7a40fcea55b3ee561725b257033b50da4f02b1c2cee67d65e47104631d5a62",
+        "ci_source_revision": "989beaae3ce60999ad8b7e07be4e6e3fdfaa6938",
+        "comparison_reference_sha256": "0da8d89136f8eb1a2870b269a90837c3f892eaac832b076a7029d4f68c1cb758",
+        "comparison_reference_bytes": 243288,
+        "output_message_count": 19127,
+        "car_params_count": 2,
+        "difference_count": 2,
+        "difference_fields": {
+          "carParams.flags": 2
+        },
+        "flags_before": 141,
+        "flags_after": 8333,
+        "marker": 8192,
+        "marker_name": "SubaruFlags.SMOOTHING_BOUND",
+        "exact_marker_ablation_difference_count": 0,
+        "comparator_ignore_fields": [
+          "logMonoTime",
+          "carState.cumLagMs"
+        ],
+        "comparator_tolerance": 0.01,
+        "config_sha256": "560c1060f4d2e43810e7bbd55d5f361a828bdb027d60f308b2e1d614222a2078",
+        "native_safety_param": 1,
+        "openpilot_longitudinal_control": false,
+        "default_maximum_seconds": 0.0,
+        "qualification_source_commit": "c6a366b013f5e0ea84562a836d7065f1917922e3",
+        "qualification_artifact_commit": "9ce28936463f686ac73e13c76d86f9cec820f9da",
+        "actual_immutable_config_signature_verified": true,
+        "reviewed_reference_selector_verified": true,
+        "completed_output_matches_selected_reference": true
+      }
     }
   ],
   "source_snapshots": {
@@ -1016,6 +1068,22 @@
         }
       },
       "verification": "Actual paired current and exact843dd22 parent-state argument replay in one exclusive lease. All recorded source/native/HEAD/index/foreign custody checks passed; comparison fields and tolerances unchanged."
+    },
+    "989-subaru-frozen-smoothing-card": {
+      "revision": "989beaae3ce60999ad8b7e07be4e6e3fdfaa6938",
+      "sha256": {
+        "opendbc_repo/opendbc/car/subaru/values.py": "a5dc8e0c5c0fa9ad43615ac149f8bb63a105d900650b0f0c53e11911902878ba",
+        "opendbc_repo/opendbc/car/subaru/stock_aol.py": "279104abe844258d5e010ee35108ee5c69b0b1aa1ab25c850323c60216534595",
+        "openpilot/starpilot/car/subaru/smoothing.py": "38c0c6e4a9cdde0f203ac69ed65e1ed8490a6f976d624fafdab91fb820bcea1b",
+        "openpilot/starpilot/vehicle_preferences.py": "bb01590ede99e5450356258ce2b4dfb3bae334ddded304d19d84b2641b7b86e0",
+        "openpilot/selfdrive/car/card.py": "bc4f77c3ac110a49a840a0ed3d762acb1614466fd1bb63123da80ae0ef0c75c7",
+        "openpilot/starpilot/car/subaru/tests/test_smoothing_factory.py": "261c026576da773c8eaad7afab05e8ac5753ab7af1e82640823f17531ffd56b6",
+        "openpilot/selfdrive/test/process_replay/process_replay.py": "383b877fe764441d9efa0ae651f919da3532151047bedc99a2826a35bc9669b5",
+        "openpilot/selfdrive/test/process_replay/compare_logs.py": "fb923cff883974dcdf2d701a0b8484c9d3c4d2192b018ef2d17aeac39dd24202",
+        "tools/ci/replay_references.py": "75267bb70fc6391bb3a1bc2c9f36af2807cf838b2ffcd72c522ae861fd431832",
+        "tools/ci/replay-fixture-cache.json": "99fd6ddc839ae2f779c4e3ef0f529359cd6e19fc20f953da1c591b3af8456e15"
+      },
+      "verification": "Completed hosted process replay reused verbatim. Pure decoding/comparison of all19127 output messages finds exactly two CarParams.flags deltas141->8333; clearing only SMOOTHING_BOUND restores zero differences using unchanged Card ignores/tolerance. No local native replay or source overlay."
     }
   }
 }
