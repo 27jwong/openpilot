@@ -41,7 +41,7 @@ class HondaCan:
       assert brake_msg.address in pt.addresses
 
   def frames(self, *, cruise_button=0, lkas=0, cruise=0, brake=False, main=True, eps=0, gear=None, gas=0, omit=(), speed_kph=45.):
-    intended = {
+    intended: dict[str, dict[str, float]] = {
       'SCM_BUTTONS': {'CRUISE_BUTTONS': cruise_button, 'CRUISE_SETTING': lkas},
       'ENGINE_DATA': {'XMISSION_SPEED': speed_kph},
       'WHEEL_SPEEDS': {f'WHEEL_SPEED_{wheel}': speed_kph for wheel in ('FL', 'FR', 'RL', 'RR')},

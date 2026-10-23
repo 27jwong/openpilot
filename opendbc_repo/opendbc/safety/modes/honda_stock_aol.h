@@ -1,46 +1,55 @@
 #pragma once
 
+#include <stdatomic.h>
+
 // Keep each flag update atomic across CAN/USB interrupts while compacting
-// private storage. No policy, source checks, or deadlines change.
-static uint16_t honda_stock_aol_flags = 0U;
-_Static_assert(__atomic_always_lock_free(sizeof(honda_stock_aol_flags), &honda_stock_aol_flags), "Honda flag atomicity");
+// private storage. C11 compound updates are atomic read-modify-write operations.
+// No policy, source checks, or deadlines change.
+static _Atomic(uint16_t) honda_stock_aol_flags = 0U;
+_Static_assert(ATOMIC_SHORT_LOCK_FREE == 2, "Honda flags require lock-free short atomics");
+_Static_assert(sizeof(honda_stock_aol_flags) == sizeof(uint16_t), "Honda flag storage");
 enum {
-  HONDA_STOCK_ENABLED = 1U << 0U,
-  HONDA_STOCK_TOKEN = 1U << 1U,
-  HONDA_STOCK_PENDING = 1U << 2U,
-  HONDA_STOCK_MAIN_NEUTRAL = 1U << 3U,
-  HONDA_STOCK_LKAS_NEUTRAL = 1U << 4U,
-  HONDA_STOCK_LKAS_PREVIOUS = 1U << 5U,
-  HONDA_STOCK_SESSION = 1U << 6U,
-  HONDA_STOCK_REQUEST_SEEN = 1U << 7U,
-  HONDA_STOCK_ALT_MAIN = 1U << 8U,
-  HONDA_STOCK_DRIVE = 1U << 9U,
-  HONDA_STOCK_TWN = 1U << 10U,
-  HONDA_STOCK_TJA = 1U << 11U,
-  HONDA_STOCK_ALT_LONG = 1U << 12U,
+  HONDA_STOCK_ENABLED = 0x0001U,
+  HONDA_STOCK_TOKEN = 0x0002U,
+  HONDA_STOCK_PENDING = 0x0004U,
+  HONDA_STOCK_MAIN_NEUTRAL = 0x0008U,
+  HONDA_STOCK_LKAS_NEUTRAL = 0x0010U,
+  HONDA_STOCK_LKAS_PREVIOUS = 0x0020U,
+  HONDA_STOCK_SESSION = 0x0040U,
+  HONDA_STOCK_REQUEST_SEEN = 0x0080U,
+  HONDA_STOCK_ALT_MAIN = 0x0100U,
+  HONDA_STOCK_DRIVE = 0x0200U,
+  HONDA_STOCK_TWN = 0x0400U,
+  HONDA_STOCK_TJA = 0x0800U,
+  HONDA_STOCK_ALT_LONG = 0x1000U,
 };
 
 static bool honda_stock_aol_flag(uint16_t bit) {
-  return (__atomic_load_n(&honda_stock_aol_flags, __ATOMIC_RELAXED) & bit) != 0U;
+  return (honda_stock_aol_flags & bit) != 0U;
 }
 
 static void honda_stock_aol_set_flag(uint16_t bit, bool value) {
   if (value) {
-    __atomic_fetch_or(&honda_stock_aol_flags, bit, __ATOMIC_RELAXED);
+    honda_stock_aol_flags |= bit;
   } else {
-    __atomic_fetch_and(&honda_stock_aol_flags, (uint16_t)~bit, __ATOMIC_RELAXED);
+    honda_stock_aol_flags &= (uint16_t)~bit;
   }
 }
 
 static uint32_t honda_stock_aol_grant_ts = 0U;
 static uint8_t honda_stock_aol_eps = 0U;
 static uint32_t honda_stock_aol_main_ts = 0U;
-static RxCheck *honda_stock_aol_eps_check = NULL;
+static uint8_t honda_stock_aol_eps_index = 8U;
 static RxCheck honda_rx_workspace[8];
 
-// EPS and gear entries are always adjacent; derive the second pointer.
+// EPS and gear entries are adjacent. The sentinel leaves both unavailable
+// until configuration installs a bounded pair in the eight-entry workspace.
+static RxCheck *honda_stock_aol_eps_check(void) {
+  return (honda_stock_aol_eps_index < 7U) ? &honda_rx_workspace[honda_stock_aol_eps_index] : NULL;
+}
+
 static RxCheck *honda_stock_aol_gear_check(void) {
-  return (honda_stock_aol_eps_check != NULL) ? honda_stock_aol_eps_check + 1 : NULL;
+  return (honda_stock_aol_eps_index < 7U) ? &honda_rx_workspace[honda_stock_aol_eps_index + 1U] : NULL;
 }
 
 static void honda_stock_aol_clear(void) {
@@ -72,7 +81,7 @@ static void honda_stock_aol_reset(void) {
   honda_stock_aol_set_flag(HONDA_STOCK_ALT_LONG, false);
   honda_stock_aol_eps = 0U;
   honda_stock_aol_main_ts = 0U;
-  honda_stock_aol_eps_check = NULL;
+  honda_stock_aol_eps_index = 8U;
 }
 
 static void honda_stock_aol_host_request(uint8_t mask) {
@@ -81,10 +90,10 @@ static void honda_stock_aol_host_request(uint8_t mask) {
 
 static bool honda_stock_aol_sources_current(void) {
   bool current = false;
-  if ((honda_stock_aol_eps_check != NULL) && (honda_stock_aol_gear_check() != NULL)) {
+  if ((honda_stock_aol_eps_check() != NULL) && (honda_stock_aol_gear_check() != NULL)) {
     const uint32_t now = microsecond_timer_get();
-    current = honda_stock_aol_eps_check->status.msg_seen && honda_stock_aol_gear_check()->status.msg_seen &&
-      (safety_get_ts_elapsed(now, honda_stock_aol_eps_check->status.last_timestamp) <= 300000U) &&
+    current = honda_stock_aol_eps_check()->status.msg_seen && honda_stock_aol_gear_check()->status.msg_seen &&
+      (safety_get_ts_elapsed(now, honda_stock_aol_eps_check()->status.last_timestamp) <= 300000U) &&
       (safety_get_ts_elapsed(now, honda_stock_aol_gear_check()->status.last_timestamp) <= 300000U) &&
       (safety_get_ts_elapsed(now, honda_stock_aol_main_ts) <= 300000U) &&
       (!honda_interceptor || (honda_interceptor_sensor_seen && honda_interceptor_sensor_valid &&
@@ -183,7 +192,7 @@ static void honda_stock_aol_rx(const CANPacket_t *msg, unsigned int pt_bus, bool
       }
       honda_stock_aol_set_flag(HONDA_STOCK_LKAS_PREVIOUS, lkas);
     }
-    if (honda_stock_aol_selected(msg, honda_stock_aol_eps_check)) {
+    if (honda_stock_aol_selected(msg, honda_stock_aol_eps_check())) {
       honda_stock_aol_eps = (msg->addr == 0x18FU) ?
         (honda_stock_aol_flag(HONDA_STOCK_TWN) ? (msg->data[5] & 15U) :
          ((GET_LEN(msg) == 6U) ? (msg->data[4] & 15U) : ((msg->data[4] >> 4U) & 15U))) :
@@ -279,7 +288,7 @@ static safety_config honda_stock_aol_configure(uint16_t param, bool nidec, bool 
     if (honda_stock_aol_flag(HONDA_STOCK_TJA) || honda_stock_aol_flag(HONDA_STOCK_ALT_LONG) || (!nidec && ((param == 16U) || (param == 17U) || (param == 80U) || (param == 81U)))) {
       honda_rx_workspace[count + 1U].msg[2] = (CanMsgCheck){0};
     }
-    honda_stock_aol_eps_check = &honda_rx_workspace[count];
+    honda_stock_aol_eps_index = (uint8_t)count;
     ret.rx_checks_len = count + 2U;
     static const AolSafetyPolicy policy = {
       .reset = honda_stock_aol_reset,
