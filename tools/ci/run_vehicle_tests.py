@@ -69,6 +69,7 @@ AOL_LIFECYCLE_TARGETS = (
   "openpilot/starpilot/aol/tests/test_gm_steering_receive_order.py",
   "openpilot/starpilot/aol/tests/test_gm_card_source_gap.py",
   "openpilot/starpilot/aol/tests/test_gm_sdgm_cold_main.py",
+  "openpilot/starpilot/aol/tests/test_gm_main_level_contract.py",
   "openpilot/starpilot/aol/tests/test_gm_sdgm_source_wait.py",
   "openpilot/starpilot/aol/tests/test_gm_ascm_receive_order.py",
   "openpilot/starpilot/aol/tests/test_gm_main_response.py",

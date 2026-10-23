@@ -320,8 +320,8 @@ class TransportPauseFeedback:
     from opendbc.car import structs
     ev9 = ev9_qualified(cp, marked_only=True)
     early_long = gm or early_native_long_withdrawal_supported(cp) or ev9
-    from openpilot.starpilot.car.gm.aol import sdgm_alpha_pedal_withdrawal
-    sdgm_pedal = sdgm_alpha_pedal_withdrawal(cp, cs)
+    from openpilot.starpilot.car.gm.aol import gm_physical_pedal_withdrawal
+    gm_pedal = gm_physical_pedal_withdrawal(cp, cs)
     event_ns = int(sm.logMonoTime['onroadEvents'])
     main_off_recovery = bool(0 < event_ns <= self.ccnc_main_off_source_ns <= now_ns and
       now_ns - self.ccnc_main_off_source_ns <= AXIS_MAX_AGE_NS)
@@ -346,7 +346,7 @@ class TransportPauseFeedback:
         now_ns - int(sm.logMonoTime['onroadEvents']) > 1_500_000_000 or
         any(event.immediateDisable or event.softDisable or
             event.userDisable and not (ev9_main_off and event.name == log.OnroadEvent.EventName.wrongCarMode or
-              sdgm_pedal and event.name == log.OnroadEvent.EventName.pedalPressed)
+              gm_pedal and event.name == log.OnroadEvent.EventName.pedalPressed)
             for event in sm['onroadEvents'])):
       return None
     native = independent_lateral_health(sm, cp, cs, self.session, now_ns)
@@ -508,8 +508,8 @@ class TransportPauseFeedback:
       not axis.desiredLongitudinal and not axis.longitudinalActive and
       all(event.name in (stock_user, log.OnroadEvent.EventName.pedalPressed) and
           not event.softDisable and not event.immediateDisable for event in users))
-    from openpilot.starpilot.car.gm.aol import sdgm_alpha_pedal_withdrawal
-    pedal = bool((cs.brakePressed or sdgm_alpha_pedal_withdrawal(cp, cs)) and users and all(
+    from openpilot.starpilot.car.gm.aol import gm_physical_pedal_withdrawal
+    pedal = bool((cs.brakePressed or gm_physical_pedal_withdrawal(cp, cs)) and users and all(
       event.name == log.OnroadEvent.EventName.pedalPressed and
       not event.softDisable and not event.immediateDisable for event in users) and not faults)
     if axis.longitudinalActive and not location_fault or not (temporary or eps_recovery or pedal):
@@ -1273,10 +1273,10 @@ class TransportPauseFeedback:
           self.sequence, self.signature = int(axis.sequence), signature
           return False
       if cp.brand == 'gm' and current and continuity and latched:
-        from openpilot.starpilot.car.gm.aol import cold_sdgm_main_intent_current
+        from openpilot.starpilot.car.gm.aol import cold_gm_main_intent_current
         native = (_healthy_transport_native(sm, cp, cs, str(axis.sessionId), now_ns)
                   if cp.brand == 'gm' else None)
-        if cold_sdgm_main_intent_current(self, sm, cp, cs, axis, native, now_ns,
+        if cold_gm_main_intent_current(self, sm, cp, cs, axis, native, now_ns,
             producer=intent_producer_session):
           # Event publication has its own unchanged 1.5s freshness contract.
           # Every axis, source and native lease is validated independently.
@@ -1482,7 +1482,14 @@ class TransportPauseFeedback:
           (native.pandaSerial, tuple(slot.hardwareSerial for slot in native.pandaInventory)) and
         not native.requestedLateral and not native.lateralAllowed and
         not native.requestedLongitudinal and not native.longitudinalAllowed)
-      baseline = bool(reason == 'none' and (axis.nativeAcknowledged or inactive) and
+      from openpilot.starpilot.car.gm.aol import main_off_idle_native_baseline
+      gm_main_off = bool(not latched and current and continuity and
+        sm.seen['onroadEvents'] and sm.valid['onroadEvents'] and sm.alive['onroadEvents'] and
+        0 < int(sm.logMonoTime['onroadEvents']) <= now_ns and
+        now_ns - int(sm.logMonoTime['onroadEvents']) <= 1_500_000_000 and
+        axis.faultEventMonoTime == int(sm.logMonoTime['onroadEvents']) and
+        main_off_idle_native_baseline(cp, cs, axis, native, sm['onroadEvents'], producer=intent_producer_session))
+      baseline = bool(reason == 'none' and (axis.nativeAcknowledged or inactive or gm_main_off) and
                       0 < axis.sourceCarStateMonoTime <= stamp and
                       stamp - axis.sourceCarStateMonoTime <= AXIS_MAX_AGE_NS)
       if native is None and latched and current and continuity and baseline:

@@ -140,13 +140,13 @@ def sdgm_lateral_pedal_source_zero(feedback, cp, cs, axis, native, now_ns, *, pr
     not native.requestedLongitudinal and not native.longitudinalAllowed)
 
 
-def cold_sdgm_main_intent_current(feedback, sm, cp, cs, axis, native, now_ns, *, producer):
+def cold_gm_main_intent_current(feedback, sm, cp, cs, axis, native, now_ns, *, producer):
   """Cold MAIN may wait on a current SOFT occurrence without renewing output."""
   from opendbc.car.structs import car
   from openpilot.starpilot.nostalgia import physical_cancel
   from openpilot.starpilot.aol.runtime import AXIS_MAX_AGE_NS
   event_ns = int(sm.logMonoTime['onroadEvents'])
-  return bool(sdgm_alpha_lateral_owner(cp) and
+  return bool(qualified_gm(cp) and aol_enabled(cp) and
     not feedback.failed and not feedback.paused and not feedback.pending_event and
     not feedback.ever_lateral_active and str(axis.faultReason) == 'availabilityPause' and
     not axis.desiredLateral and not axis.desiredLongitudinal and
@@ -160,8 +160,9 @@ def cold_sdgm_main_intent_current(feedback, sm, cp, cs, axis, native, now_ns, *,
     sm.valid['onroadEvents'] and sm.alive['onroadEvents'] and
     0 < event_ns <= axis.observedMonoTime and now_ns - event_ns <= 1_500_000_000 and
     cs.gearShifter in (car.CarState.GearShifter.drive, car.CarState.GearShifter.low,
-                      car.CarState.GearShifter.sport, car.CarState.GearShifter.brake) and
-    not cs.gasPressed and not physical_cancel(cs, cp) and
+                      car.CarState.GearShifter.sport, car.CarState.GearShifter.brake,
+                      car.CarState.GearShifter.manumatic) and
+    not physical_cancel(cs, cp) and
     cold_main_readiness(cp, cs, native, sm['onroadEvents']))
 
 
@@ -171,6 +172,19 @@ def sdgm_alpha_pedal_withdrawal(cp, cs) -> bool:
   from opendbc.car.structs import car
   return bool(qualified_gm(cp) and aol_enabled(cp) and
               is_volt_sdgm_accepted_envelope(cp) and
+              cs.canValid and not cs.canTimeout and cs.cruiseState.available and
+              not cs.steerFaultTemporary and not cs.steerFaultPermanent and not cs.accFaulted and
+              not cs.doorOpen and not cs.steeringDisengage and
+              cs.gearShifter in (car.CarState.GearShifter.drive, car.CarState.GearShifter.low,
+                                car.CarState.GearShifter.sport, car.CarState.GearShifter.brake,
+                                car.CarState.GearShifter.manumatic) and
+              (cs.brakePressed or cs.regenBraking))
+
+
+def gm_physical_pedal_withdrawal(cp, cs) -> bool:
+  """A qualified GM physical pedal withdraws LONG without canceling MAIN intent."""
+  from opendbc.car.structs import car
+  return bool(qualified_gm(cp) and aol_enabled(cp) and
               cs.canValid and not cs.canTimeout and cs.cruiseState.available and
               not cs.steerFaultTemporary and not cs.steerFaultPermanent and not cs.accFaulted and
               not cs.doorOpen and not cs.steeringDisengage and
@@ -314,7 +328,7 @@ def cold_main_readiness(cp, cs, native, events, *, recovering=False):
   host_wait = not faults if recovering else bool(faults and
     all(event.softDisable and not event.immediateDisable and event.name in names for event in faults))
   return bool(qualified_gm(cp) and aol_enabled(cp) and host_wait and
-    not any(event.userDisable and not (sdgm_alpha_lateral_owner(cp) and
+    not any(event.userDisable and not (gm_physical_pedal_withdrawal(cp, cs) and
       event.name == log.OnroadEvent.EventName.pedalPressed and (cs.brakePressed or cs.regenBraking) and
       not event.immediateDisable and not event.softDisable) for event in events) and
     cs.canValid and not cs.canTimeout and cs.cruiseState.available and
@@ -323,6 +337,28 @@ def cold_main_readiness(cp, cs, native, events, *, recovering=False):
     native is not None and native.pandaInventory and
     not native.requestedLateral and not native.lateralAllowed and
     not native.requestedLongitudinal and not native.longitudinalAllowed)
+
+
+def main_off_idle_native_baseline(cp, cs, axis, native, events, *, producer):
+  """Physical MAIN OFF can acknowledge zero native axes despite NO_ENTRY."""
+  from opendbc.car.structs import car
+  from openpilot.cereal import log
+  return bool(qualified_gm(cp) and aol_enabled(cp) and cs.canValid and not cs.canTimeout and
+    not cs.cruiseState.available and not cs.steerFaultTemporary and not cs.steerFaultPermanent and
+    not cs.accFaulted and not cs.doorOpen and not cs.seatbeltUnlatched and not cs.steeringDisengage and
+    cs.gearShifter in (car.CarState.GearShifter.drive, car.CarState.GearShifter.low,
+                      car.CarState.GearShifter.sport, car.CarState.GearShifter.brake,
+                      car.CarState.GearShifter.manumatic) and
+    producer and str(axis.intentProducerSessionId) == producer and str(axis.faultReason) == 'none' and
+    not axis.desiredLateral and not axis.desiredLongitudinal and
+    not axis.lateralActive and not axis.longitudinalActive and
+    native is not None and native.pandaInventory and
+    not native.requestedLateral and not native.lateralAllowed and
+    not native.requestedLongitudinal and not native.longitudinalAllowed and
+    not any(event.immediateDisable or event.softDisable or event.userDisable and not (
+      event.name in (log.OnroadEvent.EventName.wrongCarMode, log.OnroadEvent.EventName.pcmDisable) or
+      event.name == log.OnroadEvent.EventName.pedalPressed and (cs.brakePressed or cs.regenBraking))
+      for event in events))
 
 
 def prior_main_off_intent_current(feedback, sm, cp, cs, axis, now_ns, *, latched, main_arm_ns, producer):
@@ -345,7 +381,7 @@ def prior_main_off_intent_current(feedback, sm, cp, cs, axis, now_ns, *, latched
       cs.gearShifter not in (car.CarState.GearShifter.drive, car.CarState.GearShifter.low,
                             car.CarState.GearShifter.sport, car.CarState.GearShifter.brake) or
       any(event.type == car.CarState.ButtonEvent.Type.cancel for event in cs.buttonEvents) or
-      str(axis.faultReason) != 'none' or axis.nativeAcknowledged and not sdgm_alpha_lateral_owner(cp) or
+      str(axis.faultReason) != 'none' or
       axis.desiredLateral or axis.desiredLongitudinal or axis.lateralActive or axis.longitudinalActive or
       not 0 < axis.sourceCarStateMonoTime <= axis.observedMonoTime or axis.sourceCarStateMonoTime >= main_arm_ns or
       now_ns - axis.sourceCarStateMonoTime > AXIS_MAX_AGE_NS or
