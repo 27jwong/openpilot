@@ -23,7 +23,7 @@ from opendbc.can import CANPacker
 from opendbc.car import Bus, car_helpers, gen_empty_fingerprint, structs
 from opendbc.car.fw_versions import match_fw_to_car
 from opendbc.car.toyota.fingerprints import FW_VERSIONS
-from opendbc.car.toyota.values import CAR, DBC
+from opendbc.car.toyota.values import CAR, DBC, ToyotaFlags
 from opendbc.car.toyota.tests.test_auto_hold import decode
 from opendbc.safety.tests.libsafety import libsafety_py
 from openpilot.cereal import messaging
@@ -224,7 +224,9 @@ def control_inputs(controls, published, state, sd_events, native, now):
   return values
 
 
-def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H, bridge=None, input_clock=False, brake_stop_check_start=350):
+def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H, bridge=None, input_clock=False, brake_stop_check_start=350,
+             sdsu_words=(0x9049, 0x9249), alpha_long=False, disable_setting=None, physical_frames=None, angle=False,
+             firmware_override=None, assert_hybrid_release=False):
   SYNTHETIC_LAST.clear()
   NATIVE_LAST.clear()
   safety = libsafety_py.libsafety
@@ -235,11 +237,12 @@ def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H,
       ('OpenpilotEnabledToggle', True),
       ('SafeMode', False),
       ('AlwaysOnLateral', aol),
-      ('DisableOpenpilotLongitudinal', stock),
+      ('DisableOpenpilotLongitudinal', stock if disable_setting is None else disable_setting),
+      ('AlphaLongitudinalEnabled', alpha_long),
       ('ToyotaAutoHold', False),
     ):
       params.put_bool(k, v, block=True)
-    fw = firmware(candidate)
+    fw = firmware(candidate) if firmware_override is None else firmware_override
     exact, found = match_fw_to_car(fw, '', log=False)
     assert exact and found == {candidate}
     fp = gen_empty_fingerprint()
@@ -252,7 +255,7 @@ def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H,
     ):
       host = card_module.Car()
     assert host.CP.openpilotLongitudinalControl == (not stock)
-    assert host.CP.safetyConfigs[0].safetyParam == (0x9249 if stock else 0x9049)
+    assert host.CP.safetyConfigs[0].safetyParam == sdsu_words[stock]
     assert host.CP.alternativeExperience == 32
     controls, sd = Controls(), sd_module.SelfdriveD(CP=host.CP)
     assert controls.CP.to_dict() == host.CP.to_dict()
@@ -307,7 +310,7 @@ def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H,
         patch.object(time, 'clock_gettime_ns', side_effect=lambda c: clock[0] if c in (time.CLOCK_MONOTONIC, time.CLOCK_BOOTTIME) else real_clock(c))
       )
     try:
-      for tick in range(1, {'nominal': 251, 'physical': 601, 'faults': 801, 'bad_dlc': 801, 'off': 401, 'cold_low': 251}[scenario]):
+      for tick in range(1, {'nominal': 251, 'physical': 601, 'faults': 801, 'bad_dlc': 801, 'off': 401, 'cold_low': 251, 'hybrid_stop': 251}[scenario]):
         if deterministic:
           clock[0] += 10_000_000
         else:
@@ -316,6 +319,8 @@ def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H,
         now = time.monotonic_ns()
         safety.set_timer((now // 1000) & 0xFFFFFFFF)
         fields = {'cruise': tick >= 150}
+        if scenario == 'hybrid_stop':
+          fields.update(stopped=200 <= tick < 230)
         if scenario == 'cold_low':
           fields.update(cruise=False, stopped=True)
         if scenario == 'physical':
@@ -335,7 +340,7 @@ def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H,
           )
         elif scenario == 'off' and tick == 250:
           params.put_bool('DisableOpenpilotLongitudinal', not stock, block=True)
-        frames = physical(packer, **fields)
+        frames = (physical if physical_frames is None else physical_frames)(packer, **fields)
         if scenario == 'bad_dlc' and 630 <= tick < 665:
           malformed = packer.make_can_msg('SDSU', 0, {'STATE': 0})
           frames.append((malformed[0], malformed[1][:7], malformed[2]))
@@ -397,8 +402,15 @@ def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H,
           if f.address == 0x2E4:
             decoded = decode(host.CP, (f.address, bytes(f.dat), f.src), 'STEERING_LKA')
             positive_steering |= bool(decoded['STEER_REQUEST'] and decoded['STEER_TORQUE_CMD'])
+          elif f.address == 0x191 and angle:
+            decoded = decode(host.CP, (f.address, bytes(f.dat), f.src), 'STEERING_LTA')
+            positive_steering |= bool(decoded['STEER_REQUEST'] and decoded['STEER_ANGLE_CMD'])
           elif f.address == 0x343:
-            positive_accel |= decode(host.CP, (f.address, bytes(f.dat), f.src), 'ACC_CONTROL')['ACCEL_CMD'] > 0
+            acc = decode(host.CP, (f.address, bytes(f.dat), f.src), 'ACC_CONTROL')
+            positive_accel |= acc['ACCEL_CMD'] > 0
+            if assert_hybrid_release and cc.longActive:
+              assert host.CP.flags & ToyotaFlags.HYBRID
+              assert acc['RELEASE_STANDSTILL'] == 1, ('active hybrid resume behavior changed', tick, acc)
         trace.append(
           {
             'tick': tick,
@@ -422,7 +434,7 @@ def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H,
           }
         )
         nominal = tick >= 220 and (
-          scenario in ('nominal', 'cold_low')
+          scenario in ('nominal', 'cold_low', 'hybrid_stop')
           or scenario == 'off'
           and tick < 250
           or scenario == 'physical'
@@ -458,7 +470,7 @@ def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H,
         if scenario == 'off' and tick >= 310:
           if stock:
             assert not host.CP.openpilotLongitudinalControl and not cc.longActive
-            assert host.CP.safetyConfigs[0].safetyParam == 0x9249
+            assert host.CP.safetyConfigs[0].safetyParam == sdsu_words[1]
           else:
             assert not host.CI.CC.rav4h_filter_input.update(time.monotonic_ns())
             for f in outgoing.sendcan:

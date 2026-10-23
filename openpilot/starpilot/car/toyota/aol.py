@@ -5,7 +5,7 @@ from opendbc.car.toyota.values import CAR, ToyotaFlags, ToyotaSafetyFlags, EPS_S
 from openpilot.starpilot.aol.policy import AolVehiclePolicy
 from openpilot.starpilot.aol.intent import AolCardIntent, AOL_TOGGLE
 
-AOL_WORDS = frozenset((73, 585, 4169, 4681, 2121, 0x9049, 0x9249, 0x2049, 0x2249, 0x424D, 0x449, 0x649, 0x1449, 0x1649))
+AOL_WORDS = frozenset((73, 585, 4169, 4681, 2121, 0x9049, 0x9249, 0x2049, 0x2249, 0x424D, 0x449, 0x649, 0x1449, 0x1649, 0x8049, 0x8249, 0x8449, 0x8649))
 
 
 SECOC_TORQUE_CARS = frozenset((CAR.TOYOTA_SIENNA_4TH_GEN,))

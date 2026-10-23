@@ -178,7 +178,7 @@ class CarState(CarStateBase):
     if self.CP.flags & ToyotaFlags.TSS2 and not self.CP.flags & ToyotaFlags.DISABLE_RADAR.value:
       # The radar filter intercepts this message. Preserve stock PCS/AEB
       # observations without making intercepted ACC_CONTROL a required input.
-      if not self.CP.flags & ToyotaFlags.RADAR_CAN_FILTER:
+      if not self.CP.flags & ToyotaFlags.RADAR_CAN_FILTER and not rav4h_filter_configured(self.CP):
         self.acc_type = cp_acc.vl["ACC_CONTROL"]["ACC_TYPE"]
       ret.stockFcw = bool(cp_acc.vl["PCS_HUD"]["FCW"])
 
@@ -226,7 +226,7 @@ class CarState(CarStateBase):
         buttonEvents.extend(create_button_events(1, 0, {1: ButtonType.lkas}) +
                             create_button_events(0, 1, {1: ButtonType.lkas}))
 
-      if self.CP.flags & ToyotaFlags.TSS2 and not (self.CP.flags & (ToyotaFlags.RADAR_ACC | ToyotaFlags.SECOC)):
+      if self.CP.flags & ToyotaFlags.TSS2 and not (self.CP.flags & (ToyotaFlags.RADAR_ACC | ToyotaFlags.SECOC | ToyotaFlags.LONG_FILTER)):
         # distance button is wired to the ACC module (camera or radar)
         prev_distance_button = self.distance_button
         self.distance_button = cp_acc.vl["ACC_CONTROL"]["DISTANCE"]
