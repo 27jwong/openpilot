@@ -662,6 +662,14 @@ def run(
               native_key = native_identity_key(actual_native)
           else:
             hardware_inventory = tuple((index, str(panda.pandaType)) for index, panda in enumerate(sm['pandaStates']))
+        # Collection status carries no trial or restore authority. Send its
+        # genuine new-pose source receipt before optional snapshot work can
+        # delay delivery; its original lease is never renewed here.
+        if (source_valid and live_offer is None and live_history.offer is None and
+            tracking_pose_header > previous_tracking_pose_header):
+          pm.send('starpilotSteeringTracking', tracking_message(source, now_ns=now,
+            current_native=False, offer=None, restore=None))
+          previous_tracking_pose_header = tracking_pose_header
         prior_restore_offer = live_history.offer
         if live_offer is None:
           live_history.advance(live_actor, collector, source if source_valid else None, now_ns=now,
@@ -684,6 +692,12 @@ def run(
         new_raw_pose = tracking_pose_header > previous_tracking_pose_header
         if new_raw_pose:
           previous_tracking_pose_header = tracking_pose_header
+        # Optional work may have consumed the original witness/permission
+        # deadline. A proposal must face the actual post-work clock and native
+        # checks, never the time captured before that work started.
+        source_valid, now = source_current()
+        current_native = bool(source_valid and collector is not None and collector.ready and
+                              current_native_health(sm, CP, collector.ready[-1][0], now))
         new_restore = live_history.offer is not None and live_history.offer is not prior_restore_offer
         # The transport/source status has its own20Hz cadence. Waiting for a
         # new admitted offer can starve service health and prevent fresh raw
