@@ -228,7 +228,8 @@ def control_inputs(controls, published, state, sd_events, native, now):
 def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H, bridge=None, input_clock=False, brake_stop_check_start=350,
              sdsu_words=(0x9049, 0x9249), alpha_long=False, disable_setting=None, physical_frames=None, angle=False,
              firmware_override=None, assert_hybrid_release=False, sdsu_mirror=False, on_sample=None, camera_messages=False, filter_advert=False,
-             brake_pause_mps=None, native_rx_expected=None, on_state=None, fingerprint_frames=None, manual_selection=False, native_tx_expected=None):
+             brake_pause_mps=None, native_rx_expected=None, on_state=None, fingerprint_frames=None, manual_selection=False, native_tx_expected=None,
+             manual_filter_length=None):
   SYNTHETIC_LAST.clear()
   NATIVE_LAST.clear()
   safety = libsafety_py.libsafety
@@ -248,13 +249,18 @@ def run_case(stock, scenario='nominal', *, aol=True, candidate=CAR.TOYOTA_RAV4H,
       params.put('AolBrakePauseSpeedMps', float(brake_pause_mps), block=True)
     fw = firmware(candidate) if firmware_override is None else firmware_override
     if manual_selection:
-      assert stock and fingerprint_frames == []
-      if candidate == CAR.TOYOTA_MATRIX_RETROFIT:
+      if manual_filter_length is not None:
+        assert candidate == CAR.TOYOTA_MATRIX_RETROFIT and manual_filter_length in (4, 8)
         assert not fw and firmware_override == []
+        assert fingerprint_frames == [(0x2FF, bytes(manual_filter_length), 0)]
       else:
-        assert candidate == CAR.TOYOTA_PRIUS_RETROFIT and len(fw) == 1
-        assert fw[0].ecu == structs.CarParams.Ecu.eps and fw[0].address == 0x7A1 and fw[0].bus == 0
-        assert bytes(fw[0].fwVersion) == b'8965B47070' + bytes(6)
+        assert stock and fingerprint_frames == []
+        if candidate == CAR.TOYOTA_MATRIX_RETROFIT:
+          assert not fw and firmware_override == []
+        else:
+          assert candidate == CAR.TOYOTA_PRIUS_RETROFIT and len(fw) == 1
+          assert fw[0].ecu == structs.CarParams.Ecu.eps and fw[0].address == 0x7A1 and fw[0].bus == 0
+          assert bytes(fw[0].fwVersion) == b'8965B47070' + bytes(6)
     else:
       exact, found = match_fw_to_car(fw, '', log=False)
       assert exact and found == {candidate}

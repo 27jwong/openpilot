@@ -150,6 +150,8 @@ class CarInterface(CarInterfaceBase):
     ret.openpilotLongitudinalControl = ((bool(ret.flags & ToyotaFlags.TSS2) and not (ret.flags & ToyotaFlags.RADAR_ACC)) or
                                         bool(ret.flags & ToyotaFlags.DISABLE_RADAR.value) or (radar_filter and alpha_long))
 
+    from opendbc.car.toyota import matrix_filter
+    manual_matrix_filter = any(matrix_filter.hardware_supported(candidate, fingerprint, car_fw, length=size) for size in (4, 8))
     if candidate in (CAR.TOYOTA_MATRIX_RETROFIT, CAR.TOYOTA_PRIUS_RETROFIT):
       # These manually selected retrofits currently own stock PCM longitudinal.
       # Observed takeover hardware needs its paired controller/native port.
@@ -167,7 +169,7 @@ class CarInterface(CarInterfaceBase):
       if smart_dsu:
         ret.flags |= int(ToyotaFlags.LONG_FILTER)
         ret.safetyConfigs[0].safetyParam |= int(ToyotaSafetyFlags.LONG_FILTER)
-      elif takeover:
+      elif takeover and not manual_matrix_filter:
         ret.dashcamOnly = True
       ret.openpilotLongitudinalControl = smart_dsu
       ret.alphaLongitudinalAvailable = False

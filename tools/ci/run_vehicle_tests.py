@@ -27,6 +27,8 @@ AOL_LIFECYCLE_TARGETS = (
   'openpilot/starpilot/aol/tests/test_hkg_early_long_withdrawal.py',
   'openpilot/starpilot/car/toyota/tests/test_prius_retrofit_stock.py',
   'openpilot/starpilot/car/toyota/tests/test_prius_retrofit_stock_callers.py',
+  'opendbc_repo/opendbc/car/toyota/tests/test_matrix_filter.py',
+  'openpilot/starpilot/car/toyota/tests/test_matrix_filter_callers.py',
   'openpilot/starpilot/aol/tests/test_crossmake_native_admission.py',
   'openpilot/starpilot/aol/tests/test_hkg_source_policy_cache.py',
   'openpilot/starpilot/aol/tests/test_hkg_native_admission.py',
@@ -211,6 +213,8 @@ DEBUG_SAFETY_CLASS_TARGETS = {
 RELEASE_TARGETS = (
   'openpilot/starpilot/car/toyota/tests/test_prius_retrofit_stock.py',
   'openpilot/starpilot/car/toyota/tests/test_prius_retrofit_stock_callers.py',
+  'opendbc_repo/opendbc/car/toyota/tests/test_matrix_filter.py',
+  'openpilot/starpilot/car/toyota/tests/test_matrix_filter_callers.py',
   'opendbc_repo/opendbc/car/hyundai/tests/test_long_cp_copy.py',
   'opendbc_repo/opendbc/car/ford/tests/test_mache_display_handoff.py',
   'opendbc_repo/opendbc/safety/tests/test_ford_mache_display.py',
