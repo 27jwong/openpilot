@@ -62,14 +62,41 @@ def test_changed_source_waits_for_actual_old_probe_reap_before_bootstrap(monkeyp
   new = replace(old, source_epoch='9'*64)
   bootstrap, probe = PollProcess(), PollProcess(reap_after=3)
   actor = LiveTrackingActor(bootstrap, probe_process=probe)
+  # Lifecycle seam: preserve the current asynchronous preparation/poll contract.
+  # Response/controller/native admission is covered by the separate real collector tests.
+  class SnapshotPreparation:
+    pid = epoch = token = pending = None
+    reason = 'snapshot_submitted'
+    submissions = []
+
+    def cancel(self, reason):
+      self.pid = self.pending = None
+
+    def poll(self, *, token, now_ns):
+      result, self.pending = self.pending, None
+      self.pid = None
+      return result if token == self.token else None
+
+    def submit(self, collector, seed, *, token, now_ns):
+      assert probe.child is None  # Never start new snapshot work before the old probe is reaped.
+      self.epoch, self.token, self.pid = collector.original_source_capture.epoch, token, 1
+      self.submissions.append((token, now_ns))
+      self.pending = {'snapshot': live_tracking_bootstrap_producer.response_snapshot(collector, seed, now_ns)}
+      return True
+
+  snapshot = SnapshotPreparation()
+  from typing import Any, cast
+  actor.snapshot_process = cast(Any, snapshot)
+  monkeypatch.setattr(actor, '_same_bootstrap_source', lambda source, now_ns: True)
   actor.seed = old
   monkeypatch.setattr(actor, 'binding_for', lambda collector, source: new)
   collector = SimpleNamespace(ready=[None], original_source_capture=SimpleNamespace(epoch=1), live_tracking=None)
   monkeypatch.setattr(live_tracking_bootstrap_producer, 'response_snapshot', lambda *args: {'lifecycle_test_only': True})
   assert actor.tick(collector, object(), now_ns=10, current_native=True) is None
-  assert probe.child is not None and not bootstrap.submissions
+  assert probe.child is not None and not bootstrap.submissions and not snapshot.submissions
   assert actor.tick(collector, object(), now_ns=20, current_native=True) is None
-  assert probe.child is None
+  assert probe.child is None and len(snapshot.submissions) == 1 and not bootstrap.submissions
+  assert actor.tick(collector, object(), now_ns=30, current_native=True) is None
   assert len(bootstrap.submissions) == 1
   assert all(token is None for token, _ in probe.polls)
 

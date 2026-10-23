@@ -235,6 +235,8 @@ def test_actual_nonlive_run_does_not_read_tracking_poll_metadata(monkeypatch):
   now = [BASE-50_000_000]
 
   class SM:
+    # Ordinary SubMaster delivery metadata is required; no tracking-service metadata exists.
+    updated = {'deviceMotion': False}
     def update(self, timeout=None):
       now[0] += 50_000_000
       if now[0] > BASE+100_000_000:

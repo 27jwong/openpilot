@@ -1,4 +1,6 @@
 """Actual historical CAN maintenance never grants a live learning permission."""
+from typing import Any
+
 from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -21,7 +23,7 @@ def test_stalled_live_collection_still_decodes_original_native_history(current_n
   old_size = len(replay.records)
   cutoff = replay.records[-1].control_ns - 4_000_000_000
   stamp, _ = replay.checkpoints[0]
-  actor = LiveTrackingActor(source_tracking=True)
+  actor: Any = LiveTrackingActor(source_tracking=True)
   actor.ingress = SimpleNamespace(interrupt=Mock())
   actor.certificate = SimpleNamespace(binding=SimpleNamespace(identity=replay.identity, baseline_revision=replay.baseline_revision))
   collector = SimpleNamespace(adapter=SimpleNamespace(replay=replay), ready=[])
@@ -41,7 +43,7 @@ def test_stalled_legacy_bootstrap_keeps_original_history_policy():
   replay = fixture('starpilot', two_windows=True).engine
   history = replay.emissions
   history.decode_queue.extend(history.events)
-  actor = LiveTrackingActor(source_tracking=False)
+  actor: Any = LiveTrackingActor(source_tracking=False)
   collector = SimpleNamespace(adapter=SimpleNamespace(replay=replay), ready=[])
   before = tuple(history.decode_queue), tuple(replay.records)
   assert actor.tick(collector, None, now_ns=replay.records[-1].control_ns, current_native=False) is None

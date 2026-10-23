@@ -33,7 +33,8 @@ class MapLeaseWriter:
 
 def projection_map_active(path=DEFAULT_PATH, now=None):
   try:
-    age = (time.time() if now is None else now) - os.stat(path).st_mtime
+    # Filesystem mtimes use the realtime clock; monotonic time has a different epoch.
+    age = (time.time() if now is None else now) - os.stat(path).st_mtime  # noqa: TID251
   except OSError:
     return False
   return 0 <= age <= MAX_AGE_S
