@@ -301,6 +301,7 @@ class TransportPauseFeedback:
     self.source_retention_started_ns = 0
     self.ordinary_warning_retained = False
     self.ordinary_warning_qualified = False
+    self.ordinary_warning_pending_baseline = None
     self.healthy_feedback_ns = 0
     self.healthy_native_ns = 0
     self.healthy_inventory = None
@@ -366,7 +367,9 @@ class TransportPauseFeedback:
     from openpilot.starpilot.nostalgia import physical_cancel
     from opendbc.car import structs
 
-    if (not latched or self.failed or self.paused or self.pending_event or self.retention_started_ns or
+    pending_baseline = self.ordinary_warning_pending_baseline
+    pending = bool(pending_baseline is not None and self.pending_event)
+    if (not latched or self.failed or self.paused or self.pending_event and not pending or self.retention_started_ns or
         not self.session or not self.lateral_baseline_ns or not self.lateral_inventory or
         not policy_for(cp).intent_supported or
         policy_for(cp).cruise_main_required and not cs.cruiseState.available or
@@ -389,7 +392,8 @@ class TransportPauseFeedback:
       return False
     warning = any(event.softDisable for event in events)
     recovering = bool(getattr(self, 'ordinary_warning_retained', False) and not warning)
-    if not warning and not recovering:
+    if pending and (axis.faultEventMonoTime != self.pending_event or
+        not 0 < self.pending_event <= now_ns or now_ns - self.pending_event > AXIS_MAX_AGE_NS):
       return False
     stock_user = stock_lateral_user_event(cp)
     # Physical withdrawals still go through the family button/pedal owner.
@@ -400,7 +404,19 @@ class TransportPauseFeedback:
           cp.brand == 'gm' and 0 < self.gm_withdrawal_ns == event_ns <= now_ns and
           now_ns - event_ns <= SAFETY_MAX_AGE_NS)) for event in events):
       return False
-    prior = self.signature
+    prior = pending_baseline if pending else self.signature
+    # The typed SOFT withdrawal may precede its event socket. Hold only intent
+    # under the fixed original 30ms join until that exact event arrives.
+    # No duplicate or newer withdrawal can move the pending occurrence.
+    axis_first = bool(str(axis.faultReason) == 'availabilityPause' and
+      not (axis.lateralActive or axis.longitudinalActive or axis.desiredLateral or
+           axis.desiredLongitudinal or axis.nativeAcknowledged) and
+      prior is not None and prior[5] == 'none' and prior[9] and prior[11] and prior[13] and
+      prior[14:16] == (producer, self.availability_epoch) and
+      0 < prior[8] <= now_ns and (pending or now_ns <= prior[4] and now_ns - prior[8] <= AXIS_MAX_AGE_NS) and
+      event_ns < axis.faultEventMonoTime <= stamp and now_ns - axis.faultEventMonoTime <= AXIS_MAX_AGE_NS)
+    if not warning and not recovering and not axis_first:
+      return False
     active_join = bool(warning and prior is not None and str(axis.faultReason) == 'none' and
       axis.lateralActive and axis.desiredLateral and axis.nativeAcknowledged and
       prior[9] and prior[11] and prior[13] and prior[14:16] == (producer, self.availability_epoch) and
@@ -410,16 +426,27 @@ class TransportPauseFeedback:
       not axis.desiredLongitudinal and
       (warning and str(axis.faultReason) == 'availabilityPause' and axis.faultEventMonoTime == event_ns <= stamp or
        recovering and str(axis.faultReason) == 'none'))
-    if not active_join and not withdrawn:
+    if not active_join and not withdrawn and not axis_first:
+      return False
+    if pending and not axis_first and not (withdrawn and warning and event_ns == self.pending_event):
       return False
     native = _configured_transport_native(sm, cp, self.session, now_ns,
-      allow_restricted_lateral=withdrawn or bool(cs.steerFaultTemporary),
-      require_longitudinal=not withdrawn)
+      allow_restricted_lateral=withdrawn or axis_first or bool(cs.steerFaultTemporary),
+      require_longitudinal=not (withdrawn or axis_first))
     if (native is None or not native.pandaInventory or
         (native.pandaSerial, tuple(slot.hardwareSerial for slot in native.pandaInventory)) != self.lateral_inventory or
         native.observedMonoTime < self.lateral_native_ns or
         active_join and not (native.requestedLateral and native.lateralAllowed)):
       return False
+    if axis_first:
+      if not pending:
+        self.pending_event = int(axis.faultEventMonoTime)
+        self.ordinary_warning_pending_baseline = prior
+      self.awaiting = True
+      return True
+    if pending:
+      self.pending_event = 0
+      self.ordinary_warning_pending_baseline = None
     self.ordinary_warning_retained = True
     return True
 
@@ -879,7 +906,8 @@ class TransportPauseFeedback:
        # Unmatched joins retain pending_event; every other critical path fails
        # and clears the LAT-only baseline before changing the signature.
        self.lateral_only_baseline and not self.failed and not self.pending_event and
-       previous[5] == 'critical' and previous[1] == self.sequence and not any(previous[9:14]) and
+       (previous[5] == 'critical' or previous[5] == 'availabilityPause' and self.ordinary_warning_retained) and
+       previous[1] == self.sequence and not any(previous[9:14]) and
        0 < previous[6] <= previous[2] <= axis.faultEventMonoTime and
        0 < self.lateral_source_ns <= previous[8] <= previous[2] and
        previous[2] - previous[8] <= AXIS_MAX_AGE_NS and
@@ -1006,7 +1034,8 @@ class TransportPauseFeedback:
     output_missing = not (sm.seen['aolAxisState'] and sm.valid['aolAxisState'] and sm.alive['aolAxisState'])
     # The same exclusive matched-lag signature invariant as typed retention:
     # unknown critical joins keep pending_event; other critical paths fail.
-    matched_lag = bool(str(axis.faultReason) == 'critical' and signature == self.signature and
+    matched_lag = bool((str(axis.faultReason) == 'critical' or
+      str(axis.faultReason) == 'availabilityPause' and self.ordinary_warning_retained) and signature == self.signature and
       self.lateral_only_baseline and not self.failed and not self.pending_event and
       signature[0] == self.session and signature[7] == self.session and signature[1] == self.sequence and
       signature[14] == producer == self.availability_producer and signature[15] == self.availability_epoch and
@@ -1167,6 +1196,7 @@ class TransportPauseFeedback:
       axis = sm['aolAxisState']
       if not latched or cp_identity(cp) != self.cp or self.session and str(axis.sessionId) != self.session:
         self.ordinary_warning_retained = False
+        self.ordinary_warning_pending_baseline = None
         self.temporary_eps_event_ns = 0
         self.ccnc_main_off_source_ns = 0
         self.cold_park_waiting = False

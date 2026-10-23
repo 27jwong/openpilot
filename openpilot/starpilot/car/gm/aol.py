@@ -48,6 +48,12 @@ def sdgm_alpha_lateral_owner(cp) -> bool:
   return bool(qualified_gm(cp) and aol_enabled(cp) and is_volt_sdgm_accepted_envelope(cp))
 
 
+def steering_raw_projection_owner(cp) -> bool:
+  """Qualified non-pedal Volt owners consume their exact raw steering receipt."""
+  from opendbc.car.gm.steering_authority import monitored_profile
+  return bool(qualified_gm(cp) and monitored_profile(cp))
+
+
 def sdgm_alpha_pedal_withdrawal(cp, cs) -> bool:
   """Physical LONG withdrawal for the 2019 SASCM Alpha configuration."""
   from opendbc.car.gm.values import is_volt_sdgm_accepted_envelope
@@ -192,7 +198,7 @@ def cold_main_readiness(cp, cs, native, events, *, recovering=False):
   """A MAIN request may wait for host startup without acquiring either axis."""
   from openpilot.cereal import log
   names = (log.OnroadEvent.EventName.commIssue, log.OnroadEvent.EventName.commIssueAvgFreq,
-           log.OnroadEvent.EventName.locationdTemporaryError)
+           log.OnroadEvent.EventName.locationdTemporaryError, log.OnroadEvent.EventName.processNotRunning)
   faults = [event for event in events if event.softDisable or event.immediateDisable]
   host_wait = not faults if recovering else bool(faults and
     all(event.softDisable and not event.immediateDisable and event.name in names for event in faults))
