@@ -8,7 +8,7 @@ from opendbc.car.common.pid import PIDController
 from opendbc.car.secoc import add_mac, build_sync_mac
 from opendbc.car.interfaces import CarControllerBase
 from opendbc.car.toyota import toyotacan
-from opendbc.car.toyota import prius_longitudinal, rav4h_filter, pedal, eps8_sdsu, legacy_sdsu, advert_filter
+from opendbc.car.toyota import prius_longitudinal, rav4h_filter, pedal, eps8_sdsu, legacy_sdsu, advert_filter, legacy_stop_timer
 from opendbc.car.toyota.door_locks import DoorLocks
 from opendbc.car.toyota.values import CAR, CarControllerParams, ToyotaFlags, TOYOTA_AUTO_HOLD_CARS, uses_toyota_auto_hold_aeb
 from opendbc.can import CANPacker
@@ -84,6 +84,7 @@ class CarController(CarControllerBase):
     self.last_standstill = False
     self.prius_longitudinal = prius_longitudinal.enabled(CP)
     self.sdsu_hybrid = (eps8_sdsu.configured(CP) or legacy_sdsu.configured(CP)) and bool(CP.flags & ToyotaFlags.HYBRID)
+    self.legacy_stop_timer = legacy_stop_timer.enabled(CP)
     self.permit_braking = True
     self.steer_rate_counter = 0
     self.distance_button = 0
@@ -286,6 +287,11 @@ class CarController(CarControllerBase):
         self.last_standstill = CS.out.standstill
         if not long_active and CS.out.standstill:
           self.standstill_req = True
+      elif self.legacy_stop_timer:
+        self.standstill_req = legacy_stop_timer.request(
+          self.last_standstill, self.standstill_req, CS.out.standstill,
+          CS.pcm_acc_status, CC.cruiseControl.resume, long_active)
+        self.last_standstill = CS.out.standstill
       elif self.sdsu_hybrid or advert_long and bool(self.CP.flags & ToyotaFlags.HYBRID):
         # Retain the existing hybrid resume behavior while active. The shared
         # owner guard below still holds neutral when LONG or its source is lost.

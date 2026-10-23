@@ -84,6 +84,8 @@ AOL_LIFECYCLE_TARGETS = (
   "openpilot/starpilot/aol/tests/test_chrysler.py",
   "openpilot/starpilot/aol/tests/test_toyota.py",
   "openpilot/starpilot/car/toyota/tests/test_lexus_is_caller_native.py",
+  "openpilot/starpilot/car/toyota/tests/test_legacy_stop_timer.py",
+  "openpilot/starpilot/car/toyota/tests/test_legacy_stop_timer_callers.py",
   "openpilot/starpilot/car/nissan/tests/test_aol.py",
   "openpilot/starpilot/aol/tests/test_volkswagen.py",
   "openpilot/starpilot/aol/tests/test_volkswagen_saved_intent.py",
