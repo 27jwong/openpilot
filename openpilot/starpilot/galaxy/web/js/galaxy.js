@@ -90,9 +90,9 @@ export const GalaxyPage = {
       </BluetoothNotice>
       <GxNotice v-else-if="showAppUpdate && !ios" tone="warn" title="Android app update available">
         Version {{ availableAppVersion }} is available. Installed: {{ installedAppVersion }}.
-        <div class="gx-actions"><button v-if="nativeInstallerAvailable" type="button" class="gx-btn" @click="installAppUpdate">Update app</button>
+        <template #actions><button v-if="nativeInstallerAvailable" type="button" class="gx-btn" @click="installAppUpdate">Update app</button>
           <a v-else class="gx-btn" href="./app.apk">Update app</a>
-          <button type="button" class="gx-btn gx-btn--tonal" aria-label="Dismiss app update notice" @click="dismissAppUpdate">Dismiss</button></div>
+          <button type="button" class="gx-btn gx-btn--tonal" aria-label="Dismiss app update notice" @click="dismissAppUpdate">Dismiss</button></template>
       </GxNotice>
       <GxState v-if="mode !== 'local'">Connect to your comma to set up remote access.</GxState>
       <GxState v-else-if="loading" loading>Checking pairing status…</GxState>
