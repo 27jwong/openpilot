@@ -140,7 +140,8 @@ class TestVehicleCollection(unittest.TestCase):
     test = unittest.FunctionTestCase(lambda: None)
     with tempfile.TemporaryDirectory() as directory, \
          patch.object(test, 'id', return_value=test_id), \
-         patch.object(run_vehicle_tests, 'source_provenance', side_effect=[{'inputs': 'before'}, {'inputs': 'after'}]), \
+         patch.object(run_vehicle_tests, 'source_provenance', side_effect=[{'inputs': value, 'build_identity': {'inputs': {'revision': 'fixture'}}}
+                                                                          for value in ('before', 'after')]), \
          patch.object(run_vehicle_tests, 'vehicle_inventory', return_value={'platform_ids': ['A'], 'platform_count': 1}), \
          patch.object(run_vehicle_tests, 'native_provenance', return_value={}), \
          patch.object(run_vehicle_tests, 'audit_interface_modules', return_value=([], [])), \
@@ -186,7 +187,7 @@ class TestVehicleCollection(unittest.TestCase):
       "__module__": module.__name__, "setUpClass": set_up_class, "test_car_interfaces_A": lambda self: self.fail("unreachable")})
     tests = list(test_runner.flatten(unittest.defaultTestLoader.loadTestsFromModule(module)))
     with tempfile.TemporaryDirectory() as directory, patch.dict(sys.modules, {module.__name__: module}), \
-         patch.object(run_vehicle_tests, "source_provenance", return_value={}), \
+         patch.object(run_vehicle_tests, "source_provenance", return_value={"build_identity": {"inputs": {"revision": "fixture"}}}), \
          patch.object(run_vehicle_tests, "vehicle_inventory", return_value={"platform_ids": ["A"], "platform_count": 1}), \
          patch.object(run_vehicle_tests, "native_provenance", return_value={}), \
          patch.object(run_vehicle_tests, "audit_interface_modules", return_value=([], [])), \
@@ -214,6 +215,8 @@ class TestVehicleCollection(unittest.TestCase):
 
           for name in ("source_provenance", "vehicle_inventory", "native_provenance"):
             value = {"platform_ids": ["A"], "platform_count": 1} if name == "vehicle_inventory" else {}
+            if name == "source_provenance":
+              value = {"build_identity": {"inputs": {"revision": "fixture"}}}
             stack.enter_context(patch.object(run_vehicle_tests, name, side_effect=fail if name == failing else None, return_value=value))
           stack.enter_context(patch.object(run_vehicle_tests.vehicle_pytest, "split_targets", return_value=(["fixture.py"], [])))
           stack.enter_context(patch.object(run_vehicle_tests.vehicle_pytest, "collect", return_value=([], [])))
@@ -379,3 +382,4 @@ class TestCar(unittest.TestCase):
 
 if __name__ == "__main__":
   unittest.main()
+
