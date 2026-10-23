@@ -159,6 +159,7 @@ def _policy_for(CP) -> AolVehiclePolicy:
     )
   if qualified_non_scc(CP):
     return AolVehiclePolicy(
+      cruise_main_required=False,
       intent_supported=True,
       settings_supported=True,
       runtime_supported=True,
