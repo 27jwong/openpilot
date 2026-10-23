@@ -436,10 +436,15 @@ int main() {
   // the unchanged Ioniq6 profiles; this is not an independent AOL grant.
   auto pe = status();
   pe.safety_mode = HYUNDAI_AOL_PROFILE.mode;
-  pe.safety_param = 0x5491U;
-  assert(aol_capable(pe, HYUNDAI_AOL_PROFILE.mode, VEHICLE_REGISTRY));
-  assert(aol_runtime_enabled(false, pe, VEHICLE_REGISTRY));
-  for (uint16_t denied : {0x5490U, 0x5493U, 0x5495U, 0x5411U, 0x54B1U, 0x5691U}) {
+  for (uint16_t admitted : {0x5491U, 0x5495U}) {
+    pe.safety_param = admitted;
+    assert(aol_capable(pe, HYUNDAI_AOL_PROFILE.mode, VEHICLE_REGISTRY));
+    assert(aol_runtime_enabled(false, pe, VEHICLE_REGISTRY));
+    pe.capability_flags = 0U;
+    assert(!aol_capable(pe, HYUNDAI_AOL_PROFILE.mode, VEHICLE_REGISTRY));
+    pe.capability_flags = 1U;
+  }
+  for (uint16_t denied : {0x5490U, 0x5493U, 0x5497U, 0x5411U, 0x54B1U, 0x5691U}) {
     pe.safety_param = denied;
     assert(!aol_capable(pe, HYUNDAI_AOL_PROFILE.mode, VEHICLE_REGISTRY));
   }
@@ -481,7 +486,7 @@ int main() {
     0x7090U, 0x7092U, 0x7208U, 0x720AU, 0x7228U, 0x722AU, 0x7809U, 0x7829U,
   };
   for (uint32_t word = 0U; word <= 0xFFFFU; ++word) {
-    bool expected = word == 0x0815U || word == 0x0895U || word == 0x8815U || word == 0x8895U || word == 0x5491U || word == 0x5C91U || word == 0x5C95U;
+    bool expected = word == 0x0815U || word == 0x0895U || word == 0x8815U || word == 0x8895U || word == 0x5491U || word == 0x5495U || word == 0x5C91U || word == 0x5C95U;
     for (uint16_t stock_word : stock_canfd_words) {
       expected = expected || word == stock_word;
     }
