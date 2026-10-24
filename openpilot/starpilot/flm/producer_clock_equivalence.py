@@ -10,7 +10,10 @@ import math
 from pathlib import Path
 import time
 
-MAX_CLOCK_UNCERTAINTY_NS = 1_000_000
+# Each advertised clock resolution contributes to the conservative interval.
+# Two supported 1ms clocks already contribute 2ms before sampling overhead.
+MAX_CLOCK_RESOLUTION_NS = 1_000_000
+MAX_CLOCK_UNCERTAINTY_NS = 3_000_000
 PRODUCER_SOURCE_HASHES = (
   ('openpilot', 'system/camerad/cameras/spectra.cc', '4fa26c17f0fb792a4ab6815657beccddee1d641faa2fd02e5aa7393f717a2f3a'),
   ('openpilot', 'system/camerad/cameras/camera_qcom2.cc', 'b34c24c9984a0ac086f7b961cb7ff09d0501231da50aaad0e676bb3dc3f2edd9'),
@@ -42,6 +45,10 @@ KERNEL_ABI_SOURCE_PIN = (
 CLOSURE_BYTES = json.dumps((PRODUCER_SOURCE_HASHES, KERNEL_ABI_SOURCE_PIN), separators=(',', ':')).encode('ascii')
 CLOSURE_SHA256 = hashlib.sha256(CLOSURE_BYTES).hexdigest()
 CONVENTION = 'mono_boot_equivalent_interval_v1'
+
+
+def clock_uncertainty_limit(source_domain):
+  return MAX_CLOCK_UNCERTAINTY_NS if source_domain == CONVENTION else MAX_CLOCK_RESOLUTION_NS
 
 
 def pinned_default_contract():
@@ -79,7 +86,7 @@ class ClockEquivalence:
 
 def equivalence_from_samples(samples, mono_resolution_ns, boot_resolution_ns):
   if (type(samples) is not tuple or len(samples) != 3 or
-      any(type(value) is not int or not 0 < value <= MAX_CLOCK_UNCERTAINTY_NS
+      any(type(value) is not int or not 0 < value <= MAX_CLOCK_RESOLUTION_NS
         for value in (mono_resolution_ns, boot_resolution_ns))):
     raise ValueError('three original samples and explicit clock resolutions required')
   intervals = []
