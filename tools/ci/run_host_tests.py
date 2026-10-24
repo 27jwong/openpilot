@@ -19,6 +19,9 @@ EXTRA_PYTEST_FILES = (
   'openpilot/selfdrive/ui/tests/test_onboarding_textures.py',
 )
 
+# Public compatibility list also used by the local test command.
+UI_PYTEST_FILES = EXTRA_PYTEST_FILES
+
 
 def pytest_files(root=ROOT):
   """Select custom files containing pytest functions or plain Test classes."""
