@@ -1,14 +1,10 @@
-"""Runs the car renderer on core 6 at the lowest priority.
-Safeguards:
-- SCHED_IDLE, so camerad and the comma UI on core 6 always preempt it.
-- Core 6 again since 2026-10-14. On 2026-10-08 the comma UI took 65-75 % of it
-  and the renderer moved to core 7, but there it waited for a core 47 % of the
-  time behind modeld and dmonitoringmodeld (core 7 at 78 %). With the UI now
-  at 8-14 %, core 6 runs 16-24 % busy, and core 7 is left to the models and
-  Jetlink's frame loop.
-- Every renderer thread is placed, including ones the graphics driver starts later.
-- Parked, power saving turns cores 4-7 off. The pin is re-applied every
-  PLACEMENT_CHECK_INTERVAL seconds once core 6 is back, like selfdrive/ui/ui.py.
+"""Keep projection work below ordinary UI work on core 6.
+
+SCHED_BATCH with positive niceness permits progress when ordinary tasks keep
+core 6 busy; SCHED_IDLE could spend almost an entire startup deadline runnable
+but unscheduled. Real-time controls/model policies and CPU assignments remain
+unchanged. Apply placement before importing the UI so driver threads inherit it,
+and reapply affinity when the big cluster returns from offroad power saving.
 """
 
 from __future__ import annotations
@@ -19,7 +15,8 @@ from typing import Any
 
 RENDER_CORE = 6
 PLACEMENT_CHECK_INTERVAL = 1.0  # s
-FALLBACK_NICE = 10  # if SCHED_IDLE is unavailable
+RENDER_NICE = 5
+FALLBACK_NICE = 10  # if SCHED_BATCH is unavailable
 
 
 def _thread_ids() -> list[int]:
@@ -41,7 +38,7 @@ def _core_online(core: int) -> bool:
 
 class RendererPlacement:
   """Keeps every thread of this process on RENDER_CORE while that core is online:
-  SCHED_IDLE for the renderer, or normal scheduling (idle=False) for
+  Low-priority batch scheduling for the renderer, or normal scheduling (idle=False) for
   android_autod, whose stream thread otherwise sticks on whichever isolated
   core it first woke on (core 7, waiting ~32 % of the time behind the models)."""
 
@@ -63,10 +60,12 @@ class RendererPlacement:
       self.next_check = float("inf")
       return
     inherited = sorted(os.sched_getaffinity(0))
-    policy = "idle" if self.idle else "normal"
+    policy = "normal"
     try:
       if self.idle:
-        os.sched_setscheduler(0, os.SCHED_IDLE, os.sched_param(0))
+        os.sched_setscheduler(0, os.SCHED_BATCH, os.sched_param(0))
+        os.nice(RENDER_NICE)
+        policy = f"batch-nice{RENDER_NICE}"
     except (AttributeError, OSError):
       policy = f"nice{FALLBACK_NICE}"
       try:
