@@ -133,10 +133,14 @@ class SpeedLimitWidget:
           size -= 2
         centered(shown.offset_text, FontRole.MEDIUM, size, offset_top, color)
     else:
-      self.shapes.outline(x + 59 * scale, top + 66 * scale, white)
+      short = self.profile == Profile.COMPACT and not shown.offset_text
+      if short:
+        self.shapes.outline(x + 59 * scale, top + 58 * scale, white, short=True)
+      else:
+        self.shapes.outline(x + 59 * scale, top + 66 * scale, white)
       for label, y in ((heading, top + 11 * scale), ('LIMIT', top + 27 * scale)):
         centered(label, FontRole.SEMI_BOLD, 20, y, white, x + (52 if arrow_direction else 59) * scale)
-      number = centered(shown.posted_text, FontRole.BOLD, 58, top + (50 if shown.offset_text else 61) * scale, white)
+      number = centered(shown.posted_text, FontRole.BOLD, 58, top + (50 if shown.offset_text or short else 61) * scale, white)
       if shown.offset_text:
         centered(shown.offset_text, FontRole.MEDIUM, 36, top + 98 * scale, secondary)
     if arrow_direction:

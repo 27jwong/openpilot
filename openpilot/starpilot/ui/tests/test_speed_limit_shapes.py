@@ -102,3 +102,19 @@ def test_headless_context_loads_atlas_without_a_window(gpu, monkeypatch):
   owner = shapes.SpeedLimitShapes(headless_context=True)
   owner.circle(0, 0, shapes.rl.RED)
   gpu['load_texture_from_image'].assert_called_once()
+
+
+def test_short_outline_reuses_the_same_atlas_and_preserves_corner_scale(gpu):
+  owner = shapes.SpeedLimitShapes()
+  owner.outline(59, 58, shapes.rl.WHITE, short=True)
+  assert gpu['draw_texture_pro'].call_count == 2
+  rows = [call.args for call in gpu['draw_texture_pro'].call_args_list]
+  assert [(r[1].x, r[1].y, r[1].width, r[1].height) for r in rows] == [(256, 0, 128, 64), (256, 80, 128, 64)]
+  assert [(r[2].x, r[2].y, r[2].width, r[2].height) for r in rows] == [(59, -6, 128, 64), (59, 58, 128, 64)]
+  assert all((r[3].x, r[3].y) == (64, 0) for r in rows)
+  owner.outline(59, 66, shapes.rl.WHITE)
+  owner.outline(59, 58, shapes.rl.WHITE, short=True)
+  gpu['load_image'].assert_called_once()
+  gpu['load_texture_from_image'].assert_called_once()
+  owner.close()
+  gpu['unload_texture'].assert_called_once()
