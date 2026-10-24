@@ -79,8 +79,8 @@ class TestVehicleStartupPreferences(unittest.TestCase):
             CAR.TOYOTA_PRIUS_RETROFIT, observed=observed, car_fw=[eps],
             key='LongPitch', requested=True, after_construct=change,
             capture=lambda ci: int(ci.CP.safetyConfigs[0].safetyParam))
-          self.assertEqual(constructed, [4681 if initially_stock else 4169])
-          self.assertEqual(published.safetyConfigs[0].safetyParam, 4681)
+          self.assertEqual(constructed, [0x8249 if initially_stock else 0x8049])
+          self.assertEqual(published.safetyConfigs[0].safetyParam, 0x8249)
           self.assertTrue(published.pcmCruise)
           self.assertFalse(published.openpilotLongitudinalControl)
           self.assertFalse(host.CI.CC.prius_longitudinal)
@@ -94,7 +94,7 @@ class TestVehicleStartupPreferences(unittest.TestCase):
     eps = structs.CarParams.CarFw.new_message(
       ecu=structs.CarParams.Ecu.eps, fwVersion=b'8965B47070\x00\x00\x00\x00\x00\x00')
     cp = CarInterface.get_params(CAR.TOYOTA_PRIUS_RETROFIT, observed, [eps], False, False, False)
-    self.assertEqual(cp.safetyConfigs[0].safetyParam, 4169)
+    self.assertEqual(cp.safetyConfigs[0].safetyParam, 0x8049)
     for key in ('OpenpilotEnabledToggle', 'SafeMode', 'DisableOpenpilotLongitudinal'):
       with self.subTest(key=key):
         self.raw('OpenpilotEnabledToggle', b'1')
@@ -105,7 +105,7 @@ class TestVehicleStartupPreferences(unittest.TestCase):
         self.raw(key, b'0' if key == 'OpenpilotEnabledToggle' else b'1')
         self.assertTrue(preference.update(1_249_999_999))
         self.assertFalse(preference.update(1_250_000_000))
-        self.assertEqual(cp.safetyConfigs[0].safetyParam, 4169)
+        self.assertEqual(cp.safetyConfigs[0].safetyParam, 0x8049)
 
   def test_gm_stop_preferences_require_strict_saved_opt_in(self):
     from openpilot.common.params import ParamKeyType
