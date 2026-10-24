@@ -1799,6 +1799,15 @@ class StarCompactSettings(NavWidget):
     from openpilot.system.ui.lib.scroll_panel2 import GuiScrollPanel2
     self._panel = GuiScrollPanel2(horizontal=True)
 
+  def show_event(self) -> None:
+    super().show_event()
+    from openpilot.system.ui.lib.scroll_panel2 import GuiScrollPanel2
+    # Reset position and momentum on a fresh push, not when a submenu is popped.
+    self.session.cancel()
+    self._panel = GuiScrollPanel2(horizontal=True)
+    self.session.compact_scroll_x = 0.0
+    self.session._snapshot_cache = None
+
   def covers_camera(self, rect: rl.Rectangle) -> bool:
     return bool(gui_app.get_active_widget() is self and self.enabled and self.is_visible and
                 not gui_app.mouse_events and not self.is_dismissing and self._drag_start_pos is None and
