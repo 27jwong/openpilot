@@ -316,11 +316,11 @@ class TransportPauseFeedback:
     from openpilot.starpilot.nostalgia import physical_cancel
     from openpilot.starpilot.car.gm.aol import native_accepts_cp
     from openpilot.starpilot.car.hyundai.aol import early_native_long_withdrawal_supported
-    gm = native_accepts_cp(cp, int(cp.safetyConfigs[0].safetyModel.raw), int(cp.safetyConfigs[0].safetyParam))
+    gm = cp.brand == 'gm' and native_accepts_cp(cp, int(cp.safetyConfigs[0].safetyModel.raw), int(cp.safetyConfigs[0].safetyParam))
     from openpilot.starpilot.car.hyundai.aol import qualified_ccnc_long_aol as ev9_qualified
     from opendbc.car import structs
-    ev9 = ev9_qualified(cp, marked_only=True)
-    early_long = gm or early_native_long_withdrawal_supported(cp) or ev9
+    ev9 = cp.brand == 'hyundai' and ev9_qualified(cp, marked_only=True)
+    early_long = gm or cp.brand == 'hyundai' and early_native_long_withdrawal_supported(cp) or ev9
     from openpilot.starpilot.car.gm.aol import f1_conventional_lateral_owner, gm_physical_pedal_withdrawal
     gm_pedal = gm_physical_pedal_withdrawal(cp, cs) and not f1_conventional_lateral_owner(cp)
     event_ns = int(sm.logMonoTime['onroadEvents'])
@@ -372,8 +372,8 @@ class TransportPauseFeedback:
     pending = bool(pending_baseline is not None and self.pending_event)
     if (not latched or self.failed or self.paused or self.pending_event and not pending or self.retention_started_ns or
         not self.session or not self.lateral_baseline_ns or not self.lateral_inventory or
-        not policy_for(cp).intent_supported or
-        policy_for(cp).cruise_main_required and not cs.cruiseState.available or
+        not (policy := policy_for(cp)).intent_supported or
+        policy.cruise_main_required and not cs.cruiseState.available or
         str(axis.sessionId) != self.session or
         not producer or producer != self.availability_producer or axis.intentProducerSessionId != producer or
         axis.intentIntegrityEpoch != self.availability_epoch or
@@ -474,6 +474,8 @@ class TransportPauseFeedback:
       all(not event.immediateDisable and
           (not event.softDisable or event.name == log.OnroadEvent.EventName.steerTempUnavailable) for event in events))
     users = [event for event in events if event.userDisable]
+    if not (temporary or eps_recovery or users):
+      return False
     from opendbc.car.chrysler.aol_contract import qualified as chrysler_qualified
     from openpilot.starpilot.car.nissan.aol import qualified as nissan_qualified
     from opendbc.car.ford.aol import qualified as ford_qualified
@@ -490,13 +492,16 @@ class TransportPauseFeedback:
     # Stock PCM off is not the driver's independent AOL toggle. Retain only
     # previously established intent through a location fault or its matched EPS recovery, after it has
     # withdrawn output; the native/session/source checks below still apply.
-    stock_angle = angle_qualified(cp, marked_only=True)
-    stock_hkg = stock_angle or stock_canfd_qualified(cp, marked_only=True) or stock_classic_qualified(cp, marked_only=True)
+    stock_angle = cp.brand == 'hyundai' and angle_qualified(cp, marked_only=True)
+    stock_hkg = cp.brand == 'hyundai' and (stock_angle or stock_canfd_qualified(cp, marked_only=True) or
+      stock_classic_qualified(cp, marked_only=True))
     stock_user = stock_lateral_user_event(cp)
-    stock_temporary_user = bool((location_fault or eps_recovery) and (stock_hkg or chrysler_qualified(cp, marked_only=True) or
-      ford_qualified(cp, marked_only=True) or nissan_qualified(cp, marked_only=True)
-      or subaru_qualified(cp, marked_only=True) or mazda_qualified(cp, marked_only=True) or rivian_qualified(cp, marked_only=True)
-      or volkswagen_qualified(cp, marked_only=True)) and users and
+    stock_temporary_user = bool((location_fault or eps_recovery) and (stock_hkg or cp.brand == 'chrysler' and chrysler_qualified(cp, marked_only=True) or
+      cp.brand == 'ford' and ford_qualified(cp, marked_only=True) or cp.brand == 'nissan' and nissan_qualified(cp, marked_only=True)
+      or cp.brand == 'subaru' and subaru_qualified(cp, marked_only=True)
+      or cp.brand == 'mazda' and mazda_qualified(cp, marked_only=True)
+      or cp.brand == 'rivian' and rivian_qualified(cp, marked_only=True)
+      or cp.brand == 'volkswagen' and volkswagen_qualified(cp, marked_only=True)) and users and
       not axis.desiredLongitudinal and not axis.longitudinalActive and
       cs.cruiseState.available and not cs.cruiseState.enabled and
       cs.gearShifter in (gears.drive, gears.low, gears.sport, gears.brake) and
@@ -505,7 +510,7 @@ class TransportPauseFeedback:
       all(event.name == stock_user and not event.softDisable and
           not event.immediateDisable for event in users))
     from openpilot.starpilot.car.ford.aol import temporary_eps_brake_recovery
-    stock_temporary_user |= bool(eps_recovery and temporary_eps_brake_recovery(cp, cs) and users and
+    stock_temporary_user |= bool(cp.brand == 'ford' and eps_recovery and temporary_eps_brake_recovery(cp, cs) and users and
       not axis.desiredLongitudinal and not axis.longitudinalActive and
       all(event.name in (stock_user, log.OnroadEvent.EventName.pedalPressed) and
           not event.softDisable and not event.immediateDisable for event in users))
