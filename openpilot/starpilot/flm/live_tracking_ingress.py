@@ -111,19 +111,21 @@ class LiveTrackingIngress:
         return None  # A plant response still requires one unambiguous input.
       # Source-only tracking compares desired and measured acceleration at the
       # pose time, not a fitted command->response. Retain the genuine earlier
-      # causal emission across clock uncertainty, only within one consumed map
-      # and source lineage. Never interpolate a command or replace its clocks.
+      # causal emission across clock uncertainty within one source lineage.
+      # A known slow map ramp must not withdraw physical-source freshness;
+      # the episode builder independently discards windows across map changes. Never interpolate a command or replace its clocks.
       binding = self.binding
       lineage = (binding.identity, binding.source_epoch, binding.baseline_revision,
                  binding.controller_revision, binding.native_identity, binding.native_required)
       try:
-        profile = self.profile(pair[0])
+        self.profile(pair[0])  # Require the actual complete consumed map, not equality.
         for control, output in ready:
           if pair[1].apply_ns <= output.apply_ns <= upper[-1][1].apply_ns:
             if ((control.identity, control.source_epoch, control.baseline_revision,
                  control.controller_revision, control.native_identity, control.native_required) != lineage
-                or control.generation != pair[0].generation or self.profile(control) != profile):
+                or control.generation != pair[0].generation):
               return None
+          self.profile(control)  # Unknown consumption still fails closed.
       except (AttributeError, TypeError, ValueError):
         return None
     return pair

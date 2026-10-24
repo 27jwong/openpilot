@@ -235,7 +235,7 @@ def test_source_proposal_does_not_claim_instantaneous_gradient_is_plant_directio
   assert not o.offer_state.get('accepted', False)
 
 
-def test_direct_input_matching_uses_demand_not_exact_waveform_phase():
+def test_direct_input_matching_uses_road_regime_not_waveform_phase():
   from openpilot.starpilot.flm.live_tracking import _matches
 
   o = owner()
@@ -243,9 +243,9 @@ def test_direct_input_matching_uses_demand_not_exact_waveform_phase():
   shifted = replace(e, goal_shape=(0.2, 0.0, -0.2, 0.0, 0.2, 0.0, -0.2, 0.0))
   assert _matches(e, shifted)
   assert not _matches(e, replace(shifted, speed_low=2.0, speed_high=2.0))
-  assert not _matches(e, replace(shifted, normalization_accel=2.0))
-  assert not _matches(e, replace(shifted, goal_shape=(0.9,) * 8))
-  assert not _matches(e, replace(shifted, goal_shape=(1.0, -1.0) * 4))
+  assert _matches(e, replace(shifted, normalization_accel=2.0))
+  assert _matches(e, replace(shifted, goal_shape=(0.9,) * 8))
+  assert _matches(e, replace(shifted, goal_shape=(1.0, -1.0) * 4))
   # The old physical whole-maneuver protocol retains exact waveform matching.
   assert not _matches(replace(e, normalization_accel=None), replace(shifted, normalization_accel=None))
 
@@ -261,7 +261,7 @@ def test_selected_input_class_does_not_silently_move_to_first_baseline():
   anchor = row(0, 1.0)
   different = row(1, 0.81)
   before = tuple(row(i, 1.24) for i in range(2, 5))
-  assert _matches(anchor, different) and _matches(anchor, before[0]) and not _matches(before[0], different)
+  assert _matches(anchor, different) and _matches(anchor, before[0]) and _matches(before[0], different)
   o.selector_hint = {
     'binding': o.binding,
     'model_revision': o.certificate.model_revision,

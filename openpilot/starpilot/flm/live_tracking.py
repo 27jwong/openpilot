@@ -272,20 +272,17 @@ def _input_shape_descriptor(shape):
 
 def _matches_demand(left: DemandSignature, right: TrackingEpisode) -> bool:
   if left.normalization_accel is not None and right.normalization_accel is not None:
-    # Fixed input windows need not replay an identical waveform phase. Match
-    # steering demand magnitude, direction/mean and rate content instead. No
-    # measured error, native result or future score chooses these descriptors.
-    left_mean, left_rate = _input_shape_descriptor(left.goal_shape)
-    right_mean, right_rate = _input_shape_descriptor(right.goal_shape)
+    # Source tracking compares normalized error across the same road regime.
+    # Requiring an almost identical tiny steering waveform prevented three
+    # fresh highway windows from ever completing a bounded experiment.
+    # Direction, speed, window duration and all source/native/profile guards
+    # still apply; model-based trials retain the stricter matching below.
     return (
       left.kind == right.kind
       and (left.kind != 'large' or left.direction == right.direction)
       and max(left.duration_ns, right.end_ns - right.start_ns) <= 1.15 * min(left.duration_ns, right.end_ns - right.start_ns)
       and max(left.speed_high, right.speed_high) <= 1.15 * min(left.speed_low, right.speed_low)
       and min(_score_scale(left), _score_scale(right)) > 0
-      and max(_score_scale(left), _score_scale(right)) <= 1.25 * min(_score_scale(left), _score_scale(right))
-      and abs(left_mean - right_mean) <= 0.25
-      and max(0.15, left_rate, right_rate) <= 1.5 * max(0.15, min(left_rate, right_rate))
     )
   return (
     left.kind == right.kind
@@ -503,8 +500,10 @@ class LiveTrackingOptimizer:
     )
     if not transient:
       self.paused_intent = None
-    elif (reason in ('acknowledged_trial_profile_withdrawn', 'expired_response_witness') and self.offer_state is not None
+    elif ((reason in ('acknowledged_trial_profile_withdrawn', 'expired_response_witness') or self.rmse is None and transient) and self.offer_state is not None
         and self.offer_state['phase'] == 'trial' and not self.offer_state.get('accepted', False) and self.before):
+      # Source-only transient gaps retain completed numerical study rows,
+      # never a command lease. Resume still requires a fresh baseline ACK.
       # Profile withdrawal requires a qualified newer source control. Expiry
       # requires an otherwise valid original owned physical witness. Neither
       # restores its command lease; both retain only the numerical study.
@@ -731,6 +730,15 @@ class LiveTrackingOptimizer:
       self._current_selector(now_ns)
       if self.selector_pending and self._revalidate_selector(episode, now_ns):
         return False
+      if self.discovery is not None and self.rmse is None:
+        # A fixed-input source comparison cannot monopolize learning after
+        # that maneuver ends. Three unmatched whole windows release it by
+        # source time alone, without inspecting any tracking outcomes. No
+        # incomplete comparison can confirm or persist a target.
+        last_match = self.comparison[-1].end_ns if self.comparison else self.discovery['selected_end_ns']
+        if (not _matches(self.discovery['anchor'], episode)
+            and episode.end_ns - last_match >= 3 * (episode.end_ns - episode.start_ns)):
+          self._discard_selector()
       if self.discovery is not None:
         discovery = self.discovery
         if now_ns > discovery['expires_ns']:
@@ -778,10 +786,14 @@ class LiveTrackingOptimizer:
     if (
       episode.start_ns <= self.settled_ns + self.lag_ns
       or episode.profile_sha256 != self._hash(state['target'])
-      or not _matches_demand(state.get('demand', _demand(self.before[0])), episode)
       or self.future
       and episode.start_ns <= self.future[-1].end_ns
     ):
+      return False
+    if not _matches_demand(state.get('demand', _demand(self.before[0])), episode):
+      last_match = self.future[-1].end_ns if self.future else self.settled_ns + self.lag_ns
+      if self.rmse is None and episode.end_ns - last_match >= 3 * (episode.end_ns - episode.start_ns):
+        self._rollback('trial_input_regime_ended')
       return False
     baseline_error = statistics.mean(_score(row) for row in self.before)
     baseline_reversals = statistics.mean(row.reversal_hz for row in self.before)

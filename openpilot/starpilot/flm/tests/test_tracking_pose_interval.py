@@ -49,12 +49,13 @@ class TestTrackingPoseInterval(unittest.TestCase):
     pose = SimpleNamespace(source_lower_ns=1_005_000_000, source_upper_ns=1_015_000_000)
     assert owner.original_pose_pair(rows, pose) is None
 
-  def test_crossing_consumed_profile_change_is_rejected(self):
+  def test_source_ramp_keeps_original_causal_pair(self):
     owner = subject()
     rows = [pair(owner, 1_000_000_000), pair(owner, 1_010_000_000)]
     rows[1][0].live_applied_coordinates = (0.001,)+(0.,)*29
     pose = SimpleNamespace(source_lower_ns=1_005_000_000, source_upper_ns=1_015_000_000)
-    assert owner.original_pose_pair(rows, pose) is None
+    selected = owner.original_pose_pair(rows, pose)
+    assert selected[0] is rows[0][0] and selected[1] is rows[0][1]
 
   def test_crossing_source_or_generation_change_is_rejected(self):
     for name, value in (('source_epoch', '5'*64), ('generation', 2)):
