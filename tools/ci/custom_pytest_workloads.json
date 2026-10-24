@@ -139,8 +139,8 @@
       "seconds_per_case": 4.0
     },
     "openpilot/starpilot/car/toyota/tests/test_camera_2aa_callers.py": {
-      "basis": "Owner estimate164cases274s; only actual collected IDs when present",
-      "seconds_per_case": 2.0
+      "seconds_per_case": 5.0,
+      "basis": "Hosted tests40108387164 custom14 completed40 real callers in138.037160s including setup/teardown. Five seconds is a conservative scheduling estimate, not full-module timing or a changed test deadline."
     },
     "openpilot/starpilot/car/toyota/tests/test_legacy_advert_callers.py": {
       "basis": "Estimate from incomplete72cases213s; independent parameter cases reviewed",
@@ -1405,6 +1405,18 @@
       "blob": "58eaefa7a396f875ddf7df6aca712dfdcf4a476c",
       "cases": 18,
       "seconds": 0.02584481600001709
+    },
+    "openpilot/starpilot/car/toyota/tests/test_legacy_eps5_sdsu_callers.py": {
+      "cases": 84,
+      "seconds": 310.978236,
+      "blob": "75e5f761feca78918ec2c6537bee3a898e79653a",
+      "basis": "Actual complete-module setup/call/teardown receipts, hosted tests40108387164 custom14; same source blob. Scheduling estimate only; all original cases and timeout retained."
+    },
+    "openpilot/starpilot/tests/test_ford_bluepilot_aol.py": {
+      "cases": 40,
+      "seconds": 86.998515,
+      "blob": "09e2918b2999e9f7b5bce5e56d9c562a914a1984",
+      "basis": "Actual complete-module setup/call/teardown receipts, hosted tests40108387164 custom14; same source blob. Scheduling estimate only; all original cases and timeout retained."
     }
   },
   "reference_sha": "6eb9df96425a661afcbf1edfa27894d6e49b3706",
