@@ -592,7 +592,7 @@ def main(demo=False):
         receipt_owner.loaded(small_prepared, ModelVariant.SMALL, model_id=small_model.model_id)
       cloudlog.event("jetlinkHandover", state=HOOKS.state(model), handovers=model.handovers)
 
-    if model_output is not None:
+    if model_output is not None and vipc_dropped_frames == 0:
       modelv2_send = messaging.new_message('modelV2')
       drivingdata_send = messaging.new_message('drivingModelData')
       posenet_send = messaging.new_message('cameraOdometry')
