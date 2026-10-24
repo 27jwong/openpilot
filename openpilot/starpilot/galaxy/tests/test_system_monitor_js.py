@@ -25,6 +25,7 @@ class SystemMonitorJavaScriptTest(unittest.TestCase):
                       'roadColors': colors['roadColors']['large']}}
     node = shutil.which(os.environ.get('STARPILOT_NODE') or 'node')
     self.assertIsNotNone(node, 'Node.js is required for the projection editor contract')
+    assert node is not None
     result = subprocess.run([node, '--input-type=module', '-e', """
 import { readFileSync } from 'node:fs'
 import assert from 'node:assert/strict'
