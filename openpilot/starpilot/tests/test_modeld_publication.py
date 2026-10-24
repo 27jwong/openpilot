@@ -11,7 +11,8 @@ ROOT = Path(__file__).resolve().parents[2]
 def publication_program():
   tree = ast.parse((ROOT / "selfdrive/modeld/modeld.py").read_text())
   def sends(node):
-    return isinstance(node, ast.Expr) and isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Attribute) and ast.unparse(node.value.func) == "pm.send"
+    return (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call) and
+            isinstance(node.value.func, ast.Attribute) and ast.unparse(node.value.func) == "pm.send")
   def slice_statements(statements):
     result = []
     for statement in statements:
@@ -44,7 +45,7 @@ class TestModeldPublication(unittest.TestCase):
       namespace["meta_main"] = SimpleNamespace(frame_id=frame)
       for name in ("modelv2_send", "drivingdata_send", "posenet_send", "lane_status_msg"):
         namespace[name] = (frame, frame * 50_000_000) if name != "lane_status_msg" or lane_status else None
-      exec(program, namespace)  # noqa: S102 - execute the repository publication AST, without GPU imports.
+      exec(program, namespace)
       self.assertEqual(namespace["last_vipc_frame_id"], frame)
     return emitted
 
@@ -78,7 +79,7 @@ class TestModeldPublication(unittest.TestCase):
     for argument in function.args.args:
       argument.annotation = None
     namespace = {}
-    exec(compile(ast.fix_missing_locations(ast.Module(body=[function], type_ignores=[])), "<actual fill_pose_msg>", "exec"), namespace)  # noqa: S102 - execute the repository producer function.
+    exec(compile(ast.fix_missing_locations(ast.Module(body=[function], type_ignores=[])), "<actual fill_pose_msg>", "exec"), namespace)
     class Array:
       def __getitem__(self, key):
         return self
