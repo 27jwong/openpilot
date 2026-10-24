@@ -866,7 +866,7 @@ class TestGmAol(unittest.TestCase):
         requested = []
         for tick in range(18):
           now = 1_000_000_000 + tick * 10_000_000
-          out, sources = feed_car(ci, packer, now, counter=tick % 4, active=False, brake=True, regen=True)
+          out, sources = feed_car(ci, packer, now, counter=tick % 4, active=False, brake=True, regen=True, eps_status=1)
           sources = [source for source in sources if source[0] not in (0x1C4, 0xBE, 0xF1)]
           sources.extend([packer.make_can_msg('AcceleratorPedal2', 0, {'CruiseState': 0}),
                           packer.make_can_msg('ECMAcceleratorPos', 0, {'BrakePedalPos': 12}),

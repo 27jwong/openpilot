@@ -44,3 +44,59 @@ def test_parent_catalog_and_warm_switch_are_exact(word, parent):
   finally:
     safety.set_alternative_experience(0)
     safety.set_safety_hooks(structs.CarParams.SafetyModel.noOutput, 0)
+
+
+@pytest.mark.parametrize('word', (0xF149, 0xF349, 0xF04D, 0xF24D))
+@pytest.mark.parametrize('fault', ('main_off', 'main_stale'))
+def test_composite_alternate_main_keeps_its_independent_freshness(word, fault):
+  from opendbc.can import CANPacker
+  from opendbc.car import Bus
+  from opendbc.car.toyota import pedal
+  from opendbc.car.toyota.values import CAR, DBC
+
+  safety = libsafety_py.libsafety
+  safety.init_tests()
+  safety.set_alternative_experience(32)
+  assert safety.set_safety_hooks(structs.CarParams.SafetyModel.toyota, word) == 0
+  safety.set_aol_test_heartbeat(True)
+  identity = CAR.LEXUS_GS_F if word in (0xF149, 0xF349) else CAR.LEXUS_IS
+  packer = CANPacker(DBC[identity][Bus.pt])
+  now = 1_000_000
+  counter = 0
+
+  def tick(*, main=True, omit_main=False):
+    nonlocal now, counter
+    now += 10_000
+    safety.set_timer(now)
+    frames = helpers.physical(packer, cruise=True)
+    frames.append(packer.make_can_msg('PCS_HUD', 0, {}))
+    frames.append(packer.make_can_msg('PCM_CRUISE_ALT', 0, {'UI_SET_SPEED': 90}))
+    if not omit_main:
+      frames.append(packer.make_can_msg('DSU_CRUISE', 0, {'MAIN_ON': main, 'SET_SPEED': 90}))
+    address, data, bus = packer.make_can_msg('GAS_SENSOR', 0, {
+      'INTERCEPTOR_GAS': 0, 'INTERCEPTOR_GAS2': 0, 'COUNTER_PEDAL': counter, 'STATE': 0})
+    counter = (counter + 1) & 15
+    data = bytearray(data)
+    data[-1] = pedal.checksum(data)
+    frames.append((address, bytes(data), bus))
+    for address, data, bus in frames:
+      safety.safety_rx_hook(libsafety_py.make_CANPacket(address, bus, data))
+    safety.safety_tick()
+    safety.aol_set_host_request(3)
+
+  try:
+    assert safety.current_safety_config.rx_checks_len == 8
+    for _ in range(30):
+      tick()
+    expected = 1 if word in (0xF349, 0xF24D) else 3
+    assert safety.safety_config_valid()
+    assert safety.aol_get_permission_mask() == expected
+    for _ in range(40):
+      tick(main=False, omit_main=fault == 'main_stale')
+    assert safety.aol_get_permission_mask() == 0
+    for _ in range(30):
+      tick()
+    assert safety.aol_get_permission_mask() == expected
+  finally:
+    safety.set_alternative_experience(0)
+    safety.set_safety_hooks(structs.CarParams.SafetyModel.noOutput, 0)
