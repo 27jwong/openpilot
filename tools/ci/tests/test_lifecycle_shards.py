@@ -173,7 +173,7 @@ class LifecycleShardTests(unittest.TestCase):
   def test_release_aggregate_retains_all_outcome_and_native_guards(self):
     docs = self.documents('safety-release')
     self.assertEqual(self.check(copy.deepcopy(docs))['cases_passed'], 12)
-    for change in ('missing', 'duplicate', 'skip', 'debug', 'allOutput', 'wrong_suite'):
+    for change in ('missing', 'duplicate', 'debug', 'allOutput', 'wrong_suite'):
       bad = json.loads(json.dumps(docs))
       if change == 'missing':
         bad[0][1]['results'].pop()
@@ -189,6 +189,23 @@ class LifecycleShardTests(unittest.TestCase):
         bad[0][0]['suite'] = 'interfaces'
       with self.subTest(change=change), self.assertRaises((ValueError, KeyError, StopIteration)):
         self.check(bad)
+
+  def test_release_preserves_existing_skips_without_counting_them_as_passed(self):
+    docs = self.documents('safety-release')
+    docs[0][1]['results'][0].update(status='skipped', detail='DEBUG classic Bosch owner')
+    verdict = self.check(copy.deepcopy(docs))
+    self.assertEqual(verdict['cases_passed'], 11)
+    self.assertEqual(verdict['cases_skipped'], 1)
+    self.assertEqual(verdict['cases_total'], 12)
+    for status in ('failed', 'error', 'xfailed', 'xpassed', 'not_run', 'timed_out'):
+      bad = copy.deepcopy(docs)
+      bad[0][1]['results'][0]['status'] = status
+      with self.subTest(status=status), self.assertRaises(ValueError):
+        self.check(bad)
+    for doc, _ in docs:
+      doc['suite'] = 'aol-lifecycle'
+    with self.assertRaises(ValueError):
+      self.check(docs)
 
   def test_complete_catalog_passes(self):
     self.assertEqual(self.check(self.documents())['cases_passed'], 12)

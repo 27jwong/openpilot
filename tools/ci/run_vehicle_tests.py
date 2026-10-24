@@ -814,7 +814,8 @@ def run(suite, output, collect_only=False, shard_index=None, shard_count=4):
     gate_errors.extend(interface_execution_errors(platform_tests, records))
   if not collect_only and suite in ("aol-lifecycle", "safety-release"):
     gate_errors.extend(f"Required lifecycle case did not pass: {record['id']} ({record['status']})"
-                       for record in records if record["status"] != "passed")
+                       for record in records
+                       if not (lifecycle_shards.release_result_allowed(record) if suite == "safety-release" else record["status"] == "passed"))
     for target in plan["targets"]:
       if not any((lifecycle_shards.release_matches if suite == 'safety-release' else lifecycle_shards.matches)(identity, target) for identity in ids):
         gate_errors.append(f"Required lifecycle module collected no cases: {target}")

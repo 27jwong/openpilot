@@ -167,6 +167,13 @@ def partition(targets, identities, count):
   return shards
 
 
+def release_result_allowed(record):
+  # Preserve the unsharded RELEASE runner's original unittest/pytest skip
+  # semantics. Skipped cases stay collected, source-bound and counted as
+  # skipped, never passed. Failures, errors and xfails remain unsuccessful.
+  return record['status'] in ('passed', 'skipped')
+
+
 def release_matches(identity, target):
   if identity.startswith('opendbc.'):
     identity = 'opendbc_repo.' + identity
@@ -214,6 +221,7 @@ def aggregate(directory, count, suite='aol-lifecycle'):
   targets = first['full_catalog_targets']
   expected = partitioner(targets, full, count)
   seen, indices = [], set()
+  passed_count = skipped_count = 0
   for doc in documents:
     index = doc['shard']['index']
     if index in indices or not 0 <= index < count or doc['shard']['count'] != count:
@@ -271,14 +279,19 @@ def aggregate(directory, count, suite='aol-lifecycle'):
     records = result['results']
     if result['exit_code'] != 0 or result['collection_errors'] or result['gate_errors']:
       raise ValueError('Lifecycle outcome report failed')
-    if result['selected_test_ids'] != ids or Counter(row['id'] for row in records) != Counter(ids) or any(row['status'] != 'passed' for row in records):
+    allowed = release_result_allowed if suite == 'safety-release' else lambda row: row['status'] == 'passed'
+    if result['selected_test_ids'] != ids or Counter(row['id'] for row in records) != Counter(ids) or any(not allowed(row) for row in records):
       raise ValueError('Lifecycle missing, duplicate or unsuccessful outcomes')
     if ids != [identity for identity in full if any(matcher(identity, target) for target in expected[index])]:
       raise ValueError('Lifecycle shard cases differ from the full catalog')
+    passed_count += sum(row['status'] == 'passed' for row in records)
+    skipped_count += sum(row['status'] == 'skipped' for row in records)
     seen.extend(ids)
   if Counter(seen) != Counter(full) or len(set(full)) != len(full):
     raise ValueError('Lifecycle aggregate does not cover every case exactly once')
-  return {'status': 'completed', 'shards': count, 'cases_passed': len(full), 'targets': len(targets), 'source_revision': first['source']['revision']}
+  return {'status': 'completed', 'shards': count, 'cases_passed': passed_count, 'cases_skipped': skipped_count,
+          'cases_total': len(full), 'targets': len(targets),
+          'source_revision': first['source']['revision']}
 
 
 def main():
