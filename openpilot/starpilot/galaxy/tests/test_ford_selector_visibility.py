@@ -35,8 +35,8 @@ class TestFordSelectorVisibility(unittest.TestCase):
       rows = self.feature.rows(True)
       self.assertEqual(len(rows), 1)
       self.assertEqual(rows[0].choices, ('Current curvature', 'BluePilot angle'))
-      self.assertFalse(rows[0].available)
-      self.assertIn('Turn off Always On Lateral', rows[0].reason)
+      self.assertTrue(rows[0].available)
+      self.assertIn('works with Always On Lateral', rows[0].reason)
       self.assertEqual(self.cp.to_dict(), before)
 
   def test_saved_aol_off_allows_selection_without_waiting_for_cp_restart(self):

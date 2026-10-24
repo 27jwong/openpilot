@@ -94,7 +94,8 @@ def ford_joined(identity, alpha, hands_free, monkeypatch, record_property):
       saved.put_bool(key, value, block=True)
     from pathlib import Path
 
-    for key, value in (('FordLateralMode', b'1'), ('PauseAOLOnBrake', b'0.0'), ('CancelButtonControl', b'0'), ('MainCruiseButtonControl', b'0')):
+    for key, value in (('FordLateralMode', b'1' if getattr(monkeypatch, 'ford_angle', False) else b'0'),
+                       ('PauseAOLOnBrake', b'0.0'), ('CancelButtonControl', b'0'), ('MainCruiseButtonControl', b'0')):
       Path(saved.get_param_path(key)).write_bytes(value)
     Path(saved.get_param_path("FordHandsFreeCluster")).write_bytes(b"1" if hands_free else b"0")
     fp = gen_empty_fingerprint()
@@ -119,14 +120,15 @@ def ford_joined(identity, alpha, hands_free, monkeypatch, record_property):
       assert str(host.CP.carFingerprint) == str(name)
       expected_long = bool(alpha)
       assert host.CP.openpilotLongitudinalControl == expected_long
-      assert host.CP.safetyConfigs[-1].safetyParam == base | int(expected_long) | (256 if manual else 0)
+      expected_word = base | int(expected_long) | (256 if manual else 0) | (128 if getattr(monkeypatch, 'ford_angle', False) else 0)
+      assert host.CP.safetyConfigs[-1].safetyParam == expected_word
       record_property('ford_factory_identity', str(name))
       record_property('ford_saved_alpha', alpha)
       record_property('ford_release', release)
       record_property('ford_longitudinal', expected_long)
       record_property('ford_safety_word', int(host.CP.safetyConfigs[-1].safetyParam))
       native.reset(host.CP.safetyConfigs[-1].safetyParam)
-      native.word &= ~1
+      native.word &= ~(1 | 128)
       # Real empty update registers lazily accessed parser messages before RX.
       # Card.controls_update owns CI initialization; no flag is assigned here.
       host.CI.update([])
@@ -183,6 +185,8 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
   steps = start_tick = native.tick
   warmup_waits = qualified_samples = 0
   active_lat_frames = active_long_frames = 0
+  nonzero_after_brake = 0
+  brake_seen = False
   transition_trace = []
   long_parser = CANParser(DBC[host.CP.carFingerprint][Bus.pt], [('ACCDATA', 50)], 0)
 
@@ -221,6 +225,20 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
         return send(service, raw)
 
       local.setattr(host.pm, 'send', capture)
+      if getattr(monkeypatch, 'ford_nonzero', False):
+        control_update = controls.sm.update_msgs
+
+        def curved_model_update(timestamp, messages):
+          snapshots = []
+          for original in messages:
+            if original.which() == 'modelV2':
+              original = original.as_builder()
+              original.modelV2.action.desiredCurvature = 0.0001
+              original = original.as_reader()
+            snapshots.append(original)
+          return control_update(timestamp, snapshots)
+
+        local.setattr(controls.sm, 'update_msgs', curved_model_update)
       native.safety = ClockMappedSafety()
 
       location_unavailable = [False]
@@ -239,7 +257,8 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
       local.setattr(sd.sm, 'update_msgs', location_update)
 
       def step(*, engaged=False, brake=False, reverse=False, warmup=False, fault=None, main_off=False, availability_transition=False):
-        nonlocal steps, warmup_waits, qualified_samples, active_lat_frames, active_long_frames
+        nonlocal steps, warmup_waits, qualified_samples, active_lat_frames, active_long_frames, nonzero_after_brake, brake_seen
+        brake_seen |= brake
         steps += 1
         now[0] = 10_000_000_000 + steps * 10_000_000
         prior_axis = previous_sd.get('aolAxisState')
@@ -390,6 +409,17 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
         host.sm.update_msgs(now[0] / 1e9, [control])
         host.can_log_mono_time = source_ns
         published.pop('sendcan', None)
+        if getattr(monkeypatch, 'ford_angle', False):
+          owner = host.CI.CC.bp_lat.host.inputs
+          # Real controller input reader consumes the same original fresh native
+          # receipt, Panda inventory and synthetic model boundary as Controls.
+          messages = [wire.as_reader(), panda.as_reader()]
+          for service in ('modelV2', 'lateralDelay'):
+            message = messaging.new_message(service, valid=True, logMonoTime=source_ns)
+            setattr(message, service, controls.sm[service])
+            messages.append(message.as_reader())
+          owner.sm.update_msgs(now[0] / 1e9, messages)
+          local.setattr(owner.sm, 'update', lambda *args: None)
         host.controls_update(state, host.sm['carControl'])
         if state.canValid:
           assert 'sendcan' in published
@@ -404,12 +434,17 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
               if active:
                 assert command.latActive and permission & 1
                 active_lat_frames += 1
+              if address in (0x3D3, 0x3D6):
+                path_raw = (((data[3] & 31) << 6) | (data[4] >> 2)) if address == 0x3D6 else ((data[3] << 3) | (data[4] >> 5))
+                if brake_seen and not brake and not reverse and path_raw != 1000:
+                  nonzero_after_brake += 1
             elif address == 0x186:
               long_parser.update([(source_ns, [(address, bytes(data), frame.src - joined.offset)])])
               active = bool(long_parser.vl['ACCDATA']['Cmbb_B_Enbl'])
               assert active == bool(command.longActive)
               active_long_frames += int(active)
-        if scenario in ('display', 'route24', 'route24-mixed-eps', 'route2a', 'route2a-main', 'route2a-main-fault'):
+        if getattr(monkeypatch, 'ford_angle', False) or scenario in (
+            'display', 'route24', 'route24-mixed-eps', 'route2a', 'route2a-main', 'route2a-main-fault'):
           ui = [f for f in published['sendcan'].sendcan if f.address in (0x3D8, 0x18A)]
           owns = all(safety.safety_fwd_hook(2, address) == -1 for address in (0x3D8, 0x18A))
           assert host.CP.carFingerprint != CAR.FORD_MUSTANG_MACH_E_MK1 or not ui or owns, (
@@ -424,8 +459,8 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
           for frame in ui:
             if frame.address == 0x18A and command.latActive:
               display_parser = CANParser('ford_lincoln_base_pt', [('ACCDATA_3', 5)], 0)
-              display_parser.update([(now[0], [(frame.address, bytes(frame.dat), frame.src)])])
-              assert display_parser.vl['ACCDATA_3']['Tja_D_Stat'] == (7 if joined.hands_free else 2)
+              display_parser.update([(now[0], [(frame.address, bytes(frame.dat), frame.src - joined.offset)])])
+              assert display_parser.vl['ACCDATA_3']['Tja_D_Stat'] == (7 if joined.hands_free and host.CP.flags & FordFlags.CANFD else 2)
           if not command.latActive and host.CP.carFingerprint == CAR.FORD_MUSTANG_MACH_E_MK1:
             assert not ui
             assert all(safety.safety_fwd_hook(2, address) == 0 for address in (0x3D8, 0x18A))
@@ -465,6 +500,12 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
         for _ in range(30):
           state, axis, sd_state, command = step(brake=True)
         assert host.aol_card_intent.allowed_latch and command.latActive and not command.longActive
+        if getattr(monkeypatch, 'ford_angle', False):
+          for _ in range(20):
+            state, axis, sd_state, command = step()
+          assert not state.brakePressed and command.latActive and host.aol_card_intent.allowed_latch and not command.longActive
+          if getattr(monkeypatch, 'ford_nonzero', False):
+            assert nonzero_after_brake > 0, 'No native-accepted nonzero angle after releasing brake'
         for _ in range(30):
           state, axis, sd_state, command = step(reverse=True)
         assert host.aol_card_intent.allowed_latch and not command.latActive and not command.longActive, transition_trace[-40:]

@@ -24,6 +24,8 @@ from tools.ci import lifecycle_shards, vehicle_pytest
 # Representative production callers plus their source/native refusal cases.
 # The emitted selected_test_ids record exact parametrized configurations.
 AOL_LIFECYCLE_TARGETS = (
+  'openpilot/starpilot/tests/test_ford_bluepilot_aol.py',
+  'opendbc_repo/opendbc/safety/tests/test_ford_bluepilot_aol.py',
   'openpilot/starpilot/aol/tests/test_hkg_early_long_withdrawal.py',
   'openpilot/starpilot/car/toyota/tests/test_prius_retrofit_stock.py',
   'openpilot/starpilot/car/toyota/tests/test_prius_retrofit_stock_callers.py',
@@ -230,6 +232,8 @@ DEBUG_SAFETY_CLASS_TARGETS = {
 
 
 RELEASE_TARGETS = (
+  'openpilot/starpilot/tests/test_ford_bluepilot_aol.py',
+  'opendbc_repo/opendbc/safety/tests/test_ford_bluepilot_aol.py',
   'openpilot/starpilot/car/toyota/tests/test_prius_retrofit_stock.py',
   'openpilot/starpilot/car/toyota/tests/test_prius_retrofit_stock_callers.py',
   'opendbc_repo/opendbc/car/toyota/tests/test_matrix_filter.py',

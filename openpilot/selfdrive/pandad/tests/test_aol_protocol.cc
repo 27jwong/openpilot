@@ -248,7 +248,7 @@ int main() {
     assert(aol_capable(preap, 39U, VEHICLE_REGISTRY) == preap_expected);
     assert(!aol_capable(preap, 35U, VEHICLE_REGISTRY));
   }
-  constexpr uint16_t ford_words[] = {8U, 9U, 10U, 11U, 12U, 13U, 18U, 19U, 32U, 33U, 66U, 67U};
+  constexpr uint16_t ford_words[] = {8U, 9U, 10U, 11U, 12U, 13U, 18U, 19U, 32U, 33U, 66U, 67U, 146U, 147U, 160U, 161U, 194U, 195U};
   for (uint32_t word = 0U; word <= 65535U; ++word) {
     bool expected = false;
     for (const auto exact : ford_words) expected |= (word == exact) || (word == (exact | 256U));

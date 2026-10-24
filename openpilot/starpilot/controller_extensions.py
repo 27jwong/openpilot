@@ -16,7 +16,7 @@ class ManualTurnInputs:
   def __init__(self, params, *, track_assist_permission: bool = False):
     self.params = params
     self.track_assist_permission = track_assist_permission
-    self.sm = messaging.SubMaster(["modelV2", "lateralDelay"] + (["pandaStates"] if track_assist_permission else []))
+    self.sm = messaging.SubMaster(["modelV2", "lateralDelay"] + (["pandaStates", "aolSafetyWire"] if track_assist_permission else []))
     self.enabled = bool(self.params.get("FordHumanTurnDetection", return_default=True))
     self.frames = 0
     self.blend_settings = self._read_blend_settings()
@@ -104,12 +104,20 @@ class ManualTurnInputs:
         return False
       if len(pandas) != len(cp.safetyConfigs):
         return False
+      aol = cp.brand == "ford" and cp.alternativeExperience == 32
+      if aol:
+        from openpilot.starpilot.aol.runtime import current_native
+        native = current_native(self.sm, cp, now_ns=boot)
+        if (native is None or not native.pandaInventory or not native.requestedLateral or not native.lateralAllowed or
+            native.sourcePandaStatesMonoTime != stamp or boot - native.observedMonoTime > max_age_ns):
+          return False
       for i, (panda, config) in enumerate(zip(pandas, cp.safetyConfigs, strict=True)):
         if (panda.safetyModel != config.safetyModel or panda.safetyParam != config.safetyParam or
             panda.alternativeExperience != cp.alternativeExperience or panda.safetyRxChecksInvalid or
             panda.heartbeatLost or len(panda.faults) or str(panda.faultStatus) != "none"):
           return False
-        if bool(panda.controlsAllowed) != (i == len(pandas) - 1):
+        if (not aol and bool(panda.controlsAllowed) != (i == len(pandas) - 1) or
+            aol and i != len(pandas) - 1 and panda.controlsAllowed):
           return False
       return True
     except (AttributeError, KeyError, TypeError, ValueError, OverflowError):

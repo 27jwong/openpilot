@@ -34,7 +34,7 @@ class FordLateralFeature:
     values = []
     for key in ("SafeMode", "AlwaysOnLateral"):
       raw, readable = read_saved(self.owner.params, key, 8)
-      if not readable or raw not in (None, b"0"):
+      if not readable or raw not in ((None, b"0") if key == "SafeMode" else (None, b"0", b"1")):
         return None
       values.append((key, raw))
     return tuple(values)
@@ -49,7 +49,7 @@ class FordLateralFeature:
                        choices=tuple(CHOICES.values()), available=parked and self.owner.authority("parked_preferences") and
                        readable and dependencies is not None, capability=capability,
                        dependencies=dependencies or (), repair_value="" if valid else CHOICES[0], default_value=CHOICES[0],
-                       reason="Applies next drive. Turn off Always On Lateral and Safe Mode to select BluePilot angle with normal cruise control."),)
+                       reason="Applies next drive. BluePilot angle works with Always On Lateral. Safe Mode must be off."),)
 
   def apply(self, request):
     value = next((code for code, label in CHOICES.items() if label == request.value), None)
