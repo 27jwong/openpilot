@@ -1203,6 +1203,54 @@ class TransportPauseFeedback:
       native.observedMonoTime >= self.lateral_native_ns and
       (native.pandaSerial, tuple(p.hardwareSerial for p in native.pandaInventory)) == self.lateral_inventory)
 
+  def _inactive_gear_source_gap(self, sm, cp, cs, axis, stamp, now_ns, *, latched, producer):
+    """Keep existing intent through a source-zero OFF sample while reversing.
+
+    Both axes must already be OFF in the host and native inventory. Only the
+    original healthy source's 200ms intent-retention bound applies; this never
+    grants output or advances any source, native, output or baseline lease.
+    """
+    from opendbc.car import structs
+    previous = self.signature
+    if (not latched or self.failed or self.paused or self.pending_event or self.retention_started_ns or
+        self.source_retention_started_ns or not self.ever_lateral_active or previous is None or
+        not self.session or cp_identity(cp) != self.cp or previous[0] != self.session or
+        previous[7] != self.session or previous[5] != 'none' or any(previous[9:13]) or not previous[13] or
+        not producer or previous[14] != producer or
+        not 0 < previous[8] <= previous[2] <= self.healthy_feedback_ns <= now_ns or
+        now_ns - previous[8] > SAFETY_MAX_AGE_NS or
+        cs.gearShifter not in (structs.CarState.GearShifter.reverse, structs.CarState.GearShifter.neutral) or
+        not cs.canValid or cs.canTimeout or cs.steerFaultTemporary or cs.steerFaultPermanent or
+        cs.accFaulted or cs.vehicleSensorsInvalid or cs.doorOpen or cs.seatbeltUnlatched or
+        cs.steeringDisengage or not cs.cruiseState.available or cs.buttonEvents or
+        not sm.seen['aolAxisState'] or not sm.alive['aolAxisState'] or sm.valid['aolAxisState'] or
+        axis.qualified or axis.sourceCarStateMonoTime != 0 or str(axis.mode) != 'off' or
+        axis.desiredLateral or axis.desiredLongitudinal or axis.lateralActive or axis.longitudinalActive or
+        axis.nativeAcknowledged or str(axis.faultReason) != 'none' or
+        str(axis.sessionId) != self.session or str(axis.faultSessionId) != self.session or
+        str(axis.intentProducerSessionId) != producer or int(axis.intentIntegrityEpoch) != previous[15] or
+        axis.sequence <= self.sequence or not previous[2] < stamp == axis.observedMonoTime <= now_ns <= axis.validUntilMonoTime or
+        axis.validUntilMonoTime - stamp != AXIS_MAX_AGE_NS):
+      return False
+    event_ns = int(sm.logMonoTime['onroadEvents'])
+    allowed = (log.OnroadEvent.EventName.wrongGear, log.OnroadEvent.EventName.reverseGear,
+               log.OnroadEvent.EventName.preEnableStandstill, log.OnroadEvent.EventName.pedalPressed,
+               log.OnroadEvent.EventName.gasPressedOverride, log.OnroadEvent.EventName.steerOverride,
+               log.OnroadEvent.EventName.pcmDisable)
+    if (not sm.seen['onroadEvents'] or not sm.valid['onroadEvents'] or not sm.alive['onroadEvents'] or
+        not 0 < event_ns == axis.faultEventMonoTime <= stamp or now_ns - event_ns > 1_500_000_000 or
+        any(event.name not in allowed or event.immediateDisable or
+            event.softDisable and event.name != log.OnroadEvent.EventName.wrongGear or
+            event.userDisable and event.name not in (log.OnroadEvent.EventName.reverseGear,
+              log.OnroadEvent.EventName.pedalPressed, log.OnroadEvent.EventName.pcmDisable)
+            for event in sm['onroadEvents'])):
+      return False
+    native = _healthy_transport_native(sm, cp, cs, self.session, now_ns)
+    return bool(native is not None and native.pandaInventory and
+      not (native.requestedLateral or native.lateralAllowed or native.requestedLongitudinal or native.longitudinalAllowed) and
+      native.observedMonoTime >= self.healthy_native_ns and self.healthy_inventory ==
+        (native.pandaSerial, tuple(slot.hardwareSerial for slot in native.pandaInventory)))
+
   def observe(self, sm, cp, cs, now_ns, *, latched=True, cancel_source_ns=0, brake_source_ns=0,
               gm_withdrawal_source_ns=0, intent_producer_session='', main_arm_ns=0, startup_calibration_pending=False, intent_paused=False):
     self.ordinary_warning_qualified = False
@@ -1234,6 +1282,9 @@ class TransportPauseFeedback:
                      cp_identity(cp) == self.cp)
       continuity = bool(not self.session or axis.sessionId == self.session and
                         (axis.sequence > self.sequence or axis.sequence == self.sequence and signature == self.signature))
+      if not current and continuity and self._inactive_gear_source_gap(sm, cp, cs, axis, stamp, now_ns, latched=latched,
+          producer=intent_producer_session):
+        return False
       from openpilot.starpilot.car.gm.aol import sdgm_alpha_lateral_owner
       if (sdgm_alpha_lateral_owner(cp) and latched and current and continuity and self.signature is not None and
           signature[14:16] != self.signature[14:16]):
