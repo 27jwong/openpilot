@@ -37,6 +37,7 @@ class TestFeatureTestDiscovery(unittest.TestCase):
     workflow = (ROOT / '.github/workflows/tests.yaml').read_text()
     self.assert_hosted_pytest_contract(workflow)
     selected = pytest_files()
+    self.assertIn('openpilot/system/tests/test_sentry.py', selected)
     self.assertTrue(selected)
     for package in ('flm', 'spot_monitor', 'sentry_mode', 'galaxy', 'ui'):
       self.assertTrue(any(path.startswith(f'openpilot/starpilot/{package}/') for path in selected), package)
