@@ -197,7 +197,7 @@ def test_large_gpu_layer_uses_centered_right_inset(width):
 
   hud = HudRenderer.__new__(HudRenderer)
   hud._model_source = Mock()
-  view = SimpleNamespace(_hud_renderer=hud)
+  view = Mock(spec=LargeRoadView, _hud_renderer=hud)
   LargeRoadView.render_model_source_layer(view, rl.Rectangle(30, 30, width - 60, 1020))
   rect = hud._model_source.render.call_args.args[0]
   assert (rect.x + rect.width, rect.y + rect.height / 2) == (width - 60, 540)

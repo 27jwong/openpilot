@@ -79,7 +79,7 @@ class AugmentedRoadView(CameraView):
     if target != DRIVER_CAM:
       gui_app.measure_frame_phase("model", self.model_renderer.render, rect)
 
-  def render_model_source_layer(self, rect: rl.Rectangle) -> None:
+  def render_model_source_layer(self, rect: rl.Rectangle, *, show_long_indicator: bool | None = False) -> None:
     self._hud_renderer._draw_model_source(rect)
 
   def _render(self, rect, *, poll_camera: bool = True):

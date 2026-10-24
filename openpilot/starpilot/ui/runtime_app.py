@@ -311,7 +311,6 @@ class StarShellSession:
     if getattr(ui_state, "replay_clock", None) is not None:
       return False
     if getattr(self, "_projection_tap", False):
-      # Projected taps need live onroad state, regardless of this screen's page or visibility.
       return bool(ui_state.started and display_message(ui_state.sm, 'carState', time.monotonic_ns(),
                                                        after_frame=ui_state.started_frame) is not None)
     if self._mode != ShellMode.ONROAD:
