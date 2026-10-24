@@ -59,7 +59,7 @@ class TestVehicleStartupPreferences(unittest.TestCase):
 
   def test_prius_filter_card_rechecks_final_preferences_without_stock_promotion(self):
     observed = gen_empty_fingerprint()
-    observed[0][0x2FF] = 4
+    observed[0][0x2FF] = 8  # Legacy EPS73 smartDSU, not a four-byte advertisement.
     eps = structs.CarParams.CarFw.new_message(
       ecu=structs.CarParams.Ecu.eps, fwVersion=b'8965B47070\x00\x00\x00\x00\x00\x00')
     for key in ('OpenpilotEnabledToggle', 'SafeMode', 'DisableOpenpilotLongitudinal'):
@@ -90,7 +90,7 @@ class TestVehicleStartupPreferences(unittest.TestCase):
     from opendbc.car.toyota.interface import CarInterface
     from openpilot.starpilot.car.toyota.prius_preferences import PriusFilterPreference
     observed = gen_empty_fingerprint()
-    observed[0][0x2FF] = 4
+    observed[0][0x2FF] = 8  # Legacy EPS73 smartDSU, not a four-byte advertisement.
     eps = structs.CarParams.CarFw.new_message(
       ecu=structs.CarParams.Ecu.eps, fwVersion=b'8965B47070\x00\x00\x00\x00\x00\x00')
     cp = CarInterface.get_params(CAR.TOYOTA_PRIUS_RETROFIT, observed, [eps], False, False, False)

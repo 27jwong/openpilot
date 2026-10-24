@@ -90,7 +90,8 @@ class TestHighlanderAol(unittest.TestCase):
     for car in (CAR.TOYOTA_PRIUS, CAR.TOYOTA_PRIUS_RETROFIT):
       fw = [structs.CarParams.CarFw(ecu=structs.CarParams.Ecu.eps,
              fwVersion=b'8965B47070\x00\x00\x00\x00\x00\x00')]
-      cp = CarInterface.get_params(car, {0: {0x2FF: 4}, 1: {}, 2: {}}, fw, False, False, False)
+      # This legacy EPS73 owner consumes eight-byte smartDSU traffic, not advertisements.
+      cp = CarInterface.get_params(car, {0: {0x2FF: 8}, 1: {}, 2: {}}, fw, False, False, False)
       self.assertEqual(cp.safetyConfigs[0].safetyParam, 4169)
       self.assertTrue(qualified(cp))
       for reduced in (False, True):
