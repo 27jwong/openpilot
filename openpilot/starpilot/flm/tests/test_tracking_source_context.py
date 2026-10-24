@@ -58,20 +58,20 @@ def test_legacy_point_precision_is_unchanged():
 def test_global_thirty_coordinates_require_new_unselected_baseline(name):
   o = owner()
   kind = 'subtle' if name.startswith('center_') or name == 'highway_center_taper_max' else 'large'
-  count = 9 if kind == 'subtle' else 3
+  count = 3
   discovery = set()
   for i in range(2 * count):
     e = episode(o, i, name, kind=kind, error=0.2)
     e = replace(e, normalization_accel=max(0.1, e.goal_rms))
     refresh(o, e.end_ns)
     o.observe_episode(e, now_ns=e.end_ns)
+    if o.discovery is not None and not discovery:
+      discovery.update(o.selector_hint['source_episode_ids'])
     if i < count:
-      discovery.add(e.episode_id)
-    if i == count - 1:
       assert o.offer_state is None
   selected = o.offer(e.end_ns)
   assert selected is not None and selected.names == (name,) and len(o.before) == count
-  assert discovery.isdisjoint(e.episode_id for e in o.before)
+  assert discovery and discovery.isdisjoint(e.episode_id for e in o.before)
   assert o.offer_state['alpha'] == 0.0 and o.offer_state['critical'] == 0.0
   assert 'noise_prior' not in o.offer_state and len(selected.target) == 30 and not any(o.accepted.values())
   changes = [n for n, v in selected.target if v != dict(selected.baseline)[n]]
