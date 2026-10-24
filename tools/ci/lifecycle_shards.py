@@ -113,7 +113,7 @@ def workload_policy():
 
 
 def partition(targets, identities, count):
-  if (not 1 <= count <= 8 or len(set(targets)) != len(targets) or len(set(identities)) != len(identities) or
+  if (not 1 <= count <= 16 or len(set(targets)) != len(targets) or len(set(identities)) != len(identities) or
       any(not target.endswith('.py') or '::' in target or Path(target).is_absolute() or '..' in Path(target).parts for target in targets)):
     raise ValueError('Invalid lifecycle catalog')
   owners = {}

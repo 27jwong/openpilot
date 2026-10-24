@@ -100,7 +100,7 @@ class LifecycleShardTests(unittest.TestCase):
       with self.subTest(targets=targets), self.assertRaises(ValueError):
         helper.partition(targets, ids, 4)
     with self.assertRaises(ValueError):
-      helper.partition(['other.py'], ['other.test_case'], 9)
+      helper.partition(['other.py'], ['other.test_case'], 17)
 
   def test_future_declared_module_does_not_add_any_cases(self):
     targets, identities = self.catalog()
