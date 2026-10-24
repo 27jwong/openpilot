@@ -1,6 +1,11 @@
 """Pair selection only; these operands grant no native or application authority."""
 from types import SimpleNamespace
 import unittest
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+  from openpilot.starpilot.flm.live_tracking import LiveTrackingOptimizer
+  from openpilot.starpilot.flm.live_tracking_episodes import TrackingEpisodeBuilder
 
 from openpilot.starpilot.flm.live_tracking_ingress import LiveTrackingIngress
 
@@ -9,8 +14,8 @@ def subject(source_tracking=True):
   owner = object.__new__(LiveTrackingIngress)
   owner.binding = SimpleNamespace(identity='1'*64, source_epoch='2'*64, baseline_revision='3'*64,
                                   controller_revision='revision', native_identity='4'*64, native_required=True)
-  owner.episodes = SimpleNamespace(source_tracking=source_tracking)
-  owner.optimizer = SimpleNamespace(lag_ns=0)
+  owner.episodes = cast("TrackingEpisodeBuilder", SimpleNamespace(source_tracking=source_tracking))
+  owner.optimizer = cast("LiveTrackingOptimizer", SimpleNamespace(lag_ns=0))
   owner.last_coordinates = owner.last_profile = None
   return owner
 
@@ -126,7 +131,6 @@ class TestSourceExperimentEntry(unittest.TestCase):
 
   def test_source_experiment_still_allocates_three_fresh_baseline_windows(self):
     from openpilot.starpilot.flm.live_tracking import LiveTrackingOptimizer
-    import inspect
     # Exercise the real allocation without manufacturing source/native authority.
     function = next(value for name, value in vars(LiveTrackingOptimizer).items() if name == '_comparison_allocation')
     scope = dict(function.__globals__)
@@ -136,5 +140,6 @@ class TestSourceExperimentEntry(unittest.TestCase):
     owner = SimpleNamespace(rmse=None, binding='binding', accepted=dict.fromkeys(scope['NAMES'], 0.), lag_ns=0)
     owner.planning_history = [SimpleNamespace(binding='binding', profile_sha256='profile', end_ns=n*2_000_000_000) for n in (1,2,3)]
     episode = SimpleNamespace(kind='subtle', profile_sha256='profile', end_ns=6_000_000_000)
-    target = dict(owner.accepted); target[next(iter(target))] = .005
+    target = dict(owner.accepted)
+    target[next(iter(target))] = .005
     assert allocation(owner, episode, .001, target, minimum_episodes=1) == (3,3)
