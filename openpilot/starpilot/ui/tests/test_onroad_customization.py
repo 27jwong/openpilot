@@ -550,7 +550,8 @@ def test_compact_us_sign_keeps_camera_visible_at_saved_position(speed, size):
     hud._speed_limit_sign(state)
   fill.assert_not_called()
   outline.assert_called_once()
-  assert outline.call_args.args[:2] == (259, 96)
+  assert outline.call_args.args[:2] == (259, 88)
+  assert outline.call_args.kwargs == {"short": True}
   assert [(call.args[0], call.args[2]) for call in foreground_calls(fonts.draw)] == [("SPEED", 20), ('LIMIT', 20), (str(speed), size)]
   assert foreground_calls(fonts.draw)[0].args[3:5] == (254, 41)
 
