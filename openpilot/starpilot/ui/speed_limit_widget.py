@@ -14,6 +14,7 @@ from openpilot.starpilot.ui.unified_speed_presentation import displayed_adjusted
 
 INK = rl.Color(241, 246, 243, 255)
 MUTED = rl.Color(190, 208, 202, 255)
+SOURCE_LABELS = {'dashboard': 'DASH', 'map': 'OSM', 'vision': 'VISION', 'mapbox': 'NAV'}
 
 
 def draw_text(fonts, text, role, size, x, y, color=INK):
@@ -77,6 +78,7 @@ class SpeedLimitWidget:
 
   def _sign(self, state: OnroadState, bounds, now: float) -> None:
     shown, obs = resolve_unified_speed(state), state.speed_limit
+    unavailable = str(obs.kind) != 'valid'
     x, top = bounds[0] + 12, bounds[1] + 12
     scale = self.scale
     pending = shown.pending and not obs.automatic_adoption_pending
@@ -130,33 +132,15 @@ class SpeedLimitWidget:
           size -= 2
         centered(shown.offset_text, FontRole.MEDIUM, size, offset_top, color)
     else:
-      if self.profile == Profile.COMPACT:
-        rect = rl.Rectangle(x + 2, top, 116, 132 + (44 if shown.offset_text else 0))
-        rl.draw_rectangle_rounded_lines_ex(rl.Rectangle(rect.x + 8, rect.y + 8, rect.width - 16, rect.height - 16),
-                                         .14, 16, 2, white)
-        for label, size, label_top, role in (('SPEED', 20, 18, FontRole.SEMI_BOLD),
-                                              ('LIMIT', 20, 36, FontRole.SEMI_BOLD),
-                                              (shown.posted_text, 50 if len(shown.posted_text) <= 2 else 42, 66, FontRole.BOLD)):
-          measured = self.fonts.measure(label, role, size)
-          origin = rect.x + (rect.width - measured.width) / 2
-          if arrow_direction and role == FontRole.SEMI_BOLD:
-            origin -= 6  # Keep four pixels between the measured header ink and the pending arrow.
-          self.fonts.draw(label, role, size, origin, rect.y + label_top, white)
-          if label == shown.posted_text:
-            number = origin, rect.y + label_top, origin + measured.width, rect.y + label_top + measured.height
-        if shown.offset_text:
-          measured = self.fonts.measure(shown.offset_text, FontRole.MEDIUM, 30)
-          self.fonts.draw(shown.offset_text, FontRole.MEDIUM, 30, rect.x + (rect.width - measured.width) / 2,
-                          rect.y + 118, secondary)
-      else:
-        rect = rl.Rectangle(x + 2 * scale, top + 2 * scale, 114 * scale, 128 * scale)
-        rl.draw_rectangle_rounded(rect, .1, 16, rl.Color(10, 17, 19, 230))
-        rl.draw_rectangle_rounded_lines_ex(rect, .1, 16, 2 * scale, white)
-        for label, y in (('SPEED', top + 11 * scale), ('LIMIT', top + 27 * scale)):
-          centered(label, FontRole.SEMI_BOLD, 20, y, white, x + (53 if arrow_direction else 59) * scale)
-        number = centered(shown.posted_text, FontRole.BOLD, 58, top + (50 if shown.offset_text else 61) * scale, white)
-        if shown.offset_text:
-          centered(shown.offset_text, FontRole.MEDIUM, 36, top + 98 * scale, secondary)
+      self.shapes.outline(x + 59 * scale, top + 66 * scale, white)
+      heading = 'LAST' if unavailable else SOURCE_LABELS.get(shown.source, 'SPEED')
+      for label, y in ((heading, top + 11 * scale), ('LIMIT', top + 27 * scale)):
+        centered(label, FontRole.SEMI_BOLD, 20, y, white, x + (52 if arrow_direction else 59) * scale)
+      number = centered(shown.posted_text, FontRole.BOLD, 58, top + (50 if shown.offset_text else 61) * scale, white)
+      if shown.offset_text:
+        centered(shown.offset_text, FontRole.MEDIUM, 36, top + 98 * scale, secondary)
+    if unavailable and state.appearance.use_vienna_sign:
+      centered('LAST', FontRole.SEMI_BOLD, 16, top + 25 * scale, rl.Color(0, 0, 0, 255))
     if arrow_direction:
       ax, ay = ((x + 59 * scale, top + 29 * scale) if state.appearance.use_vienna_sign else (x + 99 * scale, top + 26 * scale))
       arrow_color = color if state.appearance.use_vienna_sign else white
