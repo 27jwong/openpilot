@@ -110,12 +110,12 @@ static bool toyota_legacy_main_current(void) {
 
 static bool toyota_legacy_advert_ready(void) {
   bool ready = true;
-  if (toyota_pedal_composite || toyota_legacy_advert() || toyota_camera_2aa() || toyota_prius_filter()) {
+  if (toyota_dsu_bypass || toyota_pedal_composite || toyota_legacy_advert() || toyota_camera_2aa() || toyota_prius_filter()) {
     static const uint32_t timeout[4] = {303031U, 10000000U, 3333334U, 400000U};
     const uint32_t now = microsecond_timer_get();
     ready = aol_rx_healthy() && toyota_aol_main && toyota_aol_drive && toyota_aol_doors_closed && toyota_aol_eps &&
             (!toyota_camera_2aa() || !toyota_camera_2aa_ambiguous) &&
-            (!toyota_prius_filter() || !toyota_prius_sdsu_ambiguous);
+            (!toyota_prius_filter() || !toyota_prius_sdsu_ambiguous) && (!toyota_dsu_bypass || !toyota_bypass_ambiguous);
     for (unsigned int i = 0U; i < 4U; i++) {
       ready &= toyota_aol_seen[i] && (safety_get_ts_elapsed(now, toyota_aol_ts[i]) <= timeout[i]);
     }
@@ -193,6 +193,19 @@ static bool toyota_get_quality_flag_valid(const CANPacket_t *msg) {
 }
 
 static void toyota_optional_rx_hook(const CANPacket_t *msg) {
+  if (toyota_dsu_bypass) {
+    if (msg_matches(msg, 0x343U, 2U)) {
+      // A malformed packet outside the required catalog cannot retain LONG.
+      toyota_bypass_control = false;
+    }
+    if ((msg->addr == 0x201U) || (msg->addr == 0x2FFU) || (msg->addr == 0x2AAU)) {
+      toyota_bypass_ambiguous = true;
+    }
+    if (msg_matches(msg, 0x283U, 2U)) {
+      const bool valid = (GET_LEN(msg) == 7U) && (toyota_get_checksum(msg) == toyota_compute_checksum(msg));
+      toyota_bypass_aeb = !valid || (GET_BIT(msg, 41U) && GET_BIT(msg, 23U));
+    }
+  }
   if (toyota_prius_advert() && ((msg->addr == 0x201U) || (msg->addr == 0x2AAU) ||
       ((msg->addr == 0x2FFU) && (((msg->bus != 0U) && (msg->bus != 2U)) || (GET_LEN(msg) != 4U))))) {
     toyota_prius_sdsu_ambiguous = true;
@@ -208,10 +221,10 @@ static void toyota_optional_rx_hook(const CANPacket_t *msg) {
     toyota_camera_2aa_ambiguous = true;
   }
   const bool aol_checksum_source = (!toyota_alt_cruise && (msg->addr == 0x1D3U)) || (msg->addr == 0x262U) || (toyota_aol_secoc && (msg->addr == 0x127U));
-  const unsigned int aol_source_len = ((toyota_aol_rav4h_filter || toyota_alt_cruise || toyota_legacy_sdsu || toyota_legacy_advert() || (current_safety_param == 856U)) && (msg->addr == 0x262U)) ? 5U : 8U;
+  const unsigned int aol_source_len = (((toyota_dsu_bypass && toyota_bypass_eps5) || toyota_aol_rav4h_filter || toyota_alt_cruise || toyota_legacy_sdsu || toyota_legacy_advert() || (current_safety_param == 856U)) && (msg->addr == 0x262U)) ? 5U : 8U;
   if (!aol_checksum_source || ((GET_LEN(msg) == aol_source_len) && (toyota_get_checksum(msg) == toyota_compute_checksum(msg)))) {
     toyota_aol_observe(msg);
-  } else if ((toyota_pedal_composite || toyota_aol_enabled || toyota_legacy_advert() || toyota_camera_2aa() || toyota_prius_filter()) && (msg->bus == 0U)) {
+  } else if ((toyota_dsu_bypass || toyota_pedal_composite || toyota_aol_enabled || toyota_legacy_advert() || toyota_camera_2aa() || toyota_prius_filter()) && (msg->bus == 0U)) {
     unsigned int index = 3U;
     if (msg->addr == 0x1D3U) {
       index = 0U;
@@ -244,9 +257,12 @@ static void toyota_optional_rx_hook(const CANPacket_t *msg) {
 }
 
 static void toyota_rx_hook(const CANPacket_t *msg) {
+  if (toyota_dsu_bypass && msg_matches(msg, 0x343U, 2U)) {
+    toyota_bypass_control = !GET_BIT(msg, 18U) && !GET_BIT(msg, 19U);
+  }
   // Required sources have already passed RX length/checksum validation here.
   // Optional ingress only runs for messages outside the required RX catalog.
-  if ((toyota_pedal_composite || toyota_legacy_advert() || toyota_camera_2aa() || toyota_prius_filter() || (current_safety_param == 856U)) && ((msg->addr == 0x262U) || (!toyota_alt_cruise && (msg->addr == 0x1D3U)))) {
+  if ((toyota_dsu_bypass || toyota_pedal_composite || toyota_legacy_advert() || toyota_camera_2aa() || toyota_prius_filter() || (current_safety_param == 856U)) && ((msg->addr == 0x262U) || (!toyota_alt_cruise && (msg->addr == 0x1D3U)))) {
     toyota_aol_observe(msg);
   }
   if (toyota_alt_cruise && msg_matches(msg, 0x365U, 0U) && (GET_LEN(msg) == 7U)) {
@@ -398,7 +414,8 @@ static bool toyota_tx_hook(const CANPacket_t *msg) {
   };
 
   const bool filter_ready = (!(toyota_sdsu_status || toyota_pedal) || aol_rx_healthy()) && toyota_legacy_main_current() && toyota_legacy_advert_ready();
-  const bool filter_long_ready = filter_ready && (!toyota_sdsu_status || toyota_sdsu_control);
+  const bool filter_long_ready = filter_ready && (!toyota_sdsu_status || toyota_sdsu_control) &&
+                                 (!toyota_dsu_bypass || (toyota_bypass_control && !toyota_bypass_aeb));
 
   bool tx = true;
   if (toyota_pedal && (msg->addr == 0x200U)) {
@@ -580,14 +597,20 @@ static bool toyota_tx_hook(const CANPacket_t *msg) {
   }
 
   // Required physical DSU MAIN cannot be manufactured through host TX.
-  if ((toyota_legacy_sdsu || toyota_legacy_advert()) && toyota_alt_cruise && msg_matches(msg, 0x365U, 0U)) {
+  if ((toyota_dsu_bypass || toyota_legacy_sdsu || toyota_legacy_advert()) && toyota_alt_cruise && msg_matches(msg, 0x365U, 0U)) {
     tx = false;
   }
   return tx;
 }
 
 static safety_config toyota_init(uint16_t param) {
-  const uint16_t base_param = toyota_pedal_parent_param(param);
+  const uint16_t base_param = toyota_bypass_base_param(toyota_pedal_parent_param(param));
+  toyota_dsu_bypass = toyota_bypass_param(param);
+  toyota_bypass_eps5 = toyota_dsu_bypass && ((param & 0x1000U) == 0U);
+  toyota_bypass_alt_main = toyota_dsu_bypass && ((param & 0x4000U) != 0U);
+  toyota_bypass_ambiguous = false;
+  toyota_bypass_control = false;
+  toyota_bypass_aeb = false;
   toyota_pedal_composite = toyota_pedal_composite_param(param);
   toyota_composite_pcm_gas = false;
   toyota_composite_pedal_gas = false;
@@ -653,7 +676,7 @@ static safety_config toyota_init(uint16_t param) {
 
   toyota_alt_brake = GET_FLAG(base_param, TOYOTA_PARAM_ALT_BRAKE);
   toyota_stock_longitudinal = GET_FLAG(base_param, TOYOTA_PARAM_STOCK_LONGITUDINAL);
-  toyota_radar_diagnostics_allowed = !toyota_stock_longitudinal && !toyota_secoc && (base_param != 0x1049U) && (base_param != 0x1449U) && !toyota_eps8_sdsu && !toyota_legacy_sdsu && !toyota_legacy_advert_param(base_param) && !toyota_camera_2aa_param(base_param) && !toyota_prius_filter_param(base_param);
+  toyota_radar_diagnostics_allowed = !toyota_dsu_bypass && !toyota_stock_longitudinal && !toyota_secoc && (base_param != 0x1049U) && (base_param != 0x1449U) && !toyota_eps8_sdsu && !toyota_legacy_sdsu && !toyota_legacy_advert_param(base_param) && !toyota_camera_2aa_param(base_param) && !toyota_prius_filter_param(base_param);
   toyota_lta = !toyota_legacy_advert_param(base_param) && GET_FLAG(base_param, TOYOTA_PARAM_LTA);
   toyota_dbc_eps_torque_factor = base_param & TOYOTA_EPS_FACTOR;
 
@@ -742,6 +765,16 @@ static safety_config toyota_init(uint16_t param) {
     } else {
       ret.rx_checks_len = 4;
     }
+    if (toyota_dsu_bypass) {
+      toyota_rx_checks[4].msg[0] = (CanMsgCheck){.addr = 0x343, .bus = 2U, .len = 8, .frequency = 33U,
+        .ignore_counter = true, .ignore_quality_flag = true};
+      toyota_rx_checks[5].msg[0] = (CanMsgCheck){.addr = 0x262, .bus = 0U, .len = toyota_bypass_eps5 ? 5 : 8, .frequency = 25U,
+        .ignore_counter = true, .ignore_quality_flag = true};
+      toyota_rx_checks[6].msg[0] = (CanMsgCheck){.addr = toyota_alt_cruise ? 0x365 : 0x1D3, .bus = 0U,
+        .len = toyota_alt_cruise ? 7 : 8, .frequency = 10U, .ignore_checksum = toyota_alt_cruise,
+        .ignore_counter = true, .ignore_quality_flag = true};
+      ret.rx_checks_len = 7;
+    }
     if (toyota_pedal_composite) {
       // Keep all parent checks, including smartDSU status, independently required.
       toyota_rx_checks[5].msg[0] = (CanMsgCheck){.addr = 0x201, .bus = 0U, .len = 6, .frequency = 50U,
@@ -764,8 +797,9 @@ static safety_config toyota_init(uint16_t param) {
 }
 
 static bool toyota_fwd_hook(int bus_num, int addr) {
-  return (bus_num == 2) && (addr == 0x344) && toyota_hold_ready(ALT_EXP_TOYOTA_AEB_HOLD) &&
-         toyota_hold_host_seen && (safety_get_ts_elapsed(microsecond_timer_get(), toyota_hold_host_ts) <= 100000U);
+  return (toyota_dsu_bypass && !toyota_stock_longitudinal && (bus_num == 2) && (addr == 0x343)) ||
+         ((bus_num == 2) && (addr == 0x344) && toyota_hold_ready(ALT_EXP_TOYOTA_AEB_HOLD) &&
+         toyota_hold_host_seen && (safety_get_ts_elapsed(microsecond_timer_get(), toyota_hold_host_ts) <= 100000U));
 }
 
 const safety_hooks toyota_hooks = {

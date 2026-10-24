@@ -2,7 +2,7 @@ import copy
 import math
 
 from opendbc.can import CANDefine, CANParser
-from opendbc.car.toyota import pedal_composite, pedal, legacy_sdsu, advert_filter, legacy_advert_filter, prius_sdsu, prius_advert_filter
+from opendbc.car.toyota import dsu_bypass, pedal_composite, pedal, legacy_sdsu, advert_filter, legacy_advert_filter, prius_sdsu, prius_advert_filter
 from opendbc.car.toyota.lexus_is import LexusIsCANParser
 from opendbc.car import Bus, DT_CTRL, create_button_events, structs
 from opendbc.car.common.conversions import Conversions as CV
@@ -78,7 +78,8 @@ class CarState(CarStateBase):
       self.pre_collision_2 = copy.copy(cp_cam.vl["PRE_COLLISION_2"])
 
     ret = structs.CarState()
-    cp_acc = cp_cam if (self.CP.flags & ToyotaFlags.TSS2) and not (self.CP.flags & ToyotaFlags.RADAR_ACC) else cp
+    bypass = dsu_bypass.configured(self.CP)
+    cp_acc = cp_cam if bypass or (self.CP.flags & ToyotaFlags.TSS2) and not (self.CP.flags & ToyotaFlags.RADAR_ACC) else cp
 
     if not self.CP.flags & ToyotaFlags.SECOC.value:
       self.gvc = cp.vl["VSC1S07"]["GVC"]
@@ -176,6 +177,18 @@ class CarState(CarStateBase):
         ret.cruiseState.available &= bool(cp.main_valid and stamp > 0 and 0 <= cp._last_update_nanos - stamp <= 303_031_000)
       ret.cruiseState.speed = cp.vl["PCM_CRUISE_2"]["SET_SPEED"] * CV.KPH_TO_MS
       cluster_set_speed = cp.vl["PCM_CRUISE_SM"]["UI_SET_SPEED"]
+
+    if bypass:
+      main = 'DSU_CRUISE' if self.CP.carFingerprint in dsu_bypass.ALT_MAIN_CARS else 'PCM_CRUISE_2'
+      stamp = cp.ts_nanos[main]['MAIN_ON']
+      ret.cruiseState.available &= bool(cp.main_valid and stamp > 0 and 0 <= cp._last_update_nanos - stamp <= 303_031_000)
+      stamp = cp.ts_nanos['EPS_STATUS']['LKA_STATE']
+      ret.steerFaultTemporary |= not (cp.eps_valid and stamp > 0 and 0 <= cp._last_update_nanos - stamp <= 400_000_000)
+      stamp = cp_cam.ts_nanos['ACC_CONTROL']['ACC_TYPE']
+      ret.accFaulted |= not (cp_cam.acc_valid and stamp > 0 and 0 <= cp_cam._last_update_nanos - stamp <= 303_031_000)
+      ret.accFaulted |= bool(cp_acc.vl['ACC_CONTROL']['ACC_MALFUNCTION'] or cp_acc.vl['ACC_CONTROL']['RADAR_DIRTY'] or cp.ambiguous or cp_cam.ambiguous)
+      self.acc_type = cp_acc.vl['ACC_CONTROL']['ACC_TYPE']
+      ret.stockFcw = bool(cp_acc.vl['PCS_HUD']['FCW'])
 
     # UI_SET_SPEED is always non-zero when main is on, hide until first enable
     is_metric = cp.vl["BODY_CONTROL_STATE_2"]["UNITS"] in (1, 2)
@@ -317,6 +330,15 @@ class CarState(CarStateBase):
       parent[Bus.pt] = pedal_composite.ParentPedalParser(parent[Bus.pt])
       parent[Bus.alt] = pedal.PedalCANParser(DBC[CP.carFingerprint][Bus.pt], [('GAS_SENSOR', 50)], 0)
       return parent
+    if dsu_bypass.configured(CP):
+      alternate = CP.carFingerprint in dsu_bypass.ALT_MAIN_CARS
+      main = 'DSU_CRUISE' if alternate else 'PCM_CRUISE_2'
+      kwargs = {'eps_length': 8 if CP.carFingerprint in dsu_bypass.EPS8_CARS or CP.carFingerprint == CAR.TOYOTA_PRIUS else 5,
+                'alternate_main': alternate}
+      return {
+        Bus.pt: dsu_bypass.BypassCANParser(DBC[CP.carFingerprint][Bus.pt], [(main, 10), ('EPS_STATUS', 25)], 0, **kwargs),
+        Bus.cam: dsu_bypass.BypassCANParser(DBC[CP.carFingerprint][Bus.pt], [('ACC_CONTROL', 33)], 2, **kwargs),
+      }
     dbc_name = DBC[CP.carFingerprint][Bus.pt]
     cam_messages = [("RSA1", math.nan)] if "RSA1" in CANDBC(dbc_name).name_to_msg else []
     if CP.flags & ToyotaFlags.AUTO_BRAKE_HOLD and uses_toyota_auto_hold_aeb(CP):

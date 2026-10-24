@@ -252,6 +252,9 @@ class CarInterface(CarInterfaceBase):
     from opendbc.car.toyota import prius_advert_filter
     if prius_advert_filter.hardware_supported(candidate, fingerprint, car_fw):
       prius_advert_filter.apply(ret)
+    from opendbc.car.toyota import dsu_bypass
+    if dsu_bypass.hardware_supported(candidate, fingerprint, car_fw):
+      dsu_bypass.apply(ret)
     from opendbc.car.toyota import pedal
     if ret.openpilotLongitudinalControl and pedal.hardware_supported(candidate, fingerprint, car_fw):
       ret.flags |= int(ToyotaFlags.GAS_INTERCEPTOR)

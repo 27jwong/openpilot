@@ -6,6 +6,8 @@ from openpilot.starpilot.aol.policy import AolVehiclePolicy
 from openpilot.starpilot.aol.intent import AolCardIntent, AOL_TOGGLE
 
 AOL_WORDS = frozenset((
+  0x8949, 0x8B49,
+  0x8849, 0x8A49, 0x9849, 0x9A49, 0x9842, 0x9A42, 0x8958, 0x8B58, 0x8964, 0x8B64, 0xC84D, 0xCA4D, 0xC949, 0xCB49,
   0x8042, 0x8242, 0xC042, 0xC242, 0xD049, 0xD249,
   0xC049, 0xC249,
   0x9449, 0x9549, 0x9558, 0x9564, 0x9649, 0x9749, 0x9758, 0x9764, 0xD44D, 0xD549, 0xD64D, 0xD749,
@@ -97,6 +99,9 @@ def stock_prius_retrofit_qualified(cp, *, marked_only=False):
 
 
 def qualified(cp, *, marked_only=False):
+  from opendbc.car.toyota import dsu_bypass
+  if dsu_bypass.configured(cp):
+    return cp.alternativeExperience in ((32,) if marked_only else (0, 32))
   from opendbc.car.toyota import pedal_composite
   if pedal_composite.configured(cp):
     return qualified(pedal_composite.parent_cp(cp), marked_only=marked_only)
