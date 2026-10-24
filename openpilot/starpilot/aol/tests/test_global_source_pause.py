@@ -70,7 +70,7 @@ def state():
   return cs
 
 
-def sample(cp, now, sequence, *, phase='active', withdrawn=False, order='matched'):
+def sample(cp, now, sequence, *, phase='active', withdrawn=False, order='matched', warning='commIssue'):
   longitudinal = bool(cp.openpilotLongitudinalControl)
   native = bound_state(cp, now=now, session=SESSION)
   native = replace(native, requestedLongitudinal=longitudinal, longitudinalAllowed=longitudinal)
@@ -101,7 +101,7 @@ def sample(cp, now, sequence, *, phase='active', withdrawn=False, order='matched
   event_stamp = now if matched else now + 1_000_000 if order == 'recovery_first' else NOW
   events = messaging.new_message('onroadEvents', int(matched), valid=True, logMonoTime=event_stamp)
   if matched:
-    events.onroadEvents[0].name, events.onroadEvents[0].softDisable = 'commIssue', True
+    events.onroadEvents[0].name, events.onroadEvents[0].softDisable = warning, True
   return Peers([wire.as_reader(), pandas.as_reader(), proof.as_reader(), events.as_reader()]), native
 
 
@@ -124,10 +124,11 @@ def change(sm, service, update):
 @pytest.mark.parametrize('identity', PROFILES)
 @pytest.mark.parametrize('withdrawn', [False, True])
 @pytest.mark.parametrize('order', ['matched', 'axis_first', 'recovery_first'])
-def test_every_make_retains_source_pause_intent_and_requires_current_output_grant(identity, withdrawn, order):
+@pytest.mark.parametrize('warning', ['commIssue', 'commIssueAvgFreq', 'selfdrivedLagging'])
+def test_every_make_retains_source_pause_intent_and_requires_current_output_grant(identity, withdrawn, order, warning):
   cp, cs, feedback = baseline(identity)
   now = NOW + 42_000_000
-  sm, _ = sample(cp, now, 20_000_001, phase='pause', withdrawn=withdrawn, order=order)
+  sm, _ = sample(cp, now, 20_000_001, phase='pause', withdrawn=withdrawn, order=order, warning=warning)
   before = dict(vars(feedback))
   assert not feedback.observe(sm, cp, cs, now + 2_000_000, latched=True, intent_producer_session=PRODUCER)
   assert not feedback.failed
@@ -150,7 +151,7 @@ def test_every_make_retains_source_pause_intent_and_requires_current_output_gran
 @pytest.mark.parametrize('identity', PROFILES)
 @pytest.mark.parametrize('fault', ['source_expired', 'packet_expired', 'native_expired', 'native_denial', 'native_fault',
                                   'can', 'timeout', 'permanent_eps', 'button', 'main_off', 'producer', 'epoch',
-                                  'session', 'cp', 'event_fault', 'event_cancel', 'unarmed'])
+                                  'session', 'cp', 'event_fault', 'event_cancel', 'combined_cancel', 'unarmed'])
 def test_every_make_keeps_existing_fault_cancel_identity_and_stale_vetoes(identity, fault):
   cp, cs, feedback = baseline(identity)
   now = NOW + (210_000_001 if fault == 'source_expired' else 42_000_000)
@@ -170,6 +171,11 @@ def test_every_make_keeps_existing_fault_cancel_identity_and_stale_vetoes(identi
     change(sm, 'aolAxisState', lambda axis: setattr(axis, 'intentIntegrityEpoch' if fault == 'epoch' else 'sessionId', 1 if fault == 'epoch' else 'different'))
   elif fault == 'cp':
     cp.flags ^= 1
+  elif fault == 'combined_cancel':
+    event = messaging.new_message('onroadEvents', 2, valid=True, logMonoTime=now)
+    event.onroadEvents[0] = sm['onroadEvents'][0]
+    event.onroadEvents[1].name, event.onroadEvents[1].userDisable = 'buttonCancel', True
+    sm.messages['onroadEvents'] = event.as_reader()
   elif fault in ('event_fault', 'event_cancel'):
     def alter(events):
       events[0].name = 'controlsMismatch' if fault == 'event_fault' else 'buttonCancel'
@@ -187,14 +193,15 @@ def test_every_make_keeps_existing_fault_cancel_identity_and_stale_vetoes(identi
 
 @pytest.mark.parametrize('identity', ('gm', *VOLTS))
 @pytest.mark.parametrize('withdrawn', [False, True])
-def test_gm_and_volt_actual_intent_owner_keeps_main_arm_during_temporary_pause(identity, withdrawn):
+@pytest.mark.parametrize('warning', ['commIssue', 'commIssueAvgFreq', 'selfdrivedLagging'])
+def test_gm_and_volt_actual_intent_owner_keeps_main_arm_during_temporary_pause(identity, withdrawn, warning):
   cp, cs, feedback = baseline(identity)
   settings = AolSettings(True, 0., 0, 0, (0, 0, 0), (0, 0, 0))
   owner = vehicle.create_intent(cp, settings, vehicle.policy_for(cp))
   owner.update(cs, fault_active=False, now_ns=NOW)
   assert owner.allowed_latch and not owner._main_cycle_required
   now = NOW + 42_000_000
-  sm, _ = sample(cp, now, 20_000_001, phase='pause', withdrawn=withdrawn)
+  sm, _ = sample(cp, now, 20_000_001, phase='pause', withdrawn=withdrawn, warning=warning)
   reset = feedback.observe(sm, cp, cs, now, latched=owner.allowed_latch, intent_producer_session=PRODUCER)
   owner.update(cs, fault_active=reset, now_ns=now)
   assert owner.allowed_latch and not owner._main_cycle_required

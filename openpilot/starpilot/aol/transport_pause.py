@@ -1284,7 +1284,7 @@ class TransportPauseFeedback:
     # axis lease; repeated OFF samples cannot renew the accepted source bound.
     if (not sm.seen['onroadEvents'] or not sm.valid['onroadEvents'] or not sm.alive['onroadEvents'] or
         not 0 < event_ns <= now_ns or now_ns - event_ns > 1_500_000_000 or
-        (not availability_only(events) if matched else
+        (not host_source_availability_only(events) if matched else
          any(event.immediateDisable or event.softDisable or event.userDisable for event in events))):
       return False
     native = _healthy_transport_native(sm, cp, cs, self.session, now_ns)
