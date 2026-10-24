@@ -213,6 +213,12 @@ def _discovery_support(rows, kind, model_rmse):
   # Maneuver geometry and miss severity are separate. A modest tracking miss
   # in a substantial curve needs the longer small-error evidence path, rather
   # than being excluded by the large-error floor forever.
+  if model_rmse is None:
+    # Native visibility selects a bounded experiment, not permission to keep it.
+    # One complete original window is enough to try a slow single-coordinate
+    # step; three NEW uncensored baseline windows and later feedback still
+    # decide its outcome. Quantized/missing probes never become sensitivity.
+    return (tuple(rows[-1:]), 1) if rows else ((), None)
   large = tuple(rows[-3:])
   if kind == 'large' and len(large) == 3 and all(row.error_rms >= (0.10 if model_rmse is None else max(0.10, 6 * model_rmse)) for row in large):
     return large, 3
@@ -587,9 +593,9 @@ class LiveTrackingOptimizer:
   def _comparison_allocation(
     self, episode: TrackingEpisode, expected: float, target: dict[str, float], *, minimum_episodes: int | None = None
   ) -> tuple[int, int] | None:
-    if minimum_episodes is not None and minimum_episodes not in (3, 9):
+    if minimum_episodes is not None and minimum_episodes not in ((1, 3, 9) if self.rmse is None else (3, 9)):
       return None
-    minimum = max(_required(episode.kind), minimum_episodes or 0)
+    minimum = max(3 if self.rmse is None else _required(episode.kind), minimum_episodes or 0)
     if type(expected) not in (int, float) or not math.isfinite(expected) or expected <= 0.0001:
       return None
     # Freeze the NEW baseline size before observing any of its scores. More
@@ -855,9 +861,9 @@ class LiveTrackingOptimizer:
   def _trial_plan(
     self, rows: tuple[TrackingEpisode, ...], expected: float, target: dict[str, float], *, minimum_episodes: int | None = None
   ) -> TrialPlan | None:
-    if minimum_episodes is not None and minimum_episodes not in (3, 9):
+    if minimum_episodes is not None and minimum_episodes not in ((1, 3, 9) if self.rmse is None else (3, 9)):
       return None
-    minimum = max(_required(rows[0].kind), minimum_episodes or 0)
+    minimum = max(3 if self.rmse is None else _required(rows[0].kind), minimum_episodes or 0)
     if type(expected) not in (int, float) or not math.isfinite(expected) or expected <= 0.0001:
       return None
     if self.rmse is None:
