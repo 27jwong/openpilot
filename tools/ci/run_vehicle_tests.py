@@ -486,6 +486,7 @@ RELEASE_TARGETS = (
   "opendbc_repo/opendbc/car/gm/tests/test_volt_camera_removed.py",
   "opendbc_repo/opendbc/safety/tests/test_gm_volt_sdgm.py",
   "opendbc_repo/opendbc/car/gm/tests/test_volt_sdgm_control.py",
+  "opendbc_repo/opendbc/car/gm/tests/test_sdgm_brake_reacquire.py",
   "opendbc_repo/opendbc/car/gm/tests/test_volt_camera_control.py",
   "opendbc_repo/opendbc/safety/tests/test_hyundai_mrr35_angle_four.py",
   "opendbc_repo/opendbc/safety/tests/test_kia_ev6_2025_angle.py",
