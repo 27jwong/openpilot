@@ -157,6 +157,14 @@
     "openpilot/starpilot/car/toyota/tests/test_prius_sdsu_callers.py": {
       "basis": "90 actual DEBUG/RELEASE caller cases passed in four bounded phases (186.885s combined wall time including startup). Scheduling estimate 3s/case; fresh per-case Params, raw CAN, native configuration and C++ host reset; no shared outcome dependence.",
       "seconds_per_case": 3.0
+    },
+    "openpilot/starpilot/car/toyota/tests/test_camera_pedal_extension_callers.py": {
+      "basis": "d570 hosted custom23: fresh per-case Params/native configuration/controller/cleanup source-reviewed. Completed actual call phases: camera96cases392.49s; EPS8partial137cases283.95s. Five seconds per case is a scheduling estimate, not whole-module timing. Full individual timelines remain intact.",
+      "seconds_per_case": 5.0
+    },
+    "openpilot/starpilot/car/toyota/tests/test_eps8_sdsu_callers.py": {
+      "basis": "d570 hosted custom23: fresh per-case Params/native configuration/controller/cleanup source-reviewed. Completed actual call phases: camera96cases392.49s; EPS8partial137cases283.95s. Five seconds per case is a scheduling estimate, not whole-module timing. Full individual timelines remain intact.",
+      "seconds_per_case": 5.0
     }
   },
   "independent_max_cases": 60,
