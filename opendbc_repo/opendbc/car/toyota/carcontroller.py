@@ -9,7 +9,7 @@ from opendbc.car.secoc import add_mac, build_sync_mac
 from opendbc.car.interfaces import CarControllerBase
 from opendbc.car.toyota import toyotacan
 from opendbc.car.toyota import prius_longitudinal, rav4h_filter, pedal, eps8_sdsu, legacy_sdsu, advert_filter, legacy_stop_timer, legacy_advert_filter
-from opendbc.car.toyota import camera_2aa_filter, prius_sdsu, prius_advert_filter
+from opendbc.car.toyota import pedal_composite, camera_2aa_filter, prius_sdsu, prius_advert_filter
 from opendbc.car.toyota.door_locks import DoorLocks
 from opendbc.car.toyota.values import CAR, CarControllerParams, ToyotaFlags, TOYOTA_AUTO_HOLD_CARS, uses_toyota_auto_hold_aeb
 from opendbc.can import CANPacker
@@ -176,7 +176,7 @@ class CarController(CarControllerBase):
       filter_allowed = filter_allowed and legacy_advert_source_ready
     pedal_owner = pedal.configured(self.CP)
     if pedal_owner:
-      filter_allowed = bool(self.pedal_input is not None and self.pedal_input.update(now_nanos) and CS.pedal_ready)
+      filter_allowed = filter_allowed and bool(self.pedal_input is not None and self.pedal_input.update(now_nanos) and CS.pedal_ready)
     long_active = CC.longActive and filter_allowed
     if guarded_advert:
       long_active = long_active and not (CS.out.seatbeltUnlatched or CS.out.gasPressed or CS.out.brakePressed)
@@ -332,7 +332,7 @@ class CarController(CarControllerBase):
       if (rav4h_long or pedal_owner or advert_long or original_prius_long) and (not filter_allowed or not long_active and CS.out.standstill):
         self.standstill_req = True
 
-      if pedal_owner and self.CP.carFingerprint in pedal.RADAR_PEDAL_CARS and not long_active:
+      if pedal_owner and (self.CP.carFingerprint in pedal.RADAR_PEDAL_CARS or pedal_composite.configured(self.CP)) and not long_active:
         # A radar-disable safety handoff starts with fresh native RX checks.
         # Neutral output must not request release before LONG is admitted.
         self.standstill_req = True

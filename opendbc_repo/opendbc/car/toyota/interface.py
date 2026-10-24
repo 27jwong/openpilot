@@ -49,6 +49,10 @@ class CarInterface(CarInterfaceBase):
 
   @staticmethod
   def _get_params(ret: structs.CarParams, candidate, fingerprint, car_fw, alpha_long, is_release, docs) -> structs.CarParams:
+    from opendbc.car.toyota import pedal_composite
+    composite_pedal = pedal_composite.hardware_supported(candidate, fingerprint, car_fw)
+    if composite_pedal:
+      fingerprint = pedal_composite.without_pedal(fingerprint)
     ret.brand = "toyota"
     ret.safetyConfigs = [get_safety_config(structs.CarParams.SafetyModel.toyota)]
     ret.safetyConfigs[0].safetyParam = EPS_SCALE[candidate]
@@ -252,6 +256,8 @@ class CarInterface(CarInterfaceBase):
     if ret.openpilotLongitudinalControl and pedal.hardware_supported(candidate, fingerprint, car_fw):
       ret.flags |= int(ToyotaFlags.GAS_INTERCEPTOR)
       ret.safetyConfigs[0].safetyParam = pedal.long_word(candidate)
+    if composite_pedal:
+      assert pedal_composite.apply(ret)
     return ret
 
   @staticmethod

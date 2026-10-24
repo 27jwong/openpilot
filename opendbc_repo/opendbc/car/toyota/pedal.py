@@ -58,6 +58,9 @@ def hardware_supported(candidate, fingerprint, car_fw):
 
 
 def configured(cp):
+  from opendbc.car.toyota import pedal_composite
+  if pedal_composite.configured(cp):
+    return True
   if cp is None or cp.brand != 'toyota' or cp.carFingerprint not in CAMERA_PEDAL_CARS | RADAR_PEDAL_CARS or (
       cp.notCar or cp.passive or cp.dashcamOnly or not cp.pcmCruise or
       cp.secOcRequired or len(cp.safetyConfigs) != 1):
@@ -87,6 +90,9 @@ def configured(cp):
 
 
 def prepare_stock(cp):
+  from opendbc.car.toyota import pedal_composite
+  if pedal_composite.marked(cp):
+    return pedal_composite.prepare_stock(cp)
   if not configured(cp):
     return False
   cp.openpilotLongitudinalControl = False

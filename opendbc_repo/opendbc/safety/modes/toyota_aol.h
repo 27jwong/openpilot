@@ -52,6 +52,18 @@ static bool toyota_legacy_advert(void) {
 
 static bool toyota_aol_enabled = false;
 static bool toyota_pedal = false;
+static bool toyota_pedal_composite = false;
+static bool toyota_composite_pcm_gas = false;
+static bool toyota_composite_pedal_gas = false;
+
+static bool toyota_pedal_composite_param(uint16_t param) {
+  return (param == 0xB049U) || (param == 0xB249U);
+}
+
+static uint16_t toyota_pedal_parent_param(uint16_t param) {
+  return toyota_pedal_composite_param(param) ? (uint16_t)(param & ~0x2000U) : param;
+}
+
 static bool toyota_alt_cruise = false;
 
 static bool toyota_aol_secoc = false;
@@ -123,7 +135,7 @@ static void toyota_aol_observe(const CANPacket_t *msg) {
     expected_len = 5U;
   } else {
   }
-  if ((toyota_aol_enabled || toyota_legacy_advert() || toyota_camera_2aa() || toyota_prius_filter()) && (msg->bus == 0U) && (GET_LEN(msg) != expected_len)) {
+  if ((toyota_pedal_composite || toyota_aol_enabled || toyota_legacy_advert() || toyota_camera_2aa() || toyota_prius_filter()) && (msg->bus == 0U) && (GET_LEN(msg) != expected_len)) {
     unsigned int index = 4U;
     if (msg->addr == main_addr) {
       index = 0U;
@@ -138,7 +150,7 @@ static void toyota_aol_observe(const CANPacket_t *msg) {
     if (index < 4U) {
       toyota_aol_seen[index] = false;
     }
-  } else if ((toyota_aol_enabled || toyota_legacy_advert() || toyota_camera_2aa() || toyota_prius_filter()) && (msg->bus == 0U) && (GET_LEN(msg) == expected_len)) {
+  } else if ((toyota_pedal_composite || toyota_aol_enabled || toyota_legacy_advert() || toyota_camera_2aa() || toyota_prius_filter()) && (msg->bus == 0U) && (GET_LEN(msg) == expected_len)) {
     unsigned int index = 4U;
     if (msg->addr == main_addr) {
       index = 0U;

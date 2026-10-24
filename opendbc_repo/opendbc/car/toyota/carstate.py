@@ -2,7 +2,7 @@ import copy
 import math
 
 from opendbc.can import CANDefine, CANParser
-from opendbc.car.toyota import pedal, legacy_sdsu, advert_filter, legacy_advert_filter, prius_sdsu, prius_advert_filter
+from opendbc.car.toyota import pedal_composite, pedal, legacy_sdsu, advert_filter, legacy_advert_filter, prius_sdsu, prius_advert_filter
 from opendbc.car.toyota.lexus_is import LexusIsCANParser
 from opendbc.car import Bus, DT_CTRL, create_button_events, structs
 from opendbc.car.common.conversions import Conversions as CV
@@ -171,7 +171,7 @@ class CarState(CarStateBase):
       ret.accFaulted = cp.vl["PCM_CRUISE_2"]["ACC_FAULTED"] != 0
       ret.carFaultedNonCritical = cp.vl["PCM_CRUISE_SM"]["TEMP_ACC_FAULTED"] != 0
       ret.cruiseState.available = cp.vl["PCM_CRUISE_2"]["MAIN_ON"] != 0
-      if pedal.configured(self.CP) or advert_filter.configured(self.CP):
+      if (pedal.configured(self.CP) and not pedal_composite.configured(self.CP)) or advert_filter.configured(self.CP):
         stamp = cp.ts_nanos["PCM_CRUISE_2"]["MAIN_ON"]
         ret.cruiseState.available &= bool(cp.main_valid and stamp > 0 and 0 <= cp._last_update_nanos - stamp <= 303_031_000)
       ret.cruiseState.speed = cp.vl["PCM_CRUISE_2"]["SET_SPEED"] * CV.KPH_TO_MS
@@ -295,9 +295,11 @@ class CarState(CarStateBase):
       ret.accFaulted = ret.accFaulted or cp.hardware_ambiguous
 
     if pedal.configured(self.CP):
-      stamp = cp.ts_nanos.get("GAS_SENSOR", {}).get("STATE", 0)
-      self.pedal_ready = bool(cp.pedal_valid and stamp > 0 and 0 <= cp._last_update_nanos - stamp <= 200_000_000)
-      ret.gasPressed = (cp.vl['GAS_SENSOR']['INTERCEPTOR_GAS'] + cp.vl['GAS_SENSOR']['INTERCEPTOR_GAS2']) / 2 > 805
+      cp_pedal = can_parsers[Bus.alt] if pedal_composite.configured(self.CP) else cp
+      stamp = cp_pedal.ts_nanos.get("GAS_SENSOR", {}).get("STATE", 0)
+      self.pedal_ready = bool(cp_pedal.pedal_valid and stamp > 0 and 0 <= cp_pedal._last_update_nanos - stamp <= 200_000_000)
+      pedal_gas = (cp_pedal.vl['GAS_SENSOR']['INTERCEPTOR_GAS'] + cp_pedal.vl['GAS_SENSOR']['INTERCEPTOR_GAS2']) / 2 > 805
+      ret.gasPressed = (ret.gasPressed or pedal_gas) if pedal_composite.configured(self.CP) else pedal_gas
       ret.accFaulted = ret.accFaulted or not self.pedal_ready
     ret.buttonEvents = buttonEvents
     timestamp, expiry = parser_expiry(cp_cam, "RSA1", "TSGN1")
@@ -310,6 +312,11 @@ class CarState(CarStateBase):
 
   @staticmethod
   def get_can_parsers(CP):
+    if pedal_composite.configured(CP):
+      parent = CarState.get_can_parsers(pedal_composite.parent_cp(CP))
+      parent[Bus.pt] = pedal_composite.ParentPedalParser(parent[Bus.pt])
+      parent[Bus.alt] = pedal.PedalCANParser(DBC[CP.carFingerprint][Bus.pt], [('GAS_SENSOR', 50)], 0)
+      return parent
     dbc_name = DBC[CP.carFingerprint][Bus.pt]
     cam_messages = [("RSA1", math.nan)] if "RSA1" in CANDBC(dbc_name).name_to_msg else []
     if CP.flags & ToyotaFlags.AUTO_BRAKE_HOLD and uses_toyota_auto_hold_aeb(CP):
