@@ -3,22 +3,22 @@ import os
 import pytest
 
 from openpilot.starpilot.system.android_auto import placement
-from openpilot.starpilot.system.android_auto.placement import FALLBACK_NICE, PLACEMENT_CHECK_INTERVAL, RENDER_CORE, RENDER_NICE, RendererPlacement
+from openpilot.starpilot.system.android_auto.placement import FALLBACK_NICE, PLACEMENT_CHECK_INTERVAL, RENDER_CORE, RendererPlacement
 
-SCHED_BATCH = 3
+SCHED_IDLE = 5
 
 
 class FakeKernel:
   """Per-thread affinity and policy, standing in for Linux (and for macOS, which has neither)."""
 
-  def __init__(self, monkeypatch, threads=(100,), mask=(0, 1, 2, 3, 4, 5), batch_allowed=True):
+  def __init__(self, monkeypatch, threads=(100,), mask=(0, 1, 2, 3, 4, 5), idle_allowed=True):
     self.masks = {tid: set(mask) for tid in threads}
     self.main = threads[0]
     self.online = {RENDER_CORE: True}
     self.policy = None
     self.niced = 0
-    self.batch_allowed = batch_allowed
-    monkeypatch.setattr(os, "SCHED_BATCH", SCHED_BATCH, raising=False)
+    self.idle_allowed = idle_allowed
+    monkeypatch.setattr(os, "SCHED_IDLE", SCHED_IDLE, raising=False)
     monkeypatch.setattr(os, "sched_param", lambda priority: priority, raising=False)
     monkeypatch.setattr(os, "sched_getaffinity", self.getaffinity, raising=False)
     monkeypatch.setattr(os, "sched_setaffinity", self.setaffinity, raising=False)
@@ -36,9 +36,8 @@ class FakeKernel:
     self.masks[tid or self.main] = set(mask)
 
   def setscheduler(self, tid, policy, param):
-    if not self.batch_allowed:
+    if not self.idle_allowed:
       raise OSError(1, "Operation not permitted")
-    assert tid == 0 and param == 0
     self.policy = policy
 
   def nice(self, increment):
@@ -55,18 +54,18 @@ def events():
   return []
 
 
-def test_start_uses_low_priority_batch_and_pins_every_thread_to_core_6(monkeypatch, events):
+def test_start_uses_sched_idle_and_pins_every_thread_to_core_6(monkeypatch, events):
   kernel = FakeKernel(monkeypatch, threads=(100, 101, 102))
   kernel.make(events).start()
 
-  assert kernel.policy == SCHED_BATCH and kernel.niced == RENDER_NICE == 5
+  assert kernel.policy == SCHED_IDLE and kernel.niced == 0
   assert all(mask == {6} for mask in kernel.masks.values())
-  assert events[0] == {"event": "cpu_placement", "policy": "batch-nice5", "inherited_cores": [0, 1, 2, 3, 4, 5], "core": 6}
+  assert events[0] == {"event": "cpu_placement", "policy": "idle", "inherited_cores": [0, 1, 2, 3, 4, 5], "core": 6}
   assert events[1] == {"event": "cpu_placement", "pinned": True, "cores": [6]}
 
 
-def test_falls_back_to_nice_without_sched_batch(monkeypatch, events):
-  kernel = FakeKernel(monkeypatch, batch_allowed=False)
+def test_falls_back_to_nice_without_sched_idle(monkeypatch, events):
+  kernel = FakeKernel(monkeypatch, idle_allowed=False)
   kernel.make(events).start()
 
   assert kernel.policy is None and kernel.niced == FALLBACK_NICE
@@ -125,7 +124,7 @@ def test_defaults_target_core_6():
   assert placement.RENDER_CORE == 6
 
 
-def test_stream_scheduling_stays_unchanged(monkeypatch, events):
+def test_normal_scheduling_pins_without_sched_idle(monkeypatch, events):
   # android_autod: core 6 next to the renderer, but never below other work
   kernel = FakeKernel(monkeypatch, threads=(100, 101))
   kernel.make(events, idle=False).start()
