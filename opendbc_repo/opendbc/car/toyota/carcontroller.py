@@ -74,7 +74,7 @@ class CarController(CarControllerBase):
     self.door_locks = DoorLocks()
     self.reverse_cruise_input = None
     self.prius_filter_input = None
-    self.original_prius_sdsu = prius_sdsu.configured(CP)
+    self.original_prius_sdsu = prius_sdsu.configured(CP) or prius_longitudinal.eps73_status_configured(CP)
     self.original_prius_filter = self.original_prius_sdsu or prius_advert_filter.configured(CP)
     self.pedal_input = None
     self.rav4h_filter_input = None
@@ -177,6 +177,20 @@ class CarController(CarControllerBase):
     if guarded_advert:
       filter_allowed = filter_allowed and legacy_advert_source_ready
     pedal_owner = pedal.configured(self.CP)
+    hold_source_ready = filter_allowed and bool(
+      CS.out.canValid and not CS.out.canTimeout and CS.out.cruiseState.available and not CS.out.accFaulted and
+      not CS.out.stockAeb and not CS.out.steerFaultTemporary and not CS.out.steerFaultPermanent and not CS.out.doorOpen and
+      not CS.out.seatbeltUnlatched and CS.out.gearShifter in (structs.CarState.GearShifter.drive, structs.CarState.GearShifter.sport))
+    if pedal_owner:
+      hold_source_ready = hold_source_ready and bool(self.pedal_input is not None and self.pedal_input.update(now_nanos) and CS.pedal_ready)
+    if bypass_long:
+      hold_source_ready = hold_source_ready and bool(self.bypass_input is not None and self.bypass_input.update(now_nanos))
+    if pedal_composite.configured(self.CP):
+      filter_allowed = filter_allowed and bool(
+        CS.out.canValid and not CS.out.canTimeout and CS.out.cruiseState.available and not CS.out.accFaulted and not CS.out.stockAeb and
+        not CS.out.steerFaultTemporary and not CS.out.steerFaultPermanent and not CS.out.doorOpen and not CS.out.seatbeltUnlatched and
+        not CS.out.gasPressed and not CS.out.brakePressed and
+        CS.out.gearShifter in (structs.CarState.GearShifter.drive, structs.CarState.GearShifter.sport))
     if pedal_owner:
       filter_allowed = filter_allowed and bool(self.pedal_input is not None and self.pedal_input.update(now_nanos) and CS.pedal_ready)
     if bypass_long:
@@ -304,7 +318,7 @@ class CarController(CarControllerBase):
     lead = hud_control.leadVisible or CS.out.vEgo < 12.  # at low speed we always assume the lead is present so ACC can be engaged
 
     # *** gas and brake ***
-    if supports_toyota_auto_hold(self.CP) and CS.out.canValid and not CS.out.canTimeout and (not rav4h_long or filter_allowed):
+    if supports_toyota_auto_hold(self.CP) and CS.out.canValid and not CS.out.canTimeout and hold_source_ready:
       self.update_auto_hold_state(CS, pcm_cancel_cmd if not uses_toyota_auto_hold_aeb(self.CP) else False)
       if (uses_toyota_auto_hold_aeb(self.CP) and self.frame % 2 == 0 and
           CS.out.standstill and CS.out.cruiseState.available and not CS.out.gasPressed):
@@ -432,7 +446,8 @@ class CarController(CarControllerBase):
           self.permit_braking = True
           self.standstill_req = True
 
-        if (bypass_long or rav4h_long or pedal_owner or advert_long or original_prius_long) and not long_active:
+        if ((bypass_long or rav4h_long or pedal_owner or advert_long or original_prius_long) and not long_active and
+            not (self.brake_hold_active and not uses_toyota_auto_hold_aeb(self.CP))):
           pcm_accel_cmd = 0.
         main_accel_cmd = 0. if self.CP.flags & ToyotaFlags.SECOC.value else pcm_accel_cmd
         can_sends.append(toyotacan.create_accel_command(self.packer, main_accel_cmd, pcm_cancel_cmd, self.permit_braking, self.standstill_req, lead,

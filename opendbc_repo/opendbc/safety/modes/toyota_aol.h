@@ -1,5 +1,7 @@
 #pragma once
 
+static uint16_t toyota_pedal_parent_param(uint16_t param);
+
 static bool toyota_dsu_bypass = false;
 static bool toyota_bypass_eps5 = false;
 static bool toyota_bypass_alt_main = false;
@@ -20,7 +22,7 @@ static bool toyota_prius_sdsu_param(uint16_t param) {
 }
 
 static bool toyota_prius_sdsu(void) {
-  return toyota_prius_sdsu_param(current_safety_param);
+  return toyota_prius_sdsu_param(toyota_pedal_parent_param(current_safety_param));
 }
 
 static bool toyota_prius_retrofit_advert_param(uint16_t param) {
@@ -32,7 +34,7 @@ static bool toyota_prius_advert_param(uint16_t param) {
 }
 
 static bool toyota_prius_advert(void) {
-  return toyota_prius_advert_param(current_safety_param);
+  return toyota_prius_advert_param(toyota_pedal_parent_param(current_safety_param));
 }
 
 static bool toyota_prius_filter_param(uint16_t param) {
@@ -40,7 +42,7 @@ static bool toyota_prius_filter_param(uint16_t param) {
 }
 
 static bool toyota_prius_filter(void) {
-  return toyota_prius_filter_param(current_safety_param);
+  return toyota_prius_filter_param(toyota_pedal_parent_param(current_safety_param));
 }
 
 // Disjoint original Prius owners share this sticky receiver identity latch.
@@ -51,7 +53,7 @@ static bool toyota_camera_2aa_param(uint16_t param) {
 }
 
 static bool toyota_camera_2aa(void) {
-  return toyota_camera_2aa_param(current_safety_param);
+  return toyota_camera_2aa_param(toyota_pedal_parent_param(current_safety_param));
 }
 
 static bool toyota_camera_2aa_ambiguous = false;
@@ -61,7 +63,7 @@ static bool toyota_legacy_advert_param(uint16_t param) {
 }
 
 static bool toyota_legacy_advert(void) {
-  return toyota_legacy_advert_param(current_safety_param);
+  return toyota_legacy_advert_param(toyota_pedal_parent_param(current_safety_param));
 }
 
 
@@ -72,7 +74,7 @@ static bool toyota_composite_pcm_gas = false;
 static bool toyota_composite_pedal_gas = false;
 
 static bool toyota_pedal_composite_param(uint16_t param) {
-  return (param == 0xB049U) || (param == 0xB249U);
+  return (param == 0x3049U) || (param == 0x3249U) || (param == 0x3449U) || (param == 0x3649U) || (param == 0xA042U) || (param == 0xA049U) || (param == 0xA242U) || (param == 0xA249U) || (param == 0xA449U) || (param == 0xA649U) || (param == 0xA849U) || (param == 0xA949U) || (param == 0xA958U) || (param == 0xA964U) || (param == 0xAA49U) || (param == 0xAB49U) || (param == 0xAB58U) || (param == 0xAB64U) || (param == 0xB049U) || (param == 0xB149U) || (param == 0xB158U) || (param == 0xB164U) || (param == 0xB249U) || (param == 0xB349U) || (param == 0xB358U) || (param == 0xB364U) || (param == 0xB449U) || (param == 0xB549U) || (param == 0xB558U) || (param == 0xB564U) || (param == 0xB649U) || (param == 0xB749U) || (param == 0xB758U) || (param == 0xB764U) || (param == 0xB842U) || (param == 0xB849U) || (param == 0xBA42U) || (param == 0xBA49U) || (param == 0xE042U) || (param == 0xE049U) || (param == 0xE242U) || (param == 0xE249U) || (param == 0xE84DU) || (param == 0xE949U) || (param == 0xEA4DU) || (param == 0xEB49U) || (param == 0xF049U) || (param == 0xF04DU) || (param == 0xF149U) || (param == 0xF249U) || (param == 0xF24DU) || (param == 0xF349U) || (param == 0xF44DU) || (param == 0xF549U) || (param == 0xF64DU) || (param == 0xF749U);
 }
 
 static uint16_t toyota_pedal_parent_param(uint16_t param) {
@@ -204,6 +206,7 @@ static void toyota_aol_observe(const CANPacket_t *msg) {
 }
 
 static void toyota_aol_configure(uint16_t param) {
+  const bool aol_requested = (alternative_experience == 32) || (alternative_experience == 160) || (alternative_experience == 288);
   toyota_aol_reset();
   toyota_camera_2aa_ambiguous = false;
   toyota_prius_sdsu_ambiguous = false;
@@ -220,14 +223,14 @@ static void toyota_aol_configure(uint16_t param) {
 #else
   toyota_aol_secoc = false;
 #endif
-  toyota_aol_enabled = (toyota_dsu_bypass && (alternative_experience == 32)) || ((toyota_eps8_sdsu || toyota_legacy_sdsu || toyota_legacy_advert_param(param) || toyota_camera_2aa_param(param) || toyota_prius_filter_param(param)) && (alternative_experience == 32)) || (toyota_aol_lta && (alternative_experience == 32)) || (toyota_aol_stock && (alternative_experience == 32)) ||
+  toyota_aol_enabled = (toyota_dsu_bypass && aol_requested) || ((toyota_eps8_sdsu || toyota_legacy_sdsu || toyota_legacy_advert_param(param) || toyota_camera_2aa_param(param) || toyota_prius_filter_param(param)) && aol_requested) || (toyota_aol_lta && aol_requested) || (toyota_aol_stock && aol_requested) ||
 #ifdef ALLOW_DEBUG
                        (toyota_aol_secoc && (alternative_experience == 32)) ||
 #endif
-                       ((param == 0x9049U) && ((alternative_experience == 32) || (alternative_experience == 160))) ||
-                       ((param == 0x2049U) && (alternative_experience == 32)) ||
-                       ((param == 4169U) && (alternative_experience == 32)) ||
-                       ((param == 73U) && ((alternative_experience == 32) || (alternative_experience == 160) || (alternative_experience == 288)));
+                       ((param == 0x9049U) && (aol_requested || (alternative_experience == 160))) ||
+                       ((param == 0x2049U) && aol_requested) ||
+                       ((param == 4169U) && aol_requested) ||
+                       ((param == 73U) && (aol_requested || (alternative_experience == 160) || (alternative_experience == 288)));
   if (toyota_aol_enabled) {
     static const AolSafetyPolicy policy = {
       .reset = toyota_aol_reset,

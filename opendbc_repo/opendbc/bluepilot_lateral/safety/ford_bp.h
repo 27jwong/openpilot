@@ -66,8 +66,13 @@ static bool ford_bp_configure(uint16_t param) {
 static bool ford_bp_health(uint32_t now);
 
 static bool ford_bp_permission(void) {
-  return ford_aol_enabled ? ((ford_aol_permission_mask() & 1U) != 0U) :
-    (lateral_controls_allowed() && controls_allowed && !brake_pressed && !gas_pressed);
+  bool permitted = false;
+  if (ford_aol_enabled) {
+    permitted = (ford_aol_permission_mask() & 1U) != 0U;
+  } else {
+    permitted = lateral_controls_allowed() && controls_allowed && !brake_pressed && !gas_pressed;
+  }
+  return permitted;
 }
 
 static void ford_bp_rx(const CANPacket_t *msg) {

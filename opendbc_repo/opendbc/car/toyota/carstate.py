@@ -2,7 +2,9 @@ import copy
 import math
 
 from opendbc.can import CANDefine, CANParser
-from opendbc.car.toyota import dsu_bypass, pedal_composite, pedal, legacy_sdsu, advert_filter, legacy_advert_filter, prius_sdsu, prius_advert_filter
+from opendbc.car.toyota import (
+  prius_longitudinal, dsu_bypass, pedal_composite, pedal, legacy_sdsu, advert_filter, legacy_advert_filter, prius_sdsu, prius_advert_filter
+)
 from opendbc.car.toyota.lexus_is import LexusIsCANParser
 from opendbc.car import Bus, DT_CTRL, create_button_events, structs
 from opendbc.car.common.conversions import Conversions as CV
@@ -291,7 +293,7 @@ class CarState(CarStateBase):
           elif abs(ret.steeringAngleDeg - (zorro - self.zss_offset)) < 4.0:
             ret.steeringAngleDeg = zorro - self.zss_offset
 
-    original_prius_sdsu = prius_sdsu.configured(self.CP)
+    original_prius_sdsu = prius_sdsu.configured(self.CP) or prius_longitudinal.eps73_status_configured(self.CP)
     if rav4h_filter_configured(self.CP) or original_prius_sdsu:
       self.sdsu_state = int(cp.vl["SDSU"]["STATE"])
       source_ns, valid_until_ns = parser_expiry(cp, "SDSU", "STATE")
@@ -327,7 +329,8 @@ class CarState(CarStateBase):
   def get_can_parsers(CP):
     if pedal_composite.configured(CP):
       parent = CarState.get_can_parsers(pedal_composite.parent_cp(CP))
-      parent[Bus.pt] = pedal_composite.ParentPedalParser(parent[Bus.pt])
+      for bus in parent:
+        parent[bus] = pedal_composite.ParentPedalParser(parent[bus])
       parent[Bus.alt] = pedal.PedalCANParser(DBC[CP.carFingerprint][Bus.pt], [('GAS_SENSOR', 50)], 0)
       return parent
     if dsu_bypass.configured(CP):
@@ -356,9 +359,10 @@ class CarState(CarStateBase):
     if CP.carFingerprint == CAR.LEXUS_IS or alternate_sdsu_main:
       pt_messages.append(("DSU_CRUISE", 10))
 
-    if (advert_filter.configured(CP) and not alternate_sdsu_main) or prius_sdsu.configured(CP) or prius_advert_filter.configured(CP):
+    if ((advert_filter.configured(CP) and not alternate_sdsu_main) or prius_sdsu.configured(CP) or
+        prius_longitudinal.eps73_status_configured(CP) or prius_advert_filter.configured(CP)):
       pt_messages.append(("PCM_CRUISE_2", 10))
-    if prius_sdsu.configured(CP) or prius_advert_filter.configured(CP):
+    if prius_sdsu.configured(CP) or prius_longitudinal.eps73_status_configured(CP) or prius_advert_filter.configured(CP):
       pt_messages.append(("EPS_STATUS", 25))
     if CP.flags & ToyotaFlags.LONG_FILTER and not prius_advert_filter.configured(CP):
       pt_messages.append(("SDSU", 50))
@@ -368,7 +372,7 @@ class CarState(CarStateBase):
     if pedal.configured(CP):
       pt_messages.append(("GAS_SENSOR", 50))
     pt_parser = (prius_advert_filter.PriusAdvertCANParser if prius_advert_filter.configured(CP) else
-                 prius_sdsu.PriusSDSUCANParser if prius_sdsu.configured(CP) else
+                 prius_sdsu.PriusSDSUCANParser if prius_sdsu.configured(CP) or prius_longitudinal.eps73_status_configured(CP) else
                  camera_2aa_filter.CameraTwoAACANParser if camera_twoaa else
                  legacy_advert_filter.LegacyAdvertCANParser if legacy_advert else
                  legacy_sdsu.AlternateMainSDSUCANParser if alternate_sdsu_main else
