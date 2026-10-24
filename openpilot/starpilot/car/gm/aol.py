@@ -39,7 +39,7 @@ def cc_independent_lateral_below_engage(cp, intent, *, enabled, active):
 def f1_conventional_lateral_owner(cp) -> bool:
   """Exact development F1 conventional-cruise owner; no pedal or ACC profile."""
   from opendbc.car.gm.values import VOLT_CC_F1_WORD, is_volt_cc_profile
-  return bool(qualified_gm(cp) and aol_enabled(cp) and is_volt_cc_profile(cp) and
+  return bool(is_volt_cc_profile(cp) and qualified_gm(cp) and aol_enabled(cp) and
               int(cp.safetyConfigs[0].safetyParam) == VOLT_CC_F1_WORD)
 
 
