@@ -643,8 +643,12 @@ class LiveTrackingOptimizer:
     hint = self._current_selector(now_ns)
     if hint is None:
       return False
-    if episode.start_ns <= self.selector_after_ns or not _matches_demand(hint['demand'], episode):
-      return True
+    if episode.start_ns <= self.selector_after_ns:
+      return self.rmse is not None
+    if not _matches_demand(hint['demand'], episode):
+      # A source recovery hint is a preference, not a collection lock. A
+      # different original maneuver can seed a new independent experiment.
+      return self.rmse is not None
     from openpilot.starpilot.flm.live_tracking_response import validate_response_witness
 
     try:
@@ -658,11 +662,11 @@ class LiveTrackingOptimizer:
     expected = self._fresh_selected_effect((episode,), hint['name'], target)
     if expected is None or expected <= 0.0001:
       self.status, self.reason = 'collecting', 'fresh_selected_native_probe_required'
-      return True
+      return self.rmse is not None
     allocation = self._comparison_allocation(episode, expected, target, minimum_episodes=hint.get('minimum_episodes'))
     if allocation is None:
       self.status, self.reason = 'collecting', 'fresh_recovery_allocation_power_insufficient'
-      return True
+      return self.rmse is not None
     # This fresh source/probe observation is REVALIDATION, never a score row.
     # Old selection provenance/expiry is preserved, not retagged as new proof.
     # The actual baseline later gets ONE unchanged power check; its honest

@@ -101,7 +101,7 @@ def _configuration_calibration(sm, calibration_lifecycle, now):
   # deliveries. Sample freshness and current native authority are checked
   # independently when admitting physical observations and applying offers.
   stamp = int(sm.logMonoTime['extrinsicsCalibration'])
-  receipt = int(sm.recv_time['extrinsicsCalibration'] * 1e9)
+  receipt = int(round(sm.recv_time['extrinsicsCalibration'] * 1e9))
   if not (sm.seen['extrinsicsCalibration'] and sm.valid['extrinsicsCalibration'] and
           0 < stamp <= now and 0 < receipt <= now):
     return calibration_lifecycle.observe(None, current=False)
