@@ -23,9 +23,10 @@ to vehicle speed; Vienna numerals stay black while their ring pulses.
 Large UI uses the same US or Vienna sign at 1.25× scale beside SET speed.
 US signs share a cached antialiased white outline with a transparent interior;
 the offset fits inside the fixed sign height on both screens.
-Their header identifies the displayed source: DASH for Dashboard, OSM for offline
+Both sign styles identify the displayed source: DASH for Dashboard, OSM for offline
 Maps, and VISION for the vision model. Explicit Mapbox readings in historical
 replay use NAV; unidentified sources keep SPEED. Retained readings use LAST.
+Vienna signs place this label above the number, beside any pending arrow.
 Steering-wheel + accepts and − declines. Tapping the sign opens the same
 Accept / Decline choices on either native screen. A pending manual choice expires
 after ten monotonic seconds, including time without active longitudinal control.

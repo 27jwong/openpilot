@@ -194,10 +194,11 @@ def test_valid_vision_limit_has_persistent_sign_without_action_receipt():
     outline.assert_not_called()
     renderer._speed_limit_sign(replace(road(speed_limit=valid), appearance=replace(shown.appearance, show_speed_limit_sign=False)))
     outline.assert_not_called()
-  with patch.object(rl, 'draw_circle') as circle, patch.object(rl, 'draw_ring') as ring:
+  fonts.draw.reset_mock()
+  with patch.object(renderer._speed_limit_widget.shapes, 'circle') as circle:
     renderer._speed_limit_sign(replace(shown, appearance=replace(shown.appearance, use_vienna_sign=True)))
     circle.assert_called_once()
-    ring.assert_called_once()
+    assert [call.args[0] for call in fonts.draw.call_args_list] == ['VISION', '55']
 
 
 def test_pending_confirmation_omits_redundant_speed_heading():
