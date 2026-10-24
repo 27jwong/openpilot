@@ -1251,6 +1251,51 @@ class TransportPauseFeedback:
       native.observedMonoTime >= self.healthy_native_ns and self.healthy_inventory ==
         (native.pandaSerial, tuple(slot.hardwareSerial for slot in native.pandaInventory)))
 
+  def _inactive_source_pause_current(self, sm, cp, cs, axis, stamp, now_ns, *, latched, producer):
+    """Retain accepted intent through a bounded, fully withdrawn source pause."""
+    from opendbc.car import structs
+    previous = self.signature
+    if (not latched or self.failed or self.paused or self.pending_event or self.retention_started_ns or
+        self.source_retention_started_ns or not self.ever_lateral_active or previous is None or
+        not self.session or cp_identity(cp) != self.cp or previous[0] != self.session or
+        previous[7] != self.session or previous[5] != 'none' or not previous[11] or not previous[13] or
+        not producer or previous[14] != producer or
+        not 0 < previous[8] <= previous[2] <= self.healthy_feedback_ns <= now_ns or
+        now_ns - previous[8] > SAFETY_MAX_AGE_NS or
+        cs.gearShifter not in (structs.CarState.GearShifter.drive, structs.CarState.GearShifter.low,
+                              structs.CarState.GearShifter.sport, structs.CarState.GearShifter.brake) or
+        not cs.canValid or cs.canTimeout or cs.steerFaultTemporary or cs.steerFaultPermanent or
+        cs.accFaulted or cs.vehicleSensorsInvalid or cs.doorOpen or cs.seatbeltUnlatched or
+        cs.steeringDisengage or not cs.cruiseState.available or cs.buttonEvents or
+        not sm.seen['aolAxisState'] or not sm.alive['aolAxisState'] or not sm.valid['aolAxisState'] or
+        not axis.qualified or axis.sourceCarStateMonoTime != 0 or str(axis.mode) != 'off' or
+        axis.desiredLateral or axis.desiredLongitudinal or axis.lateralActive or axis.longitudinalActive or
+        axis.nativeAcknowledged or str(axis.faultReason) != 'availabilityPause' or
+        str(axis.sessionId) != self.session or str(axis.faultSessionId) != self.session or
+        str(axis.intentProducerSessionId) != producer or int(axis.intentIntegrityEpoch) != previous[15] or
+        axis.sequence <= self.sequence or not previous[2] < stamp == axis.observedMonoTime <= now_ns <= axis.validUntilMonoTime or
+        axis.validUntilMonoTime - stamp != AXIS_MAX_AGE_NS or not 0 < axis.faultEventMonoTime <= stamp):
+      return False
+    event_ns = int(sm.logMonoTime['onroadEvents'])
+    events = sm['onroadEvents']
+    matched = event_ns == axis.faultEventMonoTime
+    # The event and axis sockets can deliver either half of a pause/recovery
+    # first. An unmatched nonfault event waits only under this ORIGINAL 30ms
+    # axis lease; repeated OFF samples cannot renew the accepted source bound.
+    if (not sm.seen['onroadEvents'] or not sm.valid['onroadEvents'] or not sm.alive['onroadEvents'] or
+        not 0 < event_ns <= now_ns or now_ns - event_ns > 1_500_000_000 or
+        (not availability_only(events) if matched else
+         any(event.immediateDisable or event.softDisable or event.userDisable for event in events))):
+      return False
+    native = _healthy_transport_native(sm, cp, cs, self.session, now_ns)
+    if native is None or not native.pandaInventory:
+      return False
+    granted = bool(native.requestedLateral and native.lateralAllowed and
+      native.requestedLongitudinal == previous[12] and native.longitudinalAllowed == previous[12])
+    withdrawn = not (native.requestedLateral or native.lateralAllowed or native.requestedLongitudinal or native.longitudinalAllowed)
+    return bool((granted or withdrawn) and native.observedMonoTime >= self.healthy_native_ns and
+      self.healthy_inventory == (native.pandaSerial, tuple(slot.hardwareSerial for slot in native.pandaInventory)))
+
   def observe(self, sm, cp, cs, now_ns, *, latched=True, cancel_source_ns=0, brake_source_ns=0,
               gm_withdrawal_source_ns=0, intent_producer_session='', main_arm_ns=0, startup_calibration_pending=False, intent_paused=False):
     self.ordinary_warning_qualified = False
@@ -1284,6 +1329,11 @@ class TransportPauseFeedback:
                         (axis.sequence > self.sequence or axis.sequence == self.sequence and signature == self.signature))
       if not current and continuity and self._inactive_gear_source_gap(sm, cp, cs, axis, stamp, now_ns, latched=latched,
           producer=intent_producer_session):
+        return False
+      if current and continuity and reason == 'availabilityPause' and self._inactive_source_pause_current(
+          sm, cp, cs, axis, stamp, now_ns, latched=latched, producer=intent_producer_session):
+        self.retention_qualified = int(sm.logMonoTime['onroadEvents']) == axis.faultEventMonoTime
+        self.retention_pending = not self.retention_qualified
         return False
       from openpilot.starpilot.car.gm.aol import sdgm_alpha_lateral_owner
       if (sdgm_alpha_lateral_owner(cp) and latched and current and continuity and self.signature is not None and
