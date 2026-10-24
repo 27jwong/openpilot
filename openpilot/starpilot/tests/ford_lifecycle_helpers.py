@@ -233,7 +233,7 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
           for original in messages:
             if original.which() == 'modelV2':
               original = original.as_builder()
-              original.modelV2.action.desiredCurvature = 0.0001
+              original.modelV2.action.desiredCurvature = getattr(monkeypatch, "ford_test_curvature", 0.0001)
               original = original.as_reader()
             snapshots.append(original)
           return control_update(timestamp, snapshots)
@@ -256,6 +256,9 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
 
       local.setattr(sd.sm, 'update_msgs', location_update)
 
+      delayed_pedal_frames = []
+      delayed_pedals_seen = set()
+
       def step(*, engaged=False, brake=False, reverse=False, warmup=False, fault=None, main_off=False, availability_transition=False):
         nonlocal steps, warmup_waits, qualified_samples, active_lat_frames, active_long_frames, nonzero_after_brake, brake_seen
         brake_seen |= brake
@@ -267,7 +270,8 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
         request = 0 if prior_axis is None else (int(prior_axis.aolAxisState.desiredLateral) | (int(prior_axis.aolAxisState.desiredLongitudinal) << 1))
         arm_heartbeat = retained_arm(published.get('aolIntentWire'), prior_axis, now[0])
         heartbeat = bool(request or prior_state is not None and prior_state.selfdriveState.enabled or arm_heartbeat)
-        frames = []
+        frames = delayed_pedal_frames[:]
+        delayed_pedal_frames.clear()
 
         def receive(name, values):
           fields = dict(values)
@@ -281,7 +285,14 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
           if not (fault == 'source-loss' and name == 'Yaw_Data_FD1'):
             accepted = safety.safety_rx_hook(joined_packet(frame))
             assert bool(accepted) == (not (fault == 'rx-quality' and name == 'BrakeSysFeatures'))
-          frames.append(frame)
+          pedal = name == 'EngVehicleSpThrottle' and fault == 'gas' or name == 'EngBrakeData' and brake
+          if getattr(monkeypatch, 'ford_native_first_pedal', False) and pedal and name not in delayed_pedals_seen:
+            # The real native RX already consumed this frame above. Deliver it
+            # to the host on the next update, retaining native authority now.
+            delayed_pedals_seen.add(name)
+            delayed_pedal_frames.append(frame)
+          else:
+            frames.append(frame)
 
         with patch.object(native, 'rx', side_effect=receive):
           native.pump(
@@ -290,7 +301,7 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
             gear=1 if reverse else 3,
             mask=request,
             heartbeat=heartbeat and fault != 'heartbeat',
-            speed=15.0,
+            speed=(3.1 + .12 * ((steps // 2) % 12) / 11 if getattr(monkeypatch, "ford_speed_window", False) else 15.0),
             eps=1 if fault == 'temporary-eps' else 0,
           )
         assert native.tick == steps
@@ -385,7 +396,7 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
         qualified_samples += 1
         parsed_before_producer = state.to_dict()
         assert (main_off or state.cruiseState.available or availability_transition and not state.cruiseState.enabled) and not state.steeringPressed
-        assert bool(state.gasPressed) == (fault == 'gas')
+        assert bool(state.gasPressed) == (fault == 'gas' and not any(frame[0] == 0x204 for frame in delayed_pedal_frames))
         axis, sd_state, command = drive(
           steps,
           car_state_message=published['carState'],
@@ -401,6 +412,9 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
           panda_state_message=panda,
           safety_message=wire,
         )
+        if delayed_pedal_frames:
+          assert command.latActive and host.aol_card_intent.allowed_latch, 'Native-first pedal erased granted lateral intent'
+          assert not command.longActive, 'Native LONG withdrawal was ignored'
         assert state.to_dict() == parsed_before_producer, 'Authority harness changed actual parsed CarState'
         previous_sd.update(sd.pm.messages)
         control = controls.pm.messages['carControl']
@@ -493,12 +507,18 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
         assert bool(command.longActive) == joined.expected_long
         for _ in range(30):
           state, axis, sd_state, command = step(engaged=True, fault='gas')
+          if getattr(monkeypatch, 'ford_native_first_pedal', False):
+            assert command.latActive and host.aol_card_intent.allowed_latch, 'Native-first gas erased lateral intent'
+            assert not command.longActive or joined.last_permission & 2
         assert command.latActive and not command.longActive and host.aol_card_intent.allowed_latch
         for _ in range(30):
           state, axis, sd_state, command = step(engaged=True)
         assert command.latActive and bool(command.longActive) == joined.expected_long
         for _ in range(30):
           state, axis, sd_state, command = step(brake=True)
+          if getattr(monkeypatch, 'ford_native_first_pedal', False):
+            assert command.latActive and host.aol_card_intent.allowed_latch, 'Native-first brake erased lateral intent'
+            assert not command.longActive or joined.last_permission & 2
         assert host.aol_card_intent.allowed_latch and command.latActive and not command.longActive
         if getattr(monkeypatch, 'ford_angle', False):
           for _ in range(20):

@@ -123,6 +123,14 @@ class ManualTurnInputs:
     except (AttributeError, KeyError, TypeError, ValueError, OverflowError):
       return False
 
+  def native_tx_blocked(self):
+    """Read only after native_permission qualified this same Panda snapshot."""
+    try:
+      value = self.sm["pandaStates"][-1].safetyTxBlocked
+      return int(value) if 0 <= value <= 0xFFFFFFFF else None
+    except (AttributeError, IndexError, KeyError, TypeError, ValueError, OverflowError):
+      return None
+
   def assist_permission(self):
     if not self.track_assist_permission:
       return (), False

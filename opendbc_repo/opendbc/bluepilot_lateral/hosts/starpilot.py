@@ -88,6 +88,7 @@ class Host:
     self.cp = cp
     self.controller = AngleController(low_gain=low, high_gain=high)
     self.inputs = None
+    self.tx_blocked = None
 
   def update(self, CC, CS):
     if self.inputs is not None:
@@ -102,6 +103,25 @@ class Host:
              (not aol or CS.out.gearShifter in (structs.CarState.GearShifter.drive,
                                               structs.CarState.GearShifter.sport, structs.CarState.GearShifter.low)) and
              not CS.out.steerFaultTemporary and not CS.out.steerFaultPermanent and not CS.out.vehicleSensorsInvalid)
+    # Rejected frames do not advance Panda's accepted counter/path history.
+    # One real blocked-TX increment requires an accepted neutral resynchronization,
+    # rather than sending an indefinitely rejected chain of active counters.
+    counter_reader = getattr(self.inputs, "native_tx_blocked", None)
+    blocked = counter_reader() if ready and callable(counter_reader) else None
+    if not ready:
+      self.tx_blocked = None
+    elif type(blocked) is int and 0 <= blocked <= 0xFFFFFFFF:
+      changed = self.tx_blocked is not None and blocked != self.tx_blocked
+      self.tx_blocked = blocked
+      ready = not changed
+    speed_min = speed_max = None
+    speed_window = getattr(CS, "bluepilot_speed_window", None)
+    if speed_window is not None:
+      low, high, step = speed_window
+      # Allow source progress across the existing 100 ms CAN freshness window.
+      margin = max(0.05, 5 * step)
+      speed_min = max(0.1, min(low, CS.out.vEgoRaw) - margin)
+      speed_max = max(high, CS.out.vEgoRaw, 0.1) + margin
     meta = model.meta if model is not None else None
     return self.controller.step(Inputs(
       active=ready, speed=CS.out.vEgoRaw, measured_curvature=-CS.out.yawRate / max(CS.out.vEgoRaw, 0.1),
@@ -111,4 +131,4 @@ class Host:
       lane_change=int(getattr(meta.laneChangeState, "raw", meta.laneChangeState)) in (1, 2, 3) if meta else False,
       lane_direction=int(getattr(meta.laneChangeDirection, "raw", meta.laneChangeDirection)) if meta else 0,
       limit_status=getattr(CS, "lat_ctl_lim_stat", 0),
-      geometry=model_geometry(model, fresh=snapshot is not None)))
+      geometry=model_geometry(model, fresh=snapshot is not None), speed_min=speed_min, speed_max=speed_max))

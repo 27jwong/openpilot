@@ -23,6 +23,13 @@ def native_accepts_cp(cp, model, param):
   return qualified(cp, marked_only=True) and native_profile_supported(model, param) and param == aol_safety_config(cp).safetyParam
 
 
+def early_native_long_withdrawal_supported(cp):
+  # Panda can observe a pedal before the parsed host sample. The existing
+  # independent-LAT proof remains mandatory; this never authorizes LONG.
+  return bool(qualified(cp, marked_only=True) and cp.openpilotLongitudinalControl and
+              aol_safety_config(cp).safetyParam & ANGLE)
+
+
 def native_latch_rejected(cp, native):
   return qualified(cp, marked_only=True) and native.requestedLateral and not native.lateralAllowed
 
