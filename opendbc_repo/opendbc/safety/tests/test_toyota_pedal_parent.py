@@ -91,12 +91,19 @@ def test_composite_alternate_main_keeps_its_independent_freshness(word, fault):
     expected = 1 if word in (0xF349, 0xF24D) else 3
     assert safety.safety_config_valid()
     assert safety.aol_get_permission_mask() == expected
+    steering = packer.make_can_msg('STEERING_LKA', 0, {'STEER_REQUEST': 1, 'STEER_TORQUE_CMD': 1})
+    def transmit_steering():
+      address, data, bus = steering
+      return bool(safety.safety_tx_hook(libsafety_py.make_CANPacket(address, bus, data)))
+    assert transmit_steering()
     for _ in range(40):
       tick(main=False, omit_main=fault == 'main_stale')
     assert safety.aol_get_permission_mask() == 0
+    assert not transmit_steering()
     for _ in range(30):
       tick()
     assert safety.aol_get_permission_mask() == expected
+    assert transmit_steering()
   finally:
     safety.set_alternative_experience(0)
     safety.set_safety_hooks(structs.CarParams.SafetyModel.noOutput, 0)
