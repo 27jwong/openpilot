@@ -1413,10 +1413,10 @@
       "basis": "Actual complete-module setup/call/teardown receipts, hosted tests40108387164 custom14; same source blob. Scheduling estimate only; all original cases and timeout retained."
     },
     "openpilot/starpilot/tests/test_ford_bluepilot_aol.py": {
-      "cases": 40,
-      "seconds": 86.998515,
-      "blob": "09e2918b2999e9f7b5bce5e56d9c562a914a1984",
-      "basis": "Actual complete-module setup/call/teardown receipts, hosted tests40108387164 custom14; same source blob. Scheduling estimate only; all original cases and timeout retained."
+      "cases": 64,
+      "seconds": 147.861995,
+      "blob": "cf201fab94f604dc6b9e9ea8789309c18074375d",
+      "basis": "Actual complete-module setup/call/teardown: DEBUG 96.479484s, RELEASE 98.574663s; conservative 1.5x host allowance. Scheduling estimate only; all cases and timeout retained."
     }
   },
   "reference_sha": "6eb9df96425a661afcbf1edfa27894d6e49b3706",

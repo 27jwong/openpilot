@@ -510,8 +510,8 @@ class TransportPauseFeedback:
       (not cs.gasPressed or stock_angle) and
       all(event.name == stock_user and not event.softDisable and
           not event.immediateDisable for event in users))
-    from openpilot.starpilot.car.ford.aol import temporary_eps_brake_recovery
-    stock_temporary_user |= bool(cp.brand == 'ford' and eps_recovery and temporary_eps_brake_recovery(cp, cs) and users and
+    from openpilot.starpilot.car.ford.aol import temporary_eps_pedal_recovery
+    stock_temporary_user |= bool(cp.brand == 'ford' and eps_recovery and temporary_eps_pedal_recovery(cp, cs) and users and
       not axis.desiredLongitudinal and not axis.longitudinalActive and
       all(event.name in (stock_user, log.OnroadEvent.EventName.pedalPressed) and
           not event.softDisable and not event.immediateDisable for event in users))
