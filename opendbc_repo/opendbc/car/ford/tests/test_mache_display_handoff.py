@@ -139,7 +139,7 @@ def test_recorded_turn_keeps_dom_display_and_hands_free_does_not_change_steering
   assert plain == hands_free
 
 
-@pytest.mark.parametrize('saved', [b'0', b'1'])
+@pytest.mark.parametrize('saved', [False, True])
 @pytest.mark.parametrize('flag', [ParamKeyFlag.CLEAR_ON_MANAGER_START, ParamKeyFlag.CLEAR_ON_ONROAD_TRANSITION,
                                  ParamKeyFlag.CLEAR_ON_OFFROAD_TRANSITION, ParamKeyFlag.CLEAR_ON_IGNITION_ON])
 def test_cluster_preference_survives_native_cleanup(tmp_path, saved, flag):
@@ -153,4 +153,5 @@ def test_cluster_preference_survives_native_cleanup(tmp_path, saved, flag):
   assert params.get(key) == saved and not sentinel.exists()
   reopened = Params(str(tmp_path))
   assert reopened.get(key) == saved
-  assert FordClusterPreference(reopened).enabled == (saved == b'1')
+  assert Path(reopened.get_param_path(key)).read_bytes() == (b'1' if saved else b'0')
+  assert FordClusterPreference(reopened).enabled == saved
