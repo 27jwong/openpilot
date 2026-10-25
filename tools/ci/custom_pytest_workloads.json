@@ -1429,6 +1429,12 @@
       "seconds": 254.992359,
       "blob": "c54a2f6be83b36f3c0f2f1e112d4ddffe980329d",
       "basis": "Hosted tests40117319129 custom22: 48/48 actual cases completed in 203.993887s of setup/call/teardown before whole-shard timeout. Projected full case count at observed mean with 25 percent allowance; scheduling estimate only. Original cases, grouping and 900s deadline retained."
+    },
+    "openpilot/starpilot/car/toyota/tests/test_pedal_parent_callers.py": {
+      "basis": "Hosted run 40163229316 custom12 at b6e7e63: all 92 cases passed setup/call/teardown in 300.634499071 phase seconds before a later module reached the shard cutoff. Whole-module estimate with 25 percent allowance; original cases, grouping and 900s deadline retained.",
+      "blob": "27dfb68afa17141aed168b8de15df856f53561f5",
+      "cases": 92,
+      "seconds": 375.7931238387515
     }
   },
   "reference_sha": "6eb9df96425a661afcbf1edfa27894d6e49b3706",
