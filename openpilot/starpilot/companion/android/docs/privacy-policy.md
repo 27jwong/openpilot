@@ -1,4 +1,4 @@
-# Galaxy Privacy Policy
+# "Galaxy: StarPilot Companion" Privacy Policy
 
 Google Play listing: **Galaxy: StarPilot Companion**  
 Last updated: October 25, 2026
@@ -19,4 +19,4 @@ You can remove Galaxy's saved pairing in the app. Clearing the app's storage or 
 
 ## Contact
 
-For privacy questions or requests, use the [StarPilot support ticket process](https://wiki.firestar.link/ticketsystem/) and ask for the Android app publisher.
+For privacy questions or requests, use the dedicated [StarPilot support ticket process](https://wiki.firestar.link/ticketsystem/) and ask for the Android app support. Alternatively, you may contact using the developer contact email address listed on Google Play Store page.
