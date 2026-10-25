@@ -972,7 +972,7 @@ static bool hyundai_canfd_tx_hook_valid(const CANPacket_t *msg) {
     uint8_t body[24] = {0};
     body[3] = ((left || right) ? 1U : 0U) | (left << 6U);
     body[4] = right;
-    body[5] = left << 1U;
+    // Retired FL_INDICATOR overlaps the right sound-warning bits; require zero.
     body[6] = right << 5U;
     body[7] = 0x80U | (SAFETY_MAX(left, right) << 3U);
     body[16] = left | (right << 2U);
