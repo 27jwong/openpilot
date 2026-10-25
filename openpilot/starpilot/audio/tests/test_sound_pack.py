@@ -175,7 +175,7 @@ class SoundPackTests(unittest.TestCase):
 class TiciSpeakerTests(unittest.TestCase):
   def test_bass_reduction_preserves_presence_and_never_boosts(self):
     t = np.arange(48000) / 48000
-    for frequency, bounds in ((100, (.23, .27)), (400, (.23, .28)), (1500, (.98, 1.01)), (4000, (.98, 1.01))):
+    for frequency, bounds in ((100, (.23, .27)), (400, (.03, .05)), (1500, (.98, 1.01)), (4000, (.98, 1.01))):
       with self.subTest(frequency=frequency):
         samples = (.25 * np.sin(2 * np.pi * frequency * t)).astype(np.float32)
         original = samples.copy()
@@ -250,3 +250,20 @@ class TiciSpeakerTests(unittest.TestCase):
           daemon.callback(output, len(output), None, None)
         np.testing.assert_array_equal(output[:, 0], samples)
         self.assertEqual(daemon.current_sound_frame, len(samples))
+
+
+def test_tici_speaker_targets_reported_resonance_without_cutting_chimes():
+  from openpilot.starpilot.audio.sound_pack import tici_speaker_samples
+  time = np.arange(48000) / 48000
+  amplitudes = {}
+  for frequency in (370, 420, 470, 880, 1200, 1570):
+    samples = (0.5 * np.sin(2 * np.pi * frequency * time)).astype(np.float32)
+    output = tici_speaker_samples(samples)
+    amplitudes[frequency] = np.sqrt(np.mean(output[4096:-4096] ** 2) / np.mean(samples[4096:-4096] ** 2))
+    assert len(output) == len(samples) and output.dtype == np.float32
+    assert not output.flags.writeable and np.isfinite(output).all()
+    assert np.max(np.abs(output)) <= np.max(np.abs(samples)) + 1e-7
+  for frequency in (370, 420, 470):
+    assert amplitudes[frequency] < 0.05
+  for frequency in (880, 1200, 1570):
+    assert 0.95 < amplitudes[frequency] <= 1.001

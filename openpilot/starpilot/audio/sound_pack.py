@@ -246,6 +246,19 @@ def tici_speaker_samples(samples: np.ndarray) -> np.ndarray:
   filtered_peak = float(np.max(np.abs(result)))
   if filtered_peak > original_peak:
     result *= original_peak / filtered_peak
+  result = result.astype(np.float32).astype(np.float64)
+  prior_peak = float(np.max(np.abs(result)))
+  taps = np.arange(2049, dtype=np.float64) - 1024
+  window = np.hamming(len(taps))
+  band = (2 * 540 / 48000 * np.sinc(2 * 540 / 48000 * taps) -  # codespell:ignore sinc
+          2 * 310 / 48000 * np.sinc(2 * 310 / 48000 * taps)) * window  # codespell:ignore sinc
+  result -= 0.85 * np.convolve(result, band, mode="full")[1024:1024 + len(result)]
+  if fade_frames:
+    result[:fade_frames] *= fade
+    result[-fade_frames:] *= fade[::-1]
+  peak = float(np.max(np.abs(result)))
+  if peak > prior_peak:
+    result *= prior_peak / peak
   output = result.astype(np.float32)
   output.flags.writeable = False
   return output
