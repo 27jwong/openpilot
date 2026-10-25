@@ -143,7 +143,7 @@ def ford_joined(identity, alpha, hands_free, monkeypatch, record_property):
           preframes.append(frame)
 
         with patch.object(native, 'rx', side_effect=pre_rx):
-          native.pump(1, main=3, mask=0, heartbeat=False, speed=15.0)
+          native.pump(1, main=0 if getattr(monkeypatch, 'ford_first_main', False) else 3, mask=0, heartbeat=False, speed=15.0)
         extras: list[tuple[str, int, dict[str, float]]] = [
           ('SteeringPinion_Data', 0, {'StePinCompAnEst_D_Qf': 3}),
           ('Cluster_Info1_FD1', 0, {'AccEnbl_B_RqDrv': 1}),
@@ -263,7 +263,8 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
       route45_phase = ['warmup']
       route45_trace = []
 
-      def step(*, engaged=False, brake=False, reverse=False, warmup=False, fault=None, main_off=False, availability_transition=False, steering=False):
+      def step(*, engaged=False, brake=False, reverse=False, warmup=False, fault=None, main_off=False,
+               availability_transition=False, steering=False, cancel=False):
         nonlocal steps, warmup_waits, qualified_samples, active_lat_frames, active_long_frames, nonzero_after_brake, brake_seen
         brake_seen |= brake
         steps += 1
@@ -286,7 +287,9 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
             fields['CcStat_D_Actl'] = 0
           if scenario == 'route45' and refusal == 'cancel' and name == 'Steering_Data_FD1':
             fields['CcAslButtnCnclPress'] = 1
-          if scenario == 'route45' and name == 'EPAS_INFO':
+          if scenario == 'route49' and name == 'Steering_Data_FD1':
+            fields['CcAslButtnCnclResPress'] = int(cancel)
+          if scenario in ('route45', 'route49') and name == 'EPAS_INFO':
             fields['SteeringColumnTorque'] = 2 if steering else 0
           if scenario == 'route45' and name == 'Lane_Assist_Data3_FD1':
             fields['LatCtlSte_D_Stat'] = 0 if fault in ('temporary-lkas', 'temporary-lkas-gas') else 1
@@ -410,7 +413,8 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
         host.state_publish(state, None)
         assert 'aolIntentWire' in published
         parser_ready = bool(
-          state.canValid and not state.canTimeout and state.cruiseState.available and str(state.gearShifter) == 'drive' and safety.safety_config_valid()
+          state.canValid and not state.canTimeout and (state.cruiseState.available or scenario == 'route49') and
+          str(state.gearShifter) == 'drive' and safety.safety_config_valid()
         )
         if warmup and not parser_ready:
           assert steps <= start_tick + 120 and not engaged and not brake and not reverse
@@ -422,9 +426,9 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
           assert state.canValid and not state.canTimeout
         qualified_samples += 1
         parsed_before_producer = state.to_dict()
-        assert (main_off or state.cruiseState.available or availability_transition and not state.cruiseState.enabled
+        assert (main_off or scenario == 'route49' or state.cruiseState.available or availability_transition and not state.cruiseState.enabled
                 or scenario == 'route45' and getattr(monkeypatch, 'ford_route45_refusal', None) == 'main-off')
-        assert scenario == 'route45' or not state.steeringPressed
+        assert scenario in ('route45', 'route49') or not state.steeringPressed
         assert bool(state.gasPressed) == (fault in ('gas', 'temporary-eps-gas', 'temporary-lkas-gas')
                                           and not any(frame[0] == 0x204 for frame in delayed_pedal_frames))
         axis, sd_state, command = drive(
@@ -528,10 +532,57 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
         return libsafety_py.make_CANPacket(frame[0], frame[2], frame[1])
 
       for _ in range(120):
-        step(warmup=True)
+        step(warmup=True, main_off=scenario == 'route49')
       assert 0 <= warmup_waits < 120 and qualified_samples >= 100
       assert host.ci_initialized  # Read-only witness: real controls_update completed init.
       assert not host.aol_card_intent.allowed_latch
+      if scenario == 'route49':
+        assert not host.CP.openpilotLongitudinalControl
+        trace = []
+        original_intent_update = host.aol_card_intent.update
+
+        def trace_first_main(cs, **kwargs):
+          before = host.aol_card_intent
+          snapshot = {'tick': steps, 'main': cs.cruiseState.available,
+                      'ordinary': cs.cruiseState.enabled, 'fault': kwargs.get('fault_active'),
+                      'native_rejection': kwargs.get('native_rejection_ns'),
+                      'idle_ready': before.main_idle_transition_qualified,
+                      'pending_before': before.main_pending_ns,
+                      'axis_fault': str(host.sm['aolAxisState'].faultReason)}
+          result = original_intent_update(cs, **kwargs)
+          snapshot.update(armed=before.allowed_latch, reason=before.latch_clear_reason,
+                          pending_after=before.main_pending_ns, inhibit=before._fault_inhibit)
+          trace.append(snapshot)
+          return result
+
+        local.setattr(host.aol_card_intent, 'update', trace_first_main)
+        # Recorded first MAIN edge is raw0->5, not an already-idle MAIN3 fixture.
+        # Existing real Card/SD/native receipts, CAN and clocks remain in charge.
+        for _ in range(40):
+          state, axis, sd_state, command = step(engaged=True, fault='gas', steering=True)
+        assert state.cruiseState.available and state.cruiseState.enabled
+        assert command.enabled
+        assert host.aol_card_intent.allowed_latch, ('First MAIN0->5 did not arm AOL', trace[:12])
+        cancel_seen = False
+        for _ in range(10):
+          state, axis, sd_state, command = step(engaged=True, fault='gas', cancel=True)
+          cancel_seen |= host.CI.CS.cancel_button
+          assert host.aol_card_intent.allowed_latch
+        assert cancel_seen
+        for _ in range(30):
+          state, axis, sd_state, command = step(fault='gas')
+          assert host.aol_card_intent.allowed_latch
+        assert not state.cruiseState.enabled and not command.enabled
+        assert command.latActive and joined.last_permission & 1
+        for _ in range(20):
+          state, axis, sd_state, command = step(brake=True)
+          assert host.aol_card_intent.allowed_latch
+        for _ in range(30):
+          state, axis, sd_state, command = step()
+          assert host.aol_card_intent.allowed_latch
+        assert not command.enabled and command.latActive and joined.last_permission & 1
+        joined.route49_trace = trace
+        return
       if scenario == 'route45':
         assert host.CP.carFingerprint == CAR.FORD_MUSTANG_MACH_E_MK1
         assert not host.CP.openpilotLongitudinalControl
