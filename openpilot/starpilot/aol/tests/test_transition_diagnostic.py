@@ -212,11 +212,11 @@ def test_declared_proofs_with_controlled_schedule(schedule):
       patch.object(controlsd, 'current_native', side_effect=observe_native),
     ):
       command, _ = controls.state_control()
-    expected = schedule in ('no_delay', 'expired_at_entry')
+    expected = schedule in ('no_delay', 'expired_at_entry', 'cross_before_guard')
     assert bool(command.latActive) == expected and not command.longActive
     assert native_checks == [schedule != 'expired_invalid_native']
-    assert len(updates) == int(schedule.startswith('expired'))
-    assert axis_checks[0]['accepted'] == (expected or schedule in ('expired_withdrawn', 'expired_eps', 'expired_invalid_native', 'expired_context'))
+    assert len(updates) == int(schedule != 'no_delay')
+    assert axis_checks[0]['accepted'] == (schedule not in ('cross_no_pending', 'expired_empty'))
     diagnostic = controls.aol_transition_diagnostic
     assert (diagnostic.pending is None) == expected
     if not expected:
@@ -253,13 +253,13 @@ def test_declared_proofs_with_controlled_schedule(schedule):
         assert not record['native']['valid'] and record['native']['decoded']
       if schedule == 'expired_invalid_native':
         assert record['reason'] == 'native_rejected'
-      elif schedule in ('expired_withdrawn', 'expired_context'):
+      elif schedule in ('expired_withdrawn', 'expired_context', 'cross_withdrawn_pending'):
         assert record['reason'] == 'axis_withdrawn'
-      elif schedule == 'expired_eps':
+      elif schedule in ('expired_eps', 'cross_eps_fault_pending'):
         assert record['reason'] == 'steer_temporary_fault'
       else:
         assert record['reason'] == 'axis_header_expired'
-      assert record['refreshAttempted'] == schedule.startswith('expired')
+      assert record['refreshAttempted'] == (schedule != 'no_delay')
       assert record['entry']['atNs'] < cached_deadline if not schedule.startswith('expired') else record['entry']['atNs'] > cached_deadline
       assert record['gate']['atNs'] > cached_deadline
       assert record['entry']['mode'] == 'lateralOnly'
