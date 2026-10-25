@@ -31,6 +31,7 @@ from openpilot.starpilot.lateral.pause import LateralPause, read_settings as rea
 from openpilot.starpilot.lateral.model_turn_assist import ModelTurnAssist, update_twitch_guard
 from openpilot.starpilot.aol.runtime import (current_axis, current_native, ordinary_lateral_requested, ordinary_axis_acknowledged,
                                             refresh_expired_lateral_snapshot)
+from openpilot.starpilot.aol.transition_diagnostic import TransitionDiagnostic
 from openpilot.starpilot.aol.vehicle import policy_for as axis_policy_for, ordinary_axis_request_allowed, allow_lateral_onset
 from openpilot.starpilot.lateral.lane_centering import (
   LaneCenteringController, LaneCenteringInput, LaneCenteringRequest, LaneCenteringResult,
@@ -71,6 +72,7 @@ class Controls:
       self.params, enabled=self.params.get_bool("OpenpilotEnabledToggle"))
     self.torque_learning_allowed = learning_allowed(self.params, self.CP, selection=self.lateral_controller_selection)
     self.aol_replay = feature_enabled(self.params, self.CP, 'aol', os.environ)
+    self.aol_transition_diagnostic = TransitionDiagnostic() if self.aol_replay and self.CP.brand == 'gm' else None
     self.ordinary_axis_ack_required = axis_policy_for(self.CP).ordinary_axis_ack_required
     self.longitudinal_inputs = LongitudinalInputs(self.CP, self.params, lambda: self.sm)
 
@@ -173,10 +175,17 @@ class Controls:
       self.LaC.__dict__.pop(name, None)
 
   def state_control(self, *, lane_centering: LaneCenteringRequest | None = None):
+    diagnostic_observer = getattr(self, 'aol_transition_diagnostic', None)
+    diagnostic_entry = diagnostic_gate = diagnostic_native = None
+    diagnostic_reason = ''
+    diagnostic_initial_lateral = diagnostic_onset = True
     lateral_inputs_refreshed = False
     if (self.aol_replay and os.getenv('REPLAY') != '1' and
         getattr(self, 'aol_previous_lateral_active', False)):
-      lateral_inputs_refreshed = refresh_expired_lateral_snapshot(self.sm, now_ns=time.monotonic_ns())
+      refresh_now_ns = time.monotonic_ns()
+      if diagnostic_observer is not None:
+        diagnostic_entry = diagnostic_observer.capture(self.sm, refresh_now_ns)
+      lateral_inputs_refreshed = refresh_expired_lateral_snapshot(self.sm, now_ns=refresh_now_ns)
     CS = self.sm['carState']
     self.flm_native_witness = None
     if self.lateral_gain_owner is not None:
@@ -233,6 +242,13 @@ class Controls:
                            self.CP.openpilotLongitudinalControl and
                            not any(e.overrideLongitudinal for e in self.sm['onroadEvents']))
 
+      if diagnostic_entry is not None:
+        diagnostic_gate = diagnostic_observer.capture(self.sm, now_ns)
+        diagnostic_native = native
+        diagnostic_initial_lateral = bool(CC.latActive)
+        if not diagnostic_initial_lateral:
+          diagnostic_reason = 'lateral_gate'
+
     elif getattr(self, 'ordinary_axis_ack_required', False):
       now_ns = int(self.sm.logMonoTime['carState']) if os.getenv('REPLAY') == '1' else time.monotonic_ns()
       CC.latActive = bool(CC.latActive and CS.canValid and not CS.canTimeout and
@@ -255,6 +271,9 @@ class Controls:
     CC.latActive = allow_lateral_onset(self.CP, requested=bool(CC.latActive), normal_enabled=bool(CC.enabled),
                                       steering_pressed=bool(CS.steeringPressed),
                                       previous_active=bool(getattr(self, 'aol_previous_lateral_active', False)))
+
+    if diagnostic_entry is not None:
+      diagnostic_onset = bool(CC.latActive)
 
     pause_now_ns = int(self.sm.logMonoTime['carState']) if os.getenv('REPLAY') == '1' else time.monotonic_ns()
     self.lateral_pause.refresh(pause_now_ns)
@@ -418,6 +437,23 @@ class Controls:
             (car.CarParams.SteerControlType.angle, car.CarParams.SteerControlType.curvature) else steer))
       except Exception:
         self._discard_global_learning()
+    if diagnostic_entry is not None and diagnostic_observer is not None and not CC.latActive:
+      try:
+        if not diagnostic_reason:
+          diagnostic_reason = ('refreshed_source_invalid' if lateral_inputs_refreshed and (not CS.canValid or CS.canTimeout) else
+                               'lateral_fault_latch' if fault_latch is not None and latched else
+                               'vehicle_onset_denied' if not diagnostic_onset else
+                               'lateral_pause' if not pause_allowed else 'car_state_invalid')
+        diagnostic_observer.finish(diagnostic_entry, diagnostic_gate,
+          now_ns=time.monotonic_ns(), refreshed=lateral_inputs_refreshed, native=diagnostic_native,
+          native_header_ns=self.sm.logMonoTime['aolSafetyWire'],
+          native_flags=(self.sm.seen['aolSafetyWire'], self.sm.valid['aolSafetyWire'], self.sm.alive['aolSafetyWire']),
+          native_raw=self.sm['aolSafetyWire'] if diagnostic_native is None else b'',
+          reason=diagnostic_reason, cs=CS, enabled=CC.enabled, long_active=CC.longActive,
+          axis=axis, standstill=standstill, steer_at_standstill=self.CP.steerAtStandstill)
+      except Exception:
+        diagnostic_observer.disabled = True
+        diagnostic_observer.pending = None
     self.aol_previous_lateral_active = bool(CC.latActive)
     return CC, lac_log
 
@@ -537,6 +573,9 @@ class Controls:
     else:
       self.learning_feedback_prior_publish_ns = 0
     self.pm.send('starpilotLateralState', feedback)
+    diagnostic_observer = getattr(self, 'aol_transition_diagnostic', None)
+    if diagnostic_observer is not None:
+      diagnostic_observer.emit(cloudlog.event, cc_send)
 
   def run(self):
     rk = Ratekeeper(100, print_delay_threshold=None)

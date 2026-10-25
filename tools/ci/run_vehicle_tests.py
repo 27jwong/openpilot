@@ -95,6 +95,7 @@ AOL_LIFECYCLE_TARGETS = (
   "openpilot/starpilot/aol/tests/test_gm_main_level_contract.py",
   "openpilot/starpilot/aol/tests/test_gm_sdgm_source_wait.py",
   "openpilot/starpilot/aol/tests/test_gm_stock_ascm_refusal.py",
+  "openpilot/starpilot/aol/tests/test_transition_diagnostic.py",
   "openpilot/starpilot/aol/tests/test_gm_ascm_receive_order.py",
   "openpilot/starpilot/aol/tests/test_gm_main_response.py",
   "openpilot/starpilot/aol/tests/test_gm_held_native.py",
