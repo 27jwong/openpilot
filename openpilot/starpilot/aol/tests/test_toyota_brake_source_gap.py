@@ -21,12 +21,15 @@ def rolling(brake=True):
 
 
 @pytest.mark.parametrize('brake', (False, True))
-def test_rav4_held_brake_source_gap_preserves_armed_intent(brake):
+@pytest.mark.parametrize('bsm', (False, True))
+def test_rav4_held_brake_source_gap_preserves_armed_intent(brake, bsm):
   with ExitStack() as cleanup:
     cleanup.enter_context(OpenpilotPrefix())
     case = fixture.IoniqAvailabilityTests(methodName='runTest')
     cleanup.callback(case.doCleanups)
-    cp = CarInterface.get_params(CAR.TOYOTA_RAV4_TSS2, {0: {}, 1: {}, 2: {}}, [], False, False, False)
+    fingerprint = {0: {0x3F6: 8} if bsm else {}, 1: {}, 2: {}}
+    cp = CarInterface.get_params(CAR.TOYOTA_RAV4_TSS2, fingerprint, [], False, False, False)
+    assert int(cp.flags) == (1050 if bsm else 1048) and cp.safetyConfigs[0].safetyParam == 73
     sd, controls, drive = case._authority_callers(False, cp=cp, genuine_events=True)
     refresh_saved_settings(sd)
     for tick in (0, 1):
