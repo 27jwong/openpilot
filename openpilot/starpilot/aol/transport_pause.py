@@ -27,8 +27,7 @@ def _configured_transport_native(sm, cp, session, now_ns, native=None, *, requir
                      now_ns - native.observedMonoTime > SAFETY_MAX_AGE_NS or
                      native.validUntilMonoTime - native.observedMonoTime > SAFETY_MAX_AGE_NS):
       return None
-    # current_native already checked this exact inventory in this call.
-    # Supplied native values still need structural validation here.
+    # current_native checked this inventory; supplied native values still need structural validation.
     if coherent and (not validated_here and not native_inventory_matches_cp(native, cp) or
                      any(p.safetyRxChecksInvalid or p.heartbeatLost or blocking_fault_mask(p.faults, cp) or
                          (require_longitudinal and native.requestedLongitudinal and str(config.safetyModel) not in ('silent', 'noOutput') and
@@ -65,9 +64,8 @@ def _healthy_transport_native(sm, cp, cs, session, now_ns, native=None, *, requi
 
 
 def _newer_combined_intent_native(sm, cp, cs, axis, now_ns):
-  # A prior LAT proof may await LONG acknowledgment while a newer exact
-  # inventory already grants FULL. Retain intent only; output consumers still
-  # require their own current native proof and original axis deadlines.
+  # A prior LAT proof may await LONG ACK despite newer FULL inventory. Retain intent only;
+  # output still requires current native proof and original axis deadlines.
   if (not axis.nativeAcknowledged or not axis.desiredLateral or not axis.lateralActive or
       not axis.desiredLongitudinal or not cs.cruiseState.enabled or
       cs.brakePressed or cs.gasPressed or cs.accFaulted):
@@ -410,9 +408,8 @@ class TransportPauseFeedback:
           now_ns - event_ns <= SAFETY_MAX_AGE_NS)) for event in events):
       return False
     prior = pending_baseline if pending else self.signature
-    # The typed SOFT withdrawal may precede its event socket. Hold only intent
-    # under the fixed original 30ms join until that exact event arrives.
-    # No duplicate or newer withdrawal can move the pending occurrence.
+    # SOFT may precede its exact event. Hold intent only under the original fixed 30ms join;
+    # duplicate/newer withdrawals cannot move the pending occurrence.
     axis_first = bool(str(axis.faultReason) == 'availabilityPause' and
       not (axis.lateralActive or axis.longitudinalActive or axis.desiredLateral or
            axis.desiredLongitudinal or axis.nativeAcknowledged) and
@@ -493,9 +490,8 @@ class TransportPauseFeedback:
     from opendbc.car import structs
     gears = structs.CarState.GearShifter
 
-    # Stock PCM off is not the driver's independent AOL toggle. Retain only
-    # previously established intent through a location fault or its matched EPS recovery, after it has
-    # withdrawn output; the native/session/source checks below still apply.
+    # Stock PCM off is not the AOL toggle. After output withdrawal, retain prior intent through
+    # location faults or matched EPS recovery only; native/session/source checks still apply.
     stock_angle = cp.brand == 'hyundai' and angle_qualified(cp, marked_only=True)
     stock_hkg = cp.brand == 'hyundai' and (stock_angle or stock_canfd_qualified(cp, marked_only=True) or
       stock_classic_qualified(cp, marked_only=True))
@@ -632,10 +628,8 @@ class TransportPauseFeedback:
     if users:
       from opendbc.car.gm.values import is_volt_sdgm_accepted_envelope, is_bolt_pedal_profile
       from openpilot.starpilot.nostalgia import physical_cancel
-      # On accepted Volt SDGM and Bolt pedal owners, a LAT-only physical brake
-      # or regen sample also emits ordinary pedalPressed/USER_DISABLE. It
-      # must not turn an otherwise source-qualified temporary lag withdrawal
-      # into a permanent driver-intent reset. No axis or lease is retained.
+      # Accepted Volt SDGM/Bolt LAT-only brake/regen emits pedalPressed/USER_DISABLE.
+      # Preserve intent through source-qualified temporary lag, never an axis or lease.
       gm_pedal = bool(self.lateral_only_baseline and (is_volt_sdgm_accepted_envelope(cp) or is_bolt_pedal_profile(cp)) and
         (cs.brakePressed or cs.regenBraking) and cs.cruiseState.available and
         not cs.doorOpen and not cs.seatbeltUnlatched and not cs.steeringDisengage and not physical_cancel(cs, cp) and
@@ -644,9 +638,8 @@ class TransportPauseFeedback:
         all(event.name == log.OnroadEvent.EventName.pedalPressed and event.noEntry and
             not event.softDisable and not event.immediateDisable for event in users))
       stock_user = stock_lateral_user_event(cp)
-      # Stock GM keeps publishing PCM-off/USER while isolated host lag has
-      # correctly withdrawn native LAT. Retain only the existing intent from
-      # an exact fresh OFF receipt; this creates no permission or output.
+      # Stock GM emits PCM-off/USER during host-lag LAT withdrawal. An exact fresh OFF receipt
+      # retains existing intent only, never permission or output.
       gm_stock_withdrawal = bool(cp.brand == 'gm' and cp.pcmCruise and self.lateral_only_baseline and
         (withdrawn or recovering) and cs.cruiseState.available and not cs.cruiseState.enabled and
         not cs.brakePressed and not cs.regenBraking and not cs.gasPressed and
@@ -665,9 +658,8 @@ class TransportPauseFeedback:
     elif joining:
       self.pending_event = 0
     if matched and cp.brand == 'gm':
-      # Track the latest verified inactive proof, not the fault event's
-      # age. Fresh withdrawals during a long lag episode renew no output,
-      # native permission, source lease, or healthy baseline.
+      # Track the latest verified inactive proof, not fault age. Fresh lag withdrawals renew
+      # no output, native permission, source lease, or healthy baseline.
       self.lag_withdrawal_ns = stamp
     return True
 
@@ -744,10 +736,9 @@ class TransportPauseFeedback:
         axis.sourceCarStateMonoTime < previous[8] or stamp < previous[2] or
         not 0 < self.pending_event <= now_ns or now_ns - self.pending_event > AXIS_MAX_AGE_NS):
       return False
-    # A fresh ACTIVE proof from the preceding healthy sample can arrive in
-    # Card's first temporary-EPS cycle. Accept its identity only while the
-    # previously accepted ACTIVE proof still has its original source/output
-    # lease. No permission deadline or healthy baseline is renewed here.
+    # Prior healthy ACTIVE may arrive in Card's first temporary-EPS cycle. Accept identity
+    # only within the previous ACTIVE's original source/output lease; renew no permission
+    # deadline or healthy baseline.
     fresh_active_successor = bool(previous is not None and axis.sequence > self.sequence and
       previous[5] == 'none' and previous[9] and previous[11] and previous[13] and
       previous[6] == axis.faultEventMonoTime and previous[14] == producer and
@@ -953,9 +944,8 @@ class TransportPauseFeedback:
         native.observedMonoTime < self.lateral_native_ns or
         (native.pandaSerial, tuple(p.hardwareSerial for p in native.pandaInventory)) != self.lateral_inventory):
       return False
-    # The qualified stock USER event describes the already disabled LONG
-    # owner, not an independent LAT cancellation. Qualify only this inactive source-zero
-    # proof against its accepted LAT-only baseline and current real native grant.
+    # Qualified stock USER describes disabled LONG, not LAT cancellation. Check this inactive
+    # source-zero proof against its accepted LAT-only baseline and current real native grant.
     previous = self.signature
     from openpilot.starpilot.car.toyota.aol import qualified as toyota_qualified
     toyota_pedal = bool(toyota_qualified(cp, marked_only=True) and cs.brakePressed != cs.gasPressed and
@@ -1008,12 +998,10 @@ class TransportPauseFeedback:
     typed = bool(reason == 'availabilityPause' and not axis.lateralActive and not axis.longitudinalActive and
                  0 < axis.faultEventMonoTime <= stamp)
     source_expired = bool(typed and axis.sourceCarStateMonoTime == 0)
-    # The 200ms original source bound admits an initial episode, never an
-    # active command. Once its exact event/proof pair was verified, continuing
-    # fresh OFF source-zero proofs may retain driver intent with a CURRENT real
-    # native LAT grant and the same producer/epoch/configuration/inventory.
-    # Missing/mismatched events still use the unchanged fixed 30ms join below;
-    # every other output/source/native deadline and branch remains unchanged.
+    # The original 200ms source bound admits an episode, never active output. After exact
+    # event/proof verification, fresh OFF source-zero proofs retain intent only with CURRENT
+    # real native LAT and unchanged producer/epoch/configuration/inventory. Missing/mismatched
+    # events keep the fixed 30ms join; all other deadlines and branches remain unchanged.
     continuing_intent = bool(source_expired and self.retention_verified and issue)
     if source_expired and not (0 < self.lateral_source_ns <= now_ns and
         (now_ns <= self.lateral_source_ns + SAFETY_MAX_AGE_NS or continuing_intent)):
@@ -1171,10 +1159,9 @@ class TransportPauseFeedback:
         matched_lag and not stock_event_first):
       return False
     native = _healthy_transport_native(sm, cp, cs, self.session, now_ns)
-    # The C++ owner must send request zero when this accepted output expires.
-    # A bounded held proof can retain only its prior intent under the original
-    # source, producer, epoch, CP, inventory and native bounds above. A requested
-    # but denied axis is never this zero-request case, and no output is granted.
+    # C++ must send request zero on output expiry. A held proof retains prior intent only
+    # under the original source/producer/epoch/CP/inventory/native bounds. A denied requested
+    # axis is not this zero-request case; no output is granted.
     inactive_native = bool(held and self.source_retention_started_ns and native is not None and
       not native.requestedLateral and not native.lateralAllowed and
       not native.requestedLongitudinal and not native.longitudinalAllowed)
