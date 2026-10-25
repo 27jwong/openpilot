@@ -444,3 +444,33 @@ def test_fitted_plant_does_not_reverse_identified_direction_at_boundary():
     fitted_refresh(o, e.end_ns)
     o.observe_episode(e, now_ns=e.end_ns)
   assert o.discovery is None and o.offer_state is None
+
+
+@pytest.mark.parametrize('source_only', [False, True])
+def test_new_input_regime_retires_only_source_discovery_before_launch(source_only):
+  from openpilot.starpilot.flm.tests.test_live_tracking import optimizer, refresh as fitted_refresh
+
+  o = owner() if source_only else optimizer()
+  update = refresh if source_only else fitted_refresh
+  for i in range(40):
+    e = episode(o, i, 'center_taper_max', kind='subtle')
+    if source_only:
+      e = replace(e, normalization_accel=max(0.1, e.goal_rms))
+    update(o, e.end_ns)
+    o.observe_episode(e, now_ns=e.end_ns)
+    if o.discovery is not None:
+      break
+  previous = o.discovery
+  assert previous is not None and o.offer_state is None
+  changed = episode(o, i + 1, 'center_taper_max', kind='large')
+  if source_only:
+    changed = replace(changed, normalization_accel=max(0.1, changed.goal_rms))
+  update(o, changed.end_ns)
+  o.observe_episode(changed, now_ns=changed.end_ns)
+  assert (o.discovery is None) is source_only
+  if source_only:
+    assert o.selector_hint is None and not o.comparison
+    assert o.baseline[-1].episode_id == changed.episode_id
+  else:
+    assert o.discovery == previous
+  assert o.offer_state is None and not any(o.accepted.values())

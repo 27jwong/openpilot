@@ -738,9 +738,12 @@ class LiveTrackingOptimizer:
         # that maneuver ends. Three unmatched whole windows release it by
         # source time alone, without inspecting any tracking outcomes. No
         # incomplete comparison can confirm or persist a target.
+        # Before launch, source-only discovery follows the current input regime.
+        # Waiting three unmatched windows also suppresses native discovery
+        # throughout a new short curve. No live trial or scored row is accepted.
         last_match = self.comparison[-1].end_ns if self.comparison else self.discovery['selected_end_ns']
         if (not _matches(self.discovery['anchor'], episode)
-            and episode.end_ns - last_match >= 3 * (episode.end_ns - episode.start_ns)):
+            and (self.rmse is None or episode.end_ns - last_match >= 3 * (episode.end_ns - episode.start_ns))):
           self._discard_selector()
       if self.discovery is not None:
         discovery = self.discovery
