@@ -498,6 +498,7 @@ class LiveTrackingOptimizer:
     transient = not context_changed and reason in (
       'acknowledged_trial_profile_withdrawn', 'expired_response_witness', 'stale_control', 'stale_applied_output',
       'current_evidence_delayed', 'learning_evidence_delayed', 'consumed_source_mismatch',
+      'consumer_pending_trial_interrupted',
       'fresh_physical_residual_window_required',
     )
     if not transient:

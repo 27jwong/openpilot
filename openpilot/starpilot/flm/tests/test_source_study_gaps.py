@@ -160,3 +160,73 @@ class SourceRampFreshness(unittest.TestCase):
     rows = [pair(o, 1_000_000_000), pair(o, 1_010_000_000)]
     pose = SimpleNamespace(source_lower_ns=1_005_000_000, source_upper_ns=1_015_000_000)
     assert o.original_pose_pair(rows, pose) is None
+
+
+# Explicit numerical source fixtures below; real controller/wire rejection is
+# independently exercised in test_live_trial_global_runtime.
+def pending_refusal():
+  from openpilot.starpilot.flm.live_tracking_ingress import LiveTrackingIngress
+  from openpilot.starpilot.flm.live_trial_owner import TrackingTrialOwner
+
+  o = owner()
+  for i in range(5):
+    e = replace(episode(o, i, 'ff_gain_right'), normalization_accel=0.5)
+    refresh(o, e.end_ns)
+    o.observe_episode(e, now_ns=e.end_ns)
+  proposal = o.offer(e.end_ns)
+  assert proposal is not None and o.settled_ns is None
+  consumer = TrackingTrialOwner(proposal.binding)
+  assert consumer.prepare(proposal, now_ns=e.end_ns, permission=True, binding=proposal.binding)
+  consumer.neutral('unit_source_lapse')
+  refusal = consumer.rejected_pending(control_ns=e.end_ns+10_000_000)
+  assert refusal is not None and refusal.status == 'rejected'
+  ingress = LiveTrackingIngress(o.binding, o.certificate, tuple(o.accepted.items()), controller_domain='torque')
+  ingress.optimizer = o
+  ingress.latest_offer = proposal
+  return ingress, refusal, e.end_ns+10_000_000
+
+
+def test_actual_pending_refusal_rolls_back_before_target_ack_without_spending_new_deadline():
+  from openpilot.starpilot.flm.tests.test_tracking_source_context import source_ack
+
+  ingress, refusal, now = pending_refusal()
+  o = ingress.optimizer
+  original = o.offer_state.copy()
+  before = tuple(o.before)
+  assert not ingress.observe_application(refusal, now_ns=now)
+  assert o.offer_state['phase'] == 'rollback' and o.settled_ns is None
+  assert not any(o.accepted.values()) and ingress.latest_offer is None
+  assert o.paused_intent is not None and o.paused_intent[1] == before
+  refresh(o, now+20_000_000)
+  rollback = o.offer(now+20_000_000)
+  assert source_ack(o, rollback, now+30_000_000)
+  resumed = o.offer_state
+  assert resumed['phase'] == 'trial' and resumed['trial_id'] != original['trial_id']
+  assert resumed['target_sequence'] > original['target_sequence'] and o.settled_ns is None
+  for field in ('started_ns', 'deadline_ns', 'alpha', 'required_episodes', 'target', 'baseline'):
+    assert resumed[field] == original[field]
+  assert tuple(o.before) == before and not any(o.accepted.values())
+
+
+def test_wrong_or_stale_pending_rejection_does_not_withdraw_current_trial():
+  for kind in ('binding', 'trial', 'target_sequence', 'reason', 'stale', 'hash', 'confirmed', 'version'):
+    ingress, refusal, now = pending_refusal()
+    original = ingress.optimizer.offer_state.copy()
+    if kind == 'binding':
+      refusal = replace(refusal, binding=replace(refusal.binding, source_epoch='f'*64))
+    elif kind == 'trial':
+      refusal = replace(refusal, trial_id='f'*64)
+    elif kind == 'target_sequence':
+      refusal = replace(refusal, target_sequence=refusal.target_sequence+1)
+    elif kind == 'reason':
+      refusal = replace(refusal, reason='unrelated')
+    elif kind == 'stale':
+      now += 100_000_001
+    elif kind == 'hash':
+      refusal = replace(refusal, applied_sha256='f'*64)
+    elif kind == 'confirmed':
+      refusal = replace(refusal, confirmed_target_sha256='f'*64)
+    else:
+      refusal = replace(refusal, version=0)
+    assert not ingress.observe_application(refusal, now_ns=now), kind
+    assert ingress.optimizer.offer_state == original and ingress.optimizer.paused_intent is None, kind
