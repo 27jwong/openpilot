@@ -155,7 +155,7 @@ def test_sign_text_stays_centered_without_an_arrow(profile, vienna, reason, draw
   for call in font.draw.call_args_list:
     text, role, size, x, _, _ = call.args
     left, right = font.horizontal_ink(text, role, size)
-    assert x + (left + right) / 2 == (389 if profile == Profile.COMPACT else 345.75)
+    assert x + (left + right) / 2 == ((389 if vienna else 390) if profile == Profile.COMPACT else 345.75)
 
 
 @pytest.mark.parametrize('profile', list(Profile))

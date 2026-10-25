@@ -257,7 +257,7 @@ def test_compact_preview_sprite_keeps_the_sign_offset_arrow_and_override_cross()
         rl.unload_image(image)
       assert np.array_equal(direct[..., 3], np.asarray(rebuilt)[..., 3])
       assert slot['offsetX'] == slot['offsetY'] == 0
-      assert (slot['width'], slot['height']) == (118, 132)
+      assert (slot['width'], slot['height']) == (118, min(176, 240-y))
       if scene == 'slc_retained':
         assert np.any(direct[..., 3]), (y, scene)
   finally:
@@ -363,17 +363,18 @@ def test_both_sign_styles_contain_text_and_arrows_at_each_profile_scale():
             else:
               # The inner stroke ends at x+4/x+114; keep one clear pixel beside the glyphs.
               assert x+5*scale <= box[0] < box[2] <= x+113*scale, case
-              assert y+7*scale <= box[1] < box[3] <= y+125*scale, case
+              sign_height = 176 if profile == Profile.COMPACT and offset else 132
+              assert y+7*scale <= box[1] < box[3] <= y+(sign_height-7)*scale, case
             ink.append((text, box))
             nominal_size = size/widget.text_scale
             if role == FontRole.BOLD:
               if not vienna:
-                assert nominal_size == 58, case
+                assert nominal_size == ((50 if len(text)<=2 else 42) if profile == Profile.COMPACT else 58), case
               else:
                 maximum_size = 48 if len(text)>2 else 58 if retained or profile == Profile.COMPACT and not offset else 54
                 assert 31.99 <= nominal_size <= maximum_size+.01, case
             elif role == FontRole.MEDIUM:
-              assert 23.99 <= nominal_size <= 36.01 if vienna else nominal_size == 36, case
+              assert 23.99 <= nominal_size <= 36.01 if vienna else nominal_size == (30 if profile == Profile.COMPACT else 36), case
           if retained:
             arrow_draw.assert_not_called()
           else:

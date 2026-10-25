@@ -133,16 +133,32 @@ class SpeedLimitWidget:
           size -= 2
         centered(shown.offset_text, FontRole.MEDIUM, size, offset_top, color)
     else:
-      short = self.profile == Profile.COMPACT and not shown.offset_text
-      if short:
-        self.shapes.outline(x + 59 * scale, top + 58 * scale, white, short=True)
+      if self.profile == Profile.COMPACT:
+        rect = rl.Rectangle(x + 2, top, 116, 132 + (44 if shown.offset_text else 0))
+        rl.draw_rectangle_rounded_lines_ex(rl.Rectangle(rect.x + 8, rect.y + 8, rect.width - 16, rect.height - 16),
+                                         .14, 16, 2, white)
+        for label, size, label_top, role in ((heading, 20, 18, FontRole.SEMI_BOLD),
+                                              ('LIMIT', 20, 36, FontRole.SEMI_BOLD),
+                                              (shown.posted_text, 50 if len(shown.posted_text) <= 2 else 42, 66, FontRole.BOLD)):
+          measured = self.fonts.measure(label, role, size)
+          origin = rect.x + (rect.width - measured.width) / 2
+          if arrow_direction and role == FontRole.SEMI_BOLD:
+            _, ink_right = self.fonts.horizontal_ink(label, role, size)
+            origin = min(origin - 6, x + 84 - ink_right)
+          self.fonts.draw(label, role, size, origin, rect.y + label_top, white)
+          if label == shown.posted_text:
+            number = origin, rect.y + label_top, origin + measured.width, rect.y + label_top + measured.height
+        if shown.offset_text:
+          measured = self.fonts.measure(shown.offset_text, FontRole.MEDIUM, 30)
+          self.fonts.draw(shown.offset_text, FontRole.MEDIUM, 30, rect.x + (rect.width - measured.width) / 2,
+                          rect.y + 118, secondary)
       else:
         self.shapes.outline(x + 59 * scale, top + 66 * scale, white)
-      for label, y in ((heading, top + 11 * scale), ('LIMIT', top + 27 * scale)):
-        centered(label, FontRole.SEMI_BOLD, 20, y, white, x + (52 if arrow_direction else 59) * scale)
-      number = centered(shown.posted_text, FontRole.BOLD, 58, top + (50 if shown.offset_text or short else 61) * scale, white)
-      if shown.offset_text:
-        centered(shown.offset_text, FontRole.MEDIUM, 36, top + 98 * scale, secondary)
+        for label, y in ((heading, top + 11 * scale), ('LIMIT', top + 27 * scale)):
+          centered(label, FontRole.SEMI_BOLD, 20, y, white, x + (52 if arrow_direction else 59) * scale)
+        number = centered(shown.posted_text, FontRole.BOLD, 58, top + (50 if shown.offset_text else 61) * scale, white)
+        if shown.offset_text:
+          centered(shown.offset_text, FontRole.MEDIUM, 36, top + 98 * scale, secondary)
     if arrow_direction:
       ax, ay = ((heading_bounds[2] + 11 * scale, (heading_bounds[1] + heading_bounds[3]) / 2)
                 if state.appearance.use_vienna_sign else (x + 99 * scale, top + 26 * scale))
