@@ -1310,7 +1310,8 @@ class StarShellSession:
         except (OSError, RuntimeError, ValueError):
           label = "Driving model unavailable"
         self._home_model = (now, label)
-      snapshot = replace(snapshot, home=replace(snapshot.home, model_label=label if previous is None or not 0 <= now - previous[0] < 1.0 else previous[1]))
+      local_label = label if previous is None or not 0 <= now - previous[0] < 1.0 else previous[1]
+      snapshot = replace(snapshot, home=replace(snapshot.home, model_label=snapshot.home.model_label or local_label))
     preview_flags = getattr(self, "_visual_preview_flags", frozenset())
     if mode == ShellMode.ONROAD and preview_flags:
       visual = preview_at(preview_flags,
