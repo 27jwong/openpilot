@@ -110,8 +110,8 @@ def test_layout_anchors_and_touch_targets(shell, bounds):
   assert dock.y + dock.height < rect.y + rect.height
   assert dock.width >= 44 and dock.height >= 44
   frame(shell)
-  captions = [call.args[0] for call in desktop.gui_label.call_args_list if call.args[1] in ('Terminal', 'Files')]
-  assert len(captions) == 2
+  captions = [call.args[0] for call in desktop.gui_label.call_args_list if call.args[1] in ('Terminal', 'Files', 'Rebecca')]
+  assert len(captions) == 3
   for (target, _, _), caption in zip(shell._launchers, captions, strict=True):
     icon_x, icon_y = target.x + target.width / 2, dock.y + 72 * shell._scale
     assert caption.x + caption.width / 2 == pytest.approx(icon_x)
@@ -279,7 +279,7 @@ def test_files_has_its_own_launcher_and_blank_shelf_does_not_launch(shell, probe
   shell.set_rect(rl.Rectangle(0, 0, 2160, 1080))
   create = Mock(return_value=probe)
   monkeypatch.setattr(desktop, 'Files', create)
-  terminal_target, files_target = (item[0] for item in shell._launchers)
+  terminal_target, files_target = (item[0] for item in shell._launchers[:2])
   # A gesture crossing launcher boundaries must not start either tool.
   frame(shell, event(terminal_target.x + 20, terminal_target.y + 20, pressed=True))
   frame(shell, event(files_target.x + 20, files_target.y + 20, released=True))
@@ -294,6 +294,39 @@ def test_files_has_its_own_launcher_and_blank_shelf_does_not_launch(shell, probe
   tap(shell, shell._back_button)
   probe.hide_event.assert_called_once()
   assert shell._active_tool is None
+
+
+def test_rebecca_launcher_uses_shared_lifecycle(shell, probe, monkeypatch):
+  create = Mock(return_value=probe)
+  monkeypatch.setattr(desktop, 'Rebecca', create)
+  shell.set_rect(rl.Rectangle(0, 0, 2160, 1080))
+  tap(shell, shell._launchers[2][0])
+  assert shell._active_tool is probe and not gui_app.mouse_events
+  create.assert_called_once_with()
+  probe.show_event.assert_called_once()
+  frame(shell)
+  assert desktop.gui_label.call_args_list[-2].args[1] == 'Rebecca'
+  tap(shell, shell._back_button)
+  probe.hide_event.assert_called_once()
+
+
+def test_rebecca_menu_pauses_and_dismissal_does_not_flap(shell, monkeypatch):
+  game = desktop.Rebecca()
+  monkeypatch.setattr(game, 'show_event', Mock())
+  monkeypatch.setattr(game, '_render', Mock())
+  monkeypatch.setattr(rl, 'get_frame_time', lambda: 1 / 60)
+  shell.set_rect(rl.Rectangle(0, 0, 2160, 1080))
+  shell._open_tool('Rebecca', game)
+  game._reset()
+  frame(shell)
+  tap(shell, shell._menu_button)
+  frozen = game._distance, game._y, game._vy
+  frame(shell)
+  tap(shell, game._button)
+  assert not shell._menu_open
+  assert (game._distance, game._y, game._vy) == frozen
+  frame(shell)
+  assert game._distance > frozen[0]
 
 
 @pytest.fixture

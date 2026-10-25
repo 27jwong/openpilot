@@ -4,6 +4,7 @@ import pyray as rl
 
 from openpilot.selfdrive.ui.layouts.arabesque.theme import DEFAULT_THEME
 from openpilot.selfdrive.ui.layouts.arabesque.tools.files import Files
+from openpilot.selfdrive.ui.layouts.arabesque.tools.rebecca import Rebecca
 from openpilot.selfdrive.ui.layouts.arabesque.tools.terminal import Terminal
 from openpilot.system.ui.lib.application import gui_app, MouseEvent, MousePos, TextAlignment
 from openpilot.system.ui.lib.multilang import tr
@@ -34,7 +35,7 @@ class ArabesqueLayout(Widget):
     self._menu_button = rl.Rectangle(rect.x + 24 * s, rect.y + 8 * s, 88 * s, 88 * s)
     self._exit_button = rl.Rectangle(rect.x + 24 * s, rect.y + 116 * s, 456 * s, 116 * s)
     self._back_button = rl.Rectangle(rect.x + rect.width - 296 * s, rect.y + 8 * s, 272 * s, 88 * s)
-    self._dock = dock = rl.Rectangle(rect.x + (rect.width - 600 * s) / 2, rect.y + rect.height - 272 * s, 600 * s, 240 * s)
+    self._dock = dock = rl.Rectangle(rect.x + (rect.width - 840 * s) / 2, rect.y + rect.height - 272 * s, 840 * s, 240 * s)
     self._dock_shelf = rl.Rectangle(dock.x, dock.y + 178 * s, dock.width, 10 * s)
     self._dock_top = (rl.Vector2(dock.x + 36 * s, dock.y + 118 * s), rl.Vector2(dock.x, self._dock_shelf.y),
                       rl.Vector2(dock.x + dock.width, self._dock_shelf.y), rl.Vector2(dock.x + dock.width - 36 * s, dock.y + 118 * s))
@@ -43,6 +44,7 @@ class ArabesqueLayout(Widget):
     self._launchers = (
       (rl.Rectangle(dock.x + 60 * s, dock.y, 240 * s, 200 * s), "Terminal", lambda: Terminal()),
       (rl.Rectangle(dock.x + 300 * s, dock.y, 240 * s, 200 * s), "Files", lambda: Files(self._permitted)),
+      (rl.Rectangle(dock.x + 540 * s, dock.y, 240 * s, 200 * s), "Rebecca", lambda: Rebecca()),
     )
     self._tool_rect = rl.Rectangle(rect.x, self._bar.y + self._bar.height, rect.width, rect.height - self._bar.height)
 
@@ -150,10 +152,16 @@ class ArabesqueLayout(Widget):
           rl.draw_line_ex(rl.Vector2(icon.x - 32 * s, icon.y - 24 * s), rl.Vector2(icon.x - 8 * s, icon.y), 6 * s, tint)
           rl.draw_line_ex(rl.Vector2(icon.x - 8 * s, icon.y), rl.Vector2(icon.x - 32 * s, icon.y + 24 * s), 6 * s, tint)
           rl.draw_line_ex(rl.Vector2(icon.x + 8 * s, icon.y + 24 * s), rl.Vector2(icon.x + 36 * s, icon.y + 24 * s), 6 * s, tint)
-        else:
+        elif name == "Files":
           rl.draw_rectangle_rounded(rl.Rectangle(icon.x - 32 * s, icon.y - 26 * s, 30 * s, 18 * s), 0.3, 8, tint)
           rl.draw_rectangle_rounded(rl.Rectangle(icon.x - 36 * s, icon.y - 16 * s, 72 * s, 44 * s), 0.2, 8, tint)
           rl.draw_rectangle_rounded(rl.Rectangle(icon.x - 29 * s, icon.y - 9 * s, 58 * s, 30 * s), 0.2, 8, theme.background)
+        else:
+          rl.draw_circle_v(rl.Vector2(icon.x - 19 * s, icon.y - 6 * s), 20 * s, tint)
+          rl.draw_circle_v(rl.Vector2(icon.x + 19 * s, icon.y - 6 * s), 20 * s, tint)
+          for offset in (-19, 19):
+            rl.draw_circle_v(rl.Vector2(icon.x + offset * s, icon.y - 8 * s), 11 * s, theme.background)
+          rl.draw_line_ex(rl.Vector2(icon.x - 8 * s, icon.y + 25 * s), rl.Vector2(icon.x + 8 * s, icon.y + 25 * s), 3 * s, tint)
         gui_label(rl.Rectangle(icon.x - 96 * s, icon.y + 68 * s, 192 * s, 36 * s),
                   tr(name), round(28 * s), theme.text, theme.font_weight, alignment=TextAlignment.CENTER)
 
