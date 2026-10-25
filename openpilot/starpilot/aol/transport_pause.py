@@ -285,6 +285,7 @@ class TransportPauseFeedback:
     self.ccnc_main_off_source_ns = 0
     self.cold_park_waiting = False
     self.lateral_only_baseline = False
+    self.temporary_eps_gas_override = False
     self.lateral_source_ns = 0
     self.lateral_inventory = None
     self.lateral_native_ns = 0
@@ -668,6 +669,53 @@ class TransportPauseFeedback:
       self.lag_withdrawal_ns = stamp
     return True
 
+  def _ford_gas_release_eps_join_current(self, sm, cp, cs, axis, stamp, now_ns, *, producer, latched):
+    from openpilot.starpilot.car.ford.aol import temporary_eps_restriction
+    gas_was_pressed = self.temporary_eps_gas_override
+    previous = self.signature
+    if (cp.brand != 'ford' or cp.openpilotLongitudinalControl or
+        not cp.safetyConfigs[-1].safetyParam & 128 or
+        not latched or not gas_was_pressed or cs.gasPressed or
+        not temporary_eps_restriction(cp, cs) or not self.lateral_only_baseline or
+        self.failed or self.paused or self.pending_event or self.retention_started_ns or
+        not self.ever_lateral_active or cp_identity(cp) != self.cp or previous is None or
+        not self.temporary_eps_event_ns or not self.lateral_inventory or not self.lateral_baseline_ns or
+        previous[0] != self.session or previous[7] != self.session or previous[1] != self.sequence or
+        previous[5] != 'none' or any(previous[9:13]) or not previous[13] or
+        previous[6] != self.temporary_eps_event_ns or
+        previous[14] != producer or previous[15] != self.availability_epoch or
+        not 0 < previous[8] <= previous[2] <= now_ns <= previous[4] or
+        now_ns - previous[8] > AXIS_MAX_AGE_NS):
+      return False
+    if (not axis.qualified or str(axis.sessionId) != self.session or str(axis.faultSessionId) != self.session or
+        str(axis.intentProducerSessionId) != producer or int(axis.intentIntegrityEpoch) != self.availability_epoch or
+        int(axis.sequence) < self.sequence or str(axis.faultReason) != 'none' or str(axis.mode) != 'off' or
+        not axis.nativeAcknowledged or any((axis.desiredLateral,axis.lateralActive,axis.desiredLongitudinal,axis.longitudinalActive)) or
+        not sm.seen['aolAxisState'] or not sm.valid['aolAxisState'] or not sm.alive['aolAxisState'] or
+        not previous[8] <= axis.sourceCarStateMonoTime <= stamp == axis.observedMonoTime <= now_ns <= axis.validUntilMonoTime or
+        now_ns - axis.sourceCarStateMonoTime > AXIS_MAX_AGE_NS or
+        axis.validUntilMonoTime - stamp > AXIS_MAX_AGE_NS):
+      return False
+    event_ns = int(sm.logMonoTime['onroadEvents'])
+    events = sm['onroadEvents']
+    temporary_names = ('steerTempUnavailable','steerTempUnavailableSilent')
+    if (axis.faultEventMonoTime == event_ns or
+        min(axis.faultEventMonoTime,event_ns) != self.temporary_eps_event_ns or
+        not 0 < max(axis.faultEventMonoTime,event_ns) <= now_ns or
+        now_ns-max(axis.faultEventMonoTime,event_ns) > AXIS_MAX_AGE_NS or
+        not sm.seen['onroadEvents'] or not sm.valid['onroadEvents'] or not sm.alive['onroadEvents'] or
+        now_ns-event_ns > 1_500_000_000 or
+        not any(str(e.name)in temporary_names for e in events) or
+        any(e.immediateDisable or e.softDisable and str(e.name)!='steerTempUnavailable' or
+            e.userDisable and str(e.name)!='pcmDisable' or
+            str(e.name)not in (*temporary_names,'pcmDisable','gasPressedOverride','steerOverride') for e in events)):
+      return False
+    native = _configured_transport_native(sm,cp,self.session,now_ns,allow_restricted_lateral=True)
+    return bool(native is not None and native.pandaInventory and
+                not any((native.requestedLateral,native.lateralAllowed,native.requestedLongitudinal,native.longitudinalAllowed)) and
+                native.observedMonoTime>=self.lateral_native_ns and
+                self.lateral_inventory==(native.pandaSerial,tuple(p.hardwareSerial for p in native.pandaInventory)))
+
   def _temporary_steering_intent_current(self, sm, cp, cs, axis, stamp, now_ns, *, latched, producer, signature):
     """Keep an existing armed intent during isolated temporary EPS withdrawal."""
     if (not latched or self.failed or self.paused or self.retention_started_ns or
@@ -783,6 +831,11 @@ class TransportPauseFeedback:
       self.volkswagen_eps_source_ns = int(axis.sourceCarStateMonoTime)
     if cs.steerFaultTemporary and matched_withdrawal:
       self.temporary_eps_event_ns = int(axis.faultEventMonoTime)
+      if cp.brand == 'ford':
+        # Bind the prior gas state to this accepted event receipt, not a newer
+        # parsed CS that may already have released gas on the other socket.
+        self.temporary_eps_gas_override = any(
+          event.name == log.OnroadEvent.EventName.gasPressedOverride for event in events)
     if pending_withdrawal:
       # Keep only intent while this exact physical-EPS occurrence awaits its
       # event socket. Duplicate/newer proofs cannot move the original anchor.
@@ -1464,6 +1517,11 @@ class TransportPauseFeedback:
       if current and continuity and self._temporary_host_intent_current(sm, cp, cs, axis, stamp, now_ns,
           latched=latched, producer=intent_producer_session):
         self.sequence, self.signature = int(axis.sequence), signature
+        return False
+      if (cp.brand == 'ford' and current and continuity and
+          self._ford_gas_release_eps_join_current(sm, cp, cs, axis, stamp, now_ns,
+            latched=latched, producer=intent_producer_session)):
+        # Intent only: preserve the prior accepted proof and its original expiry.
         return False
       if current and continuity and self._temporary_steering_intent_current(sm, cp, cs, axis, stamp, now_ns,
           latched=latched, producer=intent_producer_session, signature=signature):
