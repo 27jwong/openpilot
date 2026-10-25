@@ -121,9 +121,12 @@ def test_actual_daemon_reports_startup_source_refusal_without_issuing_a_trial(mo
   actor.interrupt = lambda reason, **kw: setattr(actor, 'reason', reason)
   fitter.cancel = lambda reason: None
   control_socket, output_socket = object(), object()
+  def forbid_capture() -> None:
+    raise AssertionError('Unapproved source must not enable capture')
+
   adapter = SimpleNamespace(event_collection=True, source_plant_protocol='declared-unit-source-refusal',
     source_plant_clock=None, current_physical_valid=False, last_physical_ns=0,
-    enable_original_context_capture=lambda: pytest.fail('Unapproved source must not enable capture'))
+    enable_original_context_capture=forbid_capture)
 
   def drain(socket, callback, receive, sink, stamp):
     if socket is control_socket:
