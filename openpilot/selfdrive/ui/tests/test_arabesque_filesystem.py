@@ -273,3 +273,22 @@ def test_cross_filesystem_move_fails_without_deleting_source(storage, tmp_path, 
   with pytest.raises(OSError, match='Copy the item instead'):
     storage.change('move', Event(), entry=entry(source), destination=destination)
   assert source.read_text() == 'keep' and not list(destination.iterdir())
+
+
+@pytest.mark.parametrize('action', ['mkdir', 'copy', 'move'])
+def test_missing_destination_preserves_type_error_without_mutation(storage, tmp_path, action):
+  source = tmp_path / 'source'
+  source.write_text('keep')
+  before = sorted(path.name for path in tmp_path.iterdir())
+  with pytest.raises(TypeError, match='destination path'):
+    storage.change(action, Event(), entry=entry(source), name='new')
+  assert source.read_text() == 'keep'
+  assert sorted(path.name for path in tmp_path.iterdir()) == before
+
+
+@pytest.mark.parametrize('name', ['', '..', 'nested/name', '\x00'])
+def test_missing_mkdir_destination_still_validates_name_first(storage, tmp_path, name):
+  before = sorted(path.name for path in tmp_path.iterdir())
+  with pytest.raises(ValueError, match='Use a name'):
+    storage.change('mkdir', Event(), name=name)
+  assert sorted(path.name for path in tmp_path.iterdir()) == before

@@ -139,7 +139,10 @@ class FileSystem:
     if action not in ('mkdir', 'rename', 'copy', 'move', 'delete'):
       raise ValueError('Unknown file action.')
     if action == 'mkdir':
-      target = destination / self._name(name)
+      name = self._name(name)
+      if destination is None:
+        raise TypeError('A destination path is required.')
+      target = destination / name
       self._write(target, cancelled)
       with _directory(destination) as fd:
         self._write(target, cancelled)
@@ -154,7 +157,12 @@ class FileSystem:
         self._write(entry.path, cancelled, recursive=True)
         self._remove(source, entry.path.name, entry.path, cancelled)
         return
-      target = (entry.path.parent / self._name(name)) if action == 'rename' else destination / entry.path.name
+      if action == 'rename':
+        target = entry.path.parent / self._name(name)
+      else:
+        if destination is None:
+          raise TypeError('A destination path is required.')
+        target = destination / entry.path.name
       self._write(target, cancelled)
       if target == entry.path and action in ('rename', 'move'):
         return

@@ -246,3 +246,23 @@ def test_controls_fit_scaled_tool_and_long_lists_only_draw_visible_rows(view, tm
     assert rect.x >= view.rect.x and rect.y >= view.rect.y
     assert rect.x + rect.width <= view.rect.x + view.rect.width + 1
     assert rect.y + rect.height <= view.rect.y + view.rect.height + 1
+
+
+@pytest.mark.parametrize('keyword', [False, True])
+def test_name_input_accepts_base_render_signature_with_unchanged_theme(view, monkeypatch, keyword):
+  render = Mock()
+  monkeypatch.setattr(files.InputBox, '_render', render)
+  rect = rl.Rectangle(0, 0, 400, 104)
+  if keyword:
+    view._input._render(rect, color=rl.RED, border_color=rl.GREEN, text_color=rl.BLUE, font_size=12)
+  else:
+    view._input._render(rect, rl.RED, rl.GREEN, rl.BLUE, 12)
+  theme = view._input._theme
+  render.assert_called_once_with(rect, color=theme.surface, border_color=theme.surface, text_color=theme.text, font_size=40)
+
+
+def test_mouse_event_accepts_base_keyword_and_preserves_drag(view):
+  view._press_pos = MousePos(10, 10)
+  view._dragged = False
+  view._handle_mouse_event(mouse_event=event(10 + files.DRAG_THRESHOLD + 1, 10))
+  assert view._dragged

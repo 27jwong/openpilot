@@ -44,7 +44,7 @@ class _NameInput(InputBox):
     self._submit, self._cancel = submit, cancel
     self._theme = theme
 
-  def _render(self, rect):
+  def _render(self, rect, color=rl.BLACK, border_color=rl.DARKGRAY, text_color=rl.WHITE, font_size=80):
     theme = self._theme
     super()._render(rect, color=theme.surface, border_color=theme.surface, text_color=theme.text, font_size=round(rect.height * 40 / 104))
 
@@ -77,7 +77,7 @@ class Files(Widget):
     home = Path.home().resolve()
     data = Path(Paths.comma_home()) if PC else Path('/data')
     recordings = Path(Paths.log_root())
-    self._places = ((tr('Home'), home), (tr('Data'), data), (tr('Logs'), Path(Paths.swaglog_root())),
+    self._places: tuple[tuple[str, Path], ...] = ((tr('Home'), home), (tr('Data'), data), (tr('Logs'), Path(Paths.swaglog_root())),
                     (tr('Recordings'), recordings), (tr('Software'), Path(BASEDIR)))
     protected = (Path(BASEDIR), Path(os.environ.get('PARAMS_ROOT', str(data / 'params'))), Path(Paths.persist_root()),
                  recordings, *(recordings.parent / name for name in LEGACY_NAMES))
@@ -259,8 +259,8 @@ class Files(Widget):
     self._pressed = next((action for rect, action in reversed(self._buttons) if rl.check_collision_point_rec(pos, rect)), None)
     self._press_pos, self._dragged = pos, False
 
-  def _handle_mouse_event(self, event):
-    if self._press_pos and math.hypot(event.pos.x - self._press_pos.x, event.pos.y - self._press_pos.y) > DRAG_THRESHOLD:
+  def _handle_mouse_event(self, mouse_event):
+    if self._press_pos and math.hypot(mouse_event.pos.x - self._press_pos.x, mouse_event.pos.y - self._press_pos.y) > DRAG_THRESHOLD:
       self._dragged = True
 
   def _handle_mouse_release(self, pos: MousePos):
