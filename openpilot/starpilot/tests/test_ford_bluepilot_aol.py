@@ -55,7 +55,7 @@ def test_real_rejected_packet_resynchronizes_without_permission_bypass(ford_join
   inputs = adapter.host.inputs
   blocked = 0
   monkeypatch.setattr(inputs, 'update', lambda: None)
-  monkeypatch.setattr(inputs, 'lateral_snapshot', lambda speed: None)
+  monkeypatch.setattr(inputs, 'lateral_snapshot', lambda speed, *, angle=False: None)
   # Isolate the adapter recovery while preserving actual physical native authority.
   # The full caller matrix above retains real wire/inventory/freshness qualification.
   monkeypatch.setattr(inputs, 'native_permission', lambda cp, max_age_ns: bool(safety.aol_get_permission_mask() & 1))
