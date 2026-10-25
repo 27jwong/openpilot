@@ -1049,7 +1049,8 @@ class LiveTrackingOptimizer:
           # Actual worse/inconclusive directions below remain disqualified;
           # independent baseline, later feedback and slew are unchanged.
           low, high = coordinate_bounds(name)
-          if self.rmse is None and min(high, max(low, self.accepted[name] + sign * min(MAX_STEP, 0.1 * confidence))) == self.accepted[name]:
+          step_limit = MAX_STEP if self.rmse is None else min(MAX_STEP, 0.1 * confidence)
+          if self.rmse is None and min(high, max(low, self.accepted[name] + sign * step_limit)) == self.accepted[name]:
             sign = -sign
 
           if observed_worse(sign):
@@ -1058,7 +1059,7 @@ class LiveTrackingOptimizer:
             sign = -sign
           if self.rmse is None and self._same_inconclusive_trial(name, sign, rows[-1], now_ns):
             continue
-          delta = sign * min(MAX_STEP, 0.1 * confidence)
+          delta = sign * step_limit
           predicted = min(features[id(row)][name].max_step_physical_rms for row in rows)
           expected = predicted * abs(delta) / MAX_STEP / max(_score_scale(row) for row in rows)
           if expected <= 0.0001:

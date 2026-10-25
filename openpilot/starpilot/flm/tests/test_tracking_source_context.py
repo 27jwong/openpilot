@@ -14,7 +14,8 @@ from openpilot.starpilot.flm.live_tracking_response import (
   certificate_from_dict,
   source_context,
 )
-from openpilot.starpilot.flm.canonical_surface_adapter import NAMES
+from openpilot.starpilot.flm.canonical_surface_adapter import NAMES, coordinate_bounds
+from openpilot.starpilot.flm.live_trial_contract import MAX_STEP
 from openpilot.starpilot.flm.tests.test_live_tracking import fixture_certificate, episode
 from openpilot.starpilot.flm.live_tracking import LiveTrackingOptimizer
 
@@ -75,7 +76,10 @@ def test_global_thirty_coordinates_require_new_unselected_baseline(name):
   assert o.offer_state['alpha'] == 0.0 and o.offer_state['critical'] == 0.0
   assert 'noise_prior' not in o.offer_state and len(selected.target) == 30 and not any(o.accepted.values())
   changes = [n for n, v in selected.target if v != dict(selected.baseline)[n]]
-  assert changes == [name] and abs(dict(selected.target)[name]) <= 0.005
+  assert changes == [name] and abs(dict(selected.target)[name]) <= MAX_STEP
+  for knob, value in selected.target:
+    low, high = coordinate_bounds(knob)
+    assert low <= value <= high
 
 
 def test_source_wire_roundtrip_and_model_field_smuggling_rejection():
@@ -231,7 +235,7 @@ def test_source_proposal_does_not_claim_instantaneous_gradient_is_plant_directio
       break
   assert o.offer_state is not None and o.offer_state['phase'] == 'trial'
   assert not any(o.accepted.values()) and len(o.before) == 3
-  assert o.offer_state['alpha'] == 0.0 and abs(o.offer_state['target']['ff_gain_left']) <= 0.005
+  assert o.offer_state['alpha'] == 0.0 and abs(o.offer_state['target']['ff_gain_left']) <= MAX_STEP
   assert not o.offer_state.get('accepted', False)
 
 
@@ -412,7 +416,7 @@ def test_source_boundary_tries_feasible_direction_without_claiming_plant_sign(up
       discovery_ids.update(o.selector_hint['source_episode_ids'])
   selected = o.offer(e.end_ns)
   assert selected is not None and selected.names == (name,)
-  assert dict(selected.target)[name] == pytest.approx(o.accepted[name] + (-0.005 if upper else 0.005))
+  assert dict(selected.target)[name] == pytest.approx(o.accepted[name] + (-MAX_STEP if upper else MAX_STEP))
   assert len(o.before) == 3 and discovery_ids.isdisjoint(row.episode_id for row in o.before)
   assert not o.offer_state['accepted'] and o.offer_state['alpha'] == 0.0
 
@@ -474,3 +478,35 @@ def test_new_input_regime_retires_only_source_discovery_before_launch(source_onl
   else:
     assert o.discovery == previous
   assert o.offer_state is None and not any(o.accepted.values())
+
+
+@pytest.mark.parametrize('estimate', [.0002, -.0002])
+def test_source_experiment_uses_measured_full_bound_not_tiny_confidence_fraction(estimate):
+  # Numerical proposal only; native visibility still needs actual controller/CAN evidence.
+  o = owner()
+  for index in range(6):
+    row = episode(o, index, 'ff_gain_left', error=.2)
+    feature = replace(row.sensitivity[0], error_feature_sum=estimate, feature_energy=1.)
+    row = replace(row, sensitivity=(feature,), normalization_accel=max(.1, row.goal_rms))
+    refresh(o, row.end_ns)
+    o.observe_episode(row, now_ns=row.end_ns)
+  selected = o.offer(row.end_ns)
+  assert selected is not None and selected.names == ('ff_gain_left',)
+  delta = dict(selected.target)['ff_gain_left'] - dict(selected.baseline)['ff_gain_left']
+  assert delta == pytest.approx(MAX_STEP if estimate > 0 else -MAX_STEP)
+  assert abs(delta) > .1 * abs(estimate)
+  assert len(selected.target) == 30 and len(o.before) == 3
+  assert not any(o.accepted.values()) and not o.future
+
+
+def test_fitted_model_retains_confidence_sized_proposal():
+  from openpilot.starpilot.flm.tests.test_live_tracking import optimizer, ready
+
+  o = optimizer()
+  # Preserve the fixture's original derivative: .01 physical delta per .005 coordinate.
+  state, now = ready(o, effect=.01 * MAX_STEP / .005)
+  assert state is not None
+  selected = o.offer(now)
+  assert selected is not None
+  # Existing fixture estimate=.05; original confidence fraction gives .005.
+  assert dict(selected.target)['ff_gain_left'] == pytest.approx(.005)
