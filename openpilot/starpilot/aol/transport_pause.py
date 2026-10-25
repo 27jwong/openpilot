@@ -780,7 +780,8 @@ class TransportPauseFeedback:
       previous[9] and previous[11] and previous[13] and previous[6] == event_ns and
       axis.sourceCarStateMonoTime >= previous[8] and stamp >= previous[2] and
       previous[14] == producer and previous[15] == self.availability_epoch and
-      0 < self.lateral_source_ns <= now_ns and now_ns - self.lateral_source_ns <= AXIS_MAX_AGE_NS)
+      0 < self.lateral_source_ns <= previous[8] <= previous[2] <= now_ns <= previous[4] and
+      now_ns - previous[8] <= AXIS_MAX_AGE_NS)
     pending_withdrawal = bool(all_off and not any(event.softDisable or event.userDisable for event in events) and
       not temporary_event and 0 < event_ns < axis.faultEventMonoTime <= stamp and
       now_ns - axis.faultEventMonoTime <= AXIS_MAX_AGE_NS and
