@@ -233,8 +233,8 @@ def configuration_settings_policy(cp):
   return None
 
 
-def held_lateral_brake(owner, cs):
-  """An already accepted brake may retain LAT intent, never stale output."""
+def held_lateral_pedal(owner, cs):
+  """An already accepted pedal may retain LAT intent, never stale output."""
   from math import isfinite
   from openpilot.starpilot.nostalgia import physical_cancel
   anchor = getattr(owner, 'aol_ordinary_source_anchor', None)
@@ -250,9 +250,9 @@ def held_lateral_brake(owner, cs):
     accepted.settingsQualified and not accepted.pauseLateral and not accepted.pauseLongitudinal and
     settings is not None and settings.enabled and
     not getattr(owner, 'aol_dm_lateral_inhibit', False) and
-    cs.brakePressed and not cs.regenBraking and not cs.gasPressed and
+    cs.brakePressed != cs.gasPressed and not cs.regenBraking and
     cs.cruiseState.available and not cs.cruiseState.enabled and
     cs.gearShifter == structs.CarState.GearShifter.drive and
     isfinite(cs.vEgoRaw) and isfinite(cs.vEgo) and
-    (cs.standstill or cs.vEgo >= settings.pause_brake_mps) and
+    (not cs.brakePressed or cs.standstill or cs.vEgo >= settings.pause_brake_mps) and
     not cs.seatbeltUnlatched and not physical_cancel(cs, owner.CP))

@@ -11,18 +11,20 @@ from openpilot.starpilot.aol.tests.test_input_deadline_continuity import BASE, i
 from openpilot.starpilot.aol.tests.test_toyota_parking_brake_deadline import refresh_saved_settings
 
 
-def rolling(brake=True):
+def rolling(brake=True, gas=False):
   state = fixture.car_state(brake=brake)
-  state.vEgo = state.vEgoRaw = .63179683685
+  state.gasPressed = gas
+  state.vEgo = state.vEgoRaw = 17.76392555237 if gas else .63179683685
   state.standstill = False
   state.cruiseState.available = True
   state.cruiseState.enabled = False
   return state
 
 
-@pytest.mark.parametrize('brake', (False, True))
+@pytest.mark.parametrize('pedal', ('none', 'brake', 'gas'))
 @pytest.mark.parametrize('bsm', (False, True))
-def test_rav4_held_brake_source_gap_preserves_armed_intent(brake, bsm):
+def test_rav4_held_brake_source_gap_preserves_armed_intent(pedal, bsm):
+  brake, gas = pedal == 'brake', pedal == 'gas'
   with ExitStack() as cleanup:
     cleanup.enter_context(OpenpilotPrefix())
     case = fixture.IoniqAvailabilityTests(methodName='runTest')
@@ -33,45 +35,47 @@ def test_rav4_held_brake_source_gap_preserves_armed_intent(brake, bsm):
     sd, controls, drive = case._authority_callers(False, cp=cp, genuine_events=True)
     refresh_saved_settings(sd)
     for tick in (0, 1):
-      axis, _, command = drive(tick, observed_state=rolling(brake), brake=brake, native_request_long=False)
+      axis, _, command = drive(tick, observed_state=rolling(brake, gas), brake=brake, gas=gas, native_request_long=False)
       assert axis.lateralActive and command.latActive and not command.longActive
     prior, _, command = drive(2, offset_ns=5_209_427, state_stamp=BASE,
-      intent_message=intent(BASE, 3), observed_state=rolling(brake), brake=brake, native_request_long=False)
+      intent_message=intent(BASE, 3), observed_state=rolling(brake, gas), brake=brake, gas=gas, native_request_long=False)
     assert prior.lateralActive and command.latActive
     # Recorded gap: source32.074ms old, prior command still3.135ms live.
     axis, host, command = drive(5, offset_ns=2_073_802, timeout=True,
-      state_stamp=BASE, intent_message=intent(BASE, 3), brake=brake, native_request_long=False)
+      state_stamp=BASE, intent_message=intent(BASE, 3), brake=brake, gas=gas, native_request_long=False)
     assert log.OnroadEvent.EventName.controlsMismatch not in sd.events.names, 'RAV4_HELD_BRAKE_SOURCE_GAP'
     assert str(axis.faultReason) == 'availabilityPause' and axis.sourceCarStateMonoTime == 0
     assert not axis.lateralActive and not command.latActive and not command.longActive and not host.enabled
     assert axis.desiredLateral and axis.nativeAcknowledged and not sd.aol_authority_lost
     source = BASE + 28_454_011
     axis, host, command = drive(6, state_stamp=source, intent_message=intent(source, 4),
-      observed_state=rolling(brake), brake=brake, native_request_long=False)
+      observed_state=rolling(brake, gas), brake=brake, gas=gas, native_request_long=False)
     assert axis.lateralActive and command.latActive and not command.longActive and not host.enabled
     assert not sd.aol_authority_lost
 
 
-def test_rav4_brake_source_pause_reaches_actual_card_without_disarming():
+@pytest.mark.parametrize('gas', (False, True))
+def test_rav4_pedal_source_pause_reaches_actual_card_without_disarming(gas):
+  brake = not gas
   from openpilot.starpilot.aol.tests.stock_lateral_test_helpers import callers
   with ExitStack() as cleanup:
     sd, _, drive, card, receive = callers(cleanup, 'toyota', True)
     refresh_saved_settings(sd)
     prior, _, command = drive(2, offset_ns=5_209_427, state_stamp=BASE,
-      intent_message=intent(BASE, 3), observed_state=rolling(), brake=True, native_request_long=False)
+      intent_message=intent(BASE, 3), observed_state=rolling(brake, gas), brake=brake, gas=gas, native_request_long=False)
     assert prior.lateralActive and command.latActive
-    assert receive(BASE + 5_209_427, state=rolling())
+    assert receive(BASE + 5_209_427, state=rolling(brake, gas))
     axis, host, command = drive(5, offset_ns=2_073_802, timeout=True,
-      state_stamp=BASE, intent_message=intent(BASE, 3), brake=True, native_request_long=False)
+      state_stamp=BASE, intent_message=intent(BASE, 3), brake=brake, gas=gas, native_request_long=False)
     assert str(axis.faultReason) == 'availabilityPause' and axis.sourceCarStateMonoTime == 0
     assert not command.latActive and not command.longActive and not host.enabled
-    assert receive(BASE + 32_073_802, state=rolling()), 'RAV4_CARD_BRAKE_SOURCE_PAUSE'
+    assert receive(BASE + 32_073_802, state=rolling(brake, gas)), 'RAV4_CARD_BRAKE_SOURCE_PAUSE'
     assert card.aol_card_intent.allowed_latch
     source = BASE + 28_454_011
     axis, host, command = drive(6, state_stamp=source, intent_message=intent(source, 4),
-      observed_state=rolling(), brake=True, native_request_long=False)
+      observed_state=rolling(brake, gas), brake=brake, gas=gas, native_request_long=False)
     assert axis.lateralActive and command.latActive and not command.longActive and not host.enabled
-    assert receive(BASE + 40_000_000, state=rolling())
+    assert receive(BASE + 40_000_000, state=rolling(brake, gas))
 
 
 @pytest.mark.parametrize('fault', ('native_denied', 'native_invalid', 'rx_fault', 'relay_fault',
