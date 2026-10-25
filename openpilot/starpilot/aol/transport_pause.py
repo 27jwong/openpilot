@@ -133,7 +133,7 @@ def stock_lateral_off(cp, cs, native, *, allow_independent_cancel=False, allow_i
 
   independent_angle = angle_qualified(cp, marked_only=True)
   independent_brake = independent_angle or (allow_independent_brake and (
-    toyota_qualified(cp, marked_only=True) and cs.standstill and not cs.cruiseState.enabled or
+    toyota_qualified(cp, marked_only=True) and not cs.cruiseState.enabled or
     cp.brand == 'hyundai' and len(cp.safetyConfigs) == 1 and stock_canfd_qualified(cp, marked_only=True)))
   return bool(cp.pcmCruise and cs.cruiseState.available and
     (not cs.cruiseState.enabled or independent_brake and allow_independent_brake and cs.brakePressed) and
@@ -955,10 +955,14 @@ class TransportPauseFeedback:
     # owner, not an independent LAT cancellation. Qualify only this inactive source-zero
     # proof against its accepted LAT-only baseline and current real native grant.
     previous = self.signature
+    from openpilot.starpilot.car.toyota.aol import qualified as toyota_qualified
+    toyota_brake = bool(toyota_qualified(cp, marked_only=True) and cs.brakePressed and
+      not cs.regenBraking and not cs.gasPressed and self.lateral_only_baseline and
+      not native.requestedLongitudinal and not native.longitudinalAllowed)
     stock_user = stock_lateral_user_event(cp)
     stock_lateral = bool(reason == 'availabilityPause' and axis.sourceCarStateMonoTime == 0 and
       not axis.lateralActive and not axis.longitudinalActive and not axis.desiredLongitudinal and
-      stock_lateral_off(cp, cs, native) and previous is not None and
+      stock_lateral_off(cp, cs, native, allow_independent_brake=toyota_brake) and previous is not None and
       previous[0] == self.session and previous[7] == self.session and
       previous[14] == intent_producer_session and previous[15] == self.availability_epoch and
       (previous[11] and not previous[12] and previous[13] and not previous[10] and
@@ -977,10 +981,11 @@ class TransportPauseFeedback:
        0 <= now_ns - previous[8] <= SAFETY_MAX_AGE_NS))
     if stock_lateral:
       users = [event for event in events if event.userDisable]
-      if any(event.name != stock_user or event.softDisable or event.immediateDisable
-             for event in users):
+      if any((event.name != stock_user and not (toyota_brake and event.name == log.OnroadEvent.EventName.pedalPressed)) or
+             event.softDisable or event.immediateDisable for event in users):
         return False
-      events = [event for event in events if not (event.name == stock_user and
+      events = [event for event in events if not ((event.name == stock_user or
+        toyota_brake and event.name == log.OnroadEvent.EventName.pedalPressed) and
         event.userDisable and not event.softDisable and not event.immediateDisable)]
     if cp.brand == 'gm':
       from openpilot.starpilot.car.gm.aol import sdgm_lateral_pedal_source_zero
