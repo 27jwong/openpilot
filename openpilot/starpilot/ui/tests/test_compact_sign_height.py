@@ -76,7 +76,9 @@ def test_small_offset_layout_transitions_reuse_the_same_widget(historical_outlin
     current = state(show_slc_offset=enabled)
     widget.render(current)
     historical_outline.assert_not_called()
-    assert speed_limit_bounds(Profile.COMPACT, current)[3] - speed_limit_bounds(Profile.COMPACT, current)[1] == 152
+    bounds = speed_limit_bounds(Profile.COMPACT, current)
+    assert bounds is not None
+    assert bounds[3] - bounds[1] == 152
 
 
 @pytest.mark.parametrize('y', [20, 50, 108])

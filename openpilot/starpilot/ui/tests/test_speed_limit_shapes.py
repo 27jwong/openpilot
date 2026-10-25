@@ -93,6 +93,7 @@ def test_small_arrow_has_larger_ink_at_double_density():
     bounds = atlas.crop((x, y, x+width, y+height)).getchannel('A').point(lambda alpha: 255 if alpha > 40 else 0).getbbox()
   density = shapes.SPRITE_DENSITIES['arrow_compact']
   assert density == 2
+  assert bounds is not None
   assert ((bounds[2]-bounds[0])/density, (bounds[3]-bounds[1])/density) == (12, 16)
 
 
