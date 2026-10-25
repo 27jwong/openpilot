@@ -184,10 +184,12 @@ def test_valid_vision_limit_has_persistent_sign_without_action_receipt():
   renderer = CompactHudRenderer(fonts, Mock())
   valid = SpeedLimitObservation(kind=ObservationKind.VALID, source='vision', speed_limit_mps=24.6)
   shown = replace(road(), appearance=replace(road().appearance, show_speed_limit_sign=True), speed_limit=valid)
-  with patch.object(rl, 'draw_rectangle_rounded') as fill, patch.object(renderer._speed_limit_widget.shapes, 'outline') as outline:
+  with patch.object(rl, 'draw_rectangle_rounded') as fill, patch.object(rl, 'draw_rectangle_rounded_lines_ex') as outline:
     renderer._speed_limit_sign(shown)
     fill.assert_not_called()
     outline.assert_called_once()
+    rect = outline.call_args.args[0]
+    assert (rect.width, rect.height) == (100, 116)
     assert [call.args[0] for call in foreground_calls(fonts.draw)] == ['VISION', 'LIMIT', '55']
     outline.reset_mock()
     renderer._speed_limit_sign(replace(shown, speed_limit=SpeedLimitObservation(kind=ObservationKind.STALE)))
