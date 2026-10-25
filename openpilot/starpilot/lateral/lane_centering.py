@@ -133,6 +133,40 @@ def _at(path: tuple[np.ndarray, np.ndarray], distance: float) -> float | None:
   return float(np.interp(distance, x, y))
 
 
+def _single_boundary_target(model: Any, paths, qualified, lookahead: float, offset: float) -> float | None:
+  """Keep the confident trajectory clear of one line; an edge only bounds it.
+
+  A road edge may include a shoulder or another lane, so its midpoint is never
+  a centering target. No width or confidence is assigned to the missing line.
+  """
+  known_left = qualified[0]
+  line_path = paths[0 if known_left else 1]
+  model_path, std_path = paths[2:4]
+  if line_path is None or model_path is None or std_path is None:
+    return None
+  edge_index = 1 if known_left else 0
+  edge_std = _finite_number(model.roadEdgeStds[edge_index])
+  if edge_std is None or not 0.0 <= edge_std <= MAX_LANE_STD:
+    return None
+  edge_path = _path(model.roadEdges[edge_index])
+  if edge_path is None:
+    return None
+  target = None
+  for distance in (lookahead * 0.25, lookahead * 0.5, lookahead):
+    line, edge = _at(line_path, distance), _at(edge_path, distance)
+    model_y, path_std = _at(model_path, distance), _at(std_path, distance)
+    if line is None or edge is None or model_y is None or path_std is None or not 0.0 <= path_std <= E2E_MAX_PATH_STD:
+      return None
+    left, right = (line, edge) if known_left else (edge, line)
+    if not MIN_LANE_WIDTH <= right - left <= MAX_LANE_WIDTH or not left < model_y < right:
+      return None
+    # Project the existing trajectory onto the clearance interval, without
+    # steering toward the unknown lane center or an edge/shoulder midpoint.
+    target = clip_scalar(model_y + clip_scalar(offset, -MAX_OFFSET, MAX_OFFSET),
+                         left + MIN_CENTER_TO_LINE, right - MIN_CENTER_TO_LINE)
+  return target
+
+
 def raw_correction(model: Any, speed_mps: float, offset_m: float, e2e_authority: float, *, _paths=None) -> float | None:
   """Return a finite raw curvature correction, or None for unqualified model data."""
   speed = _finite_number(speed_mps)
@@ -146,23 +180,38 @@ def raw_correction(model: Any, speed_mps: float, offset_m: float, e2e_authority:
     stds = model.laneLineStds
     if len(lines) < 3 or len(probs) < 3 or len(stds) < 3:
       return None
+    qualified = []
     for i in (1, 2):
       prob = _finite_number(probs[i])
       std = _finite_number(stds[i])
-      if prob is None or std is None or not MIN_LANE_PROB <= prob <= 1.0 or not 0.0 <= std <= MAX_LANE_STD:
+      if prob is None or std is None or not 0.0 <= prob <= 1.0 or std < 0.0:
         return None
+      qualified.append(prob >= MIN_LANE_PROB and std <= MAX_LANE_STD)
+    if not any(qualified):
+      return None
     left_path, right_path, model_path = (_path(lines[1]), _path(lines[2]), _path(model.position)) if _paths is None else _paths[:3]
-    if left_path is None or right_path is None or model_path is None:
+    if model_path is None:
       return None
     lookahead = clip_scalar(speed, 8.0, 35.0)
-    left, right, model_y = _at(left_path, lookahead), _at(right_path, lookahead), _at(model_path, lookahead)
-    if left is None or right is None or model_y is None:
+    model_y = _at(model_path, lookahead)
+    if model_y is None:
       return None
-    width = right - left
-    if not MIN_LANE_WIDTH <= width <= MAX_LANE_WIDTH:
-      return None
-    safe_offset = min(MAX_OFFSET, max(0.0, width * 0.5 - MIN_CENTER_TO_LINE))
-    target_y = (left + right) * 0.5 + clip_scalar(offset, -safe_offset, safe_offset)
+    if all(qualified):
+      if left_path is None or right_path is None:
+        return None
+      left, right = _at(left_path, lookahead), _at(right_path, lookahead)
+      if left is None or right is None:
+        return None
+      width = right - left
+      if not MIN_LANE_WIDTH <= width <= MAX_LANE_WIDTH:
+        return None
+      safe_offset = min(MAX_OFFSET, max(0.0, width * 0.5 - MIN_CENTER_TO_LINE))
+      target_y = (left + right) * 0.5 + clip_scalar(offset, -safe_offset, safe_offset)
+    else:
+      std_path = _path_xy(model.position.x, model.position.yStd) if _paths is None else _paths[3]
+      target_y = _single_boundary_target(model, (left_path, right_path, model_path, std_path), qualified, lookahead, offset)
+      if target_y is None:
+        return None
     error = target_y - model_y
     error_abs = abs(error)
     error = math.copysign(max(0.0, error_abs - CENTER_ERROR_DEADBAND), error)

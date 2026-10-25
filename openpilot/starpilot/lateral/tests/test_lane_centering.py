@@ -1,6 +1,8 @@
 """Native model-message fixtures for the standalone curvature contribution."""
 from dataclasses import replace
+import json
 import math
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 import unittest
@@ -320,3 +322,119 @@ class TestLaneCentering(unittest.TestCase):
     result = controller.update(observation(elapsed_seconds=0.2))
     self.assertEqual(result.reason, "qualified")
     self.assertGreater(result.correction, 0.0)
+
+
+def single(*, missing_right=True, line=-0.9, edge=3.0, path=0.0):
+  m = model(left=line if missing_right else -3.0, right=2.0 if missing_right else -line, path=path)
+  m.laneLineProbs = [0., .95 if missing_right else .05, .05 if missing_right else .95, 0.]
+  m.init('roadEdges', 2)
+  for item, y in zip(m.roadEdges, (-3.0 if missing_right else -edge, edge if missing_right else 3.0), strict=True):
+    item.x = XS
+    item.y = [y] * len(XS)
+  m.roadEdgeStds = [.1, .1]
+  return m
+
+
+class TestSingleBoundary(unittest.TestCase):
+  def test_recorded_bd_missing_right_line_recovers_bounded_clearance(self):
+    fixture = json.loads((Path(__file__).parent / 'fixtures/route_bd_single_boundary.json').read_text())
+    m = messaging.new_message('modelV2').modelV2
+    m.from_dict(fixture['model'])
+    self.assertTrue(fixture['recordedCarControl']['latActive'])
+    self.assertEqual(fixture['recordedFeedback']['requestedCorrection'], 0.)
+    self.assertEqual(fixture['recordedFeedback']['reason'], 'unqualified_model')
+    self.assertLess(m.laneLineProbs[2], .6)
+    raw = raw_correction(m, fixture['speedMps'], 0., 0.)
+    assert raw is not None
+    self.assertGreater(raw, 0.)
+    self.assertAlmostEqual(raw, fixture['expectedRaw'], places=12)
+    result = settled(LaneCenteringController(), observation(m, speed_mps=fixture['speedMps']))
+    self.assertLessEqual(abs(result.correction), MAX_CORRECTION)
+    # At the exact earlier bookmark BOTH line probabilities are low and the
+    # left-line std is .919 m. Preserve that refusal rather than invent a lane.
+    refused = messaging.new_message('modelV2').modelV2
+    refused.from_dict(fixture['firstBookmarkRefusal']['model'])
+    self.assertIsNone(raw_correction(refused, 15.75, 0., 0.))
+
+  def test_missing_either_line_recovers_clearance_without_centering_on_edge(self):
+    for missing_right, sign in ((True, 1), (False, -1)):
+      for edge in (2.5, 3.0):
+        with self.subTest(missing_right=missing_right, edge=edge):
+          m = single(missing_right=missing_right, edge=edge)
+          raw = raw_correction(m, 20., 0., 0.)
+          assert raw is not None
+          self.assertAlmostEqual(raw, sign * 2. * (.2 - .08) / 400., places=8)
+          result = settled(LaneCenteringController(), observation(m))
+          self.assertEqual(result.reason, 'qualified')
+          self.assertGreater(sign * result.correction, 0.)
+          self.assertLessEqual(abs(result.correction), MAX_CORRECTION)
+
+  def test_safe_model_path_is_retained_and_missing_line_geometry_is_unused(self):
+    m = single(line=-1.5)
+    self.assertEqual(raw_correction(m, 20., 0., 0.), 0.)
+    m.laneLines[2].x = []
+    m.laneLines[2].y = []
+    self.assertEqual(raw_correction(m, 20., 0., 0.), 0.)
+
+  def test_refuses_both_missing_and_unqualified_path_edge_or_corridor(self):
+    for defect in ('both', 'path_std', 'edge_std', 'nan_edge', 'no_edge', 'crossed', 'wide', 'narrow',
+                   'path_outside', 'near_crossing', 'missing_std', 'short_edge', 'bad_x', 'nan_prob'):
+      with self.subTest(defect=defect):
+        m = single()
+        if defect == 'both':
+          m.laneLineProbs = [0., .05, .05, 0.]
+        elif defect == 'path_std':
+          m.position.yStd = [.36] * len(XS)
+        elif defect == 'edge_std':
+          m.roadEdgeStds = [.1, .31]
+        elif defect == 'nan_edge':
+          m.roadEdges[1].y = [float('nan')] * len(XS)
+        elif defect == 'no_edge':
+          m.roadEdges = []
+        elif defect == 'crossed':
+          m.roadEdges[1].y = [-2.] * len(XS)
+        elif defect == 'wide':
+          m.roadEdges[1].y = [4.] * len(XS)
+        elif defect == 'narrow':
+          m.roadEdges[1].y = [1.] * len(XS)
+        elif defect == 'path_outside':
+          m.position.y = [-1.] * len(XS)
+        elif defect == 'near_crossing':
+          m.roadEdges[1].y = [-2. if x <= 10 else 3. for x in XS]
+        elif defect == 'missing_std':
+          m.position.yStd = []
+        elif defect == 'short_edge':
+          m.roadEdges[1].x = XS[:10]
+          m.roadEdges[1].y = [3.] * 10
+        elif defect == 'bad_x':
+          m.roadEdges[1].x = list(reversed(XS))
+        else:
+          m.laneLineProbs = [0., .95, float('nan'), 0.]
+        self.assertIsNone(raw_correction(m, 20., 0., 0.))
+
+  def test_current_edge_is_rechecked_for_held_reader(self):
+    m = single()
+    source = observation(m.as_reader())
+    controller = LaneCenteringController()
+    first = controller.update(source)
+    self.assertGreater(first.correction, 0.)
+    m.roadEdgeStds = [.1, .31]
+    refused = controller.update(source)
+    self.assertEqual(refused.reason, 'unqualified_model')
+    self.assertAlmostEqual(refused.correction, first.correction * math.exp(-.01 / .2))
+    m.roadEdgeStds = [.1, .1]
+    self.assertEqual(controller.update(source).reason, 'qualified')
+
+  def test_single_boundary_still_obeys_override_freshness_signal_and_axis(self):
+    source = observation(single())
+    for updates in ({'driver_override':True}, {'model_valid':False}, {'lateral_active':False},
+                    {'time_discontinuity':True}):
+      controller = LaneCenteringController()
+      self.assertGreater(settled(controller, source).correction, 0.)
+      self.assertEqual(controller.update(replace(source, **updates)).correction, 0.)
+    controller = LaneCenteringController()
+    prior = settled(controller, source).correction
+    faded = controller.update(replace(source, turn_signal_active=True))
+    self.assertEqual(faded.reason, 'signal_release')
+    self.assertLess(faded.correction, prior)
+
