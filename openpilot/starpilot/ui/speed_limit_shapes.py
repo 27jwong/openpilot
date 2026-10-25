@@ -9,9 +9,10 @@ ATLAS_PATH = Path(__file__).with_name('assets') / 'speed_limit_shapes.png'
 ATLAS_SIZE = (384, 176)
 SPRITES = {
   'disc': (0, 0, 128, 128), 'ring': (128, 0, 128, 128),
-  'arrow_large': (0, 128, 32, 40), 'arrow_compact': (32, 128, 16, 24),
+  'arrow_large': (0, 128, 32, 40), 'arrow_compact': (32, 128, 32, 48),
   'outline': (256, 0, 128, 144),
 }
+SPRITE_DENSITIES = {'arrow_compact': 2}
 
 
 class SpeedLimitShapes:
@@ -21,7 +22,8 @@ class SpeedLimitShapes:
     self.texture = None
     self.short_outline = None
     self.sources = {name: rl.Rectangle(*rect) for name, rect in SPRITES.items()}
-    self.origins = {name: rl.Vector2(rect[2] * scale / 2, rect[3] * scale / 2) for name, rect in SPRITES.items()}
+    self.origins = {name: rl.Vector2(rect[2] * scale / SPRITE_DENSITIES.get(name, 1) / 2,
+                                   rect[3] * scale / SPRITE_DENSITIES.get(name, 1) / 2) for name, rect in SPRITES.items()}
 
   def _load(self):
     if self.texture is not None:
@@ -48,7 +50,8 @@ class SpeedLimitShapes:
   def _draw(self, name, x, y, color, rotation=0):
     self._load()
     source = self.sources[name]
-    rl.draw_texture_pro(self.texture, source, rl.Rectangle(x, y, source.width * self.scale, source.height * self.scale),
+    scale = self.scale / SPRITE_DENSITIES.get(name, 1)
+    rl.draw_texture_pro(self.texture, source, rl.Rectangle(x, y, source.width * scale, source.height * scale),
                         self.origins[name], rotation, color)
 
   def circle(self, x, y, color):

@@ -21,7 +21,7 @@ def historical_outline():
 @pytest.mark.parametrize('profile', list(Profile))
 @pytest.mark.parametrize('offset', [False, True])
 @pytest.mark.parametrize('vienna', [False, True])
-def test_only_small_rectangular_sign_extends_for_visible_offset(profile, offset, vienna, historical_outline):
+def test_both_sign_styles_keep_their_height_with_or_without_offset(profile, offset, vienna, historical_outline):
   current = state(show_slc_offset=offset)
   current = replace(current, appearance=replace(current.appearance, use_vienna_sign=vienna))
   widget = SpeedLimitWidget(fonts(profile), profile)
@@ -33,18 +33,11 @@ def test_only_small_rectangular_sign_extends_for_visible_offset(profile, offset,
   bounds = speed_limit_bounds(profile, current)
   tall = speed_limit_bounds(profile, replace(current, show_slc_offset=True))
   assert bounds is not None and tall is not None
-  extended = profile == Profile.COMPACT and not vienna
-  assert bounds[:3] == tall[:3]
-  assert bounds[3] == tall[3] - (44 if extended and not offset else 0)
+  assert bounds == tall
   if vienna:
     widget.shapes.outline.assert_not_called()
     widget.shapes.circle.assert_called_once()
     historical_outline.assert_not_called()
-  elif profile == Profile.COMPACT:
-    widget.shapes.outline.assert_not_called()
-    rect, rounding, segments, stroke, _ = historical_outline.call_args.args
-    assert (rect.x, rect.y, rect.width, rect.height) == (bounds[0]+22, bounds[1]+20, 100, 116+(44 if offset else 0))
-    assert (rounding, segments, stroke) == (.14, 16, 2)
   else:
     historical_outline.assert_not_called()
     widget.shapes.outline.assert_called_once()
@@ -57,7 +50,7 @@ def test_only_small_rectangular_sign_extends_for_visible_offset(profile, offset,
 @pytest.mark.parametrize('metric', (False, True))
 @pytest.mark.parametrize('show', (False, True))
 @pytest.mark.parametrize('offset', (None, 0., .01, -.01, 5., -10.))
-def test_small_sign_has_space_only_for_a_visible_offset(value, metric, show, offset, historical_outline):
+def test_small_sign_keeps_its_footprint_for_every_offset(value, metric, show, offset, historical_outline):
   factor = 3.6 if metric else 2.2369362921
   current = state(metric=metric, show_slc_offset=show)
   current = replace(current, appearance=replace(current.appearance, show_speed_limit_sign=True, use_vienna_sign=False),
@@ -69,14 +62,11 @@ def test_small_sign_has_space_only_for_a_visible_offset(value, metric, show, off
   widget.render(current)
   bounds = speed_limit_bounds(Profile.COMPACT, current)
   assert bounds is not None
-  extended = bool(shown.offset_text)
-  widget.shapes.outline.assert_not_called()
-  rect = historical_outline.call_args.args[0]
-  assert (rect.width, rect.height) == (100, 160 if extended else 116)
-  assert bounds[3] - bounds[1] == (196 if extended else 152)
-  number = next(call.args for call in widget.fonts.draw.call_args_list if call.args[0] == str(value))
-  assert number[4] == bounds[1] + 12 + 66
-  assert number[2] == (50 if value < 100 else 42)
+  historical_outline.assert_not_called()
+  widget.shapes.outline.assert_called_once()
+  assert bounds[3] - bounds[1] == 152
+  texts = [call.args[0] for call in widget.fonts.draw.call_args_list]
+  assert texts == ['VISION', str(value)] + ([shown.offset_text] if shown.offset_text else [])
 
 
 def test_small_offset_layout_transitions_reuse_the_same_widget(historical_outline):
@@ -85,7 +75,8 @@ def test_small_offset_layout_transitions_reuse_the_same_widget(historical_outlin
   for enabled in (False, True, False):
     current = state(show_slc_offset=enabled)
     widget.render(current)
-    assert historical_outline.call_args.args[0].height == (160 if enabled else 116)
+    historical_outline.assert_not_called()
+    assert speed_limit_bounds(Profile.COMPACT, current)[3] - speed_limit_bounds(Profile.COMPACT, current)[1] == 152
 
 
 @pytest.mark.parametrize('y', [20, 50, 108])
@@ -105,5 +96,5 @@ def test_small_rectangular_no_offset_regression(historical_outline):
   widget.render(current)
   bounds = speed_limit_bounds(Profile.COMPACT, current)
   assert bounds is not None and bounds[3] - bounds[1] == 152
-  rect = historical_outline.call_args.args[0]
-  assert (rect.width, rect.height) == (100, 116)
+  historical_outline.assert_not_called()
+  widget.shapes.outline.assert_called_once()

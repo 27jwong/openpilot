@@ -81,10 +81,19 @@ def test_large_sign_scale_changes_destination_and_rotation_origin_only(gpu):
   owner = shapes.SpeedLimitShapes(1.25)
   owner.arrow('compact', 345.75, 111.25, -1, shapes.rl.BLACK)
   _, source, destination, origin, rotation, _ = gpu['draw_texture_pro'].call_args.args
-  assert (source.width, source.height) == (16, 24)
+  assert (source.width, source.height) == (32, 48)
   assert (destination.x, destination.y, destination.width, destination.height) == (345.75, 111.25, 20, 30)
   assert (origin.x, origin.y, rotation) == (10, 15, 180)
   owner.close()
+
+
+def test_small_arrow_has_larger_ink_at_double_density():
+  x, y, width, height = shapes.SPRITES['arrow_compact']
+  with Image.open(shapes.ATLAS_PATH) as atlas:
+    bounds = atlas.crop((x, y, x+width, y+height)).getchannel('A').point(lambda alpha: 255 if alpha > 40 else 0).getbbox()
+  density = shapes.SPRITE_DENSITIES['arrow_compact']
+  assert density == 2
+  assert ((bounds[2]-bounds[0])/density, (bounds[3]-bounds[1])/density) == (12, 16)
 
 
 def test_texture_setup_failure_releases_both_resources(gpu):
