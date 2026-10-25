@@ -232,7 +232,7 @@ def read_wav(path: Path) -> np.ndarray:
 def tici_speaker_samples(samples: np.ndarray) -> np.ndarray:
   """Reduce bass excursion in built-in tones, once at load time."""
   taps = np.arange(513, dtype=np.float64) - 256
-  lowpass = np.sinc(2 * 650 / 48000 * taps) * np.hamming(len(taps))
+  lowpass = np.sinc(2 * 650 / 48000 * taps) * np.hamming(len(taps))  # codespell:ignore sinc
   lowpass /= lowpass.sum()
   bass = np.convolve(samples, lowpass, mode="full")[256:256 + len(samples)]
   result = samples.astype(np.float64) - 0.75 * bass
