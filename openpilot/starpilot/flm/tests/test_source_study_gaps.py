@@ -22,7 +22,8 @@ def active_study():
 
 class SourceStudyGaps(unittest.TestCase):
   def test_each_transient_keeps_completed_scores_and_original_deadline_only(self):
-    for reason in ('current_evidence_delayed', 'learning_evidence_delayed', 'fresh_physical_residual_window_required'):
+    for reason in ('current_evidence_delayed', 'learning_evidence_delayed', 'fresh_physical_residual_window_required',
+                   'consumed_source_mismatch'):
       with self.subTest(reason=reason):
         o, now = active_study()
         before = tuple(o.before)
@@ -38,6 +39,42 @@ class SourceStudyGaps(unittest.TestCase):
         assert o.offer_state['deadline_ns'] == original['deadline_ns']
         assert tuple(o.before) == before and tuple(o.future) == future and o.settled_ns is None
         assert not any(o.accepted.values())
+
+  def test_normalized_join_clock_gap_keeps_inert_study_but_wrong_domain_does_not(self):
+    from openpilot.starpilot.flm.fullrate_collector import FullrateCollector
+    from openpilot.starpilot.flm.tests.test_fullrate_pipeline import BASE, SyntheticAdapter, snapshots
+    from types import SimpleNamespace
+
+    for wrong_domain in (False, True):
+      with self.subTest(wrong_domain=wrong_domain):
+        o, now = active_study()
+        original = o.offer_state.copy()
+        scores = tuple(o.before), tuple(o.future)
+        c = FullrateCollector(SyntheticAdapter())
+        c.adapter.command_domain = 'normalized_torque'
+        c.live_tracking = SimpleNamespace(interrupt=o.interrupt)
+        control, output, _pose = snapshots(BASE)
+        control = replace(control, domain='normalized_torque')
+        output = replace(output, domain='wrong' if wrong_domain else 'normalized_torque',
+                         state_ns=control.state_ns, apply_ns=control.control_ns+30_000_001)
+        c._join_emission(control, output)
+        assert c.reason == 'consumed_source_mismatch' and not c.ready
+        assert o.offer_state['phase'] == 'rollback' and o.settled_ns is None
+        assert not o.before and not o.future and not any(o.accepted.values())
+        if wrong_domain:
+          assert o.paused_intent is None
+        else:
+          assert o.paused_intent[1:] == scores
+        refresh(o, now+200_000_000)
+        rollback = o.offer(now+200_000_000)
+        assert source_ack(o, rollback, now+210_000_000)
+        if wrong_domain:
+          assert o.offer_state['phase'] == 'rollback' and o.offer_state['accepted']
+        else:
+          assert o.offer_state['phase'] == 'trial' and o.offer_state['trial_id'] != original['trial_id']
+          for field in ('started_ns', 'deadline_ns', 'alpha', 'required_episodes', 'target', 'baseline'):
+            assert o.offer_state[field] == original[field]
+          assert (tuple(o.before), tuple(o.future)) == scores and o.settled_ns is None
 
   def test_context_change_drops_study_instead_of_resuming(self):
     o, now = active_study()

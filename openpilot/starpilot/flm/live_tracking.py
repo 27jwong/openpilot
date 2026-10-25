@@ -493,9 +493,11 @@ class LiveTrackingOptimizer:
     # Retain only inert numerical study intent on missing/stale evidence. The
     # command still rolls back; a fresh baseline ACK must precede a NEW wire
     # trial. Completed scores, alpha and original deadline are never reset.
+    # Normalized source timing gaps reject the pair without changing identity.
+    # Wrong domains still arrive with context_changed=True and discard intent.
     transient = not context_changed and reason in (
       'acknowledged_trial_profile_withdrawn', 'expired_response_witness', 'stale_control', 'stale_applied_output',
-      'current_evidence_delayed', 'learning_evidence_delayed',
+      'current_evidence_delayed', 'learning_evidence_delayed', 'consumed_source_mismatch',
       'fresh_physical_residual_window_required',
     )
     if not transient:
