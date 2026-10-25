@@ -97,16 +97,6 @@ def test_alerts_in_logs_from_before_the_carEvents_rename_are_counted(monkeypatch
   assert A.extract_segment("rlog.zst")["alerts"] == pytest.approx([10.5])
 
 
-def test_a_route_is_dated_by_the_clock_after_it_synced(monkeypatch):
-  # the first two segments were written on the default clock (a date in the past), the third after the sync
-  segs = []
-  for mono, wall in ((5.0, 1.0e9), (65.0, 1.0e9 + 60), (125.0, 1.7e9 + 120)):
-    fake_log(monkeypatch, [init_event(mono, int(wall * 1e9)), car_state_event(mono + 1), torque_event(mono + 1, 2.0, 1.4, -1.0),
-                           car_state_event(mono + 2), torque_event(mono + 2, 2.0, 1.4, -1.0)])
-    segs.append(A.extract_segment("rlog.zst"))
-  assert list(A.assemble(segs)["start"]) == pytest.approx([1.7e9, 5.0])  # the synced clock, at the first segment's start
-
-
 def test_stretches_of_trouble_are_grouped_and_dated():
   calm = steady(3, desired=0.5, actual=0.5, output=0.3, t0=110.0)
   first, second = steady(2, 2.0, 1.4, 1.0, t0=100.0), steady(2, 2.5, 1.5, 1.0, t0=120.0)

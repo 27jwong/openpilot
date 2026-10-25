@@ -97,15 +97,8 @@ def assemble(segments: list[dict[str, np.ndarray]]) -> dict[str, np.ndarray] | N
   d["v_ego"] = np.interp(d["t"], cs_t, cat["v_ego"][c_order])
   d["pressed"] = cat["pressed"][c_order][np.clip(np.searchsorted(cs_t, d["t"], side="right") - 1, 0, len(cs_t) - 1)]
   d["alerts"] = np.sort(cat["alerts"])
-  # each segment's initData pairs the wall clock with the monotonic one. The first segments are often written before
-  # the device syncs its clock, which until then sits in the past (a default date), so the largest wall - mono offset
-  # is the synced one; applied to the earliest segment it dates the route's start.
   starts = [s["start"] for s in segments if "start" in s and s["start"][0] > 0]
-  if starts:
-    offset, mono0 = max(w - m for w, m in starts), min(m for _, m in starts)
-    d["start"] = np.array([mono0 + offset, mono0])
-  else:
-    d["start"] = np.zeros(2)
+  d["start"] = starts[0] if starts else np.zeros(2)
   return d
 
 
