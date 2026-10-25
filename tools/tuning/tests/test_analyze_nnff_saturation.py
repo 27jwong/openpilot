@@ -119,3 +119,38 @@ def test_logs_from_another_schema_raise_instead_of_looking_truncated(monkeypatch
 def test_route_counters_order_drives_and_tolerate_old_names():
   assert A.route_counter("000002d1--068db1d740") > A.route_counter("000002a0--abcdef0123")
   assert A.route_counter("2024-03-02--19-02-46") == -1
+
+
+def write_turn_rlog(path):
+  """Two seconds of an NNFF turn the car can't keep up with, as one rlog segment."""
+  from cereal import log
+  import zstandard
+  msgs = []
+  for k in range(200):
+    t = int((100 + k * 0.01) * 1e9)
+    cs = log.Event.new_message(logMonoTime=t, valid=True)
+    cs.init("carState").vEgo = 15.0
+    ctl = log.Event.new_message(logMonoTime=t, valid=True)
+    s = ctl.init("controlsState").init("lateralControlState").init("torqueState")
+    s.active, s.desiredLateralAccel, s.actualLateralAccel, s.output = True, 2.0, 1.4, -1.0
+    msgs += [cs.to_bytes(), ctl.to_bytes()]
+  path.parent.mkdir(parents=True)
+  path.write_bytes(zstandard.ZstdCompressor().compress(b"".join(msgs)))
+
+
+def test_logs_are_read_with_a_resolved_copy_of_cereal_when_git_left_symlink_stubs(tmp_path):
+  # capnp aborts the worker on a stub rather than raising (BrokenProcessPool), so the workers must be handed the copy
+  import os
+  import subprocess
+  import sys
+  from openpilot.tools.tuning.tests.test_plot_lateral_delay import TOOLS, stubbed_cereal
+  cereal = stubbed_cereal(tmp_path)
+  write_turn_rlog(tmp_path / "logs" / "000002d1--068db1d740--0" / "rlog.zst")
+  home = {"HOME": str(tmp_path / "home"), "USERPROFILE": str(tmp_path / "home")}  # where the resolved copy is cached
+
+  run = subprocess.run([sys.executable, str(TOOLS / "analyze_nnff_saturation.py"), str(tmp_path / "logs"), "--cereal", str(cereal),
+                        "--workers", "1"], capture_output=True, text=True, timeout=300, env={**os.environ, **home})
+
+  assert run.returncode == 0, run.stdout + run.stderr
+  assert "000002d1--068db1d740" in run.stdout and "NNFF" in run.stdout
+  assert (cereal / "car.capnp").read_text() == "../opendbc_repo/car.capnp"  # the checkout is left alone

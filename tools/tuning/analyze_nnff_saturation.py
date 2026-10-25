@@ -237,8 +237,8 @@ def main(argv=None):
   parser.add_argument("--workers", type=int, default=4)
   args = parser.parse_args(argv)
 
-  T.check_schema(args.cereal)
-  routes = load(args.log_dirs, int(args.from_route, 16) if args.from_route else None, args.cereal, args.workers)
+  cereal_dir = T.check_schema(args.cereal)  # a copy with symlink stubs resolved, if git left any
+  routes = load(args.log_dirs, int(args.from_route, 16) if args.from_route else None, cereal_dir, args.workers)
   results = {r: analyze(d, tuple(args.siglin)) for r, d in sorted(routes.items())}
   results = {r: a for r, a in results.items() if a["engaged"] > 0}
   if args.since:
