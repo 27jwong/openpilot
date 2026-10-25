@@ -1041,6 +1041,14 @@ class LiveTrackingOptimizer:
               for old_name, old_direction, old_profile, demand, old_end in self.closed_loop_worse
             )
 
+          # Without a fitted plant, the secant sign is only an experiment
+          # preference. At a hard bound it must not veto the feasible direction.
+          # Actual worse/inconclusive directions below remain disqualified;
+          # independent baseline, later feedback and slew are unchanged.
+          low, high = coordinate_bounds(name)
+          if self.rmse is None and min(high, max(low, self.accepted[name] + sign * min(MAX_STEP, 0.1 * confidence))) == self.accepted[name]:
+            sign = -sign
+
           if observed_worse(sign):
             if observed_worse(-sign):
               continue  # Both directions failed; do not oscillate guesses.

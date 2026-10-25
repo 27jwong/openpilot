@@ -387,3 +387,60 @@ def test_small_step_can_improve_mean_and_median_with_normal_baseline_variation()
   assert _feedback_result([1.0] * 9, [0.1] + [1.01] * 8) == 0
   # Repeated new errors outside the original envelope are not kept.
   assert _feedback_result([1.0] * 9, [0.9] * 7 + [1.1] * 2) == 0
+
+
+@pytest.mark.parametrize('upper', [False, True])
+def test_source_boundary_tries_feasible_direction_without_claiming_plant_sign(upper):
+  from openpilot.starpilot.flm.canonical_surface_adapter import coordinate_bounds
+
+  o = owner()
+  name = 'center_deadband_highway_deg'
+  low, high = coordinate_bounds(name)
+  o.accepted[name] = high if upper else low
+  discovery_ids = set()
+  for i in range(5):
+    e = episode(o, i, name, kind='large', error=0.079)
+    # Magnitudes retained from c0's original native probe: one of four
+    # endpoints separates. This fixture tests selection, not native admission.
+    f = replace(e.sensitivity[0], error_feature_sum=0.015966462570723775 if upper else -0.015966462570723775,
+                feature_energy=0.2391186088079348, native_separated=1, native_endpoints=4, max_step_physical_rms=0.0012224938875305645)
+    e = replace(e, goal_rms=0.77, normalization_accel=0.77, sensitivity=(f,))
+    refresh(o, e.end_ns)
+    o.observe_episode(e, now_ns=e.end_ns)
+    if i == 1:
+      assert o.discovery is not None and o.offer_state is None
+      discovery_ids.update(o.selector_hint['source_episode_ids'])
+  selected = o.offer(e.end_ns)
+  assert selected is not None and selected.names == (name,)
+  assert dict(selected.target)[name] == pytest.approx(o.accepted[name] + (-0.005 if upper else 0.005))
+  assert len(o.before) == 3 and discovery_ids.isdisjoint(row.episode_id for row in o.before)
+  assert not o.offer_state['accepted'] and o.offer_state['alpha'] == 0.0
+
+
+@pytest.mark.parametrize('outcome', ['worse', 'inconclusive'])
+def test_source_boundary_fallback_does_not_repeat_rejected_feasible_direction(outcome):
+  from openpilot.starpilot.flm.live_tracking import _demand
+
+  o = owner()
+  name = 'center_deadband_highway_deg'
+  for i in range(4):
+    e = replace(episode(o, i, name, kind='large'), normalization_accel=0.5)
+    e = replace(e, sensitivity=tuple(replace(f, error_feature_sum=-f.error_feature_sum) for f in e.sensitivity))
+    if i == 0:
+      history = o.closed_loop_worse if outcome == 'worse' else o.inconclusive_trials
+      history.append((name, 1, e.profile_sha256, _demand(e), e.start_ns))
+    refresh(o, e.end_ns)
+    o.observe_episode(e, now_ns=e.end_ns)
+  assert o.discovery is None and o.offer_state is None
+
+
+def test_fitted_plant_does_not_reverse_identified_direction_at_boundary():
+  from openpilot.starpilot.flm.tests.test_live_tracking import optimizer, refresh as fitted_refresh
+
+  o = optimizer()
+  for i in range(20):
+    e = episode(o, i, 'center_deadband_highway_deg', kind='subtle')
+    e = replace(e, sensitivity=tuple(replace(f, error_feature_sum=-f.error_feature_sum) for f in e.sensitivity))
+    fitted_refresh(o, e.end_ns)
+    o.observe_episode(e, now_ns=e.end_ns)
+  assert o.discovery is None and o.offer_state is None
