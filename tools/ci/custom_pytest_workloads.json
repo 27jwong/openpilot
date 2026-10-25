@@ -1395,10 +1395,10 @@
       "seconds": 0.058055562000333794
     },
     "openpilot/starpilot/tests/test_ford_configuration_parity.py": {
-      "basis": "Separate complete AOL reference from same6eb source; not custom wall-time measurement",
-      "blob": "9d0a84a2918787cc7b4d4764f1d863b01e145223",
-      "cases": 112,
-      "seconds": 217.39153231700044
+      "blob": "2b4fae2a48a5194cd0673b3123e72444e040e7e8",
+      "cases": 120,
+      "seconds": 293.05875724965705,
+      "basis": "Hosted run40231700807 head3b3960: 87/120 cases completed with 212.467599006 setup/call/teardown seconds. Full-module scheduling estimate extrapolated from completed cases; not a completed module result."
     },
     "openpilot/starpilot/ui/tests/test_meb_preferences.py": {
       "basis": "Separate complete AOL reference from same6eb source; not custom wall-time measurement",
@@ -1413,10 +1413,10 @@
       "basis": "Actual complete-module setup/call/teardown receipts, hosted tests40108387164 custom14; same source blob. Scheduling estimate only; all original cases and timeout retained."
     },
     "openpilot/starpilot/tests/test_ford_bluepilot_aol.py": {
-      "cases": 64,
-      "seconds": 147.861995,
-      "blob": "cf201fab94f604dc6b9e9ea8789309c18074375d",
-      "basis": "Actual complete-module setup/call/teardown: DEBUG 96.479484s, RELEASE 98.574663s; conservative 1.5x host allowance. Scheduling estimate only; all cases and timeout retained."
+      "blob": "e523c95becf4219ff0b4ff54dd56c21ebdcc9c4f",
+      "cases": 71,
+      "seconds": 135.1532473259997,
+      "basis": "Hosted run40231700807 head3b3960: 71/71 cases completed with 135.153247326 setup/call/teardown seconds."
     },
     "openpilot/starpilot/car/toyota/tests/test_sdsu_priority_callers.py": {
       "cases": 204,
@@ -1435,6 +1435,138 @@
       "blob": "27dfb68afa17141aed168b8de15df856f53561f5",
       "cases": 92,
       "seconds": 375.7931238387515
+    },
+    "openpilot/starpilot/car/tesla/tests/test_pedal_callers.py": {
+      "blob": "2f1bf19c1b5115d359a9f8b1562d078cf09e5795",
+      "cases": 72,
+      "seconds": 171.39420926799892,
+      "basis": "Hosted run40231700807 head3b3960: 72/72 cases completed with 171.394209268 setup/call/teardown seconds."
+    },
+    "openpilot/starpilot/car/tesla/tests/test_screen_recovery_callers.py": {
+      "blob": "6a023175acd00b7b666e58cf31d39bc6c4e18ea5",
+      "cases": 64,
+      "seconds": 52.6830948330001,
+      "basis": "Hosted run40231700807 head3b3960: 64/64 cases completed with 52.683094833 setup/call/teardown seconds."
+    },
+    "openpilot/starpilot/car/toyota/tests/test_angle_aol_callers.py": {
+      "blob": "58470683aac712dbb176a397e43854216e7c0792",
+      "cases": 24,
+      "seconds": 65.21012947299982,
+      "basis": "Hosted run40231700807 head3b3960: 24/24 cases completed with 65.210129473 setup/call/teardown seconds."
+    },
+    "openpilot/starpilot/car/toyota/tests/test_avalon_sdsu_callers.py": {
+      "blob": "1b7b28d7a5c9e967116093ae240f8bd2385c58e0",
+      "cases": 24,
+      "seconds": 91.69508481000025,
+      "basis": "Hosted run40231700807 head3b3960: 24/24 cases completed with 91.695084810 setup/call/teardown seconds."
+    },
+    "openpilot/starpilot/car/toyota/tests/test_camry_chr_filter_callers.py": {
+      "blob": "b86de9cf8f380df5c796e97a04bbb789b04310cd",
+      "cases": 36,
+      "seconds": 149.7919823829991,
+      "basis": "Hosted run40231700807 head3b3960: 36/36 cases completed with 149.791982383 setup/call/teardown seconds."
+    },
+    "openpilot/starpilot/car/toyota/tests/test_camry_cluster_callers.py": {
+      "blob": "118e02f052e87b32714d818882f914320cb223ce",
+      "cases": 12,
+      "seconds": 38.03821452899979,
+      "basis": "Hosted run40231700807 head3b3960: 12/12 cases completed with 38.038214529 setup/call/teardown seconds."
+    },
+    "openpilot/starpilot/car/toyota/tests/test_dsu_bypass_callers.py": {
+      "blob": "f949c3e298e9c6ed54a2a6877c12b0813c412fca",
+      "cases": 132,
+      "seconds": 299.87973742199904,
+      "basis": "Hosted run40231700807 head3b3960: 132/132 cases completed with 299.879737422 setup/call/teardown seconds."
+    },
+    "openpilot/starpilot/car/toyota/tests/test_matrix_filter_callers.py": {
+      "blob": "1faeb736ec0982c647a32df7cda2ccec4c28a51b",
+      "cases": 16,
+      "seconds": 45.44976264900038,
+      "basis": "Hosted run40231700807 head3b3960: 16/16 cases completed with 45.449762649 setup/call/teardown seconds."
+    },
+    "openpilot/starpilot/car/toyota/tests/test_matrix_stock_caller_native.py": {
+      "blob": "79bc467dda7c717ac268f2a86100d13c9f28223f",
+      "cases": 24,
+      "seconds": 74.6212154150005,
+      "basis": "Hosted run40231700807 head3b3960: 24/24 cases completed with 74.621215415 setup/call/teardown seconds."
+    },
+    "openpilot/starpilot/car/toyota/tests/test_pedal_caller_native.py": {
+      "blob": "e4e969a30a572846c3da3bbe5ec07eda07d4861d",
+      "cases": 40,
+      "seconds": 81.98515290600028,
+      "basis": "Hosted run40231700807 head3b3960: 40/40 cases completed with 81.985152906 setup/call/teardown seconds."
+    },
+    "openpilot/starpilot/car/toyota/tests/test_pedal_main_freshness.py": {
+      "blob": "0bf03ccf9b534ff4394413fc02008253d75ad9df",
+      "cases": 24,
+      "seconds": 142.0249736970012,
+      "basis": "Hosted run40231700807 head3b3960: 24/24 cases completed with 142.024973697 setup/call/teardown seconds."
+    },
+    "openpilot/starpilot/car/toyota/tests/test_prius_retrofit_advert_refusals.py": {
+      "blob": "e508064549b71d055e4e15d39fbc6eba44f5fd50",
+      "cases": 12,
+      "seconds": 35.2531285240002,
+      "basis": "Hosted run40231700807 head3b3960: 12/12 cases completed with 35.253128524 setup/call/teardown seconds."
+    },
+    "openpilot/starpilot/car/toyota/tests/test_radar_lta_pedal_callers.py": {
+      "blob": "17c101c3319020d02f0e12f4f73187aaa62cf736",
+      "cases": 12,
+      "seconds": 54.74621950700032,
+      "basis": "Hosted run40231700807 head3b3960: 12/12 cases completed with 54.746219507 setup/call/teardown seconds."
+    },
+    "openpilot/starpilot/car/toyota/tests/test_rav4_2022_filter_callers.py": {
+      "blob": "179608a4cae520bd08b959b8951f6b8e5ee03973",
+      "cases": 20,
+      "seconds": 58.43288677900034,
+      "basis": "Hosted run40231700807 head3b3960: 20/20 cases completed with 58.432886779 setup/call/teardown seconds."
+    },
+    "openpilot/starpilot/car/toyota/tests/test_rav4_2025_filter_callers.py": {
+      "blob": "15c4502a67ddccffba449a2085101b8b03a7eae7",
+      "cases": 20,
+      "seconds": 86.43521993199988,
+      "basis": "Hosted run40231700807 head3b3960: 20/20 cases completed with 86.435219932 setup/call/teardown seconds."
+    },
+    "openpilot/starpilot/car/toyota/tests/test_rav4_angle_filter_callers.py": {
+      "blob": "f8cba1a5eb95b61cdbdd38b3b807a84199fb4348",
+      "cases": 10,
+      "seconds": 39.58101156000009,
+      "basis": "Hosted run40231700807 head3b3960: 10/10 cases completed with 39.581011560 setup/call/teardown seconds."
+    },
+    "openpilot/starpilot/car/toyota/tests/test_rav4h_caller_native.py": {
+      "blob": "fe5722f7fb89d9dd7398b1701153eee2b5d5c701",
+      "cases": 24,
+      "seconds": 105.96243552500061,
+      "basis": "Hosted run40231700807 head3b3960: 24/24 cases completed with 105.962435525 setup/call/teardown seconds."
+    },
+    "openpilot/starpilot/car/toyota/tests/test_rav4h_pedal_composite_callers.py": {
+      "blob": "b6dd1261072cc181d1d790818139ca8279b5eaea",
+      "cases": 16,
+      "seconds": 71.46049905199925,
+      "basis": "Hosted run40231700807 head3b3960: 16/16 cases completed with 71.460499052 setup/call/teardown seconds."
+    },
+    "openpilot/starpilot/car/toyota/tests/test_sdsu_forwarded_copy_callers.py": {
+      "blob": "fefe98af3481903981f1e379bafd08009a24317d",
+      "cases": 248,
+      "seconds": 338.4465923260025,
+      "basis": "Hosted run40231700807 head3b3960: 248/248 cases completed with 338.446592326 setup/call/teardown seconds."
+    },
+    "openpilot/starpilot/flm/tests/test_physical_input_observation.py": {
+      "blob": "558e57fc4671a6e9bbf307ee66ff8da22cf1522b",
+      "cases": 56,
+      "seconds": 105.68353893799974,
+      "basis": "Hosted run40231700807 head3b3960: 56/56 cases completed with 105.683538938 setup/call/teardown seconds."
+    },
+    "openpilot/starpilot/flm/tests/test_registered_accepted_profile.py": {
+      "blob": "d9e2a8eec3671a5a4dbf8879eb12878e95da360a",
+      "cases": 9,
+      "seconds": 84.99715439200008,
+      "basis": "Hosted run40231700807 head3b3960: 9/9 cases completed with 84.997154392 setup/call/teardown seconds."
+    },
+    "openpilot/starpilot/flm/tests/test_registered_controls_global.py": {
+      "blob": "16537495e5cc478b6c94830539ce4187f6b242ed",
+      "cases": 4,
+      "seconds": 50.536827762999906,
+      "basis": "Hosted run40231700807 head3b3960: 4/4 cases completed with 50.536827763 setup/call/teardown seconds."
     }
   },
   "reference_sha": "6eb9df96425a661afcbf1edfa27894d6e49b3706",
