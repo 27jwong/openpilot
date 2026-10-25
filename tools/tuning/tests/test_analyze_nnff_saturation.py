@@ -67,8 +67,8 @@ def test_the_logged_version_says_which_controller_steered():
   assert A.analyze(steady(5, 1.2, 1.2, 0.5, version=2), SIGLIN)["controller"] == "torque"
 
 
-def init_event(t, wall_ns):
-  return SimpleNamespace(which=lambda: "initData", logMonoTime=int(t * 1e9), initData=SimpleNamespace(wallTimeNanos=wall_ns))
+def init_event(t, wall_ns, branch=""):
+  return SimpleNamespace(which=lambda: "initData", logMonoTime=int(t * 1e9), initData=SimpleNamespace(wallTimeNanos=wall_ns, gitBranch=branch))
 
 
 def goat_event(t):
@@ -86,6 +86,31 @@ def test_extract_reads_the_state_the_logged_alerts_and_when_the_route_started(mo
   d = A.assemble([seg])
   assert d["v_ego"] == pytest.approx([15.0, 15.0])
   assert list(d["start"]) == [1.7e9, 5.0]
+
+
+def test_the_branch_that_drove_is_read_from_init_data(monkeypatch):
+  fake_log(monkeypatch, [init_event(5.0, 1_700_000_000_000_000_000, "mazda-starpilot"), car_state_event(10.0), torque_event(10.0, 2.0, 1.4, -1.0),
+                         car_state_event(11.0), torque_event(11.0, 2.0, 1.5, -1.0)])
+  seg = A.extract_segment("rlog.zst")
+  assert seg["branch"] == "mazda-starpilot"
+  assert A.assemble([seg])["branch"] == "mazda-starpilot"
+
+
+def test_turns_the_driver_held_are_counted_apart_and_alerts_are_put_in_their_bin():
+  d = steady(10, desired=2.2, actual=1.7, output=1.0, alert_at=102.0)
+  d["pressed"][len(d["t"]) // 2:] = 1.0  # the driver took the second half of the turn
+  b = next(b for b in A.analyze(d, SIGLIN)["bins"] if b["lo"] == 2.0)
+  assert b["seconds"] == pytest.approx(5.0, abs=0.05)  # the untouched half only
+  assert b["pressed_seconds"] / b["held_seconds"] == pytest.approx(0.5, abs=0.01)
+  assert b["rms"] == pytest.approx(0.5)
+  assert b["alerts"] == 1
+
+
+def test_routes_are_grouped_by_controller_and_branch():
+  results = {r: dict(controller=c, branch=br) for r, c, br in (("a", "NNFF", "old"), ("b", "NNFF", "new"), ("c", "torque", "new"), ("d", "NNFF", "new"))}
+  g = A.groups(results)
+  assert list(g) == [("torque", "new"), ("NNFF", "new"), ("NNFF", "old")]
+  assert len(g[("NNFF", "new")]) == 2
 
 
 def old_alert_event(t):
@@ -134,7 +159,9 @@ def write_turn_rlog(path):
   """Two seconds of an NNFF turn the car can't keep up with, alerting the old way, as one rlog segment."""
   from cereal import log
   import zstandard
-  msgs = []
+  init = log.Event.new_message(logMonoTime=int(99e9), valid=True)
+  init.init("initData").gitBranch = "mazda-starpilot"
+  msgs = [init.to_bytes()]
   for k in range(200):
     t = int((100 + k * 0.01) * 1e9)
     cs = log.Event.new_message(logMonoTime=t, valid=True)
@@ -166,4 +193,5 @@ def test_logs_are_read_with_a_resolved_copy_of_cereal_when_git_left_symlink_stub
   assert run.returncode == 0, run.stdout + run.stderr
   assert "000002d1--068db1d740" in run.stdout and "NNFF" in run.stdout
   assert "1 logged alerts" in run.stdout
+  assert "NNFF controller on mazda-starpilot" in run.stdout
   assert (cereal / "car.capnp").read_text() == "../opendbc_repo/car.capnp"  # the checkout is left alone

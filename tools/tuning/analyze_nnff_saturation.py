@@ -52,12 +52,15 @@ def extract_segment(path: Path, cereal_dir: Path | None = None) -> dict[str, np.
   cols = defaultdict(list)
   alerts = []
   start = None
+  branch = ""
   try:
     for evt in log.Event.read_multiple_bytes(T.read_log_bytes(path)):
       which = evt.which()
       t = evt.logMonoTime * 1e-9
-      if which == "initData" and start is None and evt.initData.wallTimeNanos:
-        start = (evt.initData.wallTimeNanos * 1e-9, t)  # wall clock at this monotonic time: the route's start
+      if which == "initData":
+        branch = branch or str(evt.initData.gitBranch)  # which build drove, from git rather than the device's clock
+        if start is None and evt.initData.wallTimeNanos:
+          start = (evt.initData.wallTimeNanos * 1e-9, t)  # wall clock at this monotonic time: the route's start
       if which == "controlsState":
         lcs = evt.controlsState.lateralControlState
         if lcs.which() != "torqueState":
@@ -83,6 +86,7 @@ def extract_segment(path: Path, cereal_dir: Path | None = None) -> dict[str, np.
   out = {k: np.asarray(v, dtype=np.float64) for k, v in cols.items()}
   out["alerts"] = np.asarray(alerts, dtype=np.float64)
   out["start"] = np.asarray(start if start else (0.0, 0.0), dtype=np.float64)
+  out["branch"] = branch
   return out
 
 
@@ -99,6 +103,7 @@ def assemble(segments: list[dict[str, np.ndarray]]) -> dict[str, np.ndarray] | N
   d["alerts"] = np.sort(cat["alerts"])
   starts = [s["start"] for s in segments if "start" in s and s["start"][0] > 0]
   d["start"] = starts[0] if starts else np.zeros(2)
+  d["branch"] = next((s["branch"] for s in segments if s.get("branch")), "?")
   return d
 
 
@@ -107,24 +112,29 @@ def analyze(d: dict[str, np.ndarray], siglin_params: tuple[float, ...]) -> dict:
   applied to them; 'bins' pool the turning rows by how much lateral acceleration was wanted. Torques are
   magnitudes (the logged output has the car's sign, opposite to the lateral acceleration's)."""
   dt = float(np.median(np.diff(d["t"]))) if len(d["t"]) > 2 else T.DT
-  ok = (d["active"] > 0.5) & (d["pressed"] < 0.5) & (d["v_ego"] > 1.0)
+  engaged = (d["active"] > 0.5) & (d["v_ego"] > 1.0)
+  ok = engaged & (d["pressed"] < 0.5)
   des, act, out = d["desired"], d["actual"], np.abs(d["output"])
   under = np.abs(des) / (np.abs(act) + 1e-3) > UNDERSHOOT_RATIO
   turning = np.abs(des) > TURNING_LAT_ACCEL
   at_max = (out > AT_MAX_TORQUE) | (d["saturated"] > 0.5)
   sign = np.sign(des)
   siglin_torque = np.abs(T.siglin(des, *siglin_params))  # what the old curve asks for at this lateral acceleration
+  alert_rows = [int(np.argmin(np.abs(d["t"] - ta))) for ta in d["alerts"]]
   bins = []
   for lo, hi in BINS:
-    m = ok & turning & (np.abs(des) >= lo) & (np.abs(des) < hi)
+    in_bin = turning & (np.abs(des) >= lo) & (np.abs(des) < hi)
+    m = ok & in_bin
     n = int(m.sum())
     mean = lambda x: float(x[m].mean()) if n else np.nan  # noqa: E731
+    held = engaged & in_bin  # the same turns including the driver's: how much of them the driver took a hand in
     bins.append(dict(lo=lo, hi=hi, seconds=n * dt, undershoot=mean(under), at_max=mean(at_max), output=mean(out), siglin=mean(siglin_torque),
-                     track=mean(sign * act / np.where(np.abs(des) > 0, np.abs(des), 1.0))))
+                     track=mean(sign * act / np.where(np.abs(des) > 0, np.abs(des), 1.0)), rms=float(np.sqrt(np.mean((des - act)[m] ** 2))) if n else np.nan,
+                     held_seconds=float(held.sum() * dt), pressed_seconds=float((held & (d["pressed"] > 0.5)).sum() * dt),
+                     alerts=sum(1 for k in alert_rows if in_bin[k])))
   hard = ok & turning & (np.abs(des) >= 1.5)
   alerts = []
-  for ta in d["alerts"]:
-    k = int(np.argmin(np.abs(d["t"] - ta)))
+  for k in alert_rows:
     alerts.append(dict(v_ego=float(d["v_ego"][k]), desired=float(des[k]), actual=float(act[k]), output=float(out[k]), siglin=float(siglin_torque[k]),
                        f=float(sign[k] * d["f"][k]), p=float(sign[k] * d["p"][k]), i=float(sign[k] * d["i"][k])))
   versions = d["version"][ok]
@@ -137,7 +147,7 @@ def analyze(d: dict[str, np.ndarray], siglin_params: tuple[float, ...]) -> dict:
       k = run[int(np.argmax((np.abs(des) - np.abs(act))[run]))]
       episodes.append(dict(wall=float(wall0 + d["t"][k] - mono0) if wall0 else np.nan, seconds=len(run) * dt, v_ego=float(d["v_ego"][k]),
                            desired=float(des[k]), actual=float(act[k]), output=float(out[k]), deficit=float(abs(des[k]) - abs(act[k]))))
-  return dict(controller=controller, wall=float(wall0), episodes=episodes, engaged=float(ok.sum() * dt), would_alert=float((ok & under & turning & at_max).sum() * dt), alerts=alerts,
+  return dict(controller=controller, branch=d.get("branch", "?"), wall=float(wall0), episodes=episodes, engaged=float(ok.sum() * dt), would_alert=float((ok & under & turning & at_max).sum() * dt), alerts=alerts,
               bins=bins, out_gap=float(np.mean((out - siglin_torque)[hard])) if hard.any() else np.nan)
 
 
@@ -178,35 +188,54 @@ def when(wall: float, fmt: str = "%Y-%m-%d %H:%M") -> str:
   return datetime.datetime.fromtimestamp(wall).strftime(fmt) if wall and np.isfinite(wall) else "?"
 
 
+def groups(results: dict[str, dict]) -> dict[tuple[str, str], list[dict]]:
+  """Routes by (controller, the build's git branch), so one era of a controller isn't pooled with another."""
+  out = defaultdict(list)
+  for a in results.values():
+    out[(a["controller"], a["branch"])].append(a)
+  return dict(sorted(out.items(), key=lambda kv: (kv[0][0] != "torque", kv[0][1])))
+
+
 def report(results: dict[str, dict]) -> None:
-  print(f"\n{'route':24s} {'started':16s} {'steered by':>10s} {'min':>6s} {'alerts':>7s} {'would-alert s':>14s} {'torque - siglin at 1.5+':>24s}")
+  print(f"\n{'route':24s} {'branch':22s} {'started':16s} {'steered by':>10s} {'min':>6s} {'alerts':>7s} {'would-alert s':>14s} {'torque - siglin at 1.5+':>24s}")
   for r, a in results.items():
-    print(f"{r:24s} {when(a['wall']):16s} {a['controller']:>10s} {a['engaged'] / 60:6.1f} {len(a['alerts']):7d} {a['would_alert']:14.1f} {a['out_gap']:24.3f}")
+    print(f"{r:24s} {a['branch'][:22]:22s} {when(a['wall']):16s} {a['controller']:>10s} {a['engaged'] / 60:6.1f} {len(a['alerts']):7d} {a['would_alert']:14.1f} "
+          f"{a['out_gap']:24.3f}")
 
-  print("\nby controller (alerts = logged 'Turn Exceeds Steering Limit', either kind; condition = seconds selfdrived's test held):")
-  for name in ("torque", "NNFF"):
-    mine = [a for a in results.values() if a["controller"] == name]
-    if mine:
-      minutes = sum(a["engaged"] for a in mine) / 60
-      alerts, cond = sum(len(a["alerts"]) for a in mine), sum(a["would_alert"] for a in mine)
-      print(f"  {name:7s} {len(mine):3d} routes {minutes / 60:5.1f} h   {alerts:3d} alerts = {alerts / minutes * 60:4.1f}/h   condition {cond / minutes:.3f} s per minute")
+  print("\nby controller and branch (alerts = logged 'Turn Exceeds Steering Limit', either kind; condition = seconds selfdrived's test held;")
+  print(" hard turns = 2.0+ m/s^2 wanted, untouched; you held = share of the 1.5+ turns with your hand on the wheel):")
+  for (name, branch), mine in groups(results).items():
+    minutes = sum(a["engaged"] for a in mine) / 60
+    alerts, cond = sum(len(a["alerts"]) for a in mine), sum(a["would_alert"] for a in mine)
+    hard = sum(b["seconds"] for a in mine for b in a["bins"] if b["lo"] >= 2.0)
+    held = sum(b["held_seconds"] for a in mine for b in a["bins"] if b["lo"] >= 1.5)
+    pressed = sum(b["pressed_seconds"] for a in mine for b in a["bins"] if b["lo"] >= 1.5)
+    print(f"  {name:7s} {branch[:22]:22s} {len(mine):3d} routes {minutes / 60:5.1f} h  {alerts:3d} alerts = {alerts / minutes * 60:4.1f}/h  "
+          f"condition {cond / minutes:.3f} s/min  hard turns {hard / minutes * 60:5.0f} s/h  you held {pressed / held if held else np.nan:4.0%}")
 
-  for name in ("torque", "NNFF"):
-    mine = [a for a in results.values() if a["controller"] == name]
-    if not mine:
-      continue
-    print(f"\n{name} controller, turning rows pooled by |lateral acceleration wanted| ({sum(a['engaged'] for a in mine) / 3600:.1f} h):")
-    print(f"  {'m/s^2':9s} {'seconds':>8s} {'undershoot':>11s} {'at max':>7s} {'torque':>7s} {'siglin':>7s} {'car got':>8s}")
+  for (name, branch), mine in groups(results).items():
+    print(f"\n{name} controller on {branch}, turning rows pooled by |lateral acceleration wanted| ({sum(a['engaged'] for a in mine) / 3600:.1f} h):")
+    print(f"  {'m/s^2':9s} {'seconds':>8s} {'s/h':>6s} {'you held':>9s} {'undershoot':>11s} {'at max':>7s} {'torque':>7s} {'siglin':>7s} {'car got':>8s} "
+          f"{'rms err':>8s} {'alerts/min':>11s}")
+    hours = sum(a["engaged"] for a in mine) / 3600
     for k, (lo, hi) in enumerate(BINS):
       rows = [a["bins"][k] for a in mine if a["bins"][k]["seconds"] > 0]
       secs = sum(b["seconds"] for b in rows)
       if not secs:
         continue
       w = lambda key: sum(b[key] * b["seconds"] for b in rows) / secs  # noqa: E731
+      held = sum(a["bins"][k]["held_seconds"] for a in mine)
+      pressed = sum(a["bins"][k]["pressed_seconds"] for a in mine)
+      rms = np.sqrt(sum(b["rms"] ** 2 * b["seconds"] for b in rows) / secs)
+      alerts = sum(a["bins"][k]["alerts"] for a in mine)
       label = f"{lo:.1f}-{hi:.1f}" if np.isfinite(hi) else f"{lo:.1f}+"
-      print(f"  {label:9s} {secs:8.1f} {w('undershoot'):11.0%} {w('at_max'):7.0%} {w('output'):7.2f} {w('siglin'):7.2f} {w('track'):8.0%}")
-  print("  (torque = mean torque the controller commanded; car got = lateral acceleration achieved as a share of wanted;")
-  print("   siglin = the static default curve, not the live-learned parameters the torque controller really used)")
+      print(f"  {label:9s} {secs:8.1f} {secs / hours:6.0f} {pressed / held if held else np.nan:9.0%} {w('undershoot'):11.0%} {w('at_max'):7.0%} "
+            f"{w('output'):7.2f} {w('siglin'):7.2f} {w('track'):8.0%} {rms:8.2f} {alerts / secs * 60:11.2f}")
+  print("  (s/h = seconds of these turns per engaged hour, untouched: how hard the drives asked; you held = share of these turns")
+  print("   with your hand on the wheel, which the other columns leave out; torque = mean torque the controller commanded;")
+  print("   car got = lateral acceleration achieved as a share of wanted; rms err = wanted - got in m/s^2; alerts/min = per")
+  print("   untouched minute in the bin, by the lateral acceleration wanted when the alert fired; siglin = the static default")
+  print("   curve, not the live-learned parameters the torque controller really used)")
 
   moments = sorted(((r, a["controller"], e) for r, a in results.items() for e in a["episodes"] if e["seconds"] >= 0.3), key=lambda x: -x[2]["deficit"])
   if moments:
