@@ -1828,9 +1828,14 @@ class StarMainLayout(MainLayout):
     toggle_items = self._large_panels[Destination.TOGGLES]._scroller._items
     toggle_items.insert(2, text_item("Safe Mode", "N/A"))
     toggle_items.insert(7, text_item("Right Hand Driving", "N/A"))
+    from openpilot.common.hardware import HARDWARE
     from openpilot.starpilot.ui.starpilot_settings_adapter_large import StarPilotSettingsAdapterLarge
     for destination, owner in self._large_panels.items():
-      self._large_panels[destination] = StarPilotSettingsAdapterLarge(owner, self.star.fonts, destination.value.title(), self._settings_back)
+      if destination == Destination.DEVELOPER and HARDWARE.get_device_type() in ('mici', 'tici', 'tizi'):
+        from openpilot.starpilot.ui.spacepilot.large import SpacePilotDeveloperAdapter
+        self._large_panels[destination] = SpacePilotDeveloperAdapter(owner, self.star.fonts, self._settings_back, self._exit_spacepilot)
+      else:
+        self._large_panels[destination] = StarPilotSettingsAdapterLarge(owner, self.star.fonts, destination.value.title(), self._settings_back)
     self._network_bridge.presentation = StarPilotSettingsAdapterLarge(native_network, self.star.fonts, "Network", self._settings_back)
     self.star.set_navigation(on_settings=lambda: self._set_current_layout(MainState.SETTINGS),
                              on_home=self._set_mode_for_state,
@@ -1839,6 +1844,10 @@ class StarMainLayout(MainLayout):
     self.star.set_request_owner(self._deliver_settings_request)
     self.star._native_favorite_actions = self._native_favorites
     self.star._publish_bookmark = self._on_bookmark_clicked
+
+  def _exit_spacepilot(self) -> None:
+    gui_app.pop_widgets_to(self, instant=True)
+    self._set_mode_for_state()
 
   def _native_favorites(self):
     from openpilot.selfdrive.ui.layouts.settings.settings import PanelType

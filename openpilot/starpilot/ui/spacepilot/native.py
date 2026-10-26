@@ -1,4 +1,4 @@
-"""C4 native page and Developer version gesture. All vehicle access is read-only."""
+"""Native game and version gesture using the supported parked lifecycle owner."""
 
 from collections.abc import Callable
 import math
@@ -6,14 +6,17 @@ import time
 
 import pyray as rl
 
-import openpilot.cereal.messaging as messaging
 from openpilot.common.hardware import HARDWARE
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.ui.mici.widgets.button import BigButton
 from openpilot.selfdrive.ui.ui_state import ui_state
-from openpilot.starpilot.ui.spacepilot.guard import FAST_AGE_NS, ParkGate, Witness, read_witness
-from openpilot.starpilot.ui.spacepilot.render import EXIT, SpaceRenderer
-from openpilot.starpilot.ui.spacepilot.state import FiveTaps, Flight, WheelInput
+from openpilot.starpilot.ui.spacepilot.guard import ParkGate, Witness, read_offroad_witness, read_witness
+from openpilot.starpilot.ui.spacepilot.session import GameSession, Stage
+from openpilot.starpilot.drive_state.owner import DriveStateOwner
+from openpilot.starpilot.storage import starpilot_storage_root
+from openpilot.starpilot.ui.spacepilot.render import EXIT, SpaceRenderer, canvas_rect
+from openpilot.starpilot.favorites.actions import INCREASE_SPEED, DECREASE_SPEED
+from openpilot.starpilot.ui.spacepilot.state import FiveTaps, Flight
 from openpilot.system.ui.lib.application import MouseEvent, MousePos, gui_app
 from openpilot.system.ui.widgets import Widget
 
@@ -25,69 +28,35 @@ def live_witness() -> Witness | None:
     after = time.monotonic_ns()
     if not 0 <= after - before <= 1_000_000:
       return None
-    return read_witness(ui_state, after, boot, c4=HARDWARE.get_device_type() == 'mici')
+    native_device = HARDWARE.get_device_type() in ('mici', 'tici', 'tizi')
+    if ui_state.started:
+      return read_witness(ui_state, after, boot, c4=native_device)
+    return read_offroad_witness(ui_state, after, boot, native_device=native_device, preparing=True)
   except (AttributeError, OSError, ValueError):
     return None
-
-
-class WheelReader:
-  """Separate non-conflated subscription keeps 100 Hz press/release edges at 60 Hz UI.
-
-  It exists only while admitted. It never consumes another subscriber's input or
-  publishes any messages. Dropping the sole socket reference closes native IPC.
-  """
-  def __init__(self, after_ns: int):
-    self.socket = messaging.sub_sock('carState', conflate=False)
-    self.input = WheelInput(after_ns)
-
-  def poll(self, now_ns: int) -> bool:
-    fire = False
-    for _ in range(32):
-      message = messaging.recv_one_or_none(self.socket)
-      if message is None:
-        return fire
-      stamp = int(message.logMonoTime)
-      if stamp <= self.input.stamp:
-        continue
-      cs = message.carState
-      if (not message.valid or not 0 <= now_ns - stamp <= FAST_AGE_NS or not cs.canValid or cs.canTimeout or
-          str(cs.gearShifter) != 'park' or not cs.standstill or
-          any(not math.isfinite(v) or abs(v) > .01 for v in (cs.vEgo, cs.vEgoRaw))):
-        raise ValueError('Wheel observation is no longer trustworthy')
-      events = tuple((str(event.type), bool(event.pressed)) for event in cs.buttonEvents)
-      fire = self.input.update(stamp, events, stamp / 1e9) or fire
-    raise ValueError('Wheel input backlog exceeded the bounded drain')
-
-  def close(self) -> None:
-    self.socket = None
-    self.input = WheelInput()
 
 
 class SpacePilotPage(Widget):
   def __init__(self, gate: ParkGate, on_unsafe: Callable[[], None]):
     super().__init__()
-    self.gate = gate
+    self.gate = ParkGate()
+    self.gate.since, self.gate.previous, self.gate.ready = gate.since, gate.previous, gate.ready
+    self.session = GameSession(ui_state, DriveStateOwner(ui_state.params, starpilot_storage_root() / 'drive-state'),
+                               native_device=HARDWARE.get_device_type() in ('mici', 'tici', 'tizi'))
     self.on_unsafe = on_unsafe
     self.flight = Flight(time.monotonic_ns())
     self.renderer = SpaceRenderer()
-    self.wheel: WheelReader | None = None
+    self.controller_after_ns = time.monotonic_ns()
+    self.controller_last_ns = 0
     self.last_tick = 0.
     self.closed = True
     self.touch_held = self.exit_pressed = False
 
   def show_event(self) -> None:
     super().show_event()
-    witness = live_witness()
-    if not self.gate.update(witness) or witness is None:
-      # push_widget invokes show_event before enabling this page; defer stack
-      # mutation to its first tick, and never acquire a socket after refusal.
-      self.closed = False
-    else:
-      self.closed = False
-      try:
-        self.wheel = WheelReader(witness.mono_ns)
-      except (OSError, RuntimeError):
-        self.gate.reset()
+    self.closed = False
+    if not self.gate.update(live_witness()):
+      self.session.close('Entry evidence changed')
     self.last_tick = time.monotonic()
     self.touch_held = self.exit_pressed = False
     gui_app.add_nav_stack_tick(self._tick)
@@ -95,32 +64,34 @@ class SpacePilotPage(Widget):
   def hide_event(self) -> None:
     self.closed = True
     gui_app.remove_nav_stack_tick(self._tick)
-    if self.wheel is not None:
-      self.wheel.close()
-      self.wheel = None
+    self.session.close()
     self.flight.close()
     self.gate.reset()
     self.touch_held = self.exit_pressed = False
     super().hide_event()
 
   def _safe(self) -> bool:
-    return bool(not self.closed and gui_app.get_active_widget() is self and self.gate.update(live_witness()))
+    return bool(not self.closed and gui_app.get_active_widget() is self and self.session.playable())
 
   def _tick(self) -> None:
     if self.closed:
       return
-    if not self._safe() or self.wheel is None:
+    if gui_app.get_active_widget() is not self:
+      self._exit(unsafe=True)
+      return
+    fire = self.session.step()
+    if self.session.stage == Stage.CLOSED:
+      cloudlog.info('SpacePilot ended: %s', self.session.reason)
       self._exit(unsafe=True)
       return
     now = time.monotonic()
-    try:
-      if self.wheel.poll(time.monotonic_ns()):
-        self.flight.act(now)
-    except (OSError, RuntimeError, ValueError, AttributeError):
-      self._exit(unsafe=True)
-      return
-    self.flight.update(now - self.last_tick)
+    if fire:
+      self.flight.act(now)
+    if self.session.stage == Stage.PLAYING:
+      self.flight.update(now - self.last_tick)
     self.last_tick = now
+    if self.session.stage != Stage.PLAYING:
+      self.controller_after_ns = time.monotonic_ns()
 
   def _exit(self, *, unsafe: bool) -> None:
     if self.closed:
@@ -132,19 +103,35 @@ class SpacePilotPage(Widget):
     elif gui_app.get_active_widget() is self:
       gui_app.pop_widget()
 
+  def capture_controller(self, key: str | None, timestamp_ns: int) -> None:
+    # The shared input owner validates identity, press/release, duplicate and age.
+    # Consume every action while this page owns the batch, including during exit.
+    if (key not in (INCREASE_SPEED, DECREASE_SPEED) or timestamp_ns <= self.controller_after_ns or
+        timestamp_ns - self.controller_last_ns < 120_000_000):
+      return
+    if not self._safe():
+      if self.session.stage == Stage.PLAYING:
+        self._exit(unsafe=True)
+      return
+    self.controller_last_ns = timestamp_ns
+    self.flight.act(time.monotonic())
+
   def _in_exit(self, pos: MousePos) -> bool:
     x, y, w, h = EXIT
-    return bool(rl.check_collision_point_rec(pos, rl.Rectangle(self.rect.x + x * self.rect.width / 1072,
-                self.rect.y + y * self.rect.height / 480, w * self.rect.width / 1072, h * self.rect.height / 480)))
+    rect = canvas_rect(self.rect)
+    return bool(rl.check_collision_point_rec(pos, rl.Rectangle(rect.x + x * rect.width / 1072,
+                rect.y + y * rect.height / 480, w * rect.width / 1072, h * rect.height / 480)))
 
   def _handle_mouse_press(self, pos: MousePos) -> None:
     if self.touch_held:
       return
     self.touch_held = True
+    self.exit_pressed = self._in_exit(pos)
+    if self.session.stage != Stage.PLAYING:
+      return
     if not self._safe():
       self._exit(unsafe=True)
       return
-    self.exit_pressed = self._in_exit(pos)
     if not self.exit_pressed:
       self.flight.act(time.monotonic())
 
@@ -157,15 +144,18 @@ class SpacePilotPage(Widget):
       self.exit_pressed = False
 
   def _render(self, rect: rl.Rectangle) -> None:
-    # The check also protects rendering when another native caller renders us
-    # directly instead of through the application's navigation tick.
-    if not self._safe():
+    if self.closed or gui_app.get_active_widget() is not self:
       self._exit(unsafe=True)
       return
     try:
-      self.renderer.render(self.flight, rect, wheel_ready=bool(self.wheel and self.wheel.input.armed))
+      if self.session.stage == Stage.PLAYING:
+        if not self._safe():
+          self._exit(unsafe=True)
+          return
+        self.renderer.render(self.flight, rect, wheel_ready=bool(self.session.wheel.armed), wheel_available=self.session.vehicle is not None)
+      else:
+        self.renderer.preparing(rect, stopping=self.session.stage == Stage.STOPPING)
     except Exception:
-      # An optional Easter egg must not take the driving/alert UI down with it.
       cloudlog.exception('SpacePilot render failed')
       self._exit(unsafe=True)
 
