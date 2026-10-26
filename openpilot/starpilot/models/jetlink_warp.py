@@ -18,7 +18,6 @@ PROBE = 77
 
 class CatalogWarp:
   def __init__(self, small, geometry: tuple[int, int]):
-    from tinygrad import Tensor
     descriptor = small.camera_warp_descriptor
     if descriptor is None:
       raise RuntimeError("the small model's image history is not on the policy pipeline: it has no shared warp")
@@ -27,60 +26,36 @@ class CatalogWarp:
     if tuple(descriptor.output_shape) != shape or descriptor.dtype.itemsize != 1:
       raise RuntimeError(f"the small model's warp makes {descriptor.output_shape} {descriptor.dtype}, the link sends {shape} uint8")
     self._small = small
-    self._enqueue = small.warp_enqueue
-    self._names = small.vision_input_names
-    self._tfm, self._big_tfm = small.npy["tfm"], small.npy["big_tfm"]
-    self._queues = {key: small.input_queues[key] for key in small.warp_input_keys}
-    self._Tensor = Tensor
-    # warm up on blank frames, as the small model's own warmup does, before modeld goes realtime: the JIT is
-    # captured already, so this replays it and finds the output buffer every frame writes
-    self._blank = [np.zeros(small.frame_buf_size, dtype=np.uint8) for _ in self._names]
+    # before modeld goes realtime: a blank frame finds the output buffer every frame writes (the small model's
+    # warmup captured the JIT, which returns the same one every call), then a flat frame proves `output` reads it
+    # live. as_memoryview() hands back a one-off copy where it finds no mapping, which would send the blank frame
+    # forever; a flat frame under the identity samples to itself
+    frames = [np.zeros(small.frame_buf_size, dtype=np.uint8) for _ in small.vision_input_names]
+    pointers = tuple(frame.ctypes.data for frame in frames)
     eye = np.eye(3, dtype=np.float32)
-    frame, big_frame = self._blank
-    self._run(frame.ctypes.data, big_frame.ctypes.data, eye, eye)
-    self._bind()
+    buffer = small.warp_frames(pointers, eye, eye).uop.base.buffer
+    expected = int(np.prod(shape))
+    self._device = buffer.allocator.dev
+    # the GPU's mapping of the output, read once a frame into host memory: the link sends from `output`
+    mapped = np.frombuffer(buffer.as_memoryview(allow_zero_copy=True), dtype=np.uint8)
+    if buffer.nbytes != expected or mapped.nbytes < expected:
+      raise RuntimeError(f"the warp's output is {buffer.nbytes} bytes ({mapped.nbytes} mapped), not {expected}")
+    self._mapped = mapped[:expected]
+    self._host = np.empty(expected, dtype=np.uint8)
     self.output = memoryview(self._host)
-    # as_memoryview() hands back a one-off copy where it finds no mapping of the buffer, which would send the
-    # warm-up's frame forever: a flat frame under the identity samples to itself, so `output` must read it back
-    self._probe = [np.full(small.frame_buf_size, PROBE, dtype=np.uint8) for _ in self._names]
-    frame, big_frame = self._probe
-    self.start(frame.ctypes.data, big_frame.ctypes.data, eye, eye)
+    for frame in frames:
+      frame.fill(PROBE)
+    self.start(*pointers, eye, eye)
     self.wait()
+    # the frames go with this call; their cache entries must not outlive them
+    for key in zip(small.vision_input_names, pointers, strict=True):
+      small._blob_cache.pop(key, None)
     if not (self._host == PROBE).all():
       raise RuntimeError("the small model's warp output is not read live: the link would send a stale frame")
 
-  def _frame(self, name: str, pointer: int):
-    # the small model's own cache and arguments, so the JIT sees exactly the inputs it was captured with
-    cache = self._small._blob_cache
-    key = (name, pointer)
-    if key not in cache:
-      cache[key] = self._Tensor.from_blob(pointer, (self._small.frame_buf_size,), dtype="uint8",
-                                          device=self._small.warp_device)
-    return cache[key]
-
-  def _run(self, frame: int, big_frame: int, tfm, big_tfm) -> None:
-    self._tfm[:] = tfm
-    self._big_tfm[:] = big_tfm
-    self._out = self._enqueue(**self._queues, frame=self._frame(self._names[0], frame),
-                              big_frame=self._frame(self._names[1], big_frame))
-
-  def _bind(self) -> None:
-    self._buffer = self._out.uop.base.buffer
-    self._device = self._buffer.allocator.dev
-    # the GPU's mapping of the output, read once a frame into host memory: the link sends from `output`
-    self._mapped = np.frombuffer(self._buffer.as_memoryview(allow_zero_copy=True), dtype=np.uint8)
-    expected = int(np.prod(self._out.shape))
-    if self._buffer.nbytes != expected or self._mapped.nbytes < expected:
-      raise RuntimeError(f"the warp's output is {self._buffer.nbytes} bytes ({self._mapped.nbytes} mapped), not {expected}")
-    self._mapped = self._mapped[:expected]
-    self._host = np.empty(expected, dtype=np.uint8)
-
   def start(self, frame: int, big_frame: int, tfm, big_tfm) -> None:
     """Warp the camera buffers at these addresses under their transforms; `output` holds it once wait() returns."""
-    self._run(frame, big_frame, tfm, big_tfm)
-    if self._out.uop.base.buffer is not self._buffer:
-      self._bind()
-      self.output = memoryview(self._host)
+    self._small.warp_frames((frame, big_frame), tfm, big_tfm)
 
   def wait(self) -> None:
     self._device.synchronize()

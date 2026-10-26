@@ -256,6 +256,20 @@ class CatalogModelState:
     self.run(frames, dict.fromkeys(self.vision_input_names, np.eye(3, dtype=np.float32)), inputs)
     self._reset_state()
 
+  def warp_frames(self, pointers: tuple[int, int], tfm: np.ndarray, big_tfm: np.ndarray) -> Tensor:
+    """Enqueue the camera warp of the frames at these addresses, on the inputs its JIT was captured with.
+    run() calls it, and so does Jetlink's link (jetlink_warp) on the frames the large model drives."""
+    self.npy["tfm"][:] = tfm
+    self.npy["big_tfm"][:] = big_tfm
+    frames = {}
+    for name, pointer in zip(self.vision_input_names, pointers, strict=True):
+      key = (name, pointer)
+      if key not in self._blob_cache:
+        self._blob_cache[key] = Tensor.from_blob(pointer, (self.frame_buf_size,), dtype="uint8", device=self.warp_device)
+      frames[name] = self._blob_cache[key]
+    return self.warp_enqueue(**{key: self.input_queues[key] for key in self.warp_input_keys},
+                             frame=frames["img"], big_frame=frames["big_img"])
+
   def run(self, bufs: dict, transforms: dict[str, np.ndarray], inputs: dict[str, np.ndarray],
           after_enqueue: Callable[[], None] | None = None, *, shared_warp: SharedCameraWarp | None = None) -> dict[str, np.ndarray]:
     self.last_warp = None
@@ -273,17 +287,8 @@ class CatalogModelState:
     for name, value in self.npy.items():
       if name not in ("desire", "tfm", "big_tfm", "prev_feat") and name in inputs:
         value[:] = inputs[name]
-    self.npy["tfm"][:] = transforms["img"]
-    self.npy["big_tfm"][:] = transforms["big_img"]
     if shared_warp is None:
-      frames = {}
-      for name, pointer in zip(self.vision_input_names, pointers, strict=True):
-        key = (name, pointer)
-        if key not in self._blob_cache:
-          self._blob_cache[key] = Tensor.from_blob(pointer, (self.frame_buf_size,), dtype="uint8", device=self.warp_device)
-        frames[name] = self._blob_cache[key]
-      warped = self.warp_enqueue(**{key: self.input_queues[key] for key in self.warp_input_keys},
-                                 frame=frames["img"], big_frame=frames["big_img"])
+      warped = self.warp_frames(pointers, transforms["img"], transforms["big_img"])
     else:
       warped = shared_warp.tensor
     policy_inputs = {key: self.input_queues[key] for key in self.policy_input_keys}

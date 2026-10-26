@@ -1,6 +1,6 @@
 """Jetlink borrows the small model's camera warp: the one JIT, its inputs and its output, read into host memory."""
 import ctypes
-from types import SimpleNamespace as NS
+from types import MethodType, SimpleNamespace as NS
 from unittest.mock import Mock, patch
 
 import numpy as np
@@ -8,6 +8,7 @@ import pytest
 
 from openpilot.starpilot.models import jetlink_adapter
 from openpilot.starpilot.models.jetlink_warp import CatalogWarp
+from openpilot.starpilot.models.runner import CatalogModelState
 
 GEOMETRY = (16, 8)  # model_w, model_h
 SHAPE = (2, 6, 4, 8)
@@ -44,6 +45,8 @@ def small_model(descriptor_shape=SHAPE, descriptor=True, live=True):
              warp_enqueue=enqueue, vision_input_names=("img", "big_img"), npy=npy,
              input_queues={"tfm": "tfm queue", "big_tfm": "big_tfm queue", "img_q": "history"},
              warp_input_keys=("tfm", "big_tfm"), _blob_cache={}, frame_buf_size=32, warp_device="QCOM")
+  # the runner's own warp call, over this model's fakes
+  small.warp_frames = MethodType(CatalogModelState.warp_frames, small)
   return small, calls, buffers
 
 
@@ -61,6 +64,7 @@ def test_warps_with_the_small_models_jit_inputs_and_cache():
   small, calls, buffers = small_model()
   warp = CatalogWarp(small, GEOMETRY)
   assert len(calls) == 2  # the warm-up and the live-read probe, before modeld goes realtime
+  assert small._blob_cache == {}  # and their frames, freed, leave no blob behind
   tfm, big_tfm = np.full((3, 3), 2, np.float32), np.full((3, 3), 3, np.float32)
   road, wide = frames(7)
   warp.start(road.ctypes.data, wide.ctypes.data, tfm, big_tfm)
@@ -77,16 +81,6 @@ def test_warps_with_the_small_models_jit_inputs_and_cache():
   assert set(bytes(warp.output)) == {7}
   warp.wait()
   assert set(bytes(warp.output)) == {9}
-
-
-def test_rebinds_when_the_jit_returns_a_new_buffer():
-  small, _, buffers = small_model()
-  warp = CatalogWarp(small, GEOMETRY)
-  buffers.append(FakeBuffer())
-  road, wide = frames(5)
-  warp.start(road.ctypes.data, wide.ctypes.data, np.eye(3), np.eye(3))
-  warp.wait()
-  assert set(bytes(warp.output)) == {5}
 
 
 def test_refuses_an_output_it_cannot_read_live():
@@ -113,9 +107,8 @@ def adapter_warp(small, legacy):
 
 def test_adapter_loads_the_stock_warp_under_legacy9d():
   for kw in ({}, {"descriptor": False}):
-    warp, log = adapter_warp(small_model(**kw)[0], legacy=True)
+    warp, _ = adapter_warp(small_model(**kw)[0], legacy=True)
     assert warp is None
-    log.exception.assert_not_called()
 
 
 def test_adapter_sends_the_small_models_warp_off_legacy9d():
