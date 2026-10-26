@@ -283,7 +283,7 @@ class Rebecca(Widget):
         rl.draw_poly(center, 4, 12 * s, 0, cream)
       elif kind == _SHIELD_PICKUP:
         shield = ((-14, -12), (14, -12), (12, 2), (8, 10), (0, 17), (-8, 10), (-12, 2))
-        for (ax, ay), (bx, by) in zip(shield, shield[1:] + shield[:1]):
+        for (ax, ay), (bx, by) in zip(shield, shield[1:] + shield[:1], strict=False):
           rl.draw_line_ex(rl.Vector2(center.x + ax * s, center.y + ay * s),
                           rl.Vector2(center.x + bx * s, center.y + by * s), 2.5 * s, coral)
         rl.draw_line_ex(rl.Vector2(center.x - 7 * s, center.y), rl.Vector2(center.x + 7 * s, center.y),
