@@ -27,10 +27,7 @@ class CapturePublisher:
     self.messages[service] = messaging.log_from_bytes(raw)
 
 
-@pytest.mark.parametrize('vehicle,alpha,ordinary', ((CAR.TOYOTA_SIENNA_4TH_GEN, False, False),
-    (CAR.TOYOTA_RAV4_PRIME, False, False), (CAR.TOYOTA_YARIS, False, False),
-    (CAR.TOYOTA_YARIS, True, False), (CAR.TOYOTA_YARIS, False, True), (CAR.TOYOTA_YARIS, True, True)))
-def test_fresh_secoc_source_permission_sd_controls_card_sendcan_join(vehicle, alpha, ordinary):
+def run_joined(vehicle, alpha=False, ordinary=False):
   case = IoniqAvailabilityTests(methodName='runTest')
   with actual_card(simulation=False, vehicle=vehicle, alpha=alpha) as (selected, _), ExitStack() as cleanup:
     cleanup.callback(case.doCleanups)
@@ -135,9 +132,10 @@ def test_fresh_secoc_source_permission_sd_controls_card_sendcan_join(vehicle, al
         assert sent.valid and abs(int(sent.logMonoTime) - now) <= 1
         frame = next(packet for packet in sent.sendcan if packet.address == 0x2E4)
         steer = (frame.address, bytes(frame.dat), frame.src)
-        assert len(steer[1]) == 8
+        assert len(steer[1]) == (8 if selected.CP.secOcRequired else 5)
         assert bool(steer[1][0] & 1) == command.latActive
-        assert steer == add_mac(bytes.fromhex(TEST_KEY), 1, 1, counter, (steer[0], steer[1][:4], steer[2]))
+        if selected.CP.secOcRequired:
+          assert steer == add_mac(bytes.fromhex(TEST_KEY), 1, 1, counter, (steer[0], steer[1][:4], steer[2]))
         assert safety.safety_tx_hook(libsafety_py.make_CANPacket(steer[0], steer[2], steer[1]))
         if alpha:
           keepalive = [packet for packet in sent.sendcan if packet.address == 0x750]
@@ -159,3 +157,10 @@ def test_fresh_secoc_source_permission_sd_controls_card_sendcan_join(vehicle, al
     if alpha:
       assert radar_startup.call_args.kwargs == {'bus': 0, 'addr': 0x750, 'sub_addr': 0xf, 'com_cont_req': bytes.fromhex('280101')}
     assert any(torque != 0 for torque in driving_torques), 'Fresh joined Controls must produce actual steering torque'
+
+
+@pytest.mark.parametrize('vehicle,alpha,ordinary', ((CAR.TOYOTA_SIENNA_4TH_GEN, False, False),
+    (CAR.TOYOTA_RAV4_PRIME, False, False), (CAR.TOYOTA_YARIS, False, False),
+    (CAR.TOYOTA_YARIS, True, False), (CAR.TOYOTA_YARIS, False, True), (CAR.TOYOTA_YARIS, True, True)))
+def test_fresh_secoc_source_permission_sd_controls_card_sendcan_join(vehicle, alpha, ordinary):
+  run_joined(vehicle, alpha, ordinary)

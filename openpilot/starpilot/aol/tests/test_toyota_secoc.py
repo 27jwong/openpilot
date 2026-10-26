@@ -138,8 +138,10 @@ def parsed_state(interface, *, gear=3, main=True, door=False, belt=True, eps=1, 
     interface._secoc_fixture_packer = packer
   tracked = {bus: tuple(parser.vl) for bus, parser in interface.can_parsers.items()}
   values: dict[str, dict[str, float]] = {
-    'PCM_CRUISE': {'CRUISE_ACTIVE': cruise}, 'PCM_CRUISE_2': {'MAIN_ON': main},
-    'GEAR_PACKET_HYBRID': {'GEAR': gear}, 'EPS_STATUS': {'LKA_STATE': eps},
+    'PCM_CRUISE': {'CRUISE_ACTIVE': cruise, 'GAS_RELEASED': 1}, 'PCM_CRUISE_2': {'MAIN_ON': main},
+    'GEAR_PACKET_HYBRID': {'GEAR': gear},
+    'GEAR_PACKET': {'GEAR': {0: 32, 1: 16, 2: 8, 3: 0, 4: 1}[gear]},
+    'DSU_CRUISE': {'MAIN_ON': main}, 'EPS_STATUS': {'LKA_STATE': eps},
     'BODY_CONTROL_STATE': {'DOOR_OPEN_FL': door, 'SEATBELT_DRIVER_UNLATCHED': not belt},
     'WHEEL_SPEEDS': {f'WHEEL_SPEED_{wheel}': 72 for wheel in ('FR', 'FL', 'RR', 'RL')},
     'LKAS_HUD': {'LDA_ON_MESSAGE': lda},

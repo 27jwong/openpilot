@@ -101,8 +101,7 @@ class CarInterface(CarInterfaceBase):
 
     if candidate in (CAR.TOYOTA_PRIUS, CAR.TOYOTA_PRIUS_RETROFIT):
       stop_and_go = True
-      if candidate == CAR.TOYOTA_PRIUS_RETROFIT:
-        ret.flags |= ToyotaFlags.HYBRID.value
+      ret.flags |= ToyotaFlags.HYBRID.value
       # Only give steer angle deadzone to for bad angle sensor prius
       for fw in car_fw:
         if fw.ecu == "eps" and not fw.fwVersion == b'8965B47060\x00\x00\x00\x00\x00\x00':
@@ -266,6 +265,11 @@ class CarInterface(CarInterfaceBase):
       ret.safetyConfigs[0].safetyParam = pedal.long_word(candidate)
     if composite_pedal:
       assert pedal_composite.apply(ret)
+    from opendbc.car.toyota import stock_aol
+    if stock_aol.hardware_supported(candidate, fingerprint):
+      stock_aol.apply(ret)
+    from opendbc.car.toyota.dom_defaults import apply_defaults
+    apply_defaults(ret)
     return ret
 
   @staticmethod
