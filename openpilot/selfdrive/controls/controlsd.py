@@ -37,7 +37,7 @@ from openpilot.starpilot.lateral.lane_centering import (
   LaneCenteringController, LaneCenteringInput, LaneCenteringRequest, LaneCenteringResult,
 )
 from openpilot.starpilot.lateral.lane_feedback import feedback_message
-from openpilot.starpilot.lateral.lane_clearance import body_dimensions_required, current_delay, interface_dimensions
+from openpilot.starpilot.lateral.lane_clearance import current_delay, interface_dimensions
 from openpilot.starpilot.lateral.lane_change_preferences import LiveLaneChangePolicy
 from openpilot.starpilot.lateral.lane_change_smoothing import LaneChangeSmoother, limit_rate
 from openpilot.starpilot.lateral.lane_runtime import LaneCenteringHost, runtime_supported as lane_runtime_supported
@@ -58,7 +58,9 @@ ACTUATOR_FIELDS = tuple(car.CarControl.Actuators.schema.fields.keys())
 
 
 class Controls:
-  def __init__(self) -> None:
+  def __init__(self, *, predict_lane_clearance: bool = False) -> None:
+    if type(predict_lane_clearance) is not bool:
+      raise TypeError("Invalid lane-clearance selection")
     self.params = Params()
     cloudlog.info("controlsd is waiting for CarParams")
     self.CP = messaging.log_from_bytes(self.params.get("CarParams", block=True), car.CarParams)
@@ -96,8 +98,8 @@ class Controls:
     self.curvature = 0.0
     self.desired_curvature = 0.0
     self.model_turn_assist = ModelTurnAssist()
-    self.lane_centering_controller = LaneCenteringController(body=interface_dimensions(self.CI, self.CP),
-                                                          body_required=body_dimensions_required(self.CI, self.CP))
+    self.lane_centering_controller = (LaneCenteringController(body=interface_dimensions(self.CI, self.CP), body_required=True)
+                                      if predict_lane_clearance else LaneCenteringController())
     self.lateral_pause = LateralPause(read_lateral_pause(self.params), self.params)
     self.lane_change_preferences = LiveLaneChangePolicy(self.params,
       now_ns=0 if os.getenv('REPLAY') == '1' else time.monotonic_ns())
@@ -573,7 +575,7 @@ class Controls:
     feedback = feedback_message(
       self.last_lane_centering_result, self.lane_centering_applied, CC.latActive,
       model_mono_time=self.sm.logMonoTime['modelV2'], car_control_mono_time=cc_send.logMonoTime,
-      valid=bool(CS.canValid and self.sm.all_checks(['modelV2'])), inactive_reason=self.lane_centering_inactive_reason)
+      valid=bool(CS.canValid and self.sm.all_checks(['modelV2'])), inactive_reason=getattr(self, 'lane_centering_inactive_reason', 'inactive'))
     automatic = getattr(self, 'global_learning', None)
     if automatic is not None:
       try:

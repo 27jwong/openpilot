@@ -51,6 +51,7 @@ class LaneCenteringHost:
   REFRESH_NS = 1_000_000_000
   MAX_TICK_NS = 50_000_000
   REQUIRED = ('carState', 'selfdriveState', 'modelV2', 'vehicleParameters')
+  FREQUENCY_CHECKED = ('carState', 'modelV2', 'vehicleParameters')
 
   def __init__(self, params):
     self.params = params
@@ -81,7 +82,10 @@ class LaneCenteringHost:
     if sm['carState'].canTimeout:
       self.last_refusal = 'host_can_timeout'
       return None
-    if not sm.all_checks(list(self.REQUIRED)):
+    # The polled subscriber's mean frequency measures this consumer loop.
+    # Its source still requires a live, valid snapshot within the bound below.
+    if not (sm.all_checks(list(self.FREQUENCY_CHECKED)) and
+            sm.all_alive(['selfdriveState']) and sm.all_valid(['selfdriveState'])):
       self.last_refusal = self._unhealthy_reason(sm)
       return None
     for name in self.REQUIRED:
@@ -102,7 +106,8 @@ class LaneCenteringHost:
     for method, reason in (('all_alive', 'not_alive'), ('all_freq_ok', 'frequency'), ('all_valid', 'invalid')):
       check = getattr(sm, method, None)
       if check is not None:
-        for name in self.REQUIRED:
+        names = self.FREQUENCY_CHECKED if method == 'all_freq_ok' else self.REQUIRED
+        for name in names:
           if not check([name]):
             return f'host_{name}_{reason}'
     return 'host_checks'
