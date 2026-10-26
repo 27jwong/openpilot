@@ -142,6 +142,63 @@ def feed(controls, timestamp, tick, *, active=True, enabled=True, fault=False, o
 
 
 class LaneRuntimeTests(unittest.TestCase):
+  def test_body_profile_reaches_actual_controls_and_clearance_withdraws_only_added_curvature(self):
+    from opendbc.car.hyundai.tests.test_lane_body import identity
+    with OpenpilotPrefix(), mock.patch.dict(os.environ, {'LANE_CENTERING_REPLAY_RUNTIME': '0', 'REPLAY': '1',
+                                                        'AOL_REPLAY_RUNTIME': '0'}), \
+         mock.patch('openpilot.selfdrive.controls.controlsd.messaging.PubMaster'):
+      params = Params()
+      _, cp = ioniq_candidate()
+      metadata = identity()
+      cp.carVin = metadata.carVin
+      cp.carFw = [vars(fw) for fw in metadata.carFw]
+      before = cp.to_dict()
+      params.put('CarParams', cp.to_bytes(), block=True)
+      params.put_bool('LaneCentering', True, block=True)
+      params.put('LaneCenteringE2EAuthority', 0., block=True)
+      baseline, candidate = Controls(), Controls()
+      baseline.lane_centering_host = None
+      body = candidate.lane_centering_controller._body
+      self.assertIsNotNone(body)
+      self.assertEqual((body.width, body.length, body.height), (1.88, 4.855, 1.495))
+      self.assertEqual(candidate.CP.to_dict(), before)
+      original_model = model
+      phase = 0
+
+      def perceived_model():
+        m = original_model(left=-1.2, right=2.4)
+        m.init('roadEdges', 2)
+        for edge, side in zip(m.roadEdges, (-1., 1.), strict=True):
+          edge.x, edge.y = list(range(51)), [10. * side] * 51
+        m.roadEdgeStds = [.1, .1]
+        if phase >= 30:
+          m.laneLineProbs = [0., .9, .1, 0.]
+        if 60 <= phase < 90:
+          m.roadEdges[1].y = [1.8] * 51
+        return m
+
+      added = recovered = 0
+      with mock.patch(f'{__name__}.model', side_effect=perceived_model):
+        for phase in range(150):
+          now = 2_000_000_000 + phase * 10_000_000
+          override = phase >= 120
+          feed(baseline, now, phase, override=override)
+          feed(candidate, now, phase, override=override)
+          reference, _ = baseline.state_control()
+          command, _ = candidate.state_control()
+          self.assertEqual((command.latActive, command.longActive), (reference.latActive, reference.longActive))
+          self.assertEqual(command.actuators.accel, reference.actuators.accel)
+          self.assertEqual(command.actuators.longControlState, reference.actuators.longControlState)
+          if 60 <= phase < 90 or override:
+            self.assertEqual(candidate.lane_centering_applied, 0.)
+          elif 30 <= phase < 60:
+            added += abs(candidate.lane_centering_applied) > 1e-6
+          elif 90 <= phase < 120:
+            recovered += abs(candidate.lane_centering_applied) > 1e-6
+      self.assertGreater(added, 0)
+      self.assertGreater(recovered, 0)
+      self.assertEqual(candidate.last_lane_centering_result.reason, 'driver_override')
+
   def test_unqualified_body_through_actual_controls_preserves_nominal_native_output(self):
     for identity in ('absent', 'manual', 'unknown_firmware', 'mismatched_firmware'):
       with self.subTest(identity=identity), OpenpilotPrefix(), \
