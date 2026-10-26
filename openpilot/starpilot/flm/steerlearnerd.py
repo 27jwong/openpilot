@@ -807,6 +807,14 @@ def run(
         publication_sequence += 1
         if publication_source_reader is not None:
           source_valid, now = source_current(read=True, publication=True)
+          # Controls consumes the tracking receipt once that service exists.
+          # Its earlier neutral status may contain the cached pre-read lease;
+          # forward this genuine read too, without renewing any trial or restore.
+          # This adds at most one small status per existing250ms publication,
+          # with no extra settings read and no change to the20Hz status phase.
+          if source_valid and live_actor is not None and live_offer is None and live_history.offer is None:
+            pm.send('starpilotSteeringTracking', tracking_message(source, now_ns=now,
+              current_native=False, offer=None, restore=None))
         if live_actor is not None:
           message = result_message(None, 'live-tracking', publication_sequence, now)
           value = message.autoSteeringLearning.learning
