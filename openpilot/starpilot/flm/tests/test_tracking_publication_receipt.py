@@ -62,19 +62,18 @@ def publication(monkeypatch, *, changes=None, read_cost=0, retained=None, origin
 
 def test_actual_daemon_forwards_real_refreshed_source_to_tracking_at_recorded_clocks(monkeypatch):
   old, tracking, learning, _ = publication(monkeypatch)
-  assert len(tracking) == 2
-  assert read_tracking_source(tracking[0].starpilotSteeringTracking, now_ns=CONTROL, cp_sha256=old.cp_sha256) is None
-  current = read_tracking_source(tracking[1].starpilotSteeringTracking, now_ns=CONTROL, cp_sha256=old.cp_sha256)
+  assert len(tracking) == 1
+  current = read_tracking_source(tracking[0].starpilotSteeringTracking, now_ns=CONTROL, cp_sha256=old.cp_sha256)
   assert current == replace(old, observed_ns=FRESH_READ, expires_ns=FRESH_READ+500_000_000)
-  assert tracking[1].starpilotSteeringTracking.sourceReceipt.to_dict() == learning.autoSteeringLearning.learning.sourceReceipt.to_dict()
+  assert tracking[0].starpilotSteeringTracking.sourceReceipt.to_dict() == learning.autoSteeringLearning.learning.sourceReceipt.to_dict()
   assert all(message.starpilotSteeringTracking.trial.version == message.starpilotSteeringTracking.restore.version == 0 for message in tracking)
-  assert read_tracking_source(tracking[1].starpilotSteeringTracking,
+  assert read_tracking_source(tracking[0].starpilotSteeringTracking,
     now_ns=FRESH_READ+500_000_001, cp_sha256=old.cp_sha256) is None
 
 
 def test_read_that_outlives_its_real_lease_does_not_refresh_tracking(monkeypatch):
   _, tracking, learning, _ = publication(monkeypatch, read_cost=500_000_001)
-  assert len(tracking) == 1
+  assert not tracking
   assert learning.autoSteeringLearning.learning.status == 'unavailable'
 
 
@@ -87,7 +86,7 @@ def test_read_that_outlives_its_real_lease_does_not_refresh_tracking(monkeypatch
 ])
 def test_refreshed_configuration_rejection_cannot_publish_old_context(monkeypatch, changes):
   _, tracking, learning, interruptions = publication(monkeypatch, changes=changes)
-  assert len(tracking) == 1
+  assert not tracking
   assert learning.autoSteeringLearning.learning.status == 'unavailable'
   assert interruptions
 
@@ -108,21 +107,22 @@ def test_actual_controls_capture_recovers_from_forwarded_receipt_without_applyin
   # physical response or learned-application qualification.
   monkeypatch.setattr(consumer, 'BASE', CONTROL-60*consumer.DT)
   with consumer.live_controls() as fixture:
-    _, tracking, _, _ = publication(monkeypatch, original_source=fixture.source(OLD_READ))
-    assert len(tracking) == 2
+    old, tracking, _, _ = publication(monkeypatch, original_source=fixture.source(OLD_READ))
+    assert len(tracking) == 1
+    previous = steerlearnerd.tracking_message(old, now_ns=OLD_SEND, current_native=False).as_reader()
 
     def receive(message, stamp):
       event = message.as_builder()
-      event.logMonoTime = OLD_SEND if message is tracking[0] else FRESH_READ
+      event.logMonoTime = OLD_SEND if message is previous else FRESH_READ
       fixture.controls.sm.update_msgs(stamp/1e9, [messaging.log_from_bytes(event.to_bytes())])
 
-    receive(tracking[0], CONTROL)
+    receive(previous, CONTROL)
     now, _ = fixture.frame(publish=False)
     assert now == CONTROL
     assert not capture(fixture, now)
     fixture.assert_neutral()
 
-    receive(tracking[1], CONTROL+consumer.DT)
+    receive(tracking[0], CONTROL+consumer.DT)
     now, _ = fixture.frame(publish=False)
     assert capture(fixture, now)
     assert fixture.runtime.source.observed_ns == FRESH_READ
@@ -132,3 +132,73 @@ def test_actual_controls_capture_recovers_from_forwarded_receipt_without_applyin
       now, _ = fixture.frame(publish=False)
     assert not capture(fixture, now)
     fixture.assert_neutral()
+
+
+@pytest.mark.parametrize('read_cost,cross_boundary', [(0, False), (10_000_000, False), (25_000_000, False), (10_000_000, True), (0, True)])
+def test_actual_daemon_coalesces_refreshed_status_within_ordinary_receiver_frequency(monkeypatch, read_cost, cross_boundary):
+  from collections import defaultdict
+  from openpilot.cereal import messaging
+
+  base = 10_000_000_000
+  now, cached, reads, sent = [base-1], [source(base)], [], []
+  actor, fitter = RecordingActor(), NoLegacyFitter()
+  class SM:
+    updated = {'deviceMotion': False}
+    logMonoTime = {'deviceMotion': 0}
+    index = 0
+    def update(self, timeout=None):
+      self.updated['deviceMotion'] = False
+      if timeout == 0:
+        return
+      while base+self.index*10_000_000 < now[0]:
+        self.index += 1
+      if self.index > 1250:
+        raise LoopComplete
+      now[0] = base+self.index*10_000_000
+      self.index += 1
+      self.updated['deviceMotion'] = True
+      self.logMonoTime['deviceMotion'] = now[0]
+
+  def refresh(stamp):
+    reads.append(stamp)
+    cached[0] = source(stamp)
+    now[0] += read_cost
+    return cached[0]
+
+  def tick(*args, **kwargs):
+    if cross_boundary and (now[0]-base) % 250_000_000 == 240_000_000:
+      now[0] += 20_000_000
+    return None
+
+  def send(topic, message):
+    if topic == 'starpilotSteeringTracking':
+      message.logMonoTime = now[0]
+      sent.append((now[0], message.as_reader()))
+
+  monkeypatch.setattr(actor, 'tick', tick)
+  monkeypatch.setattr(steerlearnerd, 'drain', lambda *args: None)
+  with pytest.raises(LoopComplete):
+    steerlearnerd.run(SimpleNamespace(), SM(), object(), object(), SimpleNamespace(send=send),
+      None, None, lambda stamp: cached[0], None, None, None, None, fitter, None,
+      clock=lambda: now[0], live_actor=actor, publication_source_reader=refresh)
+  assert actor.closed and fitter.closed
+  assert len(reads) <= 51
+  if cross_boundary and read_cost == 0:
+    assert base+240_000_000 in [stamp for stamp, _ in sent]
+    assert base+260_000_000 not in [stamp for stamp, _ in sent]
+  receiver = messaging.SubMaster(['selfdriveState', 'starpilotSteeringTracking'], poll='selfdriveState')
+  assert not receiver.simulation
+  deliveries = defaultdict(list)
+  for stamp, message in sent:
+    deliveries[(stamp-base+9_999_999)//10_000_000].append(message)
+  for index in range(1251):
+    stamp = base+index*10_000_000
+    messages = [messaging.new_message('selfdriveState', valid=True, logMonoTime=stamp).as_reader()]
+    if index in deliveries:
+      messages.append(deliveries[index][-1])  # The real socket is conflated.
+    receiver.update_msgs(stamp/1e9, messages)
+    if index >= 1000:
+      assert receiver.freq_ok['starpilotSteeringTracking'], (index, read_cost, cross_boundary)
+  assert receiver.freq_tracker['starpilotSteeringTracking'].max_freq == 24.0
+  assert len(sent) <= 251  # One20Hz stream, not20+4; no settings-read increase.
+  assert all(message.starpilotSteeringTracking.trial.version == message.starpilotSteeringTracking.restore.version == 0 for _, message in sent)

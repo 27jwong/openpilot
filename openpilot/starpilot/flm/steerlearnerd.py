@@ -723,6 +723,7 @@ def run(
         # delay delivery. This neutral status is not a new physical witness;
         # the original settings lease and all trial/restore leases stay fixed.
         if (source_valid and live_offer is None and live_history.offer is None and
+            not (publication_source_reader is not None and now >= next_publish_ns) and
             now + 10_000_000 >= next_tracking_status_ns):
           pm.send('starpilotSteeringTracking', tracking_message(source, now_ns=now,
             current_native=False, offer=None, restore=None))
@@ -767,7 +768,9 @@ def run(
         # source health recoverable without granting any current correction.
         current_proposal = any(value is not None and value.observed_ns <= now <= value.expires_ns
           for value in (live_offer, live_history.offer))
-        idle_status = source_valid and not current_proposal and now + 10_000_000 >= next_tracking_status_ns
+        defer_idle_refresh = (publication_source_reader is not None and now >= next_publish_ns and
+                              live_offer is None and live_history.offer is None)
+        idle_status = source_valid and not current_proposal and not defer_idle_refresh and now + 10_000_000 >= next_tracking_status_ns
         source_withdrawal = not source_valid and _source_config_known(source, now)
         publish_tracking = latest is not None or new_restore or idle_status or new_raw_pose and source_withdrawal
         if publish_tracking:
@@ -807,14 +810,17 @@ def run(
         publication_sequence += 1
         if publication_source_reader is not None:
           source_valid, now = source_current(read=True, publication=True)
-          # Controls consumes the tracking receipt once that service exists.
-          # Its earlier neutral status may contain the cached pre-read lease;
-          # forward this genuine read too, without renewing any trial or restore.
-          # This adds at most one small status per existing250ms publication,
-          # with no extra settings read and no change to the20Hz status phase.
-          if source_valid and live_actor is not None and live_offer is None and live_history.offer is None:
+          # Forward the genuine settings read in the existing neutral-status
+          # slot. An extra4Hz stream can exceed Controls' rolling frequency
+          # bound. If earlier work crossed the publication deadline after a
+          # status was already sent, preserve its next slot instead of doubling.
+          if (source_valid and live_actor is not None and live_offer is None and live_history.offer is None and
+              now + 10_000_000 >= next_tracking_status_ns):
             pm.send('starpilotSteeringTracking', tracking_message(source, now_ns=now,
               current_native=False, offer=None, restore=None))
+            if next_tracking_status_ns == 0:
+              next_tracking_status_ns = now
+            next_tracking_status_ns += max(1, (now - next_tracking_status_ns) // 50_000_000 + 1) * 50_000_000
         if live_actor is not None:
           message = result_message(None, 'live-tracking', publication_sequence, now)
           value = message.autoSteeringLearning.learning
