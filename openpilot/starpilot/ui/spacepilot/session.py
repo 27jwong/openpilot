@@ -2,7 +2,7 @@
 
 The game never starts or stops a managed process itself. A successful onroad
 entry leaves the existing DriveStateOwner in Offroad even after game exit; only
-a later explicit drive-state selection can start driving services again.
+a later explicit drive-state selection or verified physical key-off releases it.
 """
 
 from enum import StrEnum
@@ -11,6 +11,7 @@ import time
 from openpilot.starpilot.parked_vehicle import ParkedVehicleReader
 from openpilot.starpilot.ui.spacepilot.guard import ParkGate, read_offroad_witness, read_witness
 from openpilot.starpilot.ui.spacepilot.state import WheelInput
+from openpilot.starpilot.ui.spacepilot.ignition import IgnitionReturn
 
 TRANSITION_NS = 8_000_000_000
 
@@ -28,6 +29,7 @@ class GameSession:
     self.stage = Stage.VERIFYING
     self.started_ns = time.monotonic_ns()
     self.requested_offroad = False
+    self.ignition_return: IgnitionReturn | None = None
     self.vehicle = None
     self.wheel = WheelInput()
     self.gate = ParkGate()
@@ -102,6 +104,7 @@ class GameSession:
           raise ValueError('Offroad request was not accepted')
         self._request_revision = result.revision
         self.requested_offroad = True
+        self.ignition_return = IgnitionReturn(self.ui, self.drive_owner, result.revision, native_device=self.native_device)
         self.stage = Stage.STOPPING
         self.started_ns = mono
         self.gate.reset()

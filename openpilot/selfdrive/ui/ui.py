@@ -16,13 +16,15 @@ from openpilot.starpilot.ui.startup import select_ui
 BIG_UI = gui_app.big_ui()
 
 
-def update_frame(preview=None, controllers=None, star=None):
+def update_frame(preview=None, controllers=None, star=None, game_mode=None):
   gui_app.measure_frame_phase("ui_state", ui_state.update)
   if star is not None:
     # Android Auto bookmarks must be consumed even when the comma screen is off
     # or another widget covers the StarPilot page.
     star._poll_projection_bookmark(time.monotonic_ns())
     star._poll_projection_slc(time.monotonic_ns())
+  if game_mode is not None:
+    game_mode()
   if controllers is not None:
     gui_app.measure_frame_phase("controllers", controllers.poll)
   if preview is not None:
@@ -44,7 +46,7 @@ def main():
     from openpilot.starpilot.ui.layout_preview_runtime import LayoutPreviewRuntime
     layout = StarMainLayout() if BIG_UI else StarMiciMainLayout()
     from openpilot.starpilot.controllers.runtime import ControllerRuntime
-    from openpilot.starpilot.ui.spacepilot.native import SpacePilotPage
+    from openpilot.starpilot.ui.spacepilot.native import SpacePilotPage, poll_game_mode
     def game_input():
       page = gui_app.get_active_widget()
       return page.capture_controller if isinstance(page, SpacePilotPage) else None
@@ -60,6 +62,7 @@ def main():
     preview = None if ui_state.replay_clock is not None else LayoutPreviewRuntime(ui_state.params, (Profile.LARGE if BIG_UI else Profile.COMPACT).value,
                                    offroad_hint=ui_state.is_offroad, authority=preview_authority)
   else:
+    poll_game_mode = None
     layout = MainLayout() if BIG_UI else MiciMainLayout()
     preview = None
     controllers = None
@@ -67,7 +70,7 @@ def main():
   pm = messaging.PubMaster(['uiDebug'])
   star = layout.star if star_ui else None
   try:
-    for should_render, frame_time, cpu_time in gui_app.render(before_frame=lambda: update_frame(preview, controllers, star)):
+    for should_render, frame_time, cpu_time in gui_app.render(before_frame=lambda: update_frame(preview, controllers, star, poll_game_mode)):
       if should_render:
         if camera_core_ui and not main_thread_configured:
           # Share the camera core with normal scheduling, without FIFO display

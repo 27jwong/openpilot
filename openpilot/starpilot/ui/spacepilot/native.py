@@ -9,9 +9,10 @@ import pyray as rl
 from openpilot.common.hardware import HARDWARE
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.ui.mici.widgets.button import BigButton
-from openpilot.selfdrive.ui.ui_state import ui_state
+from openpilot.selfdrive.ui.ui_state import device, ui_state
 from openpilot.starpilot.ui.spacepilot.guard import ParkGate, Witness, read_offroad_witness, read_witness
 from openpilot.starpilot.ui.spacepilot.session import GameSession, Stage
+from openpilot.starpilot.ui.spacepilot.ignition import IgnitionReturn
 from openpilot.starpilot.drive_state.owner import DriveStateOwner
 from openpilot.starpilot.storage import starpilot_storage_root
 from openpilot.starpilot.ui.spacepilot.render import EXIT, SpaceRenderer, canvas_rect
@@ -19,6 +20,32 @@ from openpilot.starpilot.favorites.actions import INCREASE_SPEED, DECREASE_SPEED
 from openpilot.starpilot.ui.spacepilot.state import FiveTaps, Flight
 from openpilot.system.ui.lib.application import MouseEvent, MousePos, gui_app
 from openpilot.system.ui.widgets import Widget
+
+
+# This observer outlives page exit, but never a UI process restart. It owns only
+# the exact game request and no game/socket/display resources.
+_ignition_return: IgnitionReturn | None = None
+# Covered widgets remain open until hide_event finishes; top-widget identity is
+# insufficient to prove cleanup before a mode request.
+_open_games: set['SpacePilotPage'] = set()
+
+
+def poll_game_mode() -> None:
+  """Called before rendering, including while the ordinary display is asleep."""
+  global _ignition_return
+  pending = _ignition_return
+  if pending is None:
+    return
+  try:
+    if pending.observe():
+      for page in tuple(_open_games):
+        page._exit(unsafe=True)
+      pending.release(lambda: not _open_games)
+  except Exception:
+    cloudlog.exception('SpacePilot ignition return ended')
+    pending.finished = True
+  if pending.finished:
+    _ignition_return = None
 
 
 def live_witness() -> Witness | None:
@@ -48,6 +75,7 @@ class SpacePilotPage(Widget):
     self.renderer = SpaceRenderer()
     self.controller_after_ns = time.monotonic_ns()
     self.controller_last_ns = 0
+    self._return_registered = False
     self.last_tick = 0.
     self.closed = True
     self.touch_held = self.exit_pressed = False
@@ -55,6 +83,7 @@ class SpacePilotPage(Widget):
   def show_event(self) -> None:
     super().show_event()
     self.closed = False
+    _open_games.add(self)
     if not self.gate.update(live_witness()):
       self.session.close('Entry evidence changed')
     self.last_tick = time.monotonic()
@@ -69,21 +98,30 @@ class SpacePilotPage(Widget):
     self.gate.reset()
     self.touch_held = self.exit_pressed = False
     super().hide_event()
+    _open_games.discard(self)
 
   def _safe(self) -> bool:
     return bool(not self.closed and gui_app.get_active_widget() is self and self.session.playable())
 
   def _tick(self) -> None:
+    global _ignition_return
     if self.closed:
       return
     if gui_app.get_active_widget() is not self:
       self._exit(unsafe=True)
       return
     fire = self.session.step()
+    if not self._return_registered and self.session.ignition_return is not None:
+      _ignition_return = self.session.ignition_return
+      self._return_registered = True
     if self.session.stage == Stage.CLOSED:
       cloudlog.info('SpacePilot ended: %s', self.session.reason)
       self._exit(unsafe=True)
       return
+    # Renew only from this active, successfully checked page. No global timeout
+    # override survives exit, a failed render, stopped ticks or UI restart.
+    if not ui_state.started:
+      device._reset_interactive_timeout()
     now = time.monotonic()
     if fire:
       self.flight.act(now)

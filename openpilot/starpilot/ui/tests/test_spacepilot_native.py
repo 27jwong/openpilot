@@ -33,7 +33,7 @@ def page(monkeypatch):
   monkeypatch.setattr(native, 'live_witness', lambda: read(parked_ui()))
   monkeypatch.setattr(native.time, 'monotonic', lambda: 10.)
   monkeypatch.setattr(native.time, 'monotonic_ns', lambda: 10_000_000_000)
-  game = Mock(stage=native.Stage.PLAYING, reason='', vehicle=Mock(), wheel=Mock(armed=set()))
+  game = Mock(stage=native.Stage.PLAYING, reason='', vehicle=Mock(), wheel=Mock(armed=set()), ignition_return=None)
   game.step.return_value = False
   game.playable.return_value = True
   game.close.side_effect = lambda *_a: setattr(game, 'stage', native.Stage.CLOSED)
@@ -264,3 +264,48 @@ def test_real_nav_stack_launch_survives_background_gesture_reset(monkeypatch, pa
   assert not game.closed
   gui_app.pop_widget()
   assert game.closed and game._tick not in gui_app._nav_stack_ticks
+
+
+@pytest.mark.parametrize('timeout', [5, 30, 60])
+@pytest.mark.parametrize('finish', ['exit', 'unsafe', 'render_failure', 'stopped_ticks'])
+def test_game_wake_renews_actual_device_timeout_and_releases(page, monkeypatch, timeout, finish):
+  from openpilot.selfdrive.ui import ui_state as display
+  from openpilot.starpilot.ui.display_preferences import DisplayPreferences
+  clock = [10.]
+  state = NS(started=False, ignition=True, projection_read_only=False, sm=NS(valid={}, alive={}))
+  monkeypatch.setattr(display, 'ui_state', state)
+  monkeypatch.setattr(native, 'ui_state', state)
+  monkeypatch.setattr(display, 'PC', False)
+  monkeypatch.setattr(display.HARDWARE, 'set_display_power', Mock())
+  monkeypatch.setattr(gui_app, 'set_should_render', Mock())
+  monkeypatch.setattr(native.time, 'monotonic', lambda: clock[0])
+  device = display.Device()
+  device._display_preferences = DisplayPreferences(enabled=True, parked_timeout=timeout)
+  monkeypatch.setattr(native, 'device', device, raising=False)
+  callback = Mock()
+  device.add_interactive_timeout_callback(callback)
+  device._reset_interactive_timeout()
+  # No touch or controller event renews this timer; the actual active page does.
+  for _ in range(150):
+    clock[0] += .5
+    device._update_wakefulness()
+    page._tick()
+    assert device.awake
+    assert device.interactive_timeout == timeout
+    assert device._override_interactive_timeout is None
+  callback.assert_not_called()
+  if finish == 'exit':
+    page._exit(unsafe=False)
+  elif finish == 'unsafe':
+    page.session.step.side_effect = lambda: setattr(page.session, 'stage', native.Stage.CLOSED)
+    page._tick()
+  elif finish == 'render_failure':
+    page.renderer = Mock(render=Mock(side_effect=RuntimeError('fixture render failure')))
+    page._render(page.rect)
+  # A halted caller renews nothing even if it never receives hide_event.
+  clock[0] += timeout + .01
+  device._update_wakefulness()
+  assert not device.awake
+  assert device.interactive_timeout == timeout and device._override_interactive_timeout is None
+  callback.assert_called_once()
+  assert page.closed or finish == 'stopped_ticks'

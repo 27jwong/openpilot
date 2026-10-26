@@ -47,11 +47,25 @@ A mode request alone never proves that the car is parked. Changing ignition,
 mode, gear, speed, engagement, process state, faults, source freshness or clock
 continuity ends the game. Entry/shutdown times out after eight seconds.
 
-A successful onroad entry **leaves Offroad selected when the game exits or the UI
-closes**. Returning to driving requires an explicit existing drive-mode selection
-(Onroad or Auto), which performs the normal offroad/onroad startup. The game never
-restores driving services automatically. This is the existing manager-session
-request, not a new persistent safety mode across manager/system restarts.
+A successful onroad entry leaves Offroad selected on ordinary game exit. A small
+UI observer retains only that exact game-owned request revision. After every
+connected Panda continuously reports ignition off for one second, with fresh
+source/receipt clocks, unchanged Panda topology/uptime and pandad process, healthy
+noOutput and stopped driving services, it closes any game and requests Auto through
+the existing owner. Auto remains offroad while ignition is off; the next ignition
+uses normal startup checks. A single off report, stale/missing/faulted telemetry,
+clock discontinuity, reconnect or external mode/session change cannot release the
+request. The observer also runs while the normal offroad screen is asleep.
+
+The observer belongs to this UI process. UI restart does not adopt a prior request;
+if observation is interrupted, use the existing drive-mode selector to choose
+Auto. Manager/system restart retains its existing Auto initialization. There is
+no new persistent interlock or blanket Auto request on page exit/crash.
+
+Successful active offroad game ticks renew the existing display activity timer,
+including the ready and game-over screens. No saved timeout is changed. Exiting,
+unsafe shutdown, render failure or stopped ticks stops renewal, and the configured
+offroad timeout applies normally.
 
 ## Validation boundary
 
