@@ -109,6 +109,7 @@ class Controls:
                         if torque_runtime_enabled(self.CP, self.params) else None)
     self.last_lane_centering_result: LaneCenteringResult | None = None
     self.lane_centering_applied = 0.0
+    self.lane_centering_inactive_reason = 'inactive'
 
     self.pose_calibrator = PoseCalibrator()
     self.calibrated_pose: Pose | None = None
@@ -365,12 +366,15 @@ class Controls:
       self.model_turn_assist.twitch_guard_remaining = update_twitch_guard(0., CS.vEgo, CS.standstill)
     lane_base_curvature = new_desired_curvature
     self.lane_centering_applied = 0.0
+    self.lane_centering_inactive_reason = 'inactive'
     self.last_lane_centering_result = None
     lane_delay = None
     if lane_centering is None and self.lane_centering_host is not None:
       now_ns = int(self.sm.logMonoTime['carState']) if os.getenv('REPLAY') == '1' else time.monotonic_ns()
       lane_centering = self.lane_centering_host.sample(self.sm, now_ns=now_ns,
                                                      lateral_active=CC.latActive, longitudinal_active=CC.longActive)
+      if lane_centering is None:
+        self.lane_centering_inactive_reason = self.lane_centering_host.last_refusal
     if lane_centering is None:
       self.lane_centering_controller.reset()
     elif not isinstance(lane_centering, LaneCenteringRequest):
@@ -569,7 +573,7 @@ class Controls:
     feedback = feedback_message(
       self.last_lane_centering_result, self.lane_centering_applied, CC.latActive,
       model_mono_time=self.sm.logMonoTime['modelV2'], car_control_mono_time=cc_send.logMonoTime,
-      valid=bool(CS.canValid and self.sm.all_checks(['modelV2'])))
+      valid=bool(CS.canValid and self.sm.all_checks(['modelV2'])), inactive_reason=self.lane_centering_inactive_reason)
     automatic = getattr(self, 'global_learning', None)
     if automatic is not None:
       try:

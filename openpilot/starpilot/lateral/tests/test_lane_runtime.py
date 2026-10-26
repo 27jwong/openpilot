@@ -612,6 +612,149 @@ class LaneRuntimeTests(unittest.TestCase):
           controls.state_control()
         self.assertGreater(controls.last_lane_centering_result.correction, 0.0)
 
+  def test_host_refusal_classification_preserves_admission_and_expires(self):
+    with OpenpilotPrefix():
+      params = Params()
+      params.put_bool('LaneCentering', True, block=True)
+      host = LaneCenteringHost(params)
+      now = 1_000_000_000
+
+      def sample(frame, at=now):
+        return host.sample(frame, now_ns=at, lateral_active=True, longitudinal_active=True)
+
+      def recovered():
+        self.assertIsNotNone(sample(Frame(now)))
+        self.assertEqual(host.last_refusal, 'inactive')
+
+      recovered()
+      # Use the actual subscriber methods, including their ignore policy.
+      sm = messaging.SubMaster(list(host.REQUIRED), frequency=100)
+      for service in host.REQUIRED:
+        sm.alive[service] = sm.freq_ok[service] = sm.valid[service] = True
+        sm.logMonoTime[service] = now
+      car_state = messaging.new_message('carState', valid=True)
+      car_state.carState.canValid = True
+      sm.data['carState'] = car_state.as_reader().carState
+      for flag, reason in (('alive', 'not_alive'), ('freq_ok', 'frequency'), ('valid', 'invalid')):
+        for service in host.REQUIRED:
+          with self.subTest(flag=flag, service=service):
+            getattr(sm, flag)[service] = False
+            self.assertIsNone(sample(sm))
+            self.assertEqual(host.last_refusal, f'host_{service}_{reason}')
+            getattr(sm, flag)[service] = True
+            self.assertIsNotNone(sample(sm))
+            self.assertEqual(host.last_refusal, 'inactive')
+      for ignore, flag in (('ignore_alive', 'alive'), ('ignore_average_freq', 'freq_ok'), ('ignore_valid', 'valid')):
+        getattr(sm, ignore).append('modelV2')
+        getattr(sm, flag)['modelV2'] = False
+        self.assertIsNotNone(sample(sm))
+        self.assertEqual(host.last_refusal, 'inactive')
+        getattr(sm, flag)['modelV2'] = True
+        getattr(sm, ignore).remove('modelV2')
+      for service in host.REQUIRED:
+        for stamp, reason in ((0, 'missing_time'), (now + 1, 'future'), (now - 200_000_000, 'stale')):
+          frame = Frame(now)
+          frame.logMonoTime[service] = stamp
+          self.assertIsNone(sample(frame))
+          self.assertEqual(host.last_refusal, f'host_{service}_{reason}')
+          recovered()
+      frame = Frame(now)
+      frame.checked = False
+      self.assertIsNone(sample(frame))
+      self.assertEqual(host.last_refusal, 'host_checks')
+      recovered()
+      for valid, timeout, reason in ((False, False, 'host_can_invalid'), (True, True, 'host_can_timeout')):
+        frame = Frame(now)
+        frame.state.canValid, frame.state.canTimeout = valid, timeout
+        self.assertIsNone(sample(frame))
+        self.assertEqual(host.last_refusal, reason)
+        recovered()
+      self.assertIsNone(sample(Frame(0), 0))
+      self.assertEqual(host.last_refusal, 'host_clock')
+      recovered()
+      params.put_bool('LaneCentering', False, block=True)
+      self.assertIsNone(sample(Frame(now * 2), now * 2))
+      self.assertEqual(host.last_refusal, 'host_disabled')
+
+  def test_actual_controls_publishes_host_refusal_and_clears_it_on_recovery(self):
+    with OpenpilotPrefix(), mock.patch.dict(os.environ, {'AOL_REPLAY_RUNTIME': '0', 'REPLAY': '1'}), \
+         mock.patch('openpilot.selfdrive.controls.controlsd.messaging.PubMaster'):
+      params = Params()
+      publish_corolla_params(params)
+      params.put_bool('LaneCentering', True, block=True)
+      params.put('LaneCenteringE2EAuthority', 0., block=True)
+      controls = Controls()
+      tick = 0
+      for tick in range(60):
+        feed(controls, 1_000_000_000 + tick * 10_000_000, tick)
+        controls.state_control()
+      for flag, reason in (('alive', 'not_alive'), ('freq_ok', 'frequency'), ('valid', 'invalid')):
+        for service in LaneCenteringHost.REQUIRED:
+          tick += 1
+          feed(controls, 1_000_000_000 + tick * 10_000_000, tick)
+          getattr(controls.sm, flag)[service] = False
+          command, lateral_log = controls.state_control()
+          self.assertIsNone(controls.last_lane_centering_result)
+          self.assertEqual(controls.lane_centering_applied, 0.)
+          controls.pm.send.reset_mock()
+          controls.publish(command, lateral_log)
+          feedback = [call.args[1] for call in controls.pm.send.call_args_list if call.args[0] == 'starpilotLateralState'][-1]
+          state = feedback.starpilotLateralState.laneCentering
+          self.assertEqual(state.reason, f'host_{service}_{reason}')
+          self.assertEqual((state.requestedCorrection, state.appliedCorrection), (0., 0.))
+          getattr(controls.sm, flag)[service] = True
+          tick += 1
+          feed(controls, 1_000_000_000 + tick * 10_000_000, tick)
+          command, lateral_log = controls.state_control()
+          self.assertIsNotNone(controls.last_lane_centering_result)
+          self.assertEqual(controls.lane_centering_inactive_reason, 'inactive')
+          controls.pm.send.reset_mock()
+          controls.publish(command, lateral_log)
+          feedback = [call.args[1] for call in controls.pm.send.call_args_list if call.args[0] == 'starpilotLateralState'][-1]
+          self.assertEqual(feedback.starpilotLateralState.laneCentering.reason, controls.last_lane_centering_result.reason)
+
+  def test_actual_controls_lane_change_has_zero_added_and_retained_contribution(self):
+    from openpilot.cereal import log
+    for state in (log.LaneChangeState.preLaneChange, log.LaneChangeState.laneChangeStarting,
+                  log.LaneChangeState.laneChangeFinishing):
+      for signal in (False, True):
+        for pause in (False, True):
+          with self.subTest(state=state, signal=signal, pause=pause), OpenpilotPrefix(), \
+               mock.patch.dict(os.environ, {'AOL_REPLAY_RUNTIME': '0', 'REPLAY': '1'}), \
+               mock.patch('openpilot.selfdrive.controls.controlsd.messaging.PubMaster'):
+            params = Params()
+            publish_corolla_params(params)
+            params.put_bool('LaneCentering', True, block=True)
+            params.put_bool('LaneCenteringPauseOnSignal', pause, block=True)
+            params.put('LaneCenteringE2EAuthority', 0., block=True)
+            reference, candidate = Controls(), Controls()
+            for tick in range(60):
+              now = 1_000_000_000 + tick * 10_000_000
+              for controls in (reference, candidate):
+                feed(controls, now, tick)
+                controls.state_control()
+            self.assertGreater(candidate.last_lane_centering_result.correction, 0.)
+            self.assertEqual(candidate.desired_curvature, reference.desired_curvature)
+            # Both native controllers have the same complete centering history.
+            reference.lane_centering_host = None
+            changed_model = model()
+            changed_model.meta.laneChangeState = state
+            with mock.patch(f'{__name__}.model', return_value=changed_model):
+              for tick in range(60, 70):
+                now = 1_000_000_000 + tick * 10_000_000
+                feed(reference, now, tick, signal=signal)
+                feed(candidate, now, tick, signal=signal)
+                nominal, _ = reference.state_control()
+                command, _ = candidate.state_control()
+                self.assertEqual(command.to_dict(), nominal.to_dict())
+                self.assertEqual(candidate.desired_curvature, reference.desired_curvature)
+                self.assertEqual(candidate.last_lane_centering_result.reason, 'lane_change')
+                self.assertEqual(candidate.last_lane_centering_result.correction, 0.)
+                self.assertEqual(candidate.lane_centering_applied, 0.)
+                self.assertEqual(candidate.lane_centering_controller._correction, 0.)
+                self.assertIsNone(candidate.lane_centering_controller._tracker.path)
+
+
   def test_saved_settings_bounds_and_corruption(self):
     with OpenpilotPrefix():
       params = Params()

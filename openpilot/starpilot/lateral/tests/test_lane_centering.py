@@ -247,19 +247,27 @@ class TestLaneCentering(unittest.TestCase):
     self.assertEqual(fading.reason, "unqualified_model")
     self.assertGreater(controller.update(source).correction, fading.correction)
 
-  def test_signal_pause_precedes_lane_change_as_in_frozen_source(self):
-    controller = LaneCenteringController()
-    source = observation()
-    before = settled(controller, source).correction
-    changed_model = model()
-    changed_model.meta.laneChangeState = "laneChangeStarting"
-    signaled = controller.update(replace(source, model=changed_model, turn_signal_active=True))
-    self.assertEqual(signaled.reason, "signal_release")
-    self.assertGreater(signaled.correction, 0.0)
-    self.assertLess(signaled.correction, before)
-    unsignaled = controller.update(replace(source, model=changed_model))
-    self.assertEqual(unsignaled.reason, "lane_change")
-    self.assertEqual(unsignaled.correction, 0.0)
+  def test_lane_change_clears_seeded_correction_even_with_signal_pause(self):
+    from openpilot.cereal import log
+    for state in (log.LaneChangeState.preLaneChange, log.LaneChangeState.laneChangeStarting,
+                  log.LaneChangeState.laneChangeFinishing):
+      for signal in (False, True):
+        for pause in (False, True):
+          with self.subTest(state=state, signal=signal, pause=pause):
+            controller = LaneCenteringController()
+            source = observation(settings=LaneCenteringSettings(True, 0., 0., pause))
+            self.assertGreater(settled(controller, source).correction, 0.)
+            changed_model = model()
+            changed_model.meta.laneChangeState = state
+            changed = controller.update(replace(source, model=changed_model, turn_signal_active=signal))
+            self.assertEqual(changed.reason, 'lane_change')
+            self.assertEqual(changed.correction, 0.)
+            self.assertEqual(changed.candidate_curvature, source.base_curvature)
+            self.assertEqual(controller._correction, 0.)
+            self.assertIsNone(controller._tracker.path)
+            self.assertEqual(controller.guard_applied(changed_model, source.base_curvature, source.base_curvature,
+                                                     source.base_curvature, source.speed_mps, .1), source.base_curvature)
+
 
   def test_unqualified_native_models_have_no_new_correction(self):
     for bad_model in (model(prob=0.2), model(std=0.4), model(left=-0.5, right=0.5),
