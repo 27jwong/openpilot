@@ -105,7 +105,7 @@ PROFILES: dict[str, LayoutProfile] = {
 
 for _profile in PROFILES:
   PROFILES[_profile]['widgets']['speed_limit_actions']['note'] = (
-    'Accept / Decline appear after tapping a pending limit.')
+    'Accept / Decline appear after tapping a pending limit. Toyota cruise guidance remains visible when buttons are hidden.')
 
 SPEED_LAYOUT_V7 = {
   'large': {'cruise_limits': (320, 210, 88, 75), 'speed_limit_actions': (320, 108, 88, 307)},

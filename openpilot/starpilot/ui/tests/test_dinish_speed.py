@@ -67,6 +67,43 @@ def test_approved_limit_offset_and_action_sizes_fit_actual_fonts():
       rl.close_window()
 
 
+def test_toyota_guidance_preserves_primary_legibility_and_fits_the_action_area():
+  from unittest.mock import patch
+  from openpilot.starpilot.ui.onroad import OnroadView
+  from openpilot.starpilot.ui.onroad_state import slc_action_bounds
+  from openpilot.starpilot.ui.unified_speed_presentation import toyota_cruise_notice
+  owns_context = not rl.is_window_ready()
+  if owns_context:
+    rl.init_window(128, 128, 'Toyota guidance font fixture')
+  try:
+    for profile in Profile:
+      with BitmapFonts(profile, default_font_directory()) as fonts:
+        view = OnroadView.__new__(OnroadView)
+        view.fonts = fonts
+        ppi = (2160**2 + 1080**2)**.5 / 6 if profile == Profile.LARGE else 300
+        for metric, status in product((False, True), ('raise_dash', 'release_plus', 'off_hold', 'off_resume')):
+          current = replace(road(), metric=metric, toyota_cruise_status=status, toyota_cruise_target_kph=145.)
+          first, last = slc_action_bounds(profile, current)
+          notice = toyota_cruise_notice(current)
+          assert notice is not None
+          calls = []
+          with patch.object(fonts, 'draw', lambda *args, calls=calls: calls.append(args)):
+            view._slc_actions(current)
+          foreground = [call for call in calls if call[-1].a == 255]
+          for text, role, size, x, y, _ in foreground:
+            a, b = fonts.horizontal_ink(text, role, size)
+            top, bottom = fonts.vertical_ink(text, role, size)
+            assert first[0] + 4 <= x + a < x + b <= last[2] - 4
+            assert first[1] <= y + top < y + bottom <= last[3]
+            if text in (notice[0], notice[2]):
+              assert (bottom - top) * 25.4 / ppi >= 2.8
+          for _left, top, _right, bottom in (first, last):
+            assert (bottom - top) * 25.4 / ppi >= 4.8
+  finally:
+    if owns_context:
+      rl.close_window()
+
+
 def test_large_sign_is_secondary_to_set_speed_at_the_saved_position():
   from unittest.mock import patch
   from openpilot.starpilot.ui.onroad_large_widgets import UnifiedSpeedWidget

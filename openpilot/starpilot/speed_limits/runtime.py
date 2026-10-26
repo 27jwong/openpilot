@@ -144,6 +144,9 @@ class Runtime:
     self.command_card_producer = ''
     self.commanded_acceptance: acc.AcceptedLimit | None = None
     self.last_received: acc.Candidate | None = None
+    self.toyota_eligible = False
+    self.toyota_projection = None
+    self.commanded_generation = -1
 
   def reset(self) -> None:
     self.map_source.reset()
@@ -170,6 +173,8 @@ class Runtime:
     self.command_card_producer = ''
     self.commanded_acceptance = None
     self.last_received = None
+    self.toyota_projection = None
+    self.commanded_generation = -1
 
   def update_offsets(self, offsets: sd.OffsetSchedule) -> None:
     self.settings = replace(self.settings, offsets=offsets)
@@ -378,6 +383,9 @@ class Runtime:
 
   def step(self, sm, CP, *, now_ns: int, now_boot_ns: int | None = None, request: Action | None = None,
            cruise_event: CruiseEvent | None = None) -> Output:
+    from openpilot.starpilot.speed_limits.toyota import eligible, projection
+    self.toyota_eligible = eligible(CP)
+    self.toyota_projection = projection(sm, now_ns) if self.toyota_eligible else None
     old_pending = self.state.acceptance.pending
     if self.command_status == 'issued' and now_ns > self.command_expiry_ns:
       self.command_status = 'expired'
@@ -423,6 +431,18 @@ class Runtime:
         result.state.override.persistent_selected_mps is not None):
       return None
     target = result.domain.context.effective_cluster_mps
+    if self.toyota_eligible:
+      row = self.toyota_projection
+      accepted = decision.state.accepted
+      if (row is None or row.status != 'ready' or row.sessionId != self.session_id or
+          int(row.acceptedMonoTime) != accepted.accepted_at_ns or
+          abs(float(row.approvedTargetMps) - target) > 0.02):
+        self.commanded_acceptance = None
+        self.command_status = ''
+        return None
+      if self.commanded_generation != result.state.control_generation:
+        self.commanded_acceptance = None
+      self.commanded_generation = result.state.control_generation
     selected_kph = float(sm['carState'].vCruise)
     if (not _number(target, positive=True) or not _number(selected_kph, positive=True) or
         selected_kph >= 255 or not V_CRUISE_MIN / 3.6 <= target <= V_CRUISE_MAX / 3.6):
@@ -504,6 +524,7 @@ class Runtime:
     accepted = result.state.acceptance.accepted
     if accepted is not None:
       state.hasAccepted = True
+      state.acceptedMonoTime = accepted.accepted_at_ns
       state.acceptedSpeedLimit = accepted.candidate.speed_mps
       state.acceptedSource = accepted.candidate.source
     if result.domain is not None and result.domain.context is not None:

@@ -567,6 +567,12 @@ class RuntimeSnapshotAdapter:
     if not display_car_valid:
       curve = None
     cluster_cruise = _finite(display_car.vCruiseCluster) if display_car_valid else None
+    from openpilot.starpilot.speed_limits.toyota import projection as toyota_projection
+    toyota = toyota_projection(sm, now_ns) if started and display_car_valid else None
+    if toyota is not None and not str(toyota.status).startswith('off_') and (
+        slc is None or not slc.enabled or slc.hasPending or toyota.sessionId != slc.sessionId or
+        toyota.acceptedMonoTime != slc.acceptedMonoTime):
+      toyota = None
     cruise = cluster_cruise if cluster_cruise is not None and cluster_cruise > 0 else None
     if cluster_cruise == 0 and display_controls is not None:
       cruise = _finite(getattr(display_controls, "vCruiseDEPRECATED", None), positive=True)
@@ -652,6 +658,8 @@ class RuntimeSnapshotAdapter:
     onroad = OnroadState(developer_metrics=developer_metrics,
                          engaged=display_lat_active or display_long_active or longitudinal_overridden, camera_available=started,
                          speed_mps=raw_speed, cruise_kph=cruise, speed_limit=observation,
+                         toyota_cruise_status=str(toyota.status) if toyota is not None else '',
+                         toyota_cruise_target_kph=_finite(toyota.targetKph, positive=True) if toyota is not None else None,
                          appearance=self._appearance_value, customization=self._customization_value,
                          alert=alert, metric=bool(ui.is_metric),
                          experimental_available=bool(ui.has_longitudinal_control),

@@ -192,7 +192,8 @@ class CompactHudRenderer:
       self._last_cruise_display = display
       self._last_cruise_ns = now_ns
       elapsed = now_ns - self._set_speed_changed_ns if self._set_speed_changed_ns is not None else 0
-      return self._set_speed_alpha.update(float(0 < elapsed < 2_500_000_000))
+      persistent = state.toyota_cruise_status in ('raise_dash', 'release_plus', 'off_hold')
+      return self._set_speed_alpha.update(float(persistent or 0 < elapsed < 2_500_000_000))
     if (self._last_cruise_ns is None or now_ns < self._last_cruise_ns or
         now_ns - self._last_cruise_ns > 150_000_000):
       self._set_speed_alpha.x = 0.0

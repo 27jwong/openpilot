@@ -186,7 +186,7 @@ class TestSlcUiRuntime(unittest.TestCase):
         result = runtime.step(sm, cp, now_ns=START + 50_000_000, request=action)
         self.assertEqual(result.message.slcState.actionStatus, 'adopt')
         self.assertIsNotNone(result.command)
-        cruise = VCruiseHelper.__new__(VCruiseHelper)
+        cruise = VCruiseHelper(cp)
         cruise.apply_slc_target(result.command.slcCruiseCommand.targetMps, metric)
         applied = replace(state, cruise_kph=cruise.v_cruise_cluster_kph,
                           speed_limit=speed_limit_from_message(result.message.slcState))

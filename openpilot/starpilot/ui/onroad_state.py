@@ -24,6 +24,9 @@ from openpilot.starpilot.ui.navigation_state import NavigationDisplay
 from openpilot.starpilot.ui.live_developer_sidebar import DeveloperMetric
 
 
+TOYOTA_NOTICE_STATUSES = frozenset(('raise_dash', 'release_plus', 'off_hold', 'off_resume'))
+
+
 class ObservationKind(StrEnum):
   VALID = "valid"
   ABSENT = "absent"
@@ -222,6 +225,8 @@ class OnroadState:
   viewport_width: float = 2160.0
   developer_metrics: tuple[DeveloperMetric, ...] = ()
   slc_prompt_open: bool = False
+  toyota_cruise_status: str = ''
+  toyota_cruise_target_kph: float | None = None
 
   @property
   def cruise_active(self) -> bool:
@@ -253,7 +258,8 @@ class OnroadRequest:
 def _default_slc_controls(profile: Profile, state: OnroadState) -> tuple[SlcControl, ...]:
   """Only render/accept actions backed by a displayed live SLC decision."""
   observation = state.speed_limit
-  if (state.alert.size != AlertSize.NONE or not observation.action_enabled or
+  if (state.toyota_cruise_status in TOYOTA_NOTICE_STATUSES or
+      state.alert.size != AlertSize.NONE or not observation.action_enabled or
       observation.kind != ObservationKind.VALID or not observation.session_id):
     return ()
   pending = observation.pending_speed_limit_mps
@@ -308,7 +314,8 @@ def slc_controls(profile: Profile, state: OnroadState) -> tuple[SlcControl, ...]
 
 
 def slc_action_occludes(profile: Profile, state: OnroadState, bounds) -> bool:
-  if state.alert.size != AlertSize.NONE or not slc_controls(profile, state):
+  notice = state.toyota_cruise_status in TOYOTA_NOTICE_STATUSES
+  if state.alert.size != AlertSize.NONE or not (notice or slc_controls(profile, state)):
     return False
   first, last = slc_action_bounds(profile, state)
   left, top, right, bottom = bounds
