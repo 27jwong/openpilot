@@ -6,7 +6,10 @@ No old parsed CarState is restamped and no actuator command bypasses Card.
 from contextlib import ExitStack
 from unittest import mock
 
+import pytest
+
 from opendbc.car import structs
+from opendbc.car.toyota.values import CAR
 from opendbc.car.secoc import add_mac
 from opendbc.safety.tests.libsafety import libsafety_py
 from openpilot.cereal import messaging
@@ -24,9 +27,10 @@ class CapturePublisher:
     self.messages[service] = messaging.log_from_bytes(raw)
 
 
-def test_fresh_secoc_source_permission_sd_controls_card_sendcan_join():
+@pytest.mark.parametrize('vehicle', (CAR.TOYOTA_SIENNA_4TH_GEN, CAR.TOYOTA_RAV4_PRIME))
+def test_fresh_secoc_source_permission_sd_controls_card_sendcan_join(vehicle):
   case = IoniqAvailabilityTests(methodName='runTest')
-  with actual_card(simulation=False) as (selected, _), ExitStack() as cleanup:
+  with actual_card(simulation=False, vehicle=vehicle) as (selected, _), ExitStack() as cleanup:
     cleanup.callback(case.doCleanups)
     sd, controls, step = case._authority_callers(
       False, cp=selected.CP.as_reader().as_builder(), genuine_events=True)
@@ -63,7 +67,7 @@ def test_fresh_secoc_source_permission_sd_controls_card_sendcan_join():
     assert warm.canValid and not warm.canTimeout
     original_message = messaging.new_message
     driving_torques = []
-    for tick, gear in enumerate((3,) * 12 + (0,)):
+    for tick, gear in enumerate((3,) * 6 + (4,) * 6 + (0, 1, 2)):
       now = base + tick * 10_000_000
       def clocked_message(*args, _stamp=now, **kwargs):
         message = original_message(*args, **kwargs)
@@ -83,7 +87,7 @@ def test_fresh_secoc_source_permission_sd_controls_card_sendcan_join():
         safety.aol_set_host_request(1)
         request = safety.aol_get_request_mask()
         permission = safety.aol_get_permission_mask()
-        assert request == 1 and permission == (1 if gear == 3 else 0)
+        assert request == 1 and permission == (1 if gear in (3, 4) else 0)
         selected.aol_card_intent.update(physical.as_reader(), now_ns=now)
         selected.state_publish(physical, None)
         car_source = capture.messages['carState']
@@ -100,7 +104,7 @@ def test_fresh_secoc_source_permission_sd_controls_card_sendcan_join():
         assert axis.sourceCarStateMonoTime == car_source.logMonoTime == now
         assert axis.observedMonoTime == now and axis.validUntilMonoTime == now + 30_000_000
         assert axis.intentProducerSessionId == selected.slc_producer_session
-        assert command.latActive == (gear == 3) and not command.longActive
+        assert command.latActive == (gear in (3, 4)) and not command.longActive
         native = decode_safety(sd.sm['aolSafetyWire'])
         assert native is not None and native.observedMonoTime == now
         assert native.safetyParam == 2121 and native.axisSessionId == axis.sessionId
@@ -129,7 +133,7 @@ def test_fresh_secoc_source_permission_sd_controls_card_sendcan_join():
         assert steer == add_mac(bytes.fromhex(TEST_KEY), 1, 1, counter, (steer[0], steer[1][:4], steer[2]))
         assert safety.safety_tx_hook(libsafety_py.make_CANPacket(steer[0], steer[2], steer[1]))
         torque = int.from_bytes(steer[1][1:3], 'big', signed=True)
-        if gear == 3:
+        if gear in (3, 4):
           driving_torques.append(torque)
           assert abs(torque) <= min(1500, 15 * (tick + 1))
         else:

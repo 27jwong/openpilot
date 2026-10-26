@@ -11,13 +11,17 @@ from openpilot.starpilot.longitudinal.toyota_output_policy import production_ena
 TOYOTA = int(structs.CarParams.SafetyModel.toyota)
 
 
-def sienna(key=True):
+def secoc_params(vehicle, key=True):
   fp = gen_empty_fingerprint()
   fp[0][0x3F6] = 8
-  cp = CarInterface.get_params(CAR.TOYOTA_SIENNA_4TH_GEN, fp, [structs.CarParams.CarFw(ecu=structs.CarParams.Ecu.hybrid)],
+  cp = CarInterface.get_params(vehicle, fp, [structs.CarParams.CarFw(ecu=structs.CarParams.Ecu.hybrid)],
                                False, False, False)
   cp.secOcKeyAvailable = key
   return cp
+
+
+def sienna(key=True):
+  return secoc_params(CAR.TOYOTA_SIENNA_4TH_GEN, key)
 
 
 class TestSiennaSecocAol(unittest.TestCase):
@@ -104,7 +108,7 @@ TEST_KEY = '11' * 16
 
 
 @contextmanager
-def actual_card(raw_key=TEST_KEY, *, simulation=True):
+def actual_card(raw_key=TEST_KEY, *, simulation=True, vehicle=CAR.TOYOTA_SIENNA_4TH_GEN):
   with OpenpilotPrefix(), mock.patch.dict(os.environ, {'SIMULATION': '1' if simulation else '0', 'AOL_REPLAY_RUNTIME': '0',
                                                        'TOYOTA_LONG_OUTPUT_REPLAY_RUNTIME': '0'}):
     params = Params()
@@ -114,7 +118,7 @@ def actual_card(raw_key=TEST_KEY, *, simulation=True):
     params.put('LKASButtonControl', 8, block=True)
     if raw_key is not None:
       params.put('SecOCKey', raw_key, block=True)
-    cp = sienna(key=False)
+    cp = secoc_params(vehicle, key=False)
     interface = CarInterface(cp)
 
     with mock.patch('openpilot.selfdrive.car.card.open', side_effect=FileNotFoundError, create=True):
@@ -158,9 +162,10 @@ def parsed_state(interface, *, gear=3, main=True, door=False, belt=True, eps=1, 
   return state, frames
 
 
+@pytest.mark.parametrize('vehicle', (CAR.TOYOTA_SIENNA_4TH_GEN, CAR.TOYOTA_RAV4_PRIME))
 @pytest.mark.parametrize('key', (None, '', 'not-a-key', '11' * 15, TEST_KEY))
-def test_actual_card_decodes_key_before_aol_admission_and_publishes_exact_profile(key):
-  with actual_card(key) as (selected, saved):
+def test_actual_card_decodes_key_before_aol_admission_and_publishes_exact_profile(key, vehicle):
+  with actual_card(key, vehicle=vehicle) as (selected, saved):
     admitted = decode_key(key) is not None
     assert selected.CP.secOcKeyAvailable == admitted
     assert selected.aol_qualified == admitted
@@ -173,7 +178,7 @@ def test_actual_card_decodes_key_before_aol_admission_and_publishes_exact_profil
       assert selected.aol_card_intent.settings.lkas_action == selected.aol_card_intent.settings.main_action == 0
       assert selected.CI.CS.secoc_key == selected.CI.CC.secoc_key == bytes.fromhex(TEST_KEY)
       assert native_matches_cp(selected.CP, TOYOTA, 2121)
-      assert production_enabled(selected.CP)
+      assert production_enabled(selected.CP) == (vehicle == CAR.TOYOTA_SIENNA_4TH_GEN)
     else:
       assert selected.aol_card_intent is None
       assert not production_enabled(selected.CP)
@@ -189,14 +194,15 @@ def test_actual_card_decodes_key_before_aol_admission_and_publishes_exact_profil
       with mock.patch('openpilot.selfdrive.selfdrived.selfdrived.REPLAY', False):
         selfdrived = SelfdriveD(CP=selected.CP)
       assert selfdrived.aol_replay and selfdrived.axis_transport_required
-      assert extension_state(LongControl(selected.CP), 'toyota_output') is not None
+      assert (extension_state(LongControl(selected.CP), 'toyota_output') is not None) == (vehicle == CAR.TOYOTA_SIENNA_4TH_GEN)
       del selfdrived
     del controls
 
 
+@pytest.mark.parametrize('vehicle', (CAR.TOYOTA_SIENNA_4TH_GEN, CAR.TOYOTA_RAV4_PRIME))
 @pytest.mark.parametrize('gear,expected', ((0, 'park'), (1, 'reverse'), (2, 'neutral'), (3, 'drive'), (4, 'brake')))
-def test_actual_secoc_factory_parser_uses_hybrid_gear_without_legacy_gear(gear, expected):
-  cp = sienna()
+def test_actual_secoc_factory_parser_uses_hybrid_gear_without_legacy_gear(gear, expected, vehicle):
+  cp = secoc_params(vehicle)
   interface = CarInterface(cp)
   state, frames = parsed_state(interface, gear=gear)
   assert state.canValid and not state.canTimeout
@@ -214,7 +220,7 @@ def test_actual_secoc_factory_parser_uses_hybrid_gear_without_legacy_gear(gear, 
   assert str(after_legacy.gearShifter) == expected
 
 
-@pytest.mark.parametrize('vehicle', (CAR.TOYOTA_RAV4_PRIME, CAR.TOYOTA_YARIS, CAR.TOYOTA_RAV4_TSS2_2023))
+@pytest.mark.parametrize('vehicle', (CAR.TOYOTA_YARIS, CAR.TOYOTA_RAV4_TSS2_2023))
 def test_other_secoc_and_angle_factories_never_join_sienna_aol(vehicle):
   cp = CarInterface.get_params(vehicle, gen_empty_fingerprint(), [], False, False, False)
   cp.secOcKeyAvailable = True
@@ -308,3 +314,14 @@ def test_secoc_fixture_advances_real_counter_and_duplicate_counter_invalidates_c
   for tick in range(8):
     state = interface.update([(1_090_000_000 + tick * 10_000_000, second)])
   assert not state.canValid and not state.canTimeout
+
+
+@pytest.mark.parametrize('vehicle', (CAR.TOYOTA_SIENNA_4TH_GEN, CAR.TOYOTA_RAV4_PRIME))
+@pytest.mark.parametrize('gear,drivable', ((0, False), (1, False), (2, False), (3, True), (4, True)))
+def test_secoc_parsed_gear_matches_common_entry_policy(vehicle, gear, drivable):
+  from openpilot.selfdrive.car.car_events import CarEvents
+  from openpilot.cereal import log
+  cp = secoc_params(vehicle)
+  current, _ = parsed_state(CarInterface(cp), gear=gear)
+  events = CarEvents(cp).create_common_events(current, current)
+  assert (log.OnroadEvent.EventName.wrongGear not in events.names) == drivable

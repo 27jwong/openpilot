@@ -24,7 +24,7 @@ AOL_WORDS = frozenset((
 ))
 
 
-SECOC_TORQUE_CARS = frozenset((CAR.TOYOTA_SIENNA_4TH_GEN,))
+SECOC_TORQUE_CARS = frozenset((CAR.TOYOTA_SIENNA_4TH_GEN, CAR.TOYOTA_RAV4_PRIME))
 RADAR_TORQUE_CARS = frozenset((CAR.TOYOTA_CHR_TSS2, CAR.TOYOTA_RAV4_TSS2_2022))
 CAMERA_TORQUE_CARS = frozenset((
   CAR.TOYOTA_ALPHARD_TSS2, CAR.TOYOTA_AVALON_TSS2, CAR.TOYOTA_CAMRY_TSS2, CAR.TOYOTA_COROLLA_TSS2,
@@ -206,7 +206,7 @@ def retain_on_native_denial(cp, native, state):
   gears = structs.CarState.GearShifter
   return bool(state is not None and qualified(cp, marked_only=True) and state.canValid and not state.canTimeout and
               not state.steerFaultPermanent and
-              (state.gearShifter not in (gears.drive, gears.sport, gears.low) or state.steerFaultTemporary or state.vehicleSensorsInvalid))
+              (state.gearShifter not in (gears.drive, gears.sport, gears.low, gears.brake) or state.steerFaultTemporary or state.vehicleSensorsInvalid))
 
 
 class ToyotaCardIntent(AolCardIntent):
@@ -252,7 +252,8 @@ def held_lateral_pedal(owner, cs):
     not getattr(owner, 'aol_dm_lateral_inhibit', False) and
     cs.brakePressed != cs.gasPressed and not cs.regenBraking and
     cs.cruiseState.available and not cs.cruiseState.enabled and
-    cs.gearShifter == structs.CarState.GearShifter.drive and
+    cs.gearShifter in (structs.CarState.GearShifter.drive, structs.CarState.GearShifter.sport,
+                       structs.CarState.GearShifter.low, structs.CarState.GearShifter.brake) and
     isfinite(cs.vEgoRaw) and isfinite(cs.vEgo) and
     (not cs.brakePressed or cs.standstill or cs.vEgo >= settings.pause_brake_mps) and
     not cs.seatbeltUnlatched and not physical_cancel(cs, owner.CP))
