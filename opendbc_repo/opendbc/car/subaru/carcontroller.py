@@ -142,7 +142,7 @@ class CarController(CarControllerBase):
                                                     self.p, self.VM)
         self.apply_angle_last = apply_angle
         self.angle_was_active = angle_active
-        angle_bus = CanBus.main if self.CP.carFingerprint in (CAR.SUBARU_ASCENT_2023, CAR.SUBARU_FORESTER_2022, CAR.SUBARU_OUTBACK_2023) else CanBus.alt
+        angle_bus = CanBus.main
         can_sends.append(subarucan.create_steering_control_angle(self.packer, apply_angle, angle_active, angle_bus))
       else:
         apply_torque = int(round(actuators.torque * self.p.STEER_MAX))

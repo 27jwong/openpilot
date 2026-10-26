@@ -19,7 +19,7 @@ class TestAngleHandoff(unittest.TestCase):
             state.out.steeringTorque = torque * sign
             state.out.steeringRateDeg = rate * sign
             steer, decoded = step(controller, command, state)
-            self.assertEqual(steer[2], 1)
+            self.assertEqual(steer[2], 0)
             self.assertEqual(decoded['LKAS_Request'], expected)
             if not expected:
               self.assertEqual(decoded['LKAS_Output'], 10)
