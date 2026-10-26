@@ -527,6 +527,40 @@ class TestSingleLineTracking(unittest.TestCase):
 
 
 class TestVehicleClearance(unittest.TestCase):
+  def test_required_unknown_body_preserves_nominal_and_clears_retained_state(self):
+    from openpilot.starpilot.lateral.lane_clearance import BodyDimensions
+    for body in (None, BodyDimensions(1.88, math.nan)):
+      with self.subTest(body=body):
+        controller = LaneCenteringController(body=body, body_required=True)
+        controller._correction = .001
+        controller._tracker.path = (np.array(XS), np.full(len(XS), .3))
+        source = observation(base_curvature=-.006)
+        result = controller.update(source)
+        self.assertEqual((result.candidate_curvature, result.correction, result.reason), (-.006, 0., 'unqualified_body'))
+        self.assertIsNone(controller._tracker.path)
+        self.assertIsNone(controller._geometry_cache)
+        controller._correction = .001
+        controller._tracker.path = (np.array(XS), np.full(len(XS), .3))
+        self.assertEqual(controller.guard_applied(source.model, -.006, -.005, -.006, 20., .1), -.006)
+        self.assertEqual(controller._correction, 0.)
+        self.assertIsNone(controller._tracker.path)
+
+  def test_required_known_body_retains_prediction_and_withdraws_when_lost(self):
+    from openpilot.starpilot.lateral.lane_clearance import BodyDimensions
+    controller = LaneCenteringController(body=BodyDimensions(1.88, 4.855), body_required=True)
+    m = single(edge=10.)
+    m.roadEdges[0].y = [-10.] * len(XS)
+    for frame in range(30):
+      source = observation(m, model_sample_id=frame + 1, elapsed_seconds=.05,
+                           measured_curvature=0., lateral_delay_s=.1)
+      result = controller.update(source)
+    self.assertGreater(result.correction, 0.)
+    self.assertIsNotNone(controller._tracker.path)
+    controller._body = None
+    result = controller.update(replace(source, turn_signal_active=True))
+    self.assertEqual((result.candidate_curvature, result.correction), (source.base_curvature, 0.))
+    self.assertIsNone(controller._tracker.path)
+
   def test_final_command_guard_rejects_worsening_tracking_and_preserves_limits(self):
     from openpilot.starpilot.lateral.lane_clearance import BodyDimensions
     controller = LaneCenteringController(body=BodyDimensions(1.88, 4.855))
@@ -593,4 +627,7 @@ class TestVehicleClearance(unittest.TestCase):
     self.assertIsNone(interface_dimensions(object(), object()))
     for width, length in ((True, 4.8), (1.8, math.nan), (0., 4.8), (1.8, 20.)):
       self.assertFalse(BodyDimensions(width, length).valid)
+    for dimensions in ((1.88,), (1.88, 4.855, 0.), 'unknown', (1.88, math.nan)):
+      interface = SimpleNamespace(get_lateral_body_dimensions=lambda cp, bounds=dimensions: bounds)
+      self.assertIsNone(interface_dimensions(interface, object()))
 

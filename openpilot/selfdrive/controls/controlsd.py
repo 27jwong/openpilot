@@ -37,7 +37,7 @@ from openpilot.starpilot.lateral.lane_centering import (
   LaneCenteringController, LaneCenteringInput, LaneCenteringRequest, LaneCenteringResult,
 )
 from openpilot.starpilot.lateral.lane_feedback import feedback_message
-from openpilot.starpilot.lateral.lane_clearance import current_delay, interface_dimensions
+from openpilot.starpilot.lateral.lane_clearance import body_dimensions_required, current_delay, interface_dimensions
 from openpilot.starpilot.lateral.lane_change_preferences import LiveLaneChangePolicy
 from openpilot.starpilot.lateral.lane_change_smoothing import LaneChangeSmoother, limit_rate
 from openpilot.starpilot.lateral.lane_runtime import LaneCenteringHost, runtime_supported as lane_runtime_supported
@@ -96,7 +96,8 @@ class Controls:
     self.curvature = 0.0
     self.desired_curvature = 0.0
     self.model_turn_assist = ModelTurnAssist()
-    self.lane_centering_controller = LaneCenteringController(body=interface_dimensions(self.CI, self.CP))
+    self.lane_centering_controller = LaneCenteringController(body=interface_dimensions(self.CI, self.CP),
+                                                          body_required=body_dimensions_required(self.CI, self.CP))
     self.lateral_pause = LateralPause(read_lateral_pause(self.params), self.params)
     self.lane_change_preferences = LiveLaneChangePolicy(self.params,
       now_ns=0 if os.getenv('REPLAY') == '1' else time.monotonic_ns())

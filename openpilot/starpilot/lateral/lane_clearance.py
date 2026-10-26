@@ -30,8 +30,16 @@ def interface_dimensions(interface, cp) -> BodyDimensions | None:
   dimensions = provider(cp)
   if dimensions is None:
     return None
-  body = BodyDimensions(*dimensions)
+  try:
+    body = BodyDimensions(*dimensions)
+  except (TypeError, ValueError):
+    return None
   return body if body.valid else None
+
+
+def body_dimensions_required(interface, cp) -> bool:
+  provider = getattr(interface, 'requires_lateral_body_dimensions', None)
+  return bool(provider(cp)) if callable(provider) else False
 
 
 def current_delay(sm, now_ns: int) -> float | None:

@@ -257,11 +257,12 @@ def _reader_geometry_key(model):
 
 
 class LaneCenteringController:
-  def __init__(self, *, body: BodyDimensions | None = None) -> None:
+  def __init__(self, *, body: BodyDimensions | None = None, body_required: bool = False) -> None:
     self._correction = 0.0
     self._geometry_cache = None
     self._tracker = SingleLineTracker()
     self._body = body
+    self._body_required = body_required
     self._clearance_observation = None
 
   def reset(self) -> None:
@@ -289,6 +290,9 @@ class LaneCenteringController:
     return self._result(base, reason)
 
   def guard_applied(self, model, base: float, candidate: float, measured: float, speed: float, delay) -> float:
+    if self._body_required and (self._body is None or not self._body.valid):
+      self.reset()
+      return base
     if base == candidate or self._body is None and self._tracker.path is None:
       return candidate
     checked_delay = _finite_number(delay)
@@ -337,6 +341,9 @@ class LaneCenteringController:
     if observation.driver_override:
       self.reset()
       return self._result(base, "driver_override")
+    if self._body_required and (self._body is None or not self._body.valid):
+      self.reset()
+      return self._result(base, "unqualified_body")
     if settings.pause_on_signal and observation.turn_signal_active:
       self._tracker.reset()
       return self._fade(base, dt, "signal_release")
