@@ -52,7 +52,10 @@ def source_receiver(services):
   # process conflates CarState, so its receive count cannot measure the 100Hz
   # publisher rate while it processes a batch. Keep the actual envelope,
   # source-age, state-bracket and native checks; do not fabricate freq_ok.
-  return messaging.SubMaster(services, poll='carState', ignore_alive=['aolSafetyWire'],
+  # Wake on the actual motion/native/state delivery rather than waiting for
+  # another CarState. All envelope, source-age and current authority checks
+  # still run on the real received messages.
+  return messaging.SubMaster(services, ignore_alive=['aolSafetyWire'],
     ignore_valid=['aolSafetyWire'], ignore_avg_freq=['aolSafetyWire', 'carState'])
 
 
