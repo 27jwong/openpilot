@@ -499,6 +499,10 @@ export const NavigationPage = {
               <option v-for="option in gpsModes" :key="option.value" :value="option.value">{{ option.label }}</option>
             </GalaxySelect>
           </div>
+          <p v-if="data?.phoneGps">Phone updates: {{ data.phoneGps.usable ? 'usable' : 'waiting for a usable fix' }}.
+            Last update {{ Math.round(data.phoneGps.receivedAgeMs / 1000) }} seconds ago.
+            <span v-if="!data.phoneGps.accepted">{{ ({poorAccuracy: 'Position accuracy is too low.', outOfOrder: 'An older or repeated update was ignored.', delayed: 'An update arrived too late.'})[data.phoneGps.reason] || 'The last update was invalid.' }}</span>
+          </p>
           <h4>Set up GPS sharing</h4>
           <div class="gx-actions" role="group" aria-label="GPS setup guides">
             <button v-for="source in [{id:'android',label:'Android App'},{id:'iphone',label:'iPhone'}]" :key="source.id"
