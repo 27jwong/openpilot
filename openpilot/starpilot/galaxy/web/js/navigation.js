@@ -534,10 +534,10 @@ export const NavigationPage = {
         <section class="gx-card gx-navigation__section">
           <div class="gx-section__header"><i class="bi bi-map" aria-hidden="true"></i><span class="gx-section__title">Mapbox</span></div>
           <p>One public Mapbox access token (starting with pk.) handles the map, place and address search, and routes. A separate secret token is not needed.</p>
-          <p>Save your token while parked. Galaxy keeps it on your comma and never displays it after saving. Permanent address results can be saved. Search suggestions are temporary and used only for the current route. Favorites and recent destinations are also kept on your comma; going to one skips search, so it uses none of your search allowance. URL-restricted keys may reject map requests.</p>
-          <p class="gx-note">Typing suggestions and offline road maps stop just short of Mapbox's free monthly allowance and resume on the 1st. Permanent address lookups are billed by Mapbox. Searches, address lookups, routes and map views are counted here but not limited.</p>
+          <p>Save your token while parked. Galaxy keeps it on your comma and never displays it after saving. Address searches use temporary geocoding. Search suggestions are temporary and used only for the current route. Favorites and recent destinations are also kept on your comma; going to one skips search, so it uses none of your search allowance. URL-restricted keys may reject map requests.</p>
+          <p class="gx-note">Typing suggestions, address lookups and offline road maps stop just short of their free monthly allowances and resume on the 1st. Routes, full place searches and map views are counted but not limited. These counts cover this comma only; Mapbox bills total account usage, including other apps and devices.</p>
           <dl v-if="usageRows.length" class="gx-navigation__usage" aria-label="Mapbox use this month">
-            <template v-for="row in usageRows" :key="row.key"><dt>{{ row.label }}</dt><dd>{{ row.used.toLocaleString() }}<template v-if="row.key !== 'geocoding'"> of {{ row.limit.toLocaleString() }} free</template> this month</dd></template>
+            <template v-for="row in usageRows" :key="row.key"><dt>{{ row.label }}</dt><dd>{{ row.used.toLocaleString() }} of {{ row.limit.toLocaleString() }} free this month</dd></template>
           </dl>
           <a class="gx-btn gx-btn--tonal gx-navigation__token-link" href="https://account.mapbox.com/access-tokens/" target="_blank" rel="noopener noreferrer">Get a Mapbox access token</a>
           <p v-if="data?.hasKey" class="gx-note">A Mapbox key is saved.</p>
