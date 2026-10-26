@@ -267,7 +267,7 @@ def tici_speaker_samples(samples: np.ndarray) -> np.ndarray:
 def tici_disengage_samples(samples: np.ndarray) -> np.ndarray:
   """Lighten the existing disengage chime at load time, preserving its timing."""
   taps = np.arange(2049, dtype=np.float64) - 1024
-  lowpass = 2 * 700 / 48000 * np.sinc(2 * 700 / 48000 * taps) * np.hamming(len(taps))
+  lowpass = 2 * 700 / 48000 * np.sinc(2 * 700 / 48000 * taps) * np.hamming(len(taps))  # codespell:ignore sinc
   lowpass /= lowpass.sum()
   bass = np.convolve(samples, lowpass, mode="full")[1024:1024 + len(samples)]
   result = samples.astype(np.float64) - 0.65 * bass
