@@ -2093,17 +2093,6 @@ class StarMiciMainLayout(MiciMainLayout):
     self._scroller.scroll_to(self._onroad_layout.rect.x if ui_state.started else self._home_layout.rect.x, smooth=False)
 
   def _open_compact_destination(self, destination: Destination) -> None:
-    if destination == Destination.NETWORK and not self.star.connectivity_allowed():
-      from openpilot.selfdrive.ui.mici.widgets.button import GreyBigButton
-      from openpilot.system.ui.widgets.scroller import NavScroller
-      page = NavScroller()
-      current = self.star.snapshot(ShellMode.SETTINGS).home.network
-      label = {"wifi": "Wi-Fi", "ethernet": "Ethernet", "cell2G": "Cellular 2G", "cell3G": "Cellular 3G",
-               "cell4G": "Cellular 4G", "cell5G": "Cellular 5G"}.get(current, "No connection shown")
-      page._scroller.add_widgets([GreyBigButton("network", label),
-                                  GreyBigButton("network changes", "Use Offroad mode to change network settings")])
-      gui_app.push_widget(page)
-      return
     if destination == Destination.BLUETOOTH:
       from openpilot.starpilot.ui.bluetooth_compact import BluetoothCompact
       panel = self._compact_panels.get(destination)
