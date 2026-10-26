@@ -94,6 +94,33 @@ class TestBoltVoltConfigurations(unittest.TestCase):
               self.assertEqual((data[0] >> 4) & 3, expected)
               self.assertFalse(data[0] & 8)
 
+  def test_nonpedal_gm_preserves_legacy_loopback_counter_progression(self):
+    for identity in (CAR.CHEVROLET_VOLT, CAR.CHEVROLET_VOLT_CAMERA, CAR.CHEVROLET_VOLT_2019,
+                     CAR.CHEVROLET_BOLT_EUV):
+      for alpha in (False, True):
+        with self.subTest(identity=identity, alpha=alpha):
+          cp = ordinary_params(identity, alpha=alpha, radar=True)
+          cs = CarState(cp)
+          parsers = cs.get_can_parsers(cp)
+          packer = CANPacker(DBC[identity][Bus.pt])
+          controller = CarController(DBC[identity], cp)
+          self.assertFalse(controller.bolt_steering_ack_counter)
+          control = structs.CarControl()
+          expected = 0
+          for step, received in enumerate(([3], [0, 1], [0, 0], [1], [], [2, 3], [0])):
+            now = 1_000_000_000 + step * 100_000_000
+            packets = [packer.make_can_msg("ASCMLKASteeringCmd", 128, {"RollingCounter": value}) for value in received]
+            for parser in parsers.values():
+              parser.update([(now - 20_000_000, packets)])
+            cs.out = cs.update(parsers).as_reader()
+            expected += bool(received)
+            controller.frame = 20 + step * 10
+            _, commands = controller.update(control.as_reader(), cs, now)
+            steering = [message for message in commands if message[0] == 0x180 and message[2] == 0]
+            self.assertEqual(len(steering), 1)
+            self.assertEqual((steering[0][1][0] >> 4) & 3, expected % 4)
+            self.assertFalse(steering[0][1][0] & 8)
+
   def test_all_bolt_pedal_generations_withdraw_on_missing_stale_or_future_gear(self):
     for candidate in PEDAL_BOLT_CAR:
       for alpha in (False, True):
