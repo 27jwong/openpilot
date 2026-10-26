@@ -506,6 +506,21 @@ def run(
         collector._learning_current_native_allowed = bool(source_valid and previous is not None and
           current_native_health(sm, CP, previous, now))
 
+      native_refreshed = False
+
+      def ingest_current(evidence):
+        nonlocal native_refreshed
+        valid_source, stamp = source_current()
+        if (valid_source and evidence is not None and not native_refreshed and
+            not current_native_health(sm, CP, evidence, stamp)):
+          # A queued native delivery may already revoke or renew the received
+          # state. Consume it once for this bounded batch before excluding an
+          # original tick; the final post-drain refresh remains mandatory.
+          native_refreshed = True
+          source_delivery.refresh(sm)
+          valid_source, stamp = source_current(read=True)
+        return valid_source, stamp
+
       def control(event, current, stamp, offered=live_offer):
         nonlocal collector, raw_context, active_key, unavailable_reason
         valid_source, received_now = source_current()
@@ -593,6 +608,11 @@ def run(
           # The pre-drain reference can have expired while fresh controls were
           # queued; inheriting its Boolean rejects the fresh batch as well.
           # No old receipt or deadline is renewed by this current check.
+          if live_actor is not None:
+            original_collector = collector
+            valid_source, received_now = ingest_current(prepared)
+            if not valid_source or collector is not original_collector:
+              return
           _collect_source_control(collector, prepared, sm, CP, received_now)
           if live_actor is not None and offered is not None:
             from openpilot.starpilot.flm.live_trial_wire import read_application
@@ -616,7 +636,14 @@ def run(
           if event.which() == 'starpilotCarState' and event.starpilotCarState.appliedEvidence.version == 0:
             collector.split('no_current_applied_evidence')
             return
-          _collect_applied_output(collector, read_applied(event), sm, CP, received_now)
+          applied = read_applied(event)
+          if live_actor is not None:
+            original_collector = collector
+            consumed = collector.controls.get(applied.control_ns, collector.recent_controls.get(applied.control_ns))
+            valid_source, received_now = ingest_current(consumed)
+            if not valid_source or collector is not original_collector:
+              return
+          _collect_applied_output(collector, applied, sm, CP, received_now)
 
       drain(control_socket, control, messaging.recv_one_or_none, sink, now)
       drain(applied_socket, output, messaging.recv_one_or_none, sink, now)
