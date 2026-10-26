@@ -1,4 +1,4 @@
-"""Always On Lateral on the SecOC Sienna (TOYOTA_SIENNA_4TH_GEN, safety param 2121)."""
+"""SecOC AOL factories, key admission, and hybrid gear policy including radar Yaris."""
 import unittest
 
 from opendbc.car import gen_empty_fingerprint, structs
@@ -11,11 +11,11 @@ from openpilot.starpilot.longitudinal.toyota_output_policy import production_ena
 TOYOTA = int(structs.CarParams.SafetyModel.toyota)
 
 
-def secoc_params(vehicle, key=True):
+def secoc_params(vehicle, key=True, *, alpha=False):
   fp = gen_empty_fingerprint()
   fp[0][0x3F6] = 8
   cp = CarInterface.get_params(vehicle, fp, [structs.CarParams.CarFw(ecu=structs.CarParams.Ecu.hybrid)],
-                               False, False, False)
+                               alpha, False, False)
   cp.secOcKeyAvailable = key
   return cp
 
@@ -108,7 +108,7 @@ TEST_KEY = '11' * 16
 
 
 @contextmanager
-def actual_card(raw_key=TEST_KEY, *, simulation=True, vehicle=CAR.TOYOTA_SIENNA_4TH_GEN):
+def actual_card(raw_key=TEST_KEY, *, simulation=True, vehicle=CAR.TOYOTA_SIENNA_4TH_GEN, alpha=False):
   with OpenpilotPrefix(), mock.patch.dict(os.environ, {'SIMULATION': '1' if simulation else '0', 'AOL_REPLAY_RUNTIME': '0',
                                                        'TOYOTA_LONG_OUTPUT_REPLAY_RUNTIME': '0'}):
     params = Params()
@@ -118,7 +118,7 @@ def actual_card(raw_key=TEST_KEY, *, simulation=True, vehicle=CAR.TOYOTA_SIENNA_
     params.put('LKASButtonControl', 8, block=True)
     if raw_key is not None:
       params.put('SecOCKey', raw_key, block=True)
-    cp = secoc_params(vehicle, key=False)
+    cp = secoc_params(vehicle, key=False, alpha=alpha)
     interface = CarInterface(cp)
 
     with mock.patch('openpilot.selfdrive.car.card.open', side_effect=FileNotFoundError, create=True):
@@ -130,7 +130,7 @@ def actual_card(raw_key=TEST_KEY, *, simulation=True, vehicle=CAR.TOYOTA_SIENNA_
       del selected
 
 
-def parsed_state(interface, *, gear=3, main=True, door=False, belt=True, eps=1, lda=0, now_ns=1_000_000_000, ticks=8):
+def parsed_state(interface, *, gear=3, main=True, door=False, belt=True, eps=1, lda=0, now_ns=1_000_000_000, ticks=8, cruise=False):
   interface.update([])
   packer = getattr(interface, '_secoc_fixture_packer', None)
   if packer is None:
@@ -138,7 +138,7 @@ def parsed_state(interface, *, gear=3, main=True, door=False, belt=True, eps=1, 
     interface._secoc_fixture_packer = packer
   tracked = {bus: tuple(parser.vl) for bus, parser in interface.can_parsers.items()}
   values: dict[str, dict[str, float]] = {
-    'PCM_CRUISE': {'CRUISE_ACTIVE': 0}, 'PCM_CRUISE_2': {'MAIN_ON': main},
+    'PCM_CRUISE': {'CRUISE_ACTIVE': cruise}, 'PCM_CRUISE_2': {'MAIN_ON': main},
     'GEAR_PACKET_HYBRID': {'GEAR': gear}, 'EPS_STATUS': {'LKA_STATE': eps},
     'BODY_CONTROL_STATE': {'DOOR_OPEN_FL': door, 'SEATBELT_DRIVER_UNLATCHED': not belt},
     'WHEEL_SPEEDS': {f'WHEEL_SPEED_{wheel}': 72 for wheel in ('FR', 'FL', 'RR', 'RL')},
@@ -162,22 +162,24 @@ def parsed_state(interface, *, gear=3, main=True, door=False, belt=True, eps=1, 
   return state, frames
 
 
-@pytest.mark.parametrize('vehicle', (CAR.TOYOTA_SIENNA_4TH_GEN, CAR.TOYOTA_RAV4_PRIME))
+@pytest.mark.parametrize('vehicle,alpha', ((CAR.TOYOTA_SIENNA_4TH_GEN, False), (CAR.TOYOTA_RAV4_PRIME, False),
+                                           (CAR.TOYOTA_YARIS, False), (CAR.TOYOTA_YARIS, True)))
 @pytest.mark.parametrize('key', (None, '', 'not-a-key', '11' * 15, TEST_KEY))
-def test_actual_card_decodes_key_before_aol_admission_and_publishes_exact_profile(key, vehicle):
-  with actual_card(key, vehicle=vehicle) as (selected, saved):
+def test_actual_card_decodes_key_before_aol_admission_and_publishes_exact_profile(key, vehicle, alpha):
+  with actual_card(key, vehicle=vehicle, alpha=alpha) as (selected, saved):
     admitted = decode_key(key) is not None
     assert selected.CP.secOcKeyAvailable == admitted
     assert selected.aol_qualified == admitted
     assert selected.CP.alternativeExperience == (32 if admitted else 0)
-    assert selected.CP.safetyConfigs[0].safetyParam == 2121
-    assert selected.CP.secOcRequired and selected.CP.openpilotLongitudinalControl
+    word = (6217 if alpha else 2633) if vehicle == CAR.TOYOTA_YARIS else 2121
+    assert selected.CP.safetyConfigs[0].safetyParam == word
+    assert selected.CP.secOcRequired and selected.CP.openpilotLongitudinalControl == (vehicle != CAR.TOYOTA_YARIS or alpha)
     assert policy_for(selected.CP).auxiliary_lkas_supported
     assert saved.get('LKASButtonControl') == 8
     if admitted:
       assert selected.aol_card_intent.settings.lkas_action == selected.aol_card_intent.settings.main_action == 0
       assert selected.CI.CS.secoc_key == selected.CI.CC.secoc_key == bytes.fromhex(TEST_KEY)
-      assert native_matches_cp(selected.CP, TOYOTA, 2121)
+      assert native_matches_cp(selected.CP, TOYOTA, word)
       assert production_enabled(selected.CP) == (vehicle == CAR.TOYOTA_SIENNA_4TH_GEN)
     else:
       assert selected.aol_card_intent is None
@@ -199,10 +201,11 @@ def test_actual_card_decodes_key_before_aol_admission_and_publishes_exact_profil
     del controls
 
 
-@pytest.mark.parametrize('vehicle', (CAR.TOYOTA_SIENNA_4TH_GEN, CAR.TOYOTA_RAV4_PRIME))
+@pytest.mark.parametrize('vehicle,alpha', ((CAR.TOYOTA_SIENNA_4TH_GEN, False), (CAR.TOYOTA_RAV4_PRIME, False),
+                                           (CAR.TOYOTA_YARIS, False), (CAR.TOYOTA_YARIS, True)))
 @pytest.mark.parametrize('gear,expected', ((0, 'park'), (1, 'reverse'), (2, 'neutral'), (3, 'drive'), (4, 'brake')))
-def test_actual_secoc_factory_parser_uses_hybrid_gear_without_legacy_gear(gear, expected, vehicle):
-  cp = secoc_params(vehicle)
+def test_actual_secoc_factory_parser_uses_hybrid_gear_without_legacy_gear(gear, expected, vehicle, alpha):
+  cp = secoc_params(vehicle, alpha=alpha)
   interface = CarInterface(cp)
   state, frames = parsed_state(interface, gear=gear)
   assert state.canValid and not state.canTimeout
@@ -220,7 +223,7 @@ def test_actual_secoc_factory_parser_uses_hybrid_gear_without_legacy_gear(gear, 
   assert str(after_legacy.gearShifter) == expected
 
 
-@pytest.mark.parametrize('vehicle', (CAR.TOYOTA_YARIS, CAR.TOYOTA_RAV4_TSS2_2023))
+@pytest.mark.parametrize('vehicle', (CAR.TOYOTA_RAV4_TSS2_2023,))
 def test_other_secoc_and_angle_factories_never_join_sienna_aol(vehicle):
   cp = CarInterface.get_params(vehicle, gen_empty_fingerprint(), [], False, False, False)
   cp.secOcKeyAvailable = True
@@ -316,12 +319,38 @@ def test_secoc_fixture_advances_real_counter_and_duplicate_counter_invalidates_c
   assert not state.canValid and not state.canTimeout
 
 
-@pytest.mark.parametrize('vehicle', (CAR.TOYOTA_SIENNA_4TH_GEN, CAR.TOYOTA_RAV4_PRIME))
+@pytest.mark.parametrize('vehicle,alpha', ((CAR.TOYOTA_SIENNA_4TH_GEN, False), (CAR.TOYOTA_RAV4_PRIME, False),
+                                           (CAR.TOYOTA_YARIS, False), (CAR.TOYOTA_YARIS, True)))
 @pytest.mark.parametrize('gear,drivable', ((0, False), (1, False), (2, False), (3, True), (4, True)))
-def test_secoc_parsed_gear_matches_common_entry_policy(vehicle, gear, drivable):
+def test_secoc_parsed_gear_matches_common_entry_policy(vehicle, alpha, gear, drivable):
   from openpilot.selfdrive.car.car_events import CarEvents
   from openpilot.cereal import log
-  cp = secoc_params(vehicle)
+  cp = secoc_params(vehicle, alpha=alpha)
   current, _ = parsed_state(CarInterface(cp), gear=gear)
   events = CarEvents(cp).create_common_events(current, current)
   assert (log.OnroadEvent.EventName.wrongGear not in events.names) == drivable
+
+
+def test_every_secoc_factory_is_accounted_for():
+  assert {vehicle for vehicle in CAR if vehicle.config.flags & ToyotaFlags.SECOC} == {CAR.TOYOTA_SIENNA_4TH_GEN, CAR.TOYOTA_RAV4_PRIME, CAR.TOYOTA_YARIS}
+
+
+@pytest.mark.parametrize('alpha', (False, True))
+@pytest.mark.parametrize('mutation', ('missing_radar', 'wrong_disable', 'wrong_long', 'wrong_word', 'no_key', 'release'))
+def test_yaris_secoc_refuses_inconsistent_configuration(alpha, mutation):
+  cp = secoc_params(CAR.TOYOTA_YARIS, alpha=alpha)
+  assert qualified(cp)
+  if mutation == 'missing_radar':
+    cp.flags &= ~int(ToyotaFlags.RADAR_ACC)
+  elif mutation == 'wrong_disable':
+    cp.flags ^= int(ToyotaFlags.DISABLE_RADAR)
+  elif mutation == 'wrong_long':
+    cp.openpilotLongitudinalControl = not cp.openpilotLongitudinalControl
+  elif mutation == 'wrong_word':
+    cp.safetyConfigs[0].safetyParam = 2121
+  elif mutation == 'no_key':
+    cp.secOcKeyAvailable = False
+  else:
+    cp.dashcamOnly = True
+  assert not qualified(cp)
+  assert not policy_for(cp).intent_supported

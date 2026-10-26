@@ -159,6 +159,9 @@ class CarInterface(CarInterfaceBase):
     ret.openpilotLongitudinalControl = ((bool(ret.flags & ToyotaFlags.TSS2) and not (ret.flags & ToyotaFlags.RADAR_ACC)) or
                                         bool(ret.flags & ToyotaFlags.DISABLE_RADAR.value) or (radar_filter and alpha_long))
 
+    if candidate == CAR.TOYOTA_YARIS and ret.flags & ToyotaFlags.DISABLE_RADAR:
+      ret.safetyConfigs[0].safetyParam |= int(ToyotaSafetyFlags.SECOC_RADAR_LONG)
+
     from opendbc.car.toyota import matrix_filter
     manual_matrix_filter = any(matrix_filter.hardware_supported(candidate, fingerprint, car_fw, length=size) for size in (4, 8))
     if candidate in (CAR.TOYOTA_MATRIX_RETROFIT, CAR.TOYOTA_PRIUS_RETROFIT):

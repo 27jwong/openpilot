@@ -217,13 +217,13 @@ static void toyota_aol_configure(uint16_t param) {
   toyota_pedal = (param == 0x2049U) || (param == 0x2249U) || (param == 0x2449U) || (param == 0x2649U);
   toyota_aol_rav4h_filter = (param == 0x9049U) || (param == 0x9249U);
   toyota_sdsu_status = toyota_aol_rav4h_filter || toyota_eps8_sdsu || toyota_legacy_sdsu || toyota_prius_sdsu_param(param);
-  toyota_aol_stock = (toyota_dsu_bypass && ((param & 0x200U) != 0U)) || (param == 0x2649U) || (param == 585U) || (param == 856U) || (param == 4681U) || (param == 0x9249U) || (param == 0x2249U) || (param == 0x424DU) || (param == 0x649U) || (param == 0x1649U) || (param == 0x8249U) || (param == 0x8649U) || ((toyota_legacy_sdsu || toyota_legacy_advert_param(param) || toyota_camera_2aa_param(param) || toyota_prius_filter_param(param)) && ((param & 0x200U) != 0U));
 #ifdef ALLOW_DEBUG
-  toyota_aol_secoc = (param == 2121U);
+  toyota_aol_secoc = (param == 2121U) || (param == 2633U) || (param == 6217U);
 #else
   toyota_aol_secoc = false;
 #endif
-  toyota_aol_enabled = (toyota_dsu_bypass && aol_requested) || ((toyota_eps8_sdsu || toyota_legacy_sdsu || toyota_legacy_advert_param(param) || toyota_camera_2aa_param(param) || toyota_prius_filter_param(param)) && aol_requested) || (toyota_aol_lta && aol_requested) || (toyota_aol_stock && aol_requested) ||
+  toyota_aol_stock = (toyota_dsu_bypass && ((param & 0x200U) != 0U)) || (param == 0x2649U) || (param == 585U) || (param == 856U) || (param == 4681U) || (param == 0x9249U) || (param == 0x2249U) || (param == 0x424DU) || (param == 0x649U) || (param == 0x1649U) || (param == 0x8249U) || (param == 0x8649U) || ((toyota_legacy_sdsu || toyota_legacy_advert_param(param) || toyota_camera_2aa_param(param) || toyota_prius_filter_param(param)) && ((param & 0x200U) != 0U)) || (toyota_aol_secoc && (param == 2633U));
+  toyota_aol_enabled = (toyota_dsu_bypass && aol_requested) || ((toyota_eps8_sdsu || toyota_legacy_sdsu || toyota_legacy_advert_param(param) || toyota_camera_2aa_param(param) || toyota_prius_filter_param(param)) && aol_requested) || (toyota_aol_lta && aol_requested) || (toyota_aol_stock && (!toyota_aol_secoc || (alternative_experience == 32)) && aol_requested) ||
 #ifdef ALLOW_DEBUG
                        (toyota_aol_secoc && (alternative_experience == 32)) ||
 #endif

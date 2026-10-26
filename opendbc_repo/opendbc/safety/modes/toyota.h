@@ -681,14 +681,14 @@ static safety_config toyota_init(uint16_t param) {
   const uint32_t TOYOTA_PARAM_STOCK_LONGITUDINAL = 2UL << TOYOTA_PARAM_OFFSET;
   const uint32_t TOYOTA_PARAM_LTA = 4UL << TOYOTA_PARAM_OFFSET;
 
-#ifdef ALLOW_DEBUG
   const uint32_t TOYOTA_PARAM_SECOC = 8UL << TOYOTA_PARAM_OFFSET;
+#ifdef ALLOW_DEBUG
   toyota_secoc = GET_FLAG(base_param, TOYOTA_PARAM_SECOC);
 #endif
 
   toyota_alt_brake = GET_FLAG(base_param, TOYOTA_PARAM_ALT_BRAKE);
   toyota_stock_longitudinal = GET_FLAG(base_param, TOYOTA_PARAM_STOCK_LONGITUDINAL);
-  toyota_radar_diagnostics_allowed = !toyota_dsu_bypass && !toyota_stock_longitudinal && !toyota_secoc && (base_param != 0x1049U) && (base_param != 0x1449U) && !toyota_eps8_sdsu && !toyota_legacy_sdsu && !toyota_legacy_advert_param(base_param) && !toyota_camera_2aa_param(base_param) && !toyota_prius_filter_param(base_param);
+  toyota_radar_diagnostics_allowed = !toyota_dsu_bypass && !toyota_stock_longitudinal && (!GET_FLAG(base_param, TOYOTA_PARAM_SECOC) || (toyota_secoc && (base_param == 6217U))) && (base_param != 0x1049U) && (base_param != 0x1449U) && !toyota_eps8_sdsu && !toyota_legacy_sdsu && !toyota_legacy_advert_param(base_param) && !toyota_camera_2aa_param(base_param) && !toyota_prius_filter_param(base_param);
   toyota_lta = !toyota_legacy_advert_param(base_param) && GET_FLAG(base_param, TOYOTA_PARAM_LTA);
   toyota_dbc_eps_torque_factor = base_param & TOYOTA_EPS_FACTOR;
 

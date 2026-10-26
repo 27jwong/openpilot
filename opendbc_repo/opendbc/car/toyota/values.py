@@ -57,6 +57,7 @@ class ToyotaSafetyFlags(IntFlag):
   LTA = (4 << 8)
   SECOC = (8 << 8)
   LONG_FILTER = (16 << 8)
+  SECOC_RADAR_LONG = SECOC | LONG_FILTER  # Exact radar-disable SecOC profile; separates its keepalive permission.
   GAS_INTERCEPTOR = (32 << 8)
   ALT_CRUISE = (64 << 8)  # Exact Lexus IS DSU MAIN profile
   RAV4H_FILTER_PROFILE = (128 << 8)  # Exact smartDSU owner; bit14 remains reserved for ALT_CRUISE
