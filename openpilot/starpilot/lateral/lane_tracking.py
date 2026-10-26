@@ -93,7 +93,9 @@ class SingleLineTracker:
             raise ValueError
           slope = sum(float(np.interp(distance, x, np.gradient(y, x))) for x, y in valid_lines) * 0.5
           widths.append((right - left) / math.hypot(1.0, slope))
-        width = float(np.median(widths))
+        if not all(math.isfinite(value) for value in widths):
+          raise ValueError
+        width = sorted(widths)[1]
         if not 2.6 <= width <= 4.8:
           raise ValueError
         self.width, self.width_at, self.width_travel = width, self.clock, self.travel
@@ -137,7 +139,7 @@ class SingleLineTracker:
         self._clear_line()
         self.side = side
         self.acquired_at = self.clock
-        self.pending = max(self.MIN_CLEARANCE, float(np.median(distances)))
+        self.pending = max(self.MIN_CLEARANCE, sorted(distances)[1])
         if (
           not jump
           and self.width is not None
@@ -147,9 +149,9 @@ class SingleLineTracker:
           self.spacing = self.width * 0.5
       elif self.spacing is None and self.clock - self.acquired_at >= self.ACQUIRE_SECONDS:
         assert self.pending is not None
-        if abs(float(np.median(distances)) - self.pending) > 0.25:
+        if abs(sorted(distances)[1] - self.pending) > 0.25:
           self.acquired_at = self.clock
-          self.pending = max(self.MIN_CLEARANCE, float(np.median(distances)))
+          self.pending = max(self.MIN_CLEARANCE, sorted(distances)[1])
         else:
           self.spacing = self.pending
       self.last_good_at, self.last_near, self.last_slope = self.clock, near, slope

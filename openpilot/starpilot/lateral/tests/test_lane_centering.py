@@ -49,6 +49,33 @@ def settled(controller, source, ticks=300):
 
 
 class TestLaneCentering(unittest.TestCase):
+  def test_lane_width_avoids_first_use_numpy_median_import(self):
+    from openpilot.starpilot.lateral.lane_tracking import SingleLineTracker
+    tracker = SingleLineTracker()
+    with patch.object(np, 'median', side_effect=AssertionError('No lazy masked-array import in Controls')):
+      result = tracker.target(model(), 1, 10.0, 0.01, 0.0)
+    self.assertFalse(result.blocked)
+    assert tracker.width is not None
+    self.assertAlmostEqual(tracker.width, 3.6, places=5)
+
+  def test_single_line_spacing_avoids_first_use_numpy_median_import(self):
+    from openpilot.starpilot.lateral.lane_tracking import SingleLineTracker
+    tracker = SingleLineTracker()
+    with patch.object(np, 'median', side_effect=AssertionError('No lazy masked-array import in Controls')):
+      for frame in range(8):
+        tracker.target(single(line=-1.7, edge=10.), frame, 20., .05, 0.)
+    assert tracker.spacing is not None
+    self.assertAlmostEqual(tracker.spacing, 1.7, places=5)
+
+  def test_lane_width_rejects_nonfinite_gradient_before_median(self):
+    from openpilot.starpilot.lateral.lane_tracking import SingleLineTracker
+    for value in (float('nan'), float('inf'), float('-inf')):
+      tracker = SingleLineTracker()
+      with patch.object(np, 'gradient', return_value=np.full(len(XS), value)):
+        result = tracker.target(model(), 1, 10.0, 0.01, 0.0)
+      self.assertTrue(result.blocked)
+      self.assertIsNone(tracker.width)
+
   def test_reader_cache_detects_mutation_samples_and_reset(self):
     from openpilot.starpilot.lateral import lane_centering as module
     builder = model()
