@@ -878,12 +878,6 @@ export const AndroidAutoPage = {
                 <span class="gx-aa-row__text"><strong>Adapter</strong><small>{{ selected ? selected.name : 'Put it in pairing mode, then tap Find adapter.' }}</small></span>
                 <span class="gx-aa-pill" :class="selected ? 'gx-aa-pill--ready' : ''">{{ selected ? 'Paired' : 'Not paired' }}</span>
               </li>
-              <li class="gx-aa-row">
-                <i class="bi bi-car-front" aria-hidden="true"></i>
-                <span class="gx-aa-row__text"><strong>Your car (optional)</strong><small>{{ runtime?.companion_name || 'Android Auto works without pairing your car.' }}</small></span>
-                <span v-if="runtime?.companion_name" class="gx-aa-pill gx-aa-pill--ready">Paired</span>
-                <a v-else class="gx-btn gx-btn--tonal" href="#/bluetooth">Open Bluetooth</a>
-              </li>
             </ol>
             <GxNotice v-if="!pairing?.active && runtime?.pairing_note" tone="warn">{{ runtime.pairing_note }}</GxNotice>
             <ul v-if="!pairing?.active && receivers.length" class="gx-aa-list" aria-label="Paired cars">
