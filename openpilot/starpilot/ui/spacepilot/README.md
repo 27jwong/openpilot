@@ -2,9 +2,15 @@
 
 In native Developer settings, tap the **version number** five times. Both the
 comma four and Big UI provide the same gesture and native game. Release each tap
-within 450 ms without dragging; consecutive taps must be 100–850 ms apart, all
-within three seconds. Scrolling, another row, navigation, a long press, or loss
-of physical parked evidence resets progress.
+within 450 ms without dragging; tap at your own pace, with no more than 1.5 seconds
+between taps and six seconds overall. Distinct releases are counted from their
+touch timestamps even when delivered together in one UI frame. Scrolling, another
+row, navigation, a long press, or loss of physical parked evidence resets progress.
+Taps count while valid Park evidence is settling; the preparation screen still
+requires the full physical dwell before it can request Offroad or accept input.
+Holding the brake does not prevent entry. A pending C4 startup camera redirect
+does not dismiss a game with fresh parked evidence; movement and unsafe exits
+retain their normal behavior.
 
 Keep the vehicle in Park and disengaged while the preparation screen verifies
 its state and stops driving services. Play begins only after those services are

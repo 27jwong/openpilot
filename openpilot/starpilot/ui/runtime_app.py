@@ -2086,6 +2086,16 @@ class StarMiciMainLayout(MiciMainLayout):
                                              lambda index: panel().request_personality(index),
                                              lambda: panel().request_experimental())
 
+  def _handle_transitions(self):
+    from openpilot.starpilot.ui.spacepilot.native import SpacePilotPage, Stage, live_witness
+    page = gui_app.get_active_widget()
+    if (isinstance(page, SpacePilotPage) and not page.closed and page.session.stage != Stage.CLOSED and
+        live_witness() is not None):
+      # Cancel only the cosmetic delayed startup redirect for a freshly parked
+      # game. The base movement transition and the game's own gates still run.
+      self._onroad_time_delay = None
+    super()._handle_transitions()
+
   def _exit_spacepilot(self) -> None:
     # An unsafe game exit must reveal the existing road/alert presentation now,
     # including when engagement/alerts change while the car still reports Park.
