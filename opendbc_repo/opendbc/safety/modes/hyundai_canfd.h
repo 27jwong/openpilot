@@ -1273,7 +1273,8 @@ static bool hyundai_canfd_angle_aol_capacity(safety_config *ret) {
   return bounded;
 }
 
-static safety_config hyundai_canfd_init_validated(uint16_t param) {
+static safety_config hyundai_canfd_init_validated(uint16_t supplied_param) {
+  uint16_t param = supplied_param;
   const uint16_t HYUNDAI_PARAM_LONGITUDINAL = 4U;
   const uint16_t HYUNDAI_PARAM_CANFD_LKA_STEER_MSG_ALT = 128;
   const uint16_t HYUNDAI_PARAM_CANFD_ALT_BUTTONS = 32;
