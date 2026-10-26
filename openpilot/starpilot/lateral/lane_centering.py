@@ -15,6 +15,8 @@ import numpy as np
 
 from openpilot.cereal import log
 from openpilot.common.scalar_clip import clip_scalar
+from openpilot.starpilot.lateral.lane_tracking import SingleLineTracker
+from openpilot.starpilot.lateral.lane_clearance import BodyDimensions, limit_correction, limit_tracking
 
 
 STRENGTH_BASELINE = 1.5
@@ -80,6 +82,8 @@ class LaneCenteringInput:
   turn_signal_active: bool = False
   driver_override: bool = False
   time_discontinuity: bool = False
+  measured_curvature: float | None = None
+  lateral_delay_s: float | None = None
 
 
 @dataclass(frozen=True)
@@ -167,7 +171,7 @@ def _single_boundary_target(model: Any, paths, qualified, lookahead: float, offs
   return target
 
 
-def raw_correction(model: Any, speed_mps: float, offset_m: float, e2e_authority: float, *, _paths=None) -> float | None:
+def raw_correction(model: Any, speed_mps: float, offset_m: float, e2e_authority: float, *, _paths=None, _single_target=None) -> float | None:
   """Return a finite raw curvature correction, or None for unqualified model data."""
   speed = _finite_number(speed_mps)
   offset = _finite_number(offset_m)
@@ -209,7 +213,14 @@ def raw_correction(model: Any, speed_mps: float, offset_m: float, e2e_authority:
       target_y = (left + right) * 0.5 + clip_scalar(offset, -safe_offset, safe_offset)
     else:
       std_path = _path_xy(model.position.x, model.position.yStd) if _paths is None else _paths[3]
-      target_y = _single_boundary_target(model, (left_path, right_path, model_path, std_path), qualified, lookahead, offset)
+      if _single_target is not None:
+        known_path = left_path if qualified[0] else right_path
+        path_std = _at(std_path, lookahead) if std_path is not None else None
+        if (known_path is None or _at(known_path, lookahead) is None or
+            path_std is None or not 0. <= path_std <= E2E_MAX_PATH_STD):
+          return None
+      target_y = (_single_target if _single_target is not None else
+                  _single_boundary_target(model, (left_path, right_path, model_path, std_path), qualified, lookahead, offset))
       if target_y is None:
         return None
     error = target_y - model_y
@@ -239,21 +250,35 @@ def _reader_geometry_key(model):
   try:
     return (tuple(model.laneLineProbs), tuple(model.laneLineStds),
             *((tuple(line.x), tuple(line.y)) for line in (model.laneLines[1], model.laneLines[2])),
-            tuple(model.position.x), tuple(model.position.y), tuple(model.position.yStd))
+            tuple(model.position.x), tuple(model.position.y), tuple(model.position.yStd),
+            tuple(model.roadEdgeStds), tuple((tuple(edge.x), tuple(edge.y)) for edge in model.roadEdges))
   except (AttributeError, IndexError, TypeError, ValueError, OverflowError):
     return None
 
 
 class LaneCenteringController:
-  def __init__(self) -> None:
+  def __init__(self, *, body: BodyDimensions | None = None) -> None:
     self._correction = 0.0
     self._geometry_cache = None
+    self._tracker = SingleLineTracker()
+    self._body = body
+    self._clearance_observation = None
 
   def reset(self) -> None:
     self._correction = 0.0
     self._geometry_cache = None
+    self._tracker.reset()
 
   def _result(self, base: float, reason: str) -> LaneCenteringResult:
+    if self._body is not None and self._correction != 0.:
+      source = self._clearance_observation
+      measured = _finite_number(source.measured_curvature) if source is not None else None
+      delay = _finite_number(source.lateral_delay_s) if source is not None else None
+      guarded = (0. if measured is None or delay is None else
+                 limit_correction(source.model, base, self._correction, measured, source.speed_mps, delay, self._body))
+      if guarded != self._correction:
+        self._correction = guarded
+        reason = 'clearance_limited'
     correction = self._correction
     return LaneCenteringResult(base + correction, correction, (correction > 0) - (correction < 0), reason)
 
@@ -263,10 +288,29 @@ class LaneCenteringController:
       self._correction = 0.0
     return self._result(base, reason)
 
+  def guard_applied(self, model, base: float, candidate: float, measured: float, speed: float, delay) -> float:
+    if base == candidate or self._body is None and self._tracker.path is None:
+      return candidate
+    checked_delay = _finite_number(delay)
+    delta = candidate - base
+    allowed = 0. if checked_delay is None else delta
+    if checked_delay is not None:
+      if self._tracker.path is not None:
+        x, y = self._tracker.path
+        source = self._clearance_observation
+        offset = source.settings.offset_m if source is not None else 0.
+        allowed = limit_tracking((x, y + offset), base, allowed, measured, speed, checked_delay)
+      if self._body is not None:
+        allowed = limit_correction(model, base, allowed, measured, speed, checked_delay, self._body)
+    if allowed != delta:
+      self._correction *= abs(allowed / delta)
+    return base + allowed
+
   def update(self, observation: LaneCenteringInput) -> LaneCenteringResult:
     if not isinstance(observation, LaneCenteringInput):
       self.reset()
       return LaneCenteringResult(None, 0.0, 0, "invalid_input")
+    self._clearance_observation = observation
     base = _finite_number(observation.base_curvature)
     speed = _finite_number(observation.speed_mps)
     dt = _finite_number(observation.elapsed_seconds)
@@ -294,6 +338,7 @@ class LaneCenteringController:
       self.reset()
       return self._result(base, "driver_override")
     if settings.pause_on_signal and observation.turn_signal_active:
+      self._tracker.reset()
       return self._fade(base, dt, "signal_release")
     try:
       if observation.model.meta.laneChangeState != log.LaneChangeState.off:
@@ -316,7 +361,9 @@ class LaneCenteringController:
         self._geometry_cache = (observation.model, cache_key, paths)
     else:
       self._geometry_cache = None
-    raw = raw_correction(observation.model, speed, offset, authority, _paths=paths)
+    tracked = self._tracker.target(observation.model, observation.model_sample_id, speed, dt, offset, revision=geometry)
+    raw = None if tracked.blocked else raw_correction(observation.model, speed, offset, authority,
+                                                     _paths=paths, _single_target=tracked.y)
     if raw is None or not math.isfinite(raw):
       return self._fade(base, dt, "unqualified_model")
     target = clip_scalar(raw, -0.004, 0.004) * 0.30

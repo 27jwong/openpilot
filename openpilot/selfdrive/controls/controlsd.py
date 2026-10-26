@@ -37,6 +37,7 @@ from openpilot.starpilot.lateral.lane_centering import (
   LaneCenteringController, LaneCenteringInput, LaneCenteringRequest, LaneCenteringResult,
 )
 from openpilot.starpilot.lateral.lane_feedback import feedback_message
+from openpilot.starpilot.lateral.lane_clearance import current_delay, interface_dimensions
 from openpilot.starpilot.lateral.lane_change_preferences import LiveLaneChangePolicy
 from openpilot.starpilot.lateral.lane_change_smoothing import LaneChangeSmoother, limit_rate
 from openpilot.starpilot.lateral.lane_runtime import LaneCenteringHost, runtime_supported as lane_runtime_supported
@@ -95,7 +96,7 @@ class Controls:
     self.curvature = 0.0
     self.desired_curvature = 0.0
     self.model_turn_assist = ModelTurnAssist()
-    self.lane_centering_controller = LaneCenteringController()
+    self.lane_centering_controller = LaneCenteringController(body=interface_dimensions(self.CI, self.CP))
     self.lateral_pause = LateralPause(read_lateral_pause(self.params), self.params)
     self.lane_change_preferences = LiveLaneChangePolicy(self.params,
       now_ns=0 if os.getenv('REPLAY') == '1' else time.monotonic_ns())
@@ -364,6 +365,7 @@ class Controls:
     lane_base_curvature = new_desired_curvature
     self.lane_centering_applied = 0.0
     self.last_lane_centering_result = None
+    lane_delay = None
     if lane_centering is None and self.lane_centering_host is not None:
       now_ns = int(self.sm.logMonoTime['carState']) if os.getenv('REPLAY') == '1' else time.monotonic_ns()
       lane_centering = self.lane_centering_host.sample(self.sm, now_ns=now_ns,
@@ -374,6 +376,8 @@ class Controls:
       self.lane_centering_controller.reset()
       self.last_lane_centering_result = LaneCenteringResult(None, 0.0, 0, "invalid_request")
     else:
+      lane_now_ns = int(self.sm.logMonoTime['carState']) if os.getenv('REPLAY') == '1' else time.monotonic_ns()
+      lane_delay = current_delay(self.sm, lane_now_ns)
       result = self.lane_centering_controller.update(LaneCenteringInput(
         model=model_v2, model_sample_id=self.sm.logMonoTime['modelV2'],
         model_valid=bool(self.sm.all_checks(['modelV2'])), base_curvature=new_desired_curvature,
@@ -381,6 +385,8 @@ class Controls:
         settings=lane_centering.settings, elapsed_seconds=lane_centering.elapsed_seconds,
         turn_signal_active=bool(CS.leftBlinker or CS.rightBlinker), driver_override=bool(CS.steeringPressed),
         time_discontinuity=lane_centering.time_discontinuity,
+        measured_curvature=self.curvature,
+        lateral_delay_s=lane_delay,
       ))
       self.last_lane_centering_result = result
       if result.candidate_curvature is not None:
@@ -398,6 +404,12 @@ class Controls:
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, previous_curvature, new_desired_curvature, lp.roll)
     if self.last_lane_centering_result is not None and self.last_lane_centering_result.correction != 0.0:
       baseline_curvature, _ = clip_curvature(CS.vEgo, previous_curvature, limit_rate(CS.vEgo, previous_curvature, lane_base_curvature, factor), lp.roll)
+      guarded = self.lane_centering_controller.guard_applied(
+        model_v2, baseline_curvature, self.desired_curvature, self.curvature, CS.vEgo,
+        lane_delay)
+      if guarded != self.desired_curvature:
+        self.desired_curvature = guarded
+        curvature_limited = True
       self.lane_centering_applied = self.desired_curvature - baseline_curvature
     from openpilot.starpilot.car.subaru.smoothing import seconds as subaru_smooth_seconds, control_maximum
     lat_delay = self.sm["lateralDelay"].lateralDelay + LAT_SMOOTH_SECONDS + subaru_smooth_seconds(CS.vEgo, control_maximum(self))

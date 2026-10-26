@@ -71,8 +71,12 @@ def publish_corolla_params(params):
 
 def feed(controls, timestamp, tick, *, active=True, enabled=True, fault=False, override=False, signal=False, model_age=0,
          can_valid=True, can_timeout=False, aol_lat_only=False, native_session='lane-aol-session', speed=20.,
-         drive_id=500_000_000, native_allowed=True, independent=False):
+         drive_id=500_000_000, native_allowed=True, independent=False, delay_fast=False):
   events = []
+  if not controls.sm.seen['lateralDelay']:
+    initial = messaging.new_message('lateralDelay', valid=True, logMonoTime=timestamp - 250_000_000)
+    initial.lateralDelay.lateralDelay = .1
+    controls.sm.update_msgs((timestamp - 250_000_000) / 1e9, [initial.as_reader()])
 
   def msg(service, size=None):
     event = messaging.new_message(service, size, valid=True, logMonoTime=timestamp)
@@ -97,7 +101,8 @@ def feed(controls, timestamp, tick, *, active=True, enabled=True, fault=False, o
     lp = msg('vehicleParameters')
     lp.stiffnessFactor, lp.steerRatio = 1.0, controls.CP.steerRatio
   msg('longitudinalPlan').aTarget = 0.5
-  msg('lateralDelay').lateralDelay = 0.1
+  if tick % 25 == 0 or delay_fast:
+    msg('lateralDelay').lateralDelay = 0.1
   msg('onroadEvents', 0)
   if tick % 5 == 0:
     event = messaging.new_message('modelV2', valid=True, logMonoTime=timestamp - model_age)
@@ -135,6 +140,55 @@ def feed(controls, timestamp, tick, *, active=True, enabled=True, fault=False, o
 
 
 class LaneRuntimeTests(unittest.TestCase):
+  def test_body_dimensions_follow_selected_vehicle_without_retuning_geometry(self):
+    from openpilot.starpilot.lateral.lane_clearance import BodyDimensions, interface_dimensions
+    stock, tagged = ioniq_candidate()
+    for cp in (stock, tagged):
+      before = cp.to_dict()
+      self.assertEqual(interface_dimensions(HyundaiCarInterface, cp), BodyDimensions(1.88, 4.855))
+      self.assertEqual(cp.to_dict(), before)
+      other = cp.as_reader().as_builder()
+      other.carFingerprint = HyundaiCAR.HYUNDAI_IONIQ_5
+      self.assertIsNone(interface_dimensions(HyundaiCarInterface, other))
+    self.assertIsNone(interface_dimensions(HondaCarInterface, stock))
+
+  def test_body_guard_rejects_incorrect_delay_rate_with_lateral_axis_still_active(self):
+    with OpenpilotPrefix(), mock.patch.dict(os.environ, {'LANE_CENTERING_REPLAY_RUNTIME': '0', 'REPLAY': '1',
+                                                         'AOL_REPLAY_RUNTIME': '0'}), \
+         mock.patch('openpilot.selfdrive.controls.controlsd.messaging.PubMaster'):
+      params = Params()
+      _, tagged = ioniq_candidate()
+      params.put('CarParams', tagged.to_bytes(), block=True)
+      params.put_bool('LaneCentering', True, block=True)
+      params.put('LaneCenteringE2EAuthority', 0., block=True)
+      controls = Controls()
+      for tick in range(35):
+        feed(controls, 2_000_000_000 + tick * 10_000_000, tick)
+        command, _ = controls.state_control()
+      self.assertTrue(command.latActive)
+      self.assertGreater(controls.last_lane_centering_result.correction, 0.)
+      for tick in range(35, 45):
+        feed(controls, 2_000_000_000 + tick * 10_000_000, tick, delay_fast=True)
+        command, _ = controls.state_control()
+      self.assertTrue(command.latActive)
+      self.assertFalse(controls.sm.all_checks(['lateralDelay']))
+      self.assertEqual(controls.last_lane_centering_result.correction, 0.)
+      self.assertEqual(controls.lane_centering_applied, 0.)
+
+  def test_clearance_delay_uses_original_header_and_rejects_stale_or_future_source(self):
+    from openpilot.starpilot.lateral.lane_clearance import current_delay
+    frame = SimpleNamespace(logMonoTime={'lateralDelay':1_000_000_000}, all_checks=lambda services:True)
+    class Source:
+      logMonoTime = frame.logMonoTime
+      all_checks = staticmethod(frame.all_checks)
+      def __getitem__(self, service):
+        return SimpleNamespace(lateralDelay=.1)
+    source = Source()
+    self.assertEqual(current_delay(source, 1_250_000_000), .1)
+    self.assertIsNone(current_delay(source, 1_626_000_000))
+    self.assertIsNone(current_delay(source, 999_999_999))
+    self.assertEqual(source.logMonoTime['lateralDelay'], 1_000_000_000)
+
   def test_steering_pause_original_timing_source_loss_and_units(self):
     from openpilot.starpilot.lateral.pause import LateralPause, PauseSettings, read_settings as read_pause
     state = SimpleNamespace(vEgo=0., leftBlinker=True, rightBlinker=False, canValid=True, canTimeout=False)
@@ -350,6 +404,8 @@ class LaneRuntimeTests(unittest.TestCase):
                                                          lateral_active=True, longitudinal_active=False))
       params.put_bool('LaneCentering', True, block=True)
       controls = disabled
+      self.assertEqual(controls.lane_centering_controller._body.width, 1.88)
+      self.assertEqual(controls.lane_centering_controller._body.length, 4.855)
       self.assertIsNotNone(controls.lane_centering_host)
       for tick in range(35):
         now = 2_000_000_000 + tick * 10_000_000

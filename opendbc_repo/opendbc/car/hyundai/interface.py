@@ -34,6 +34,14 @@ class CarInterface(CarInterfaceBase):
   RadarInterface = RadarInterface
 
   @staticmethod
+  def get_lateral_body_dimensions(cp):
+    # Hyundai's published pre-facelift IONIQ 6 body dimensions, metres.
+    # https://www.hyundai.news/uk/models/electrified/ioniq-6/press-kit/hyundai-ioniq-6-delivers-a-new-electric-mobility-experience.html
+    if cp.carFingerprint == CAR.HYUNDAI_IONIQ_6:
+      return 1.880, 4.855
+    return None
+
+  @staticmethod
   def startup_required(cp):
     from opendbc.car.hyundai.g90_startup import required
     from opendbc.car.hyundai.ev6_startup import required as ev6_required
