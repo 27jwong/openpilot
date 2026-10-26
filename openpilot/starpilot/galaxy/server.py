@@ -803,16 +803,15 @@ def make_server(*, port=8082, host='127.0.0.1', monitor=None, owner=None, crashe
                         'tunnelClientAvailable': frpc_binary() is not None,
                         'legacyPassword': access.status().status == AccessStatus.LEGACY_IMPORT_AVAILABLE,
                         'legacyPairingAvailable': legacy_available is True})
-      elif path in ('/api/galaxy/qr.svg', '/api/companion/qr.svg'):
+      elif path == '/api/galaxy/qr.svg':
         if not self.require_session():
           return
         record = pairing.read()
-        if record is None and path == '/api/galaxy/qr.svg':
+        if record is None:
           self.json(404, {'error': 'Galaxy is not paired'})
           return
         from openpilot.common.qrcode import _Qr, _capacity
-        from openpilot.starpilot.galaxy.hotspot import ADDRESS
-        raw = (f"http://{ADDRESS}:8082/app.apk" if path == '/api/companion/qr.svg' or record is None else pairing.url(record['slug'])).encode()
+        raw = pairing.url(record['slug']).encode()
         version = next(version for version in range(1, 21)
                        if 4 + 8 + len(raw) * 8 <= _capacity(version) * 8)
         matrix = _Qr(version, raw).modules

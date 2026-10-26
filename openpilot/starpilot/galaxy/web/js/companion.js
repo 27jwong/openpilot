@@ -86,13 +86,10 @@ export const GalaxyCompanion = {
   template: `<section class="gx-card gx-panel gx-stack"><h3>Android companion · Connections</h3>
     <p v-if="native"><button class="gx-btn gx-btn--tonal" @click="connectionOptions">Bluetooth, Galaxy Wi-Fi or LAN</button></p>
     <BluetoothNotice v-if="bluetooth" feature="Media transfers and phone internet">Phone internet requires the Galaxy hotspot. Settings and small requests remain available.</BluetoothNotice>
-    <p v-else>Share your phone’s mobile data over Galaxy Wi-Fi. Navigation and online services use your mobile plan. Log uploads, software updates and offline map downloads are blocked.</p>
     <template v-if="!native"><p>Join the Android beta on Google Groups to get the app, then join TheGalaxy Wi-Fi.</p>
       <a class="gx-btn" href="https://groups.google.com/g/galaxy-starpilot-android-beta" target="_blank" rel="noopener">Join the Android beta</a>
     </template>
     <template v-if="status && mode === 'local'"><p>Status: <strong>{{ status.state }}</strong> {{ status.reason }} · {{ ((native ? nativeBytes : status.bytes) / 1048576).toFixed(1) }} MB today</p>
-      <button v-if="!bluetooth" class="gx-btn gx-btn--tonal" :disabled="busy" @click="toggle">{{ (native ? sharing : status.enabled) ? 'Disable phone internet' : 'Enable phone internet' }}</button>
-      <label v-if="!bluetooth && native && !!windowAutoStart"><input type="checkbox" v-model="autoStart" @change="setAutoStart" /> Resume sharing after phone restart (keeps a notification while waiting for Galaxy Wi-Fi)</label>
     </template><GxNotice v-if="error" tone="danger">{{ error }}</GxNotice>
   </section>`,
 }
