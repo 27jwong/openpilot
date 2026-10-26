@@ -604,7 +604,9 @@ class CarController(CarControllerBase):
       if CS.loopback_lka_steering_cmd_ts_nanos == 0 or out_of_sync:
         steer_step = self.params.STEER_STEP
 
-    self.lka_steering_cmd_counter += 1 if CS.loopback_lka_steering_cmd_updated else 0
+    if CS.loopback_lka_steering_cmd_updated:
+      # Batched or duplicate acknowledgements must not advance a local count.
+      self.lka_steering_cmd_counter = (CS.loopback_lka_steering_cmd_counter + 1) % 4
 
     # Avoid GM EPS faults when transmitting messages too close together: skip this transmit if we
     # received the ASCMLKASteeringCmd loopback confirmation too recently
