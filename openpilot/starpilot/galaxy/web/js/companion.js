@@ -23,7 +23,7 @@ export const GalaxyCompanion = {
   components: { GxNotice, BluetoothNotice },
   emits: ['status'],
   props: { mode: String, unauthorized: Function },
-  data: () => ({ status: null, error: '', native: !!window.StarPilotApp, sharing: false, autoStart: false,
+  data: () => ({ status: null, error: '', native: !!window.StarPilotApp?.uplinkState, sharing: false, autoStart: false,
     bluetooth: bluetoothConnection(), nativeBytes: 0, busy: false, generation: 0, alive: false }),
   computed: { windowAutoStart() { return !!window.StarPilotApp?.setAutoStart } },
   mounted() { this.start() },
@@ -66,11 +66,12 @@ export const GalaxyCompanion = {
       this.busy = true
       try {
         const enabled = this.native ? !this.sharing : !this.status.enabled
+        if (this.native && window.StarPilotApp.setUplinkEnabled(enabled) === false) { this.sharing = false; return }
         const status = await requestJson('./api/companion/settings', { request: { method: 'POST',
           headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }) } })
         if (!this.alive || generation !== this.generation) return
         this.adopt(status)
-        if (this.native) { window.StarPilotApp.setUplinkEnabled(enabled); this.sharing = enabled }
+        if (this.native) this.sharing = enabled
         this.error = ''
       } catch (e) {
         if (!this.alive || generation !== this.generation) return

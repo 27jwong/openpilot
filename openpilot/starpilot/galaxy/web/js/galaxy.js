@@ -15,14 +15,15 @@ export const GalaxyPage = {
   components: { GxState, GxNotice, BluetoothNotice, InstallApp, GalaxyHotspot, GalaxyCompanion, LocalAccess },
   props: { mode: { type: String, required: true }, unauthorized: { type: Function, required: true } },
   data: () => ({ loading: true, paired: false, url: "", tunnelClientAvailable: false, legacyPassword: false,
-    legacyPairingAvailable: false, password: "", busy: false, error: "", companionStatus: null,
+    appKey: '', keyVisible: false, legacyPairingAvailable: false, password: "", busy: false, error: "", companionStatus: null,
     bluetooth: bluetoothConnection(), nativeVersion: window.StarPilotApp?.version?.() || '', dismissedUpdateVersion: dismissedUpdate(),
     ios: isIosDevice() }),
   computed: {
     availableAppVersion() { return this.companionStatus?.appAvailable ? this.companionStatus.shippedVersion : '' },
     installedAppVersion() { return this.nativeVersion || this.companionStatus?.version || '' },
+    playDistribution() { return window.StarPilotApp?.distribution?.() === 'play' },
     appUpdateAvailable() {
-      return this.mode === 'local' && newerCompanionVersion(this.availableAppVersion, this.installedAppVersion)
+      return !this.playDistribution && this.mode === 'local' && newerCompanionVersion(this.availableAppVersion, this.installedAppVersion)
     },
     nativeInstallerAvailable() { return typeof window.StarPilotApp?.installUpdate === 'function' },
     showAppUpdate() {
@@ -31,6 +32,13 @@ export const GalaxyPage = {
   },
   mounted() { this.load() },
   methods: {
+    async showAppKey() {
+      try { const data = await this.request('./api/galaxy/session'); this.appKey = data.paired ? decodeURIComponent(data.sessionToken) : ''; this.keyVisible = !!this.appKey }
+      catch (error) { this.error = error.message }
+    },
+    async copyAppKey() {
+      try { await navigator.clipboard.writeText(this.appKey) } catch { this.error = 'Select and copy the displayed key.' }
+    },
     installAppUpdate() { window.StarPilotApp?.installUpdate?.() },
     dismissAppUpdate() {
       this.dismissedUpdateVersion = this.availableAppVersion
@@ -84,6 +92,7 @@ export const GalaxyPage = {
   template: `
     <div class="gx-settings gx-tunnel" :inert="busy" :aria-busy="busy || undefined"><header class="gx-settings__header gx-page-header"><div><h2>Galaxy Access & Install</h2>
       <p>Pair your comma, then install Galaxy from your remote link.</p></div></header>
+      <p v-if="playDistribution" class="gx-note">Updates come from Google Play.</p>
       <BluetoothNotice v-if="showAppUpdate && bluetooth && !ios" :feature="'Android app update ' + availableAppVersion">
         Installed: {{ installedAppVersion }}.
         <button type="button" class="gx-btn gx-btn--tonal" aria-label="Dismiss app update notice" @click="dismissAppUpdate">Dismiss</button>
@@ -106,6 +115,11 @@ export const GalaxyPage = {
               <BluetoothNotice v-if="bluetooth" feature="Galaxy QR code">Your Galaxy link remains available below.</BluetoothNotice>
               <img v-else src="./api/galaxy/qr.svg" alt="QR code for your Galaxy link" class="gx-tunnel__qr" />
               <p><a :href="url" target="_blank" rel="noopener" class="gx-btn gx-btn--tonal gx-wrap">Open your Galaxy link</a></p>
+              <section class="gx-card"><h3>App key</h3><p>Keep this key private. It grants remote access to this comma.</p>
+                <button v-if="!keyVisible" class="gx-btn" @click="showAppKey">Show</button>
+                <template v-else><code class="gx-wrap">{{ appKey }}</code><button class="gx-btn" @click="copyAppKey">Copy</button>
+                  <img src="./api/galaxy/session/qr.svg" class="gx-tunnel__qr" alt="Add remote access to Galaxy" /></template>
+              </section>
               <div class="gx-actions"><button type="button" class="gx-btn gx-btn--danger" @click="unpair">{{ busy ? 'Unpairing…' : 'Unpair' }}</button></div>
             </template>
             <template v-else>

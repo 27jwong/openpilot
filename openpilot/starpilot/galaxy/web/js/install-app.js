@@ -27,7 +27,7 @@ export const InstallApp = {
   props: { url: { type: String, default: '' }, updateAvailable: { type: Boolean, default: false } },
   data: () => ({ prompt: null, installed: false, help: false, message: '',
     android: isAndroidDevice(), ios: isIosDevice() }),
-  computed: { onPublicGalaxy() { return window.location?.hostname === 'galaxy.firestar.link' } },
+  computed: { playDistribution() { return window.StarPilotApp?.distribution?.() === 'play' }, onPublicGalaxy() { return window.location?.hostname === 'galaxy.firestar.link' } },
   mounted() {
     this.prompt = deferredPrompt
     this.displayMode = window.matchMedia('(display-mode: standalone)')
@@ -75,7 +75,9 @@ export const InstallApp = {
     <a v-else-if="url" class="gx-btn" :href="url" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i> Install web app</a>
     <p v-else class="gx-note">Pair in step 1 to get your install link.</p>
     <a v-if="ios" class="gx-btn" href="https://apps.apple.com/ca/app/starpilot-bt/id6821039119" target="_blank" rel="noopener"><i class="bi bi-apple" aria-hidden="true"></i> Download StarPilot BT on the App Store</a>
-    <button v-if="android && !ios && (!installed || updateAvailable)" type="button" class="gx-btn" @click="installAndroid"><i class="bi bi-download" aria-hidden="true"></i><span>{{ updateAvailable ? 'Update offline app (Android)' : 'Download Android APK' }}</span></button>
+    <button v-if="android && !ios && !playDistribution && (!installed || updateAvailable)" type="button" class="gx-btn" @click="installAndroid"><i class="bi bi-download" aria-hidden="true"></i><span>{{ updateAvailable ? 'Update offline app (Android)' : 'Direct (advanced) · Download APK' }}</span></button>
+    <a v-if="android" class="gx-btn" href="https://play.google.com/store/apps/details?id=link.firestar.galaxy" target="_blank" rel="noopener">Galaxy on Google Play</a>
+    <p v-if="playDistribution" class="gx-note">Updates come from Google Play.</p>
     <p v-if="help" class="gx-note gx-install-help">{{ message }}</p>
   </div>`,
 }

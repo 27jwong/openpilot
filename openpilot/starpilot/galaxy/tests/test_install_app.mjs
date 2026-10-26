@@ -59,7 +59,7 @@ const android = { ...InstallApp.data() }
 InstallApp.methods.installAndroid.call(android)
 assert.equal(apk, './app.apk')
 assert.match(InstallApp.template, /Install web app/)
-assert.match(InstallApp.template, /Download Android APK/)
+assert.match(InstallApp.template, /Direct \(advanced\) · Download APK/)
 assert.match(InstallApp.template, /Update offline app \(Android\)/)
 assert.match(InstallApp.template, /android && !ios/)
 location.protocol = 'https:'

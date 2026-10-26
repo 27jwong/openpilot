@@ -61,7 +61,7 @@ export const SentryNotifications = {
   components: { GxNotice },
   name: "SentryNotifications",
   props: { mode: { type: String, required: true }, unauthorized: { type: Function, required: true } },
-  data: () => ({ channels, labels, notifications: null, notificationBusy: false, notificationError: "",
+  data: () => ({ nativePush: !!window.StarPilotApp?.sentryPush, pushState: {}, testPoll: null, channels, labels, notifications: null, notificationBusy: false, notificationError: "",
     drafts: Object.fromEntries(channels.map(name => [name, { url: "", token: "" }])) }),
   created() { this.client = new NotificationClient({ publish: update => Object.assign(this.$data, update), unauthorized: this.unauthorized }) },
   mounted() {
@@ -69,11 +69,23 @@ export const SentryNotifications = {
     document.addEventListener("visibilitychange", this.visibility)
     this.start()
   },
-  beforeUnmount() { this.client.stop(); clearInterval(this.poll); document.removeEventListener("visibilitychange", this.visibility) },
+  beforeUnmount() { clearInterval(this.testPoll); this.client.stop(); clearInterval(this.poll); document.removeEventListener("visibilitychange", this.visibility) },
   methods: {
     reportSave,
+    refreshPush() { try { this.pushState = JSON.parse(window.StarPilotApp?.sentryPush?.() || '{}') } catch { this.pushState = {} } },
+    togglePhone() { window.StarPilotApp?.setSentryPush?.(!this.pushState.enabled); this.refreshPush(); setTimeout(() => this.client.run(), 1000) },
+    async testPhone(id) {
+      if (!await this.client.run({ action: 'test', target: 'app', id })) return
+      clearInterval(this.testPoll)
+      let attempts = 0
+      this.testPoll = setInterval(() => { if (++attempts >= 15) { clearInterval(this.testPoll); this.testPoll = null } if (!this.client.pending) this.client.run() }, 1000)
+    },
+    removePhone(id) { return this.client.run({ action: 'appUnsubscribe', id }) },
+    simulate() { return this.client.run({ action: 'simulate' }) },
+    canSimulate() { return !!window.StarPilotApp || location.protocol === 'http:' },
     start() {
       clearInterval(this.poll)
+      this.refreshPush()
       if (this.mode !== "local" || document.hidden) return
       this.client.run()
       this.poll = setInterval(() => { if (!this.notificationBusy && !this.client.pending) this.client.run() }, 5000)
@@ -120,6 +132,18 @@ export const SentryNotifications = {
         <GxNotice tone="danger" v-if="notifications?.queueFull">The notification queue is full. Some events could not be queued.</GxNotice>
         <template v-if="notifications">
           <p class="gx-note">{{ notifications.deliverySemantics }}</p>
+          <section v-if="nativePush || notifications.appSubscriptions?.length" class="gx-card gx-panel gx-stack">
+            <h3>This phone (Galaxy app)</h3>
+            <button v-if="nativePush" class="gx-btn" @click="togglePhone">{{ pushState.enabled ? 'Disable phone alerts' : 'Enable phone alerts' }}</button>
+            <button v-if="pushState.registered && pushState.id" class="gx-btn" @click="testPhone(pushState.id)">Send test to this phone</button>
+            <p v-if="!notifications.appPushAvailable" class="gx-note">Push not set up — the app will pick up real alerts by polling.</p>
+            <p v-for="phone in (notifications.appSubscriptions || [])" :key="phone.id">{{ phone.label }} · {{ phone.lastResult || 'Not tested' }} · {{ phone.lastAt ? new Date(phone.lastAt * 1000).toLocaleString() : '' }}
+              <button class="gx-btn" @click="testPhone(phone.id)">Test</button><button class="gx-btn" @click="removePhone(phone.id)">Remove</button>
+            </p>
+            <p v-for="phone in (notifications.removedAppSubscriptions || [])" :key="phone.id">{{ phone.lastResult }}</p>
+            <button v-if="canSimulate()" class="gx-btn" @click="simulate">Simulate event</button>
+          </section>
+          <button class="gx-btn" @click="client.run({action: 'test', target: 'all'})">Test all channels</button>
           <section v-for="name in channels" :key="name" class="gx-card gx-sentry-channel">
             <div class="gx-section__header"><i class="bi" :class="{webPush: 'bi-bell', discord: 'bi-discord', webhook: 'bi-link-45deg', ntfy: 'bi-broadcast'}[name]" aria-hidden="true"></i><span class="gx-section__title">{{ labels[name] }}</span></div>
             <div class="gx-panel gx-stack"><div class="gx-row gx-row--borderless"><div class="gx-row__info"><span class="gx-row__label">Enabled</span>
