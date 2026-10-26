@@ -82,3 +82,8 @@ and cleanup. Native GL previews and host CPU/RSS/frame-time measurements use
 isolated synthetic telemetry. They do not establish physical C4/C3 performance,
 actual wheel/controller hardware behavior, full-system headroom or deployment.
 No road-device installation, restart, or driving test is part of host validation.
+
+Clock reads interrupted by scheduling are retried up to three times, with the
+same 1 ms sampling bound and resume/freshness checks on the accepted sample.
+Cold receive-only decoder construction yields to the next normal UI update
+before admission; it never grants gameplay or Offroad from an aged UI snapshot.

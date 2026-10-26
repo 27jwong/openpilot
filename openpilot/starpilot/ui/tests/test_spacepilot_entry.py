@@ -113,6 +113,10 @@ def test_fresh_park_page_prepares_after_dwell_reset_and_keeps_actual_owner_gates
     page._tick()
     assert not page.closed and game.stage == native.Stage.VERIFYING
     assert owner.snapshot().mode == 'auto' and not game.playable()
+    assert game.gate.since is None  # Reader setup yields before using this frame's snapshot.
+    clock.refresh(ui)
+    page._tick()
+    assert owner.snapshot().mode == 'auto' and not game.playable()
     assert game.gate.since == clock.now
     for _ in range(9):
       clock.refresh(ui)

@@ -10,7 +10,7 @@ from openpilot.common.hardware import HARDWARE
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.ui.mici.widgets.button import BigButton
 from openpilot.selfdrive.ui.ui_state import device, ui_state
-from openpilot.starpilot.ui.spacepilot.guard import ParkGate, Witness, read_offroad_witness, read_witness
+from openpilot.starpilot.ui.spacepilot.guard import ParkGate, Witness, read_offroad_witness, read_witness, sample_clocks
 from openpilot.starpilot.ui.spacepilot.session import GameSession, Stage
 from openpilot.starpilot.ui.spacepilot.ignition import IgnitionReturn
 from openpilot.starpilot.drive_state.owner import DriveStateOwner
@@ -50,11 +50,7 @@ def poll_game_mode() -> None:
 
 def live_witness() -> Witness | None:
   try:
-    before = time.monotonic_ns()
-    boot = time.clock_gettime_ns(time.CLOCK_BOOTTIME)
-    after = time.monotonic_ns()
-    if not 0 <= after - before <= 1_000_000:
-      return None
+    after, boot = sample_clocks()
     native_device = HARDWARE.get_device_type() in ('mici', 'tici', 'tizi')
     if ui_state.started:
       return read_witness(ui_state, after, boot, c4=native_device)
