@@ -1470,7 +1470,7 @@ class Car:
     from opendbc.car.hyundai.ev6_startup import EV6Startup, required
     from opendbc.car.hyundai.ecu_startup import Outcome
     owner = getattr(getattr(self, 'vehicle_startup', None), 'owner', None)
-    return (isinstance(owner, EV6Startup) and owner.outcome is Outcome.SENT_UNCONFIRMED and
+    return (isinstance(owner, EV6Startup) and owner.outcome in (Outcome.PENDING, Outcome.SENT_UNCONFIRMED) and
             owner.ready and owner.published and owner.ci is self.CI and not owner.closed and
             required(self.CP))
 
@@ -1567,9 +1567,10 @@ class Car:
       mixed = self.vehicle_startup.owner if self.mixed_startup_keepalive() else None
       from opendbc.car.hyundai.g90_startup import G90Startup
       from opendbc.car.hyundai.torque_ev_startup import TorqueEVStartup
+      from opendbc.car.hyundai.ev6_startup import EV6Startup
       from opendbc.car.hyundai.ecu_startup import Outcome
       classic = self.vehicle_startup.owner
-      if isinstance(classic, (G90Startup, TorqueEVStartup)) and classic.outcome is Outcome.PENDING:
+      if isinstance(classic, (G90Startup, TorqueEVStartup, EV6Startup)) and classic.outcome is Outcome.PENDING:
         now = time.monotonic_ns()
         source = int(self.sm.logMonoTime['carControl'])
         receipt = int(self.sm.recv_time['carControl'] * 1e9)
