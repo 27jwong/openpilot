@@ -228,6 +228,7 @@ class Car:
     self.ioniq6_last_preflight_at = 0.0
     self.ioniq6_panda_armed = False
     self.ioniq6_host_warmed = False
+    self.ioniq6_handoff_source_floor_ns = 0
     self.ioniq6_long_lost = False
     self.ioniq6_keepalive = None
     self.ioniq6_restore_callbacks = None
@@ -1243,6 +1244,20 @@ class Car:
       }
       self.pm.send('slcCruiseEvent', event)
 
+  def ioniq6_post_handoff_sources_current(self):
+    """A parser's invalid grace is not proof of post-transaction warmup."""
+    from opendbc.can.parser import MAX_BAD_COUNTER
+    floor = getattr(self, 'ioniq6_handoff_source_floor_ns', 0)
+    if floor <= 0:
+      return False
+    now = time.clock_gettime_ns(time.CLOCK_BOOTTIME)
+    sources = [source for parser in self.CI.can_parsers.values()
+               for source in parser.message_states.values() if not source.ignore_alive]
+    return bool(sources) and all(
+      source.timestamps and floor < source.timestamps[-1] <= now and
+      now - source.timestamps[-1] <= source.timeout_threshold and source.counter_fail < MAX_BAD_COUNTER
+      for source in sources)
+
   def observe_ioniq6_long_authority(self, can_list, CS):
     if getattr(self, 'ioniq6_long_selected', False) and self.ioniq6_long_lost:
       CS.canValid = False
@@ -1252,10 +1267,11 @@ class Car:
     if any((src == 1 and address in (0x1A0, 0x1BA, 0x1E5)) or (src == 0 and address == 0x100)
            for _, packet in can_list for address, _, src in packet):
       self.ioniq6_long_lost = True
-    if CS.canValid:
+    if self.ioniq6_host_warmed:
+      if not CS.canValid:
+        self.ioniq6_long_lost = True
+    elif CS.canValid and self.ioniq6_post_handoff_sources_current():
       self.ioniq6_host_warmed = True
-    elif self.ioniq6_host_warmed:
-      self.ioniq6_long_lost = True
     if self.ioniq6_long_lost:
       CS.canValid = False
       if self.ioniq6_keepalive is not None:
@@ -1629,6 +1645,7 @@ class Car:
         # The transaction consumed Card's CAN cursor. Rewarm the host parser
         # from post-handoff independent inputs before its first controller TX.
         self.ioniq6_host_warmed = False
+        self.ioniq6_handoff_source_floor_ns = time.clock_gettime_ns(time.CLOCK_BOOTTIME)
         self.ioniq6_restore_callbacks = self.can_callbacks
       elif self.vehicle_startup.owner is None:
         self.CI.init(self.CP, *self.can_callbacks)
