@@ -209,10 +209,8 @@ class CompositionTests(unittest.TestCase):
     self.assertEqual(rejected.state.acceptance.last_timestamp_ns, 0)
 
   def test_new_limit_never_creates_a_hidden_planner_target(self):
-    pending = self.run_frame(frame(0, speed=20.))
-    self.assertEqual(pending.acceptance.basis, 'automatic_pending')
-    self.assertIsNone(pending.ceiling)
-    accepted = self.run_frame(frame(acc.AUTOMATIC_ADOPTION_NS, speed=20.))
+    accepted = self.run_frame(frame(0, speed=20.))
+    self.assertEqual(accepted.acceptance.basis, 'accepted')
     self.assertEqual(accepted.domain.context.effective_cluster_mps, 22.)
     self.assertIsNone(accepted.ceiling)
     self.assertIsNone(accepted.state.lead_prior)

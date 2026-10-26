@@ -14,7 +14,6 @@ from openpilot.selfdrive.car.cruise import VCruiseHelper, SlcPendingConfirmation
 from openpilot.starpilot.car.toyota.tests.test_pedal_caller_native import firmware
 from openpilot.starpilot.speed_limits.runtime import Action, CruiseEvent, Runtime
 from openpilot.starpilot.speed_limits.runtime_settings import parse
-from openpilot.starpilot.speed_limits.acceptance import AUTOMATIC_ADOPTION_NS
 from openpilot.starpilot.speed_limits.tests import test_runtime_replay as replay
 from openpilot.starpilot.speed_limits.toyota import eligible, projection
 
@@ -308,7 +307,7 @@ def test_runtime_waits_for_bound_fresh_card_projection(helper, manual):
     return runtime.step(sm, helper.CP, now_ns=stamp, **kwargs)
 
   pending = tick(2_000_000_000).message.slcState
-  accepted_ns = 2_000_000_000 + (10_000_000 if manual else AUTOMATIC_ADOPTION_NS)
+  accepted_ns = 2_000_000_000 + (10_000_000 if manual else 0)
   request = Action('drive', 1, pending.decisionId, pending.presentationId, 'accept') if manual else None
   accepted = tick(accepted_ns, request=request)
   assert accepted.message.slcState.hasAccepted and accepted.command is None

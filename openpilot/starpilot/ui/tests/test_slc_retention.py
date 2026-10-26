@@ -156,11 +156,6 @@ class RetentionDrive:
     self.planner = native.LongitudinalPlanner(self.cp, init_v=45 * MPH)
 
   def step(self, milliseconds, *, received=True, alive=True, status='matchedLimit', limit=45, request=None, **changes):
-    if (self.runtime.state.last_now_ns is None and not self.runtime.settings.acceptance.confirm_higher and
-        not getattr(self, '_priming', False)):
-      self._priming = True
-      self.step(milliseconds - 3000, received=received, alive=alive, status=status, limit=limit, **changes)
-      self._priming = False
     now, boot = NOW + milliseconds * 1_000_000, BOOT + milliseconds * 1_000_000
     previous_stamp = self.sm.logMonoTime.get('mapdOut', BOOT)
     self.sm.advance(now)
@@ -362,9 +357,9 @@ def test_retention_respects_lower_max_secondary_source_and_reset(tmp_path):
   secondary = RetentionDrive(tmp_path / 'secondary', dashboard=True)
   secondary.step(0)
   output, _, target = secondary.step(300, status='noCoverage')
-  assert target == pytest.approx(published_cruise_mph(45), rel=0, abs=1e-10)
-  assert output.message.slcState.automaticAdoptionPending
-  assert output.message.slcState.acceptedSource == 'map'
+  assert target == pytest.approx(published_cruise_mph(70), rel=0, abs=1e-10)
+  assert not output.message.slcState.automaticAdoptionPending
+  assert output.message.slcState.acceptedSource == 'dashboard'
 
 
 def test_compact_sign_keeps_accepted_value_without_pulsing_on_recovery(tmp_path):

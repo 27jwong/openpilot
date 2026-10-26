@@ -7,7 +7,6 @@ from dataclasses import dataclass, replace
 from enum import Enum
 
 CONFIRMATION_NS = 10_000_000_000
-AUTOMATIC_ADOPTION_NS = 3_000_000_000
 MAX_REJECTIONS = 256
 
 
@@ -443,7 +442,7 @@ def step(state: State, observation: Observation, authority: Authority, policy: P
   state = replace(state, pending=pending, timer_running=True)
 
   if pending.automatic:
-    if pending.active_elapsed_ns >= AUTOMATIC_ADOPTION_NS and (authority.can_control or authority.fully_disengaged):
+    if authority.can_control or authority.fully_disengaged:
       state, history = _accept(state, candidate, now_ns)
       return finish("accepted" if authority.can_control else "disengaged_accept",
                     target=candidate.speed_mps if authority.can_control else None, history=history)

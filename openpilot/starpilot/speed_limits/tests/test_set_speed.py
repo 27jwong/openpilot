@@ -73,11 +73,11 @@ def test_failed_adoption_retries_with_current_evidence_and_stops_after_applicati
 
 
 @pytest.mark.parametrize('change', ['manual', 'unclassified', 'source', 'returned_source', 'disengaged'])
-def test_expired_adoption_does_not_retry_after_driver_or_authority_changes(drive, change):
+def test_expired_adoption_does_not_revive_superseded_commands(drive, change):
   sm, cp = drive
   runtime = Runtime(parse({'SpeedLimitController': True, 'SLCPriority1': 'Dashboard'}))
   tick(runtime, sm, cp, 0)
-  tick(runtime, sm, cp, 3)
+  old_command = tick(runtime, sm, cp, 3).command.slcCruiseCommand
   kwargs = {}
   if change in ('manual', 'unclassified'):
     sm['carState'].vCruise = sm['carState'].vCruiseCluster = 61.
@@ -93,7 +93,13 @@ def test_expired_adoption_does_not_retry_after_driver_or_authority_changes(drive
   else:
     sm['selfdriveState'].enabled = sm['carControl'].enabled = sm['carControl'].longActive = False
     sm['controlsState'].longControlState = 'off'
-  assert tick(runtime, sm, cp, 3.2, **kwargs).command is None
+  result = tick(runtime, sm, cp, 3.2, **kwargs)
+  if change in ('source', 'returned_source'):
+    assert result.message.slcState.acceptedMonoTime == START + 3_200_000_000
+    assert result.command.slcCruiseCommand.commandId > old_command.commandId
+    assert result.command.slcCruiseCommand.targetMps == (20. if change == 'source' else 25.)
+  else:
+    assert result.command is None
 
 
 @pytest.mark.parametrize('failure', ['rejected', 'expired'])
@@ -213,18 +219,17 @@ def test_source_loss_preserves_latest_received_limit_and_offset_without_actions(
 
 @pytest.mark.parametrize('limit', [12., 25.])
 @pytest.mark.parametrize('pcm', [False, True])
-def test_automatic_adoption_updates_set_speed_up_or_down_after_three_seconds(drive, limit, pcm):
+def test_automatic_adoption_updates_set_speed_up_or_down_immediately(drive, limit, pcm):
+  from openpilot.starpilot.ui.onroad_state import OnroadState, speed_limit_from_message
+  from openpilot.starpilot.ui.speed_limit_pulse import SpeedLimitPulse
   sm, cp = drive
   cp.pcmCruise = pcm
   sm['slcDashboardObservation'].speedMps = limit
   runtime = Runtime(parse({'SpeedLimitController': True, 'SLCPriority1': 'Dashboard'}))
-  first = tick(runtime, sm, cp, 0)
-  assert first.message.slcState.automaticAdoptionPending
-  assert first.message.slcState.pendingSinceMonoTime == START
-  assert not first.message.slcState.hasAccepted
-  assert first.command is None and first.result.ceiling is None
-  assert tick(runtime, sm, cp, 2.999).command is None
-  adopted = tick(runtime, sm, cp, 3)
+  adopted = tick(runtime, sm, cp, 0)
+  assert adopted.message.slcState.hasAccepted
+  assert not adopted.message.slcState.automaticAdoptionPending
+  assert adopted.message.slcState.pendingSinceMonoTime == 0
   assert adopted.command is not None
   assert adopted.command.slcCruiseCommand.targetMps == pytest.approx(limit)
   assert adopted.result.ceiling is None and not adopted.message.slcState.hasCeiling
@@ -233,16 +238,18 @@ def test_automatic_adoption_updates_set_speed_up_or_down_after_three_seconds(dri
   evidence = sm['slcDashboardObservation']
   observation = SimpleNamespace(status=Status.VALID, speed_mps=limit, episode=evidence.episode,
                                 observed_ns=evidence.observedMonoTime, valid_until_ns=evidence.validUntilMonoTime)
-  current = physical_actions.state_current(ReplaySM({'slcState': state}, START + 3_000_000_000), observation,
-                                           'card-producer', START + 3_000_000_000)
+  current = physical_actions.state_current(ReplaySM({'slcState': state}, START), observation, 'card-producer', START)
   assert physical_actions.command_applicable(adopted.command.slcCruiseCommand, current, observation, 'card-producer',
-    START + 3_000_000_000, 60 / 3.6, long_active=True, button_event=False)
+    START, 60 / 3.6, long_active=True, button_event=False)
   helper = VCruiseHelper(cp)
   helper.v_cruise_kph = 60.
   helper.apply_slc_target(limit, True)
   sm['carState'].vCruise = sm['carState'].vCruiseCluster = helper.v_cruise_kph
   assert helper.v_cruise_kph == round(limit * 3.6)
-  assert tick(runtime, sm, cp, 3.05).command is None
+  pulse = SpeedLimitPulse()
+  pulse.update(OnroadState(True, False, 20., helper.v_cruise_kph, speed_limit_from_message(state)), START / 1e9)
+  assert not pulse.display_pulsing and pulse.start_time == -float('inf')
+  assert tick(runtime, sm, cp, 0.05).command is None
 
 
 @pytest.mark.parametrize('response', ['accept', 'reject', 'timeout'])
@@ -274,9 +281,8 @@ def test_new_limits_still_adopt_during_manual_override_in_either_direction(drive
     selected / 3.6, 'accel' if selected > 90 else 'decel', 'card-producer', START + 3_100_000_000))
   assert changed.message.slcState.driverOverrideActive
   sm['slcDashboardObservation'].speedMps = 18.
-  new = tick(runtime, sm, cp, 3.2)
-  assert new.message.slcState.automaticAdoptionPending and new.message.slcState.driverOverrideActive
-  adopted = tick(runtime, sm, cp, 6.2)
+  adopted = tick(runtime, sm, cp, 3.2)
+  assert not adopted.message.slcState.hasPending
   assert adopted.command.slcCruiseCommand.targetMps == pytest.approx(18.)
   assert not adopted.message.slcState.driverOverrideActive
 
@@ -372,17 +378,17 @@ def test_ford_parser_buttons_adjust_set_speed_or_confirm_without_a_second_step(p
   assert (helper.slc_cruise_change is None) == pending
 
 
-def test_automatic_countdown_never_consumes_plus_or_minus_and_late_accept_is_declined():
+def test_automatic_adoption_does_not_consume_confirmation_actions_and_late_manual_accept_is_declined():
   candidate = acc.Candidate('dashboard', acc.ObservationIdentity(acc.IdentityKind.SESSION_VALUE, session_id='drive'), 20.)
   observation = acc.Observation(acc.ObservationKind.VALID, candidate)
   authority = acc.Authority(acc.Mode.LONGITUDINAL_ONLY, acc.LongitudinalOwner.SYSTEM, False, True, False, False)
   for automatic in (False, True):
     policy = acc.Policy(not automatic, not automatic)
-    pending = acc.step(acc.new_session('drive'), observation, authority, policy, now_ns=0)
-    action = acc.DriverAction('drive', 1, pending.state.pending.decision_id, acc.ActionKind.ACCEPT)
-    output = acc.step(pending.state, observation, authority, policy, now_ns=1 if automatic else acc.CONFIRMATION_NS + 1, action=action)
+    first = acc.step(acc.new_session('drive'), observation, authority, policy, now_ns=0)
+    action = acc.DriverAction('drive', 1, first.state.next_decision_id - 1, acc.ActionKind.ACCEPT)
+    output = acc.step(first.state, observation, authority, policy, now_ns=1 if automatic else acc.CONFIRMATION_NS + 1, action=action)
     assert not output.action_receipt.consumed
-    assert output.state.accepted is None
+    assert (output.state.accepted is not None) == automatic
 
 
 @pytest.mark.parametrize('source_name', ['map', 'vision'])
