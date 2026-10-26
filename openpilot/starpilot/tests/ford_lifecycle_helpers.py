@@ -289,7 +289,7 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
             fields['CcAslButtnCnclPress'] = 1
           if scenario == 'route49' and name == 'Steering_Data_FD1':
             fields['CcAslButtnCnclResPress'] = int(cancel)
-          if scenario in ('route45', 'route49') and name == 'EPAS_INFO':
+          if scenario in ('route45', 'route49', 'route22') and name == 'EPAS_INFO':
             fields['SteeringColumnTorque'] = 2 if steering else 0
           if scenario == 'route45' and name == 'Lane_Assist_Data3_FD1':
             fields['LatCtlSte_D_Stat'] = 0 if fault in ('temporary-lkas', 'temporary-lkas-gas') else 1
@@ -428,7 +428,7 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
         parsed_before_producer = state.to_dict()
         assert (main_off or scenario == 'route49' or state.cruiseState.available or availability_transition and not state.cruiseState.enabled
                 or scenario == 'route45' and getattr(monkeypatch, 'ford_route45_refusal', None) == 'main-off')
-        assert scenario in ('route45', 'route49') or not state.steeringPressed
+        assert scenario in ('route45', 'route49', 'route22') or not state.steeringPressed
         assert bool(state.gasPressed) == (fault in ('gas', 'temporary-eps-gas', 'temporary-lkas-gas')
                                           and not any(frame[0] == 0x204 for frame in delayed_pedal_frames))
         axis, sd_state, command = drive(
@@ -536,6 +536,59 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
       assert 0 <= warmup_waits < 120 and qualified_samples >= 100
       assert host.ci_initialized  # Read-only witness: real controls_update completed init.
       assert not host.aol_card_intent.allowed_latch
+      if scenario == 'route22':
+        assert host.CP.openpilotLongitudinalControl
+        latch_trace = []
+        for _ in range(40):
+          state, axis, sd_state, command = step(engaged=True, fault='gas')
+          latch_trace.append((steps, host.aol_card_intent.allowed_latch,
+            host.aol_card_intent.latch_clear_reason, str(axis.mode), str(axis.faultReason),
+            joined.last_native_request, joined.last_permission))
+        assert state.gasPressed and state.cruiseState.enabled
+        assert host.aol_card_intent.allowed_latch, ('Gas-held first engagement erased AOL', latch_trace)
+        assert command.latActive and not command.longActive
+        for _ in range(40):
+          state, axis, sd_state, command = step(engaged=True)
+        assert command.latActive and command.longActive and host.aol_card_intent.allowed_latch
+        # Driver releases a small steering override while AOL remains armed.
+        # Every real packed angle command must stay active and pass native TX.
+        for pressed in (True, False):
+          lateral = []
+          for _ in range(70):
+            state, axis, sd_state, command = step(engaged=True, steering=pressed)
+            assert command.latActive and host.aol_card_intent.allowed_latch
+            lateral.extend((address, data) for address, data in joined.last_lateral_packets if address in (0x3D3, 0x3D6))
+          assert lateral
+          for address, data in lateral:
+            mode = ((data[4] >> 2) & 7) if address == 0x3D3 else ((data[0] >> 4) & 7)
+            assert mode == 1, ('Unprompted angle reset after steering override', pressed, address, data.hex())
+        brake_seen = False
+        for _ in range(30):
+          state, axis, sd_state, command = step(brake=True)
+          assert host.aol_card_intent.allowed_latch, ('Brake erased first-engagement AOL', transition_trace[-12:])
+          assert command.latActive, transition_trace[-12:]
+          # The simulated 50 Hz brake source need not transmit on the first 100 Hz tick.
+          # LONG must be off once either native or host has actually observed that pedal.
+          brake_seen |= state.brakePressed
+          if state.brakePressed or not joined.last_permission & 2:
+            assert not command.longActive, transition_trace[-12:]
+          assert str(axis.faultReason) == 'none'
+          assert sd_state.alertType != 'controlsMismatch/immediateDisable'
+        assert brake_seen and not command.longActive
+        for _ in range(30):
+          state, axis, sd_state, command = step()
+        assert command.latActive and not command.longActive and host.aol_card_intent.allowed_latch
+        for _ in range(30):
+          state, axis, sd_state, command = step(fault=getattr(monkeypatch, 'ford_route22_final_fault', 'heartbeat'))
+        assert not command.latActive and not command.longActive
+        if getattr(monkeypatch, 'ford_route22_final_fault', 'heartbeat') == 'source-loss':
+          # This injection withholds native yaw RX while the host parser still receives it.
+          # Host CAN validity must never substitute for missing native permission.
+          assert joined.last_permission == 0 and state.canValid
+        else:
+          assert not host.aol_card_intent.allowed_latch
+        assert active_lat_frames > 0 and active_long_frames > 0
+        return
       if scenario == 'route49':
         assert not host.CP.openpilotLongitudinalControl
         trace = []
@@ -592,15 +645,14 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
         for _ in range(100):
           state, axis, sd_state, command = step(fault='gas', steering=True)
         assert state.steeringPressed and state.gasPressed
-        # Release sustained driver pressure and observe the actual angle handoff.
-        neutral_seen = False
+        # Release pressure without an optional reset pulse. The real EPS
+        # restriction below must still withdraw output and retain only intent.
         for _ in range(20):
           state, axis, sd_state, command = step(fault='gas')
-          neutral_seen |= any(address == 0x3D6 and (data[0] >> 4) & 7 == 0
-                              for address, data in joined.last_lateral_packets)
-          if neutral_seen:
-            break
-        assert neutral_seen and host.aol_card_intent.allowed_latch
+          assert host.aol_card_intent.allowed_latch and command.latActive
+          for address, data in joined.last_lateral_packets:
+            if address == 0x3D6:
+              assert (data[0] >> 4) & 7 == 1
         for _ in range(8):
           state, axis, sd_state, command = step(fault='gas')
         for _ in range(77):

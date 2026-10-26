@@ -308,6 +308,35 @@ class TransportPauseFeedback:
     self.healthy_native_ns = 0
     self.healthy_inventory = None
 
+  def _first_ford_gas_lateral_grant(self, sm, cp, cs, axis, now_ns, *, latched, producer):
+    """Bind the first real LAT-only grant while gas independently vetoes LONG."""
+    from opendbc.car import structs
+    from openpilot.starpilot.car.ford.aol import early_native_long_withdrawal_supported
+    if (not early_native_long_withdrawal_supported(cp) or not latched or self.failed or self.paused or
+        self.pending_event or self.retention_started_ns or self.source_retention_started_ns or
+        self.lateral_baseline_ns or not self.session or str(axis.sessionId) != self.session or
+        not producer or str(axis.intentProducerSessionId) != producer or int(axis.intentIntegrityEpoch) < 0 or
+        self.signature is None or self.signature[14:16] != (producer, int(axis.intentIntegrityEpoch)) or
+        str(axis.faultReason) != 'none' or str(axis.mode) != 'lateralOnly' or not axis.nativeAcknowledged or
+        not axis.desiredLateral or not axis.lateralActive or not axis.desiredLongitudinal or axis.longitudinalActive or
+        not 0 < axis.sourceCarStateMonoTime <= axis.observedMonoTime <= now_ns <= axis.validUntilMonoTime or
+        now_ns - axis.sourceCarStateMonoTime > AXIS_MAX_AGE_NS or
+        not cs.gasPressed or cs.brakePressed or cs.regenBraking or not cs.cruiseState.available or
+        not cs.cruiseState.enabled or not cs.canValid or cs.canTimeout or cs.steerFaultTemporary or
+        cs.steerFaultPermanent or cs.accFaulted or cs.vehicleSensorsInvalid or cs.steeringDisengage or
+        cs.doorOpen or cs.seatbeltUnlatched or cs.gearShifter not in
+          (structs.CarState.GearShifter.drive, structs.CarState.GearShifter.sport, structs.CarState.GearShifter.low) or
+        not sm.seen['onroadEvents'] or not sm.valid['onroadEvents'] or not sm.alive['onroadEvents'] or
+        not 0 < int(sm.logMonoTime['onroadEvents']) <= now_ns or
+        now_ns - int(sm.logMonoTime['onroadEvents']) > 1_500_000_000 or
+        any(event.immediateDisable or event.softDisable or event.userDisable for event in sm['onroadEvents'])):
+      return None
+    native = independent_lateral_health(sm, cp, cs, self.session, now_ns)
+    if (native is None or not native.pandaInventory or not native.requestedLongitudinal or native.longitudinalAllowed or
+        self.healthy_inventory != (native.pandaSerial, tuple(slot.hardwareSerial for slot in native.pandaInventory))):
+      return None
+    return native
+
   def _native_long_withdrawal_lateral_current(self, sm, cp, cs, axis, now_ns, *, latched, producer):
     """Retain existing LAT intent from a fresh independently granted LAT proof.
 
@@ -1677,6 +1706,15 @@ class TransportPauseFeedback:
       lateral_native = (self._native_long_withdrawal_lateral_current(sm, cp, cs, axis, now_ns,
         latched=latched, producer=intent_producer_session)
         if native is None and current and continuity and baseline else None)
+      first_ford_grant = (self._first_ford_gas_lateral_grant(sm, cp, cs, axis, now_ns,
+        latched=latched, producer=intent_producer_session)
+        if native is None and lateral_native is None and current and continuity and baseline else None)
+      if first_ford_grant is not None:
+        lateral_native = first_ford_grant
+        self.availability_producer = str(axis.intentProducerSessionId)
+        self.availability_epoch = int(axis.intentIntegrityEpoch)
+        self.lateral_inventory = (lateral_native.pandaSerial, tuple(slot.hardwareSerial for slot in lateral_native.pandaInventory))
+        self.ever_lateral_active = True
       if lateral_native is not None:
         from openpilot.starpilot.car.hyundai.aol import qualified_ccnc_long_aol
         if not cs.cruiseState.available and qualified_ccnc_long_aol(cp, marked_only=True):

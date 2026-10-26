@@ -164,3 +164,67 @@ def test_route45_eps_join_keeps_physical_refusals(ford_joined, monkeypatch, refu
   monkeypatch.ford_route45_delivery = 'axis-first'
   monkeypatch.ford_route45_refusal = refusal
   run_actual_producer(ford_joined, monkeypatch, scenario='route45')
+
+
+@pytest.mark.parametrize('identity', [(CAR.FORD_MUSTANG_MACH_E_MK1, 18), (CAR.FORD_ESCAPE_MK4, 32), (CAR.FORD_F_150_MK14, 66)])
+@pytest.mark.parametrize('alpha', [True])
+@pytest.mark.parametrize('hands_free', [False, True])
+@pytest.mark.parametrize('topology', ['automatic', 'manual-multi'])
+def test_route22_gas_held_first_engagement_keeps_aol_through_braking(ford_joined, monkeypatch):
+  from openpilot.starpilot.aol.transport_pause import TransportPauseFeedback
+  from opendbc.car import structs
+
+  class Changed:
+    def __init__(self, source, **values):
+      self.source = source
+      self.__dict__.update(values)
+
+    def __getattr__(self, name):
+      return getattr(self.source, name)
+
+  checked = []
+  original = TransportPauseFeedback._first_ford_gas_lateral_grant
+
+  def check_first_grant(feedback, sm, cp, cs, axis, now_ns, *, latched, producer):
+    result = original(feedback, sm, cp, cs, axis, now_ns, latched=latched, producer=producer)
+    if result is not None and not checked:
+      def refuses(*, state=cs, proof=axis, armed=latched, owner=producer, params=cp):
+        assert original(feedback, sm, params, state, proof, now_ns, latched=armed, producer=owner) is None
+      for field, value in [('gasPressed', False), ('brakePressed', True), ('regenBraking', True),
+                           ('canValid', False), ('canTimeout', True), ('steerFaultTemporary', True),
+                           ('steerFaultPermanent', True), ('accFaulted', True), ('doorOpen', True),
+                           ('seatbeltUnlatched', True), ('vehicleSensorsInvalid', True),
+                           ('steeringDisengage', True), ('gearShifter', structs.CarState.GearShifter.reverse)]:
+        refuses(state=Changed(cs, **{field: value}))
+      for field, value in [('intentProducerSessionId', 'other'), ('intentIntegrityEpoch', axis.intentIntegrityEpoch + 1),
+                           ('sessionId', 'other'), ('nativeAcknowledged', False), ('lateralActive', False),
+                           ('desiredLateral', False), ('longitudinalActive', True), ('desiredLongitudinal', False),
+                           ('faultReason', 'controlsMismatch'), ('mode', 'off'),
+                           ('sourceCarStateMonoTime', now_ns - 30_000_001), ('validUntilMonoTime', now_ns - 1)]:
+        refuses(proof=Changed(axis, **{field: value}))
+      refuses(armed=False)
+      refuses(owner='other')
+      refuses(params=Changed(cp, alternativeExperience=0))
+      for field, value in [('failed', True), ('paused', True), ('pending_event', True),
+                           ('healthy_inventory', ('other', ())), ('lateral_baseline_ns', now_ns)]:
+        with monkeypatch.context() as local:
+          local.setattr(feedback, field, value)
+          refuses()
+      checked.append(True)
+    return result
+
+  monkeypatch.setattr(TransportPauseFeedback, '_first_ford_gas_lateral_grant', check_first_grant)
+  monkeypatch.ford_nonzero = True
+  run_actual_producer(ford_joined, monkeypatch, scenario='route22')
+  assert checked
+
+
+@pytest.mark.parametrize('identity', [(CAR.FORD_MUSTANG_MACH_E_MK1, 18)])
+@pytest.mark.parametrize('alpha', [True])
+@pytest.mark.parametrize('hands_free', [True])
+@pytest.mark.parametrize('topology', ['automatic'])
+@pytest.mark.parametrize('fault', ['rx-quality', 'source-loss'])
+def test_route22_native_fault_still_withdraws_aol(ford_joined, monkeypatch, fault):
+  monkeypatch.ford_nonzero = True
+  monkeypatch.ford_route22_final_fault = fault
+  run_actual_producer(ford_joined, monkeypatch, scenario='route22')
