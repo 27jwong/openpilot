@@ -2077,6 +2077,12 @@ class StarMiciMainLayout(MiciMainLayout):
                                              lambda index: panel().request_personality(index),
                                              lambda: panel().request_experimental())
 
+  def _exit_spacepilot(self) -> None:
+    # An unsafe game exit must reveal the existing road/alert presentation now,
+    # including when engagement/alerts change while the car still reports Park.
+    gui_app.pop_widgets_to(self, instant=True)
+    self._scroller.scroll_to(self._onroad_layout.rect.x if ui_state.started else self._home_layout.rect.x, smooth=False)
+
   def _open_compact_destination(self, destination: Destination) -> None:
     if destination == Destination.NETWORK and not self.star.connectivity_allowed():
       from openpilot.selfdrive.ui.mici.widgets.button import GreyBigButton
@@ -2134,7 +2140,7 @@ class StarMiciMainLayout(MiciMainLayout):
       return
     panel = self._compact_panels.get(destination)
     if panel is None:
-      panel = panel_type()
+      panel = DeveloperLayoutMici(on_spacepilot_exit=self._exit_spacepilot) if destination == Destination.DEVELOPER else panel_type()
       if destination == Destination.DEVICE:
         from openpilot.starpilot.ui.display_compact import DisplayCompact
         from openpilot.starpilot.ui.replay_settings import replay_entry
