@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any
 
 from openpilot.common.hardware import COMMA_HARDWARE
-from openpilot.starpilot.system.android_auto import car_profiles, identity as identity_store
+from openpilot.starpilot.system.android_auto import car_profiles, device_health, identity as identity_store, system_slice
 from openpilot.starpilot.system.android_auto.auto_connect import AutoConnectPolicy
 from openpilot.starpilot.system.android_auto.bootstrap import NAMES, BootstrapError, WirelessBootstrap
 from openpilot.starpilot.system.android_auto.bugsink_report import PairingAttempt
@@ -237,6 +237,8 @@ class EventLog:
     self._writer: threading.Thread | None = None
     self._writer_stop: threading.Event | None = None
     self._dropped = 0
+    self.path: Path | None = None
+    self.started = 0.0
 
   def open(self) -> None:
     try:
@@ -244,6 +246,7 @@ class EventLog:
       logs = sorted(self.directory.glob("session-*.jsonl"), key=identity_store.session_log_order)
       for old in logs[:max(0, len(logs) - MAX_LOG_FILES + 1)]:
         old.unlink(missing_ok=True)
+      system_slice.prune_sidecars(self.directory)
       number = max([0, *(identity_store.session_log_order(log)[0] for log in logs)]) + 1
       path = self.directory / f"session-{number:06d}-{identity_store.timestamp()}.jsonl"
       fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
@@ -251,6 +254,7 @@ class EventLog:
     except OSError:
       return
     with self.lock:
+      self.path, self.started = path, datetime.now(UTC).timestamp()
       self._queue = queue.Queue(maxsize=LOG_QUEUE_MAX)
       self._dropped = 0
       self._writer_stop = threading.Event()
@@ -283,6 +287,11 @@ class EventLog:
     assert stopped is not None
     stopped.set()
     writer.join(timeout=2.0)
+
+  def capture_system(self) -> None:
+    """Save what the device was doing during this session beside its log, off the session's thread."""
+    if self.path is not None:
+      system_slice.write_sidecar_async(self.path, self.started, datetime.now(UTC).timestamp())
 
   def _line(self, record: dict) -> str:
     return json.dumps(record, default=str) + "\n"
@@ -1124,6 +1133,7 @@ class Supervisor:
         self.log("bluetooth_release_failed", error=str(error))
       self.log("session_stop")
       self.log.close()
+      self.log.capture_system()
       self._set(state="idle", detail="", running=False, retry_in=0.0, mode=None)
 
   @staticmethod
@@ -1593,7 +1603,7 @@ class Supervisor:
                  "uptime_s": round(now - started), "frames_from_view": source.frames, "wifi_dbm": watch.wifi_dbm}
         self._set(stats=stats)
         if int(now - started) % 30 == 0:
-          self.log("stats", **stats)
+          self.log("stats", **{**device_health.sample(getattr(watch.lease, "interface", "wlan0")), **stats})
           encode_peak = 0.0  # the peak covers each logged 30 s window
       spent = time.monotonic() - pass_started
       if spent > STREAM_STALL_LOG:
