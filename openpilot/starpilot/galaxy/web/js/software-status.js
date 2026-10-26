@@ -415,7 +415,7 @@ export const SoftwarePage = {
       const history = this.operations?.history
       return this.historyKind === "recent" ? (history?.recent?.branch === this.draftBranch ? history.recent.entries : []) : history?.[this.historyKind] || []
     },
-    commitsUrl() { return this.data?.installed.branch ? `https://github.com/firestar5683/StarPilot/commits/${encodeURIComponent(this.data.installed.branch)}/` : "" },
+    commitsUrl() { return this.data?.installed.branch ? `https://github.com/StarPilotHQ/StarPilot/commits/${encodeURIComponent(this.data.installed.branch)}/` : "" },
   },
   methods: {
     switchRow,
