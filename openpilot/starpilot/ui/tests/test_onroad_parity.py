@@ -231,7 +231,7 @@ def test_compact_pending_label_and_button_follow_saved_action_placement():
   view.fonts.vertical_ink.return_value = (0, 20)
   with patch.object(rl, 'draw_rectangle_rounded') as button, patch.object(rl, 'draw_line_ex'):
     view._slc_actions(state)
-  assert foreground_calls(view.fonts.draw)[0].args[3:5] == (179, 203)
+  assert foreground_calls(view.fonts.draw)[0].args[3:5] == (187, 63)
   button.assert_not_called()
 
 

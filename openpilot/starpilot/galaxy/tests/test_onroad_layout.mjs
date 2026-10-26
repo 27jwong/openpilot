@@ -57,7 +57,7 @@ export function snapshot() {
   metadata.roadColorFields = [{ id: 'path', label: 'Path', default: '#30FF9CFF' },
     { id: 'pathEdge', label: 'Path edges', default: '#00FF40FF' }, { id: 'laneLines', label: 'Lane lines', default: '#FFFFFFFF' }]
   metadata.profiles.compact.widgets.speed_limit_actions.visualInsetTop = 32
-  const document = { version: 10, roadColors: { large: {}, compact: {} }, widgetColors: { large: {}, compact: {} }, palette: Object.fromEntries(metadata.paletteFields.map((field) => [field.id, field.default])),
+  const document = { version: 11, roadColors: { large: {}, compact: {} }, widgetColors: { large: {}, compact: {} }, palette: Object.fromEntries(metadata.paletteFields.map((field) => [field.id, field.default])),
     layouts: Object.fromEntries(Object.entries(metadata.profiles).map(([id, profile]) => [id,
       Object.fromEntries(Object.entries(profile.widgets).map(([key, definition]) => [key,
         { ...definition.default, ...(definition.resizable ? { size: definition.resizable.default } : {}) }]))])) }
@@ -529,18 +529,20 @@ vm.state.data.metadata.profiles.large.widgets.cruise_limits.sourcesExtent = { in
 vm.state.selected = "cruise_limits"
 const sourcesCard = vm.layout.cruise_limits, sourcesActions = vm.layout.speed_limit_actions
 const actionsBefore = { ...sourcesActions }
-Object.assign(sourcesActions, { x: sourcesCard.x, y: sourcesCard.y + 522 + 22 })
+const sourceDx = vm.profile.widgets.speed_limit_actions.default.x - vm.profile.widgets.cruise_limits.default.x
+const sourceGap = vm.profile.widgets.speed_limit_actions.default.y - vm.profile.widgets.cruise_limits.default.y - 522
+Object.assign(sourcesActions, { x: sourcesCard.x + sourceDx, y: sourcesCard.y + 522 + sourceGap })
 vm.setSpeedSources("speedSources", true)
 assert.equal(vm.state.draft.speedSources, true)
 assert.equal(vm.profile.widgets.cruise_limits.height, 522 + 76)
-assert.equal(sourcesActions.y, sourcesCard.y + 522 + 76 + 22)
+assert.equal(sourcesActions.y, sourcesCard.y + 522 + 76 + sourceGap)
 vm.setSpeedSources("speedSourcesCard", true)
 assert.equal(vm.profile.widgets.cruise_limits.height, 522 + 84)
-assert.equal(sourcesActions.y, sourcesCard.y + 522 + 84 + 22)
+assert.equal(sourcesActions.y, sourcesCard.y + 522 + 84 + sourceGap)
 vm.undo(); vm.undo()
 assert.notEqual(vm.state.draft.speedSources, true)
 assert.equal(vm.profile.widgets.cruise_limits.height, 522)
-assert.equal(vm.layout.speed_limit_actions.y, vm.layout.cruise_limits.y + 522 + 22)
+assert.equal(vm.layout.speed_limit_actions.y, vm.layout.cruise_limits.y + 522 + sourceGap)
 Object.assign(vm.layout.speed_limit_actions, actionsBefore)
 vm.state.selected = "current_speed"
 vm.setSpeedSources("speedSources", true)

@@ -8,6 +8,12 @@ const signLayout = { speed_limit: { x: 160, y: 80, enabled: true }, speed_limit_
 const signWidgets = { speed_limit: { width: 264, height: 82, visualInsetTop: 12 }, speed_limit_actions: { width: 440, height: 52 } }
 assert.equal(sceneHidesWidget('slc_pending', 'compact', 'speed_limit', signLayout, signWidgets), true, 'The caption overlaps even when the original rectangle does not')
 assert.equal(sceneHidesWidget('engaged', 'compact', 'speed_limit', signLayout, signWidgets), false)
+for (const scene of ['slc_pending', 'slc_max', 'slc_retained']) {
+  for (const profile of ['large', 'compact'])
+    assert.equal(sceneHidesWidget(scene, profile, 'speed_limit_actions'), false)
+  assert.equal(sceneHidesWidget(scene, 'compact', 'speed_limit', signLayout, signWidgets), true)
+}
+assert.equal(sceneHidesWidget('slc_equal', 'compact', 'speed_limit_actions'), true)
 assert.equal(sceneHidesWidget('slc_pending', 'compact', 'speed_limit', signLayout,
   { ...signWidgets, speed_limit: { ...signWidgets.speed_limit, visualInsetTop: 0 } }), false)
 const restoredLayout = { speed_limit: {x:330, y:20, enabled:true}, speed_limit_actions: {x:128, y:186, enabled:true} }

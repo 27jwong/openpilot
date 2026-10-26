@@ -84,7 +84,7 @@ def test_small_offset_layout_transitions_reuse_the_same_widget(historical_outlin
 @pytest.mark.parametrize('y', [20, 50, 108])
 def test_compact_confirmation_overlap_remains_conservative(y):
   current = state(slc_prompt_open=True)
-  current.customization['layouts']['compact']['speed_limit']['y'] = y
+  current.customization['layouts']['compact']['speed_limit'].update(x=280 if y == 108 else 330, y=y)
   obscured = compact_sign_obscured_by_actions(current)
   assert obscured is (y == 108)
   assert (speed_limit_bounds(Profile.COMPACT, current) is None) is obscured

@@ -44,8 +44,8 @@ export function sceneHidesWidget(scene, profile, id, layout = {}, widgets = {}) 
   if (profile === "compact" && id === "max_speed") return !longitudinal
   // Native samples already use their accepted limit except for a pending decision,
   // a lower set speed, or a driver override. Those are the remaining actionable scenes.
-  if (id === "speed_limit_actions") return profile === "compact" ? scene !== "slc_pending" :
-    !["slc_pending", "slc_max", "slc_retained"].includes(scene)
+  const slcActions = ["slc_pending", "slc_max", "slc_retained"].includes(scene)
+  if (id === "speed_limit_actions") return !slcActions
   const overlaps = (a, b) => a && b && a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y
   const box = key => {
     if (!layout[key]?.enabled || !widgets[key]) return null
@@ -56,7 +56,7 @@ export function sceneHidesWidget(scene, profile, id, layout = {}, widgets = {}) 
   if (profile === "compact" && id === "speed_limit") {
     if (scene === "slc_unavailable") return true
     const actions = box("speed_limit_actions")
-    if (scene !== "slc_pending" || !actions) return false
+    if (!slcActions || !actions) return false
     const sign = box(id)
     if (!sign) return false
     const signTop = Math.max(0, sign.y - (sign.visualInsetTop || 0))

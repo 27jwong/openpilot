@@ -10,7 +10,6 @@ from openpilot.selfdrive.car.cruise import V_CRUISE_MIN, V_CRUISE_MAX
 from openpilot.starpilot.speed_limits import acceptance as acc
 from openpilot.starpilot.speed_limits import action_arbitration as arb
 from openpilot.starpilot.speed_limits import composition as comp
-from openpilot.starpilot.speed_limits import lead_relaxation as lr
 from openpilot.starpilot.speed_limits import selection as sel
 from openpilot.starpilot.speed_limits import speed_domain as sd
 from openpilot.starpilot.speed_limits.runtime_settings import Settings
@@ -61,20 +60,6 @@ def dashboard_observation(evidence, *, car_fingerprint: str, session_id: str, no
                                      value=f"{session_id}:{producer_session}:{car_fingerprint}:{int(evidence.episode)}")
   return acc.Observation(acc.ObservationKind.VALID,
                          acc.Candidate(sel.Source.DASHBOARD.value, identity, float(evidence.speedMps)))
-
-
-def _lead(sm, now_ns: int) -> lr.LeadEvidence:
-  if not _fresh(sm, "radarState", now_ns):
-    return lr.LeadEvidence(lr.LeadKind.STALE if sm.logMonoTime.get("radarState", 0) else lr.LeadKind.UNKNOWN)
-  lead = sm["radarState"].leadOne
-  if not lead.present:
-    return lr.LeadEvidence(lr.LeadKind.VALID, False, False, 0.0, 0.0, 0.0)
-  if not all(_number(value, positive=(name == "distance")) for name, value in
-             (("distance", lead.dRel), ("speed", lead.vLeadK))):
-    return lr.LeadEvidence(lr.LeadKind.UNKNOWN)
-  if type(lead.aLeadK) not in (int, float) or not math.isfinite(lead.aLeadK):
-    return lr.LeadEvidence(lr.LeadKind.UNKNOWN)
-  return lr.LeadEvidence(lr.LeadKind.VALID, True, True, float(lead.dRel), float(lead.vLeadK), float(lead.aLeadK))
 
 
 def _authority(CP, sm, host_long: bool, lateral: bool, *, long_enabled: bool) -> acc.Authority:
@@ -365,8 +350,7 @@ class Runtime:
     return comp.Frame(now_ns, self._observations(sm, CP, now_ns, now_boot_ns), self.settings.selection, authority,
                       self.settings.acceptance, self.settings.offsets,
                       sd.DomainStatus.VALID if car_fresh and selected_cluster is not None else sd.DomainStatus.STALE,
-                      ego, bool(car_state.gasPressed) if car_fresh else False,
-                      _lead(sm, now_ns), self.settings.lead_policy, host, action=action, adopt=adopt,
+                      ego, bool(car_state.gasPressed) if car_fresh else False, host, action=action, adopt=adopt,
                       classified_cruise=classified)
 
   def _action(self, request: Action | None, now_ns: int) -> tuple[acc.DriverAction | None, acc.AdoptRequest | None, int | None]:

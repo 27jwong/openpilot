@@ -35,8 +35,6 @@ class Frame:
   selected_kind: sd.DomainStatus
   ego_pair: sd.SpeedPair
   pedal_pressed: bool | None
-  lead: lr.LeadEvidence
-  lead_policy: lr.Policy
   host: HostState
   action: acc.DriverAction | None = None
   adopt: acc.AdoptRequest | None = None
@@ -134,8 +132,7 @@ def step(state: State, frame: Frame) -> Result:
                                                 frame.acceptance_policy.confirm_higher,
                                                 frame.acceptance_policy.fallback_previous,
                                                 frame.acceptance_policy.display_only)) or
-      not isinstance(frame.selected_kind, sd.DomainStatus) or not isinstance(frame.ego_pair, sd.SpeedPair) or
-      not isinstance(frame.lead, lr.LeadEvidence)):
+      not isinstance(frame.selected_kind, sd.DomainStatus) or not isinstance(frame.ego_pair, sd.SpeedPair)):
     return Result(replace(state, lead_prior=None, reset_required=True), status="invalid_frame", errors=("invalid frame or clock",))
   host = frame.host
   selected_initialized = host.driver_v_cruise_kph > 0 and host.driver_v_cruise_kph != 255.0

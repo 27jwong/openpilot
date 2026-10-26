@@ -35,7 +35,7 @@ def test_numeric_subset_is_pinned_and_has_real_tabular_glyphs():
 
 
 def test_approved_limit_offset_and_action_sizes_fit_actual_fonts():
-  from openpilot.starpilot.ui.large_speed_geometry import ACTION_TEXT, LARGE_SIGN_SCALE, LIMIT_RECTS
+  from openpilot.starpilot.ui.large_speed_geometry import ACTION_TEXT_SIZE, LARGE_SIGN_SCALE, LIMIT_RECTS
   owns_context = not rl.is_window_ready()
   if owns_context:
     rl.init_window(128, 128, "Native speed-group font fixture")
@@ -53,13 +53,13 @@ def test_approved_limit_offset_and_action_sizes_fit_actual_fonts():
           offset_width = b - a
           width = max(value_width, offset_width) + 20 * scale
           assert width <= LIMIT_RECTS[profile][2]
-        action_width = 272 if large else 168
-        assert all(fonts.measure(label, FontRole.MEDIUM, ACTION_TEXT[profile][0]).width + 4 <= action_width
+        action_width = 308 if large else 184
+        assert all(fonts.measure(label, FontRole.MEDIUM, ACTION_TEXT_SIZE[profile]).width + 4 <= action_width
                    for label in ('Accept', 'Decline'))
         ppi = (2160**2 + 1080**2)**.5 / 6 if large else 300
         for text, role, size, minimum in (('65', FontRole.BOLD, limit_size, 2.5 if large else 2.8),
                                          ('+5', FontRole.MEDIUM, offset_size, 1.5 if large else 2.0),
-                                         ('H', FontRole.MEDIUM, ACTION_TEXT[profile][0], 2.8)):
+                                         ('H', FontRole.MEDIUM, ACTION_TEXT_SIZE[profile], 2.8)):
           top, bottom = fonts.vertical_ink(text, role, size)
           assert (bottom - top) * 25.4 / ppi >= minimum
   finally:
@@ -226,7 +226,7 @@ def test_native_signs_offsets_and_captions_fit_their_touch_targets():
             x1, y1, x2, y2 = ink[label]
             assert left < x1 < x2 < right and top <= y1 < y2 < bottom
           controls = slc_controls(profile, replace(current, slc_prompt_open=True))
-          assert ink['120'][3]+4 < controls[0].bounds[1]
+          assert ink['120'][3] + 4 < controls[0].bounds[1] or controls[-1].bounds[2] + 4 < ink['120'][0]
   finally:
     if owns_context:
       rl.close_window()
@@ -287,7 +287,8 @@ def test_large_sources_and_confirmation_text_have_clearance_below_both_signs():
       for vienna, separate in product((False, True), repeat=2):
         current = state(slc_prompt_open=True)
         current.customization.update(speedSources=True, speedSourcesCard=separate)
-        current = replace(current, appearance=replace(current.appearance, use_vienna_sign=vienna),
+        current = replace(current, customization=validate_document(current.customization),
+          appearance=replace(current.appearance, use_vienna_sign=vienna),
           speed_limit=replace(current.speed_limit, source_readings=tuple(
             SourceReading(source, True, 'valid', 50/3.6) for source in ('dashboard', 'map', 'vision'))))
         calls = []
@@ -301,6 +302,42 @@ def test_large_sources_and_confirmation_text_have_clearance_below_both_signs():
         assert source_bottom+8 <= action_top
       widget.close()
   finally:
+    if owns_context:
+      rl.close_window()
+
+
+def test_source_card_action_sprite_contains_both_actual_button_rows():
+  import json
+  from unittest.mock import patch
+  from openpilot.starpilot.ui.layout_preview_renderer import _Canvas, sample_state
+  from openpilot.starpilot.ui.onroad import OnroadView
+
+  owns_context = not rl.is_window_ready()
+  if owns_context:
+    rl.init_window(128, 128, 'SLC source card widget art')
+  target = rl.load_render_texture(*Profile.LARGE.size)
+  try:
+    with BitmapFonts(Profile.LARGE, default_font_directory()) as fonts:
+      document = default_document()
+      document.update(speedSources=True, speedSourcesCard=True)
+      document = validate_document(document)
+      state = sample_state('slc_pending', document)
+      view = OnroadView.__new__(OnroadView)
+      view.fonts = fonts
+      canvas = _Canvas.__new__(_Canvas)
+      canvas.profile, canvas.viewport, canvas.fonts, canvas.target = Profile.LARGE, None, fonts, target
+      with patch.object(canvas, 'view', SimpleNamespace(_ordered_widgets=lambda content, state, **kw: view._slc_actions(state)), create=True), \
+           patch.object(canvas, '_settle', lambda state: None), \
+           patch.dict('openpilot.starpilot.ui.layout_preview_renderer.RUNTIME_PREVIEW_WIDGETS', large=('speed_limit_actions',)):
+        png = canvas.render_widget_art(state, document['layouts']['large'])
+      with Image.open(io.BytesIO(png)) as image:
+        slot = json.loads(image.info['starpilot-widget-art'])['sprites']['speed_limit_actions']
+        assert (slot['width'], slot['height'], slot['offsetY']) == (308, 168, 0)
+        alpha = np.asarray(image.convert('RGBA'))[..., 3]
+      assert (alpha[:80] > 200).any(), 'Accept must remain in its sprite'
+      assert (alpha[88:] > 200).any(), 'Decline must remain in its sprite'
+  finally:
+    rl.unload_render_texture(target)
     if owns_context:
       rl.close_window()
 
@@ -459,23 +496,23 @@ def test_v5_geometry_migrates_and_keeps_custom_actions_independent():
   doc['layouts']['large']['cruise_limits'].update(x=1550, y=638)
   doc['layouts']['large']['speed_limit_actions'].update(x=1550, y=954)
   migrated = validate_document(doc)
-  assert migrated['version'] == 10
+  assert migrated['version'] == 11
   assert migrated['layouts']['large']['cruise_limits'] == {'x': 1550, 'y': 638, 'enabled': True}
-  assert migrated['layouts']['large']['speed_limit_actions'] == {'x': 1550, 'y': 902, 'enabled': True}
+  assert migrated['layouts']['large']['speed_limit_actions'] == {'x': 1550, 'y': 882, 'enabled': True}
   assert migrated['speedSources'] is True
   assert doc['layouts']['large']['cruise_limits']['x'] == 1550
   assert validate_document(migrated) == migrated
   doc['layouts']['large']['cruise_limits'].update(x=88, y=75)
   doc['layouts']['large']['speed_limit_actions'].update(x=88, y=447)
-  assert validate_document(doc)['layouts']['large']['speed_limit_actions']['y'] == 296
+  assert validate_document(doc)['layouts']['large']['speed_limit_actions']['y'] == 343
 
 
 def test_pending_choices_are_plain_accept_and_decline_with_padded_targets():
   state = road()
   state = replace(state, slc_prompt_open=True, speed_limit=replace(state.speed_limit, pending_speed_limit_mps=25))
   accept, decline = slc_controls(Profile.LARGE, state)
-  assert accept.bounds == (100, 296, 372, 444)
-  assert decline.bounds == (404, 296, 676, 444)
+  assert accept.bounds == (112, 267, 420, 347)
+  assert decline.bounds == (112, 355, 420, 435)
   assert (accept.label, decline.label) == ('Accept', 'Decline')
 
 
@@ -487,7 +524,7 @@ def test_projection_v1_layout_migrates_without_losing_other_widgets():
   doc['widgets']['current_speed'].update(x=1400, y=100)
   migrated = validate_layout_for_viewport(doc, viewport)
   assert migrated['version'] == 5
-  assert migrated['widgets']['speed_limit_actions']['y'] == 296
+  assert migrated['widgets']['speed_limit_actions']['y'] == 267
   assert migrated['widgets']['current_speed'] == doc['widgets']['current_speed']
   assert validate_layout_for_viewport(migrated, viewport) == migrated
 
@@ -500,5 +537,5 @@ def test_committed_projection_v1_right_edge_is_preserved_and_clamped():
   doc['widgets']['speed_limit_actions'].update(x=1654, y=500)
   migrated = validate_layout_for_viewport(doc, viewport)
   assert migrated['widgets']['cruise_limits']['x'] == 1342
-  assert migrated['widgets']['speed_limit_actions'] == {'x': 1254, 'y': 296, 'enabled': True}
+  assert migrated['widgets']['speed_limit_actions'] == {'x': 1510, 'y': 267, 'enabled': True}
 

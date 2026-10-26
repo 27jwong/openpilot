@@ -6,12 +6,17 @@ import unittest
 from unittest.mock import Mock
 
 from openpilot.starpilot.ui.onroad_state import (ObservationKind, OnroadInput, OnroadState,
-                                                 SlcActionKind, SlcUiRequest, SpeedLimitObservation, slc_controls, speed_limit_bounds)
+                                                 SlcActionKind, SlcUiRequest, SpeedLimitObservation, slc_action_bounds, slc_controls, speed_limit_bounds)
 from openpilot.starpilot.ui.presentation import Profile
 from openpilot.starpilot.ui.preview_home import reference_state
 from openpilot.starpilot.ui.preview_settings import reference_settings_state
 from openpilot.starpilot.ui.shell import ShellInput, ShellMode, ShellSnapshot
 from openpilot.starpilot.ui.slc_action_dispatch import SlcActionDispatcher
+
+from openpilot.starpilot.ui.large_speed_geometry import sources_extent
+from openpilot.starpilot.ui.onroad_customization import default_document, placement, validate_document
+from openpilot.starpilot.ui.onroad_torque_geometry import maximum_footprint
+from openpilot.starpilot.ui.tests.test_onroad_customization import road
 
 
 NOW = 10_000_000_000
@@ -81,7 +86,8 @@ class TestSlcTouch(unittest.TestCase):
         self.assertFalse(emitted)
         self.assertIsNone(touch.pressed_action)
       tap_sign(touch, current)
-      x = (controls[0].bounds[2] + controls[1].bounds[0]) / 2
+      x = (controls[0].bounds[0] + controls[0].bounds[2]) / 2
+      y = (controls[0].bounds[3] + controls[1].bounds[1]) / 2
       touch.press(x, y, current)
       touch.release(x, y, current)
       self.assertFalse(emitted)
@@ -162,16 +168,17 @@ class TestSlcTouch(unittest.TestCase):
   def test_adopt_hidden_once_limit_is_in_use(self):
     adoptable = state(pending=False)
     in_use = replace(adoptable, speed_limit=replace(adoptable.speed_limit, speed_limit_mps=18.0))
-    self.assertEqual(slc_controls(Profile.LARGE, in_use), ())
     overridden = replace(in_use, speed_limit=replace(in_use.speed_limit, driver_override_active=True))
-    self.assertEqual(slc_controls(Profile.LARGE, overridden)[0].label, 'USE LIMIT')
+    for profile in Profile:
+      self.assertEqual(slc_controls(profile, in_use), ())
+      self.assertEqual(slc_controls(profile, overridden)[0].label, 'Use 40')
 
-  def test_rejected_limit_remains_explicitly_adoptable_in_large_layout(self):
-    emitted, current = [], state(pending=False)
-    touch = OnroadInput(emitted.append, Profile.LARGE)
-    tap_control(touch, current, SlcActionKind.ADOPT)
-    self.assertEqual(emitted[-1].kind, SlcActionKind.ADOPT)
-    self.assertEqual(slc_controls(Profile.COMPACT, current), ())
+  def test_rejected_limit_remains_explicitly_adoptable_in_both_layouts(self):
+    for profile in Profile:
+      emitted, current = [], state(pending=False)
+      touch = OnroadInput(emitted.append, profile)
+      tap_control(touch, current, SlcActionKind.ADOPT)
+      self.assertEqual(emitted[-1].kind, SlcActionKind.ADOPT)
 
 
 class TestSlcDispatcher(unittest.TestCase):
@@ -226,6 +233,52 @@ class TestSlcDispatcher(unittest.TestCase):
     self.assertFalse(dispatcher.dispatch(request))
     self.assertEqual(current.actionSequenceId, 0)
     self.assertTrue(current.hasPending)
+
+
+def test_compact_actions_center_on_road_and_clear_full_torque():
+  state = road()
+  first, last = slc_action_bounds(Profile.COMPACT, state)
+  assert (first[0] + last[2]) / 2 == 476 / 2
+  torque_top = maximum_footprint(0, 0, 476, 240, 536)[1]
+  assert last[3] < torque_top
+
+
+def test_large_attached_actions_follow_source_row_and_custom_actions_stay_put():
+  state = road()
+  before = slc_action_bounds(Profile.LARGE, state)
+  state.customization['speedSources'] = True
+  state = replace(state, customization=validate_document(state.customization))
+  after = slc_action_bounds(Profile.LARGE, state)
+  assert after[0][1] - before[0][1] == sources_extent(state.customization)
+  assert after[0][:2] == tuple(placement(state.customization, Profile.LARGE, 'speed_limit_actions')[key] for key in ('x', 'y'))
+  state.customization['layouts']['large']['speed_limit_actions'].update(x=600, y=500)
+  assert slc_action_bounds(Profile.LARGE, state)[0][:2] == (600, 500)
+
+
+def test_v10_default_migration_preserves_unrelated_customization_and_optional_widgets():
+  old = default_document()
+  old['version'] = 10
+  old['layouts']['compact']['speed_limit_actions'].update(x=128, y=186)
+  old['layouts']['compact']['clock'].update(x=168, y=92, enabled=True)
+  old['layouts']['compact']['driving_mode_descriptions'].update(x=162, y=22, enabled=True)
+  old['layouts']['large']['speed_limit_actions'].update(x=100, y=296)
+  old['layouts']['large']['current_speed'].update(x=800, y=120)
+  migrated = validate_document(old)
+  assert migrated['layouts']['compact']['speed_limit_actions'] == {'x': 146, 'y': 44, 'enabled': True}
+  assert migrated['layouts']['large']['current_speed'] == old['layouts']['large']['current_speed']
+  clock = migrated['layouts']['compact']['clock']
+  mode = migrated['layouts']['compact']['driving_mode_descriptions']
+  assert clock['enabled'] and mode['enabled'] and mode['y'] + 44 <= 44
+  assert clock['x'] >= mode['x'] + 168 and clock['y'] < 20
+  assert validate_document(migrated) == migrated
+
+
+def test_large_controls_with_source_card_clear_the_default_cem_gauge():
+  state = road()
+  state.customization.update(speedSources=True, speedSourcesCard=True)
+  state = replace(state, customization=validate_document(state.customization))
+  bounds = slc_action_bounds(Profile.LARGE, state)
+  assert bounds[-1][3] < state.customization['layouts']['large']['cem_gauge']['y']
 
 
 if __name__ == "__main__":

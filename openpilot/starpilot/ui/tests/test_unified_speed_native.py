@@ -228,13 +228,13 @@ def test_large_limit_keeps_a_unit_when_set_speed_is_hidden():
 
 @pytest.mark.parametrize('profile', list(Profile))
 def test_actions_have_only_fixed_size_words_divider_and_pressed_underline(profile, drawing):
-  from openpilot.starpilot.ui.large_speed_geometry import ACTION_TEXT
+  from openpilot.starpilot.ui.large_speed_geometry import ACTION_TEXT_SIZE
   view = OnroadView.__new__(OnroadView)
   view.fonts = fonts(profile)
   current = state(slc_prompt_open=True)
   view._slc_actions(current)
   assert [(call.args[0], call.args[2]) for call in foreground_calls(view.fonts.draw)] == [
-    ('Accept', ACTION_TEXT[profile][0]), ('Decline', ACTION_TEXT[profile][0])]
+    ('Accept', ACTION_TEXT_SIZE[profile]), ('Decline', ACTION_TEXT_SIZE[profile])]
   assert len(foreground_calls(drawing['draw_line_ex'])) == 1
   view.pressed_action = lambda: slc_controls(profile, current)[0].request
   drawing['draw_line_ex'].reset_mock()

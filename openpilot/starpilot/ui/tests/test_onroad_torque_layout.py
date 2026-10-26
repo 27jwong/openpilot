@@ -81,9 +81,9 @@ class TestTorqueLayout(unittest.TestCase):
         invalid = default_document()
         actions = invalid['layouts']['compact']['speed_limit_actions']
         _, height = widget_size(invalid, 'compact', key)
-        invalid['layouts']['compact'][key].update(x=actions['x'], y=actions['y'] - height)
+        invalid['layouts']['compact'][key].update(x=actions['x'] - widget_size(invalid, 'compact', key)[0], y=min(actions['y'], 240 - height))
         self.assertEqual(validate_document(invalid), invalid)  # Touching edges do not overlap.
-        invalid['layouts']['compact'][key]['y'] += 1
+        invalid['layouts']['compact'][key]['x'] += 1
         with self.assertRaises(ValueError):
           validate_document(invalid)
 

@@ -17,7 +17,7 @@ import pyray as rl
 
 from openpilot.starpilot.ui import clip
 from openpilot.system.ui.lib.application import gui_app
-from openpilot.starpilot.ui.onroad_customization import (CLOCK_WIDGET, MODE_WIDGET, RAIL_WIDGETS, STOPPED_TIMER_WIDGET, offset, placement, rgba,
+from openpilot.starpilot.ui.onroad_customization import (CLOCK_WIDGET, MODE_WIDGET, RAIL_WIDGETS, STOPPED_TIMER_WIDGET, placement, rgba,
                                                          widget_order, widget_size)
 from openpilot.starpilot.ui.appearance_preferences import CameraViewChoice
 
@@ -31,13 +31,13 @@ from openpilot.starpilot.ui.onroad_large_widgets import CurrentSpeedHud, Unified
 from openpilot.starpilot.ui.onroad_cem_gauge import AetherGauge
 from openpilot.starpilot.ui.live_developer_sidebar import render_sidebar as render_live_sidebar
 from openpilot.starpilot.ui.layout_preview_sidebar import SIDEBAR_WIDTH
-from openpilot.starpilot.ui.onroad_state import AlertSize, OnroadState, slc_controls
+from openpilot.starpilot.ui.onroad_state import AlertSize, OnroadState, slc_action_occludes, slc_controls
 from openpilot.starpilot.ui.onroad_stopped_timer import duration_color, duration_text, timer_size
 from openpilot.starpilot.ui.onroad_torque import TorqueBarWidget
 from openpilot.starpilot.ui.onroad_navigation import NavigationCard
 from openpilot.starpilot.ui.onroad_navigation_favorites import NavigationFavorites
 from openpilot.starpilot.ui.presentation import BitmapFonts, FontRole, Profile
-from openpilot.starpilot.ui.large_speed_geometry import ACTION_TEXT
+from openpilot.starpilot.ui.large_speed_geometry import ACTION_TEXT_SIZE
 from openpilot.starpilot.ui.speed_limit_widget import MUTED, draw_ink, draw_line, draw_text
 from openpilot.starpilot.conditional_mode.policy import ModeChoice
 
@@ -169,28 +169,29 @@ class OnroadView:
       self._compact(state)
 
   def _slc_actions(self, state: OnroadState) -> None:
+    from openpilot.starpilot.ui.onroad_state import slc_action_bounds
+    bounds = slc_action_bounds(self.fonts.profile, state)
     controls = slc_controls(self.fonts.profile, state)
     feedback = state.speed_limit.action_feedback
     if (self.fonts.profile == Profile.LARGE and feedback and state.alert.size == AlertSize.NONE and
         placement(state.customization, self.fonts.profile, 'speed_limit_actions')['enabled']):
-      saved = placement(state.customization, self.fonts.profile, 'speed_limit_actions')
-      draw_ink(self.fonts, feedback, FontRole.MEDIUM, 30, saved['x'], saved['y'] + (122 if controls else 48), MUTED)
+      draw_ink(self.fonts, feedback, FontRole.MEDIUM, 30, bounds[0][0], bounds[-1][3] + 8 if controls else bounds[0][1] + 24, MUTED)
     if not controls:
       return
     large = self.fonts.profile == Profile.LARGE
-    size, cy = ACTION_TEXT[self.fonts.profile]
-    _, dy = offset(state.customization, self.fonts.profile, 'speed_limit_actions')
-    cy += dy
+    size = ACTION_TEXT_SIZE[self.fonts.profile]
     role = FontRole.MEDIUM
     a, b = self.fonts.vertical_ink('Accept Decline', role, size)
     color = rl.Color(*rgba(state.customization, 'text', self.fonts.profile, 'speed_limit_actions'))
     if len(controls) == 2:
-      center_x = (controls[0].bounds[2] + controls[1].bounds[0]) / 2
-      extent = 26 if large else 18
-      draw_line(self.fonts.profile, rl.Vector2(center_x, cy - extent), rl.Vector2(center_x, cy + extent),
+      center_x = (controls[0].bounds[0] + controls[0].bounds[2]) / 2
+      y = (controls[0].bounds[3] + controls[1].bounds[1]) / 2
+      extent = 36 if large else 24
+      draw_line(self.fonts.profile, rl.Vector2(center_x - extent, y), rl.Vector2(center_x + extent, y),
                 2 if large else 1, rl.Color(155, 178, 173, 170))
     for control in controls:
-      left, _, right, _ = control.bounds
+      left, top, right, bottom = control.bounds
+      cy = (top + bottom) / 2
       measured = self.fonts.measure(control.label, role, size)
       x = (left + right - measured.width) / 2
       draw_text(self.fonts, control.label, role, size, x, cy - (b - a) / 2 - a, color)
@@ -530,6 +531,8 @@ class OnroadView:
     if position is None or not position["enabled"]:
       return
     width, height = timer_size(profile)
+    if slc_action_occludes(self.fonts.profile, state, (position['x'], position['y'], position['x'] + width, position['y'] + height)):
+      return
     scale = height / 112
     minutes, remainder = duration_text(seconds)
     color = rl.Color(*duration_color(seconds), 255)

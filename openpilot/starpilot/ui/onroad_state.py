@@ -267,8 +267,6 @@ def _default_slc_controls(profile: Profile, state: OnroadState) -> tuple[SlcCont
                  zip((SlcActionKind.ACCEPT, SlcActionKind.REJECT), ('Accept', 'Decline'), ACTION_BOUNDS[profile], strict=True))
   if (pending is None and observation.speed_limit_mps is not None and
       observation.presentation_id is not None and observation.presentation_id > 0):
-    if profile == Profile.COMPACT:
-      return ()
     # Once this limit is the one in use, adopting it again only helps to clear an override
     # or to raise a set speed that sits below it.
     accepted = observation.accepted_speed_limit_mps
@@ -286,15 +284,20 @@ def _default_slc_controls(profile: Profile, state: OnroadState) -> tuple[SlcCont
     first, last = ACTION_BOUNDS[profile]
     bounds = first[0], first[1], last[2], last[3]
     target = observation.presentation_adjusted_limit_mps
-    label = f'Use limit {round(target * (3.6 if state.metric else 2.2369362921))}' if target is not None else 'USE LIMIT'
+    label = f'Use {round((target or observation.speed_limit_mps) * display_units)}'
     return (SlcControl(request, label, bounds),)
   return ()
+
+
+def slc_action_bounds(profile: Profile, state: OnroadState):
+  dx, dy = offset(state.customization, profile, 'speed_limit_actions')
+  return tuple((left + dx, top + dy, right + dx, bottom + dy) for left, top, right, bottom in ACTION_BOUNDS[profile])
 
 
 def slc_controls(profile: Profile, state: OnroadState) -> tuple[SlcControl, ...]:
   if not placement(state.customization, profile, "speed_limit_actions")["enabled"]:
     return ()
-  dx, dy = offset(state.customization, profile, "speed_limit_actions")
+  dx, dy = offset(state.customization, profile, 'speed_limit_actions')
   controls = tuple(SlcControl(item.request, item.label,
                              (item.bounds[0] + dx, item.bounds[1] + dy, item.bounds[2] + dx, item.bounds[3] + dy))
                    for item in _default_slc_controls(profile, state))
@@ -302,6 +305,14 @@ def slc_controls(profile: Profile, state: OnroadState) -> tuple[SlcControl, ...]
     controls = tuple(replace(item, bounds=(max(0, item.bounds[0]), max(0, item.bounds[1]),
                                            min(476, item.bounds[2]), min(240, item.bounds[3]))) for item in controls)
   return controls
+
+
+def slc_action_occludes(profile: Profile, state: OnroadState, bounds) -> bool:
+  if state.alert.size != AlertSize.NONE or not slc_controls(profile, state):
+    return False
+  first, last = slc_action_bounds(profile, state)
+  left, top, right, bottom = bounds
+  return first[0] < right and left < last[2] and first[1] < bottom and top < last[3]
 
 
 def _inside_widget(x, y, state, widget, bounds):

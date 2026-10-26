@@ -87,11 +87,11 @@ export function overlapsReserved(profile, id, x, y, layout = null) {
   const positions = layout || Object.fromEntries(Object.entries(profile.widgets).map(([key, item]) => [key, item.default]))
   if (id === "speed_limit_actions") return Object.entries(profile.widgets).some(([key, other]) => {
     const at = positions[key]
-    return key !== id && key !== "speed_limit" && other.layer !== "underlay" && at &&
+    return key !== id && key !== "speed_limit" && key !== "stopped_timer" && other.layer !== "underlay" && at &&
       !(OPTIONAL_WIDGETS.includes(key) && !at.enabled) && Number.isFinite(at.x) && Number.isFinite(at.y) &&
       intersects(at.x, at.y, ...widgetSize(other, at))
   })
-  if (id === "speed_limit") return false
+  if (id === "speed_limit" || id === "stopped_timer") return false
   const at = positions.speed_limit_actions
   if (!at || !Number.isFinite(at.x) || !Number.isFinite(at.y)) return true
   return intersects(at.x, at.y, actions.width, actions.height)
@@ -113,7 +113,7 @@ export const PROJECTION_DISPLAY_SWITCHES = ["blindSpotBorder", "signalBorder", "
 export function validDocument(document, metadata) {
   if (!object(document)) return false
   const profiles = metadata?.projection === true ? ["large"] : PROFILES
-  if (!keysEqual(document, ["version", "palette", "layouts", "widgetColors", "roadColors", ...(Object.hasOwn(document, "widgetOrder") ? ["widgetOrder"] : []), ...(Object.hasOwn(document, "speedSources") ? ["speedSources"] : []), ...(Object.hasOwn(document, "speedSourcesCard") ? ["speedSourcesCard"] : []), ...(Object.hasOwn(document, "speedAlign") ? ["speedAlign"] : []), ...(Object.hasOwn(document, "clock24Hour") ? ["clock24Hour"] : []), ...(Object.hasOwn(document, "showMaxSpeed") ? ["showMaxSpeed"] : []), ...(metadata?.projection !== true && Object.hasOwn(document, "display") ? ["display"] : []), ...(metadata?.projection === true && Object.hasOwn(document, "largeUiGammaTrial") ? ["largeUiGammaTrial"] : []), ...(metadata?.projection === true ? PROJECTION_DISPLAY_SWITCHES.filter(key => Object.hasOwn(document, key)) : []), ...(metadata?.projection === true && Object.hasOwn(document, "leadInfo") ? ["leadInfo"] : [])]) || document.version !== (metadata?.projection === true ? 8 : 10) ||
+  if (!keysEqual(document, ["version", "palette", "layouts", "widgetColors", "roadColors", ...(Object.hasOwn(document, "widgetOrder") ? ["widgetOrder"] : []), ...(Object.hasOwn(document, "speedSources") ? ["speedSources"] : []), ...(Object.hasOwn(document, "speedSourcesCard") ? ["speedSourcesCard"] : []), ...(Object.hasOwn(document, "speedAlign") ? ["speedAlign"] : []), ...(Object.hasOwn(document, "clock24Hour") ? ["clock24Hour"] : []), ...(Object.hasOwn(document, "showMaxSpeed") ? ["showMaxSpeed"] : []), ...(metadata?.projection !== true && Object.hasOwn(document, "display") ? ["display"] : []), ...(metadata?.projection === true && Object.hasOwn(document, "largeUiGammaTrial") ? ["largeUiGammaTrial"] : []), ...(metadata?.projection === true ? PROJECTION_DISPLAY_SWITCHES.filter(key => Object.hasOwn(document, key)) : []), ...(metadata?.projection === true && Object.hasOwn(document, "leadInfo") ? ["leadInfo"] : [])]) || document.version !== (metadata?.projection === true ? 8 : 11) ||
     (Object.hasOwn(document, "speedSources") && typeof document.speedSources !== "boolean") ||
     (Object.hasOwn(document, "speedSourcesCard") && typeof document.speedSourcesCard !== "boolean") ||
     (Object.hasOwn(document, "speedAlign") && !SPEED_ALIGNMENTS.includes(document.speedAlign)) ||
