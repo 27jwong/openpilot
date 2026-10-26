@@ -73,10 +73,6 @@ def feed(controls, timestamp, tick, *, active=True, enabled=True, fault=False, o
          can_valid=True, can_timeout=False, aol_lat_only=False, native_session='lane-aol-session', speed=20.,
          drive_id=500_000_000, native_allowed=True, independent=False, delay_fast=False):
   events = []
-  if not controls.sm.seen['lateralDelay']:
-    initial = messaging.new_message('lateralDelay', valid=True, logMonoTime=timestamp - 250_000_000)
-    initial.lateralDelay.lateralDelay = .1
-    controls.sm.update_msgs((timestamp - 250_000_000) / 1e9, [initial.as_reader()])
 
   def msg(service, size=None):
     event = messaging.new_message(service, size, valid=True, logMonoTime=timestamp)
@@ -140,6 +136,38 @@ def feed(controls, timestamp, tick, *, active=True, enabled=True, fault=False, o
 
 
 class LaneRuntimeTests(unittest.TestCase):
+  def test_shared_feed_is_one_current_batch_and_delay_qualifies_at_real_rate(self):
+    with OpenpilotPrefix(), mock.patch.dict(os.environ, {'REPLAY': '1', 'SIMULATION': '0'}), \
+         mock.patch('openpilot.selfdrive.controls.controlsd.messaging.PubMaster'):
+      params = Params()
+      _, tagged = ioniq_candidate()
+      params.put('CarParams', tagged.to_bytes(), block=True)
+      controls = Controls()
+      now = 2_000_000_000
+      batches = []
+      with mock.patch.object(controls.sm, 'update_msgs', side_effect=lambda stamp, rows: batches.append((stamp, rows))):
+        feed(controls, now, 0)
+      self.assertEqual(len(batches), 1)
+      self.assertEqual(batches[0][0], now / 1e9)
+      delays = [row for row in batches[0][1] if row.which() == 'lateralDelay']
+      self.assertEqual([row.logMonoTime for row in delays], [now])
+      before = controls.sm.frame
+      controls.sm.update_msgs(*batches[0])
+      self.assertEqual(controls.sm.frame, before + 1)
+      self.assertEqual(controls.sm.freq_tracker['lateralDelay'].avg_dt.count, 0)
+      self.assertFalse(controls.sm.all_checks(['lateralDelay']))
+      for tick in range(1, 26):
+        before = controls.sm.frame
+        feed(controls, now + tick * 10_000_000, tick)
+        self.assertEqual(controls.sm.frame, before + 1)
+        if tick < 25:
+          self.assertFalse(controls.sm.all_checks(['lateralDelay']))
+      self.assertEqual(controls.sm.freq_tracker['lateralDelay'].avg_dt.get_average(), .25)
+      self.assertTrue(controls.sm.all_checks(['lateralDelay']))
+      for tick in range(26, 31):
+        feed(controls, now + tick * 10_000_000, tick, delay_fast=True)
+      self.assertFalse(controls.sm.all_checks(['lateralDelay']))
+
   def test_body_dimensions_follow_selected_vehicle_without_retuning_geometry(self):
     from openpilot.starpilot.lateral.lane_clearance import BodyDimensions, interface_dimensions
     stock, tagged = ioniq_candidate()
@@ -435,6 +463,10 @@ class LaneRuntimeTests(unittest.TestCase):
       params.put_bool('LaneCentering', True, block=True)
       params.put('LaneCenteringE2EAuthority', 0.0, block=True)
       controls = Controls()
+      # This qualified-axis test also explicitly primes the 4 Hz delay source.
+      initial = messaging.new_message('lateralDelay', valid=True, logMonoTime=750_000_000)
+      initial.lateralDelay.lateralDelay = .1
+      controls.sm.update_msgs(.75, [initial.as_reader()])
       self.assertIsNotNone(controls.lane_centering_host)
       # Inject already-qualified independent-axis results at the consumer seam;
       # AOL's native/session checks are covered by its own wire tests.
