@@ -137,7 +137,7 @@ static uint8_t hyundai_ordinary_angle_request_mask(void) {
 static uint8_t hyundai_ordinary_angle_permission_mask(void) {
   uint8_t result = 0U;
   if (hyundai_angle_aol_enabled) {
-    result = hyundai_angle_aol_permission_mask();
+    result = hyundai_ev9_long_aol ? (hyundai_ev9_long_aol_permission_mask() & 1U) : hyundai_angle_aol_permission_mask();
     if (result == 0U) {
       hyundai_ordinary_angle_release();
     }
@@ -1173,7 +1173,7 @@ static bool hyundai_canfd_tx_hook(const CANPacket_t *msg) {
     if (independent_active) {
       const unsigned int len = GET_LEN(msg);
       const uint32_t xor_out = (len == 16U) ? 0x041DU : 0U;
-      ordinary_angle_valid = (hyundai_angle_aol_permission_mask() != 0U) &&
+      ordinary_angle_valid = (hyundai_ordinary_angle_permission_mask() != 0U) &&
         (hyundai_canfd_get_checksum(msg) == (hyundai_common_canfd_compute_checksum(msg) ^ xor_out));
       if (hyundai_ordinary_angle_counter_seen) {
         const uint8_t delta = (uint8_t)(msg->data[2] - hyundai_ordinary_angle_counter);
