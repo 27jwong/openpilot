@@ -537,6 +537,7 @@ class Supervisor:
   def set_car_type(self, car_type: str) -> None:
     if car_type not in ("builtin", "adapter", "usb", "app"):
       raise RuntimeError(f"Unknown car type {car_type!r}")
+    previous_wireless_type = self.config["car_type"] or ("adapter" if self.config.get("companion_address") else "builtin")
     connection = {"usb": "wired", "app": "headunitpad" if self.config["connection"] not in ("headunitpad", "openheadunit")
                   else self.config["connection"]}.get(car_type, "wireless")
     if connection != self.config["connection"]:
@@ -544,6 +545,10 @@ class Supervisor:
     if car_type in ("builtin", "adapter"):
       with self._lock:
         self.config["car_type"] = car_type
+        if previous_wireless_type != car_type:
+          if self._bluez is not None and self.config["receiver_address"]:
+            self._bluez.release()
+          self.config.update(receiver_address="", receiver_name="", companion_address="", companion_name="", car_fingerprint={})
         if car_type != "adapter":
           self.config["car_profile_override"] = ""  # the adapter model only applies to a wireless adapter
         identity_store.save_config(self.config)

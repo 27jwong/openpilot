@@ -1,19 +1,10 @@
-"""Per-car tuning, picked by fingerprint so nobody has to choose their car from a list.
-
-A car is recognized from what its head unit reported on a previous connection. Cars without a rule
-keep the standard behavior exactly. Add a rule to ship a variation for one car; ``car_profile_override``
-in the config pins a profile (or "default") for a single comma while testing with someone.
-"""
+"""Android Auto tuning selected from the saved head-unit fingerprint or an override."""
 import re
 
-# connect_delay_s: wait before the Bluetooth connect, for head units that need time to wake
-# max_window: most unacknowledged video messages in flight; phone_services: open the car-data and Bluetooth channels
-# like a phone does; phone_frames: send picture NAL units only, without AUD or repeated SPS/PPS
 DEFAULTS = {"connect_delay_s": 0.0, "max_window": 2, "phone_services": False, "phone_frames": False}
 
 FINGERPRINT_KEYS = ("head_unit_make", "head_unit_model", "car_make", "car_model", "car_year")
 
-# {"id": "...", "label": "...", "match": {fingerprint key: regex, ...}, "tuning": {key from DEFAULTS: value}}
 RULES: list[dict] = [
   {"id": "aawireless", "label": "AAWireless", "match": {},
    "tuning": {"max_window": 30, "phone_services": True, "phone_frames": True}},

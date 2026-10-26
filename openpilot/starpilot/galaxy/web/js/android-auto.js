@@ -59,7 +59,7 @@ const CONNECT = `<button v-if="!runtime?.running" class="gx-btn gx-aa-cta" :disa
 const CONNECTION_PROGRESS = `
   <div v-if="!showPairSteps" class="gx-aa-progress" :class="'gx-aa-progress--' + connectionProgress.tone" role="status" aria-live="polite" aria-atomic="true">
     <div class="gx-aa-progress__heading">
-      <span v-if="connectionProgress.active" class="gx-aa-orbit" aria-hidden="true"></span>
+      <span v-if="connectionProgress.active" class="gx-spinner gx-aa-orbit" aria-hidden="true"></span>
       <i v-else :class="'bi bi-' + connectionProgress.icon" aria-hidden="true"></i>
       <div><small>{{ connectionProgress.eyebrow }}</small><strong>{{ connectionProgress.title }}</strong></div>
     </div>
@@ -894,7 +894,7 @@ export const AndroidAutoPage = {
             <ol v-if="showPairSteps" class="gx-aa-list" aria-label="Pairing progress">
               <li v-for="step in pairSteps" :key="step.label" class="gx-aa-row" :class="'gx-aa-row--' + step.status" :aria-current="step.status === 'active' ? 'step' : undefined">
                 <i v-if="step.status === 'done'" class="bi bi-check-circle-fill gx-aa-ok" aria-hidden="true"></i>
-                <span v-else-if="step.status === 'active'" class="gx-aa-orbit gx-aa-orbit--small" aria-hidden="true"></span>
+                <span v-else-if="step.status === 'active'" class="gx-spinner gx-aa-orbit gx-aa-orbit--small" aria-hidden="true"></span>
                 <i v-else class="bi bi-circle" aria-hidden="true"></i>
                 <span class="gx-aa-row__text"><strong>{{ step.label }}</strong></span>
               </li>

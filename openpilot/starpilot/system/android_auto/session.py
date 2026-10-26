@@ -294,10 +294,10 @@ class Session:
         self.peer.settimeout(previous_timeout)
     return -(-len(data) // FRAGMENT_SIZE)
 
-  def receive(self, *, deadline: float | None = None) -> tuple[int, int, bytes]:
+  def receive(self, *, deadline: float | None = None, patient: bool = False) -> tuple[int, int, bytes]:
     """Read one complete message within one deadline, tolerating partial reads."""
     message_deadline = time.monotonic() + (self.receive_timeout if self.authenticated else self.handshake_timeout)
-    deadline = message_deadline if deadline is None else min(deadline, message_deadline)
+    deadline = message_deadline if deadline is None else deadline if patient else min(deadline, message_deadline)
     timed_peer = hasattr(self.peer, "gettimeout") and hasattr(self.peer, "settimeout")
     previous_timeout = self.peer.gettimeout() if timed_peer else None
 
@@ -516,20 +516,11 @@ class Session:
   def wait_for(self, channel: int, kind: int, timeout: float = 10.0, patient: bool = False) -> bytes:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-      if patient and not self._await_readable(deadline):
-        break
-      ch, message, data = self.receive()
+      ch, message, data = self.receive(deadline=deadline, patient=patient)
       if ch == channel and message == kind:
         return data
       self.dispatch(ch, message, data, expected=f"{channel}/{kind:#x}")
     raise TimeoutError(f"Head unit did not send {channel}/{kind:#x}")
-
-  def _await_readable(self, deadline: float) -> bool:
-    """Wait for the first byte of the next message, so a slow adapter or car is not cut off by the per-message timeout."""
-    if not hasattr(self.peer, "fileno"):
-      return True
-    remaining = deadline - time.monotonic()
-    return remaining > 0 and bool(select.select([self.peer], [], [], remaining)[0])
 
   def dispatch(self, channel: int, kind: int, data: bytes, expected: str) -> None:
     """Handle a message that arrived while waiting for another one."""

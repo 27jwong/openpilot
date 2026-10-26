@@ -1,8 +1,4 @@
-"""What the rest of the device was doing during one Android Auto session or pairing window, as bounded line lists.
-
-The journal lives in RAM here, so a session's slice is captured when it ends and kept in a sidecar next to its log;
-by the time a drive report is sent, those lines may be gone. The device is only read, at low priority, under one deadline.
-"""
+"""Bounded device logs captured beside an Android Auto session log."""
 
 from __future__ import annotations
 

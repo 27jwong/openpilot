@@ -1266,8 +1266,20 @@ def test_discovery_waits_past_the_message_timeout_for_a_slow_adapter():
   a, b = socket.socketpair()
   session = Session.__new__(Session)
   session.peer = a
-  threading.Timer(0.3, b.send, args=(b"x",)).start()
-  assert session._await_readable(time.monotonic() + 5)
-  a.recv(1)
-  assert not session._await_readable(time.monotonic() + 0.1)
-  assert Session.DISCOVERY_TIMEOUT >= 30
+  session.authenticated = False
+  session.handshake_timeout = 0.1
+  session.fragments = {}
+  session.bytes_received = 0
+  def send_slowly():
+    time.sleep(0.2)
+    b.sendall(b"\x00\x03\x00\x02")
+    time.sleep(0.2)
+    b.sendall(b"\x00\x06")
+  sender = threading.Thread(target=send_slowly)
+  sender.start()
+  try:
+    assert session.wait_for(0, 6, timeout=1.0, patient=True) == b""
+  finally:
+    sender.join()
+    a.close()
+    b.close()

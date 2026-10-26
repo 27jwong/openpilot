@@ -312,6 +312,9 @@ def test_supervisor_records_build_at_session_start(monkeypatch):
     def close(self):
       pass
 
+    def capture_system(self):
+      pass
+
     def __call__(self, name, **values):
       records.append({"event": name, **values})
 

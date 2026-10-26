@@ -47,9 +47,12 @@ def test_aawireless_tuning_applies_only_when_chosen():
 
 def test_leaving_the_adapter_setup_clears_the_adapter_model(sup):
   sup.config["car_type"] = "adapter"
+  sup.config.update(receiver_address=ADAPTER, receiver_name="AAWireless", companion_address="car",
+                    companion_name="Car", car_fingerprint={"address": ADAPTER})
   sup.set_car_profile("aawireless")
   sup.set_car_type("builtin")
   assert sup.config["car_profile_override"] == ""
+  assert not sup.config["receiver_address"] and not sup.config["companion_address"] and not sup.config["car_fingerprint"]
 
 
 def test_an_adapter_setup_must_choose_its_model_before_pairing_or_starting(sup):
