@@ -88,7 +88,7 @@ class Host:
     self.cp = cp
     self.controller = AngleController(low_gain=low, high_gain=high)
     self.inputs = None
-    self.tx_blocked = None
+    self.steering_rejected = False
 
   def update(self, CC, CS):
     if self.inputs is not None:
@@ -107,17 +107,10 @@ class Host:
              (not aol or CS.out.gearShifter in (structs.CarState.GearShifter.drive,
                                               structs.CarState.GearShifter.sport, structs.CarState.GearShifter.low)) and
              not CS.out.steerFaultTemporary and not CS.out.steerFaultPermanent and not CS.out.vehicleSensorsInvalid)
-    # Rejected frames do not advance Panda's accepted counter/path history.
-    # One real blocked-TX increment requires an accepted neutral resynchronization,
-    # rather than sending an indefinitely rejected chain of active counters.
-    counter_reader = getattr(self.inputs, "native_tx_blocked", None)
-    blocked = counter_reader() if ready and callable(counter_reader) else None
-    if not ready:
-      self.tx_blocked = None
-    elif type(blocked) is int and 0 <= blocked <= 0xFFFFFFFF:
-      changed = self.tx_blocked is not None and blocked != self.tx_blocked
-      self.tx_blocked = blocked
-      ready = not changed
+    # Only an actual steering/shadow rejection invalidates its accepted path
+    # and counter history. Unrelated ACC/UI rejections do not reset steering.
+    rejected, self.steering_rejected = self.steering_rejected, False
+    ready = ready and not rejected
     speed_min = speed_max = None
     speed_window = getattr(CS, "bluepilot_speed_window", None)
     if speed_window is not None:
