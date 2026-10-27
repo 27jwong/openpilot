@@ -12,7 +12,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 import pytest
 
-from openpilot.starpilot.sentry_mode.notifications import NotificationOwner, NotificationUnavailable, CHANNELS
+from openpilot.starpilot.sentry_mode.notifications import NotificationOwner, NotificationUnavailable
 from openpilot.starpilot.sentry_mode import web_push
 
 
@@ -344,7 +344,8 @@ def test_app_success_dedupe_selfie_and_migration(tmp_path):
   owner.action({'action': 'configure', 'channel': 'appPush', 'enabled': True, 'url': 'https://relay.example', 'token': ''})
   events.extend([{'eventId': 'a' * 32, 'kind': 'selfie', 'wallTimeNs': int(101e9)}, {'eventId': 'b' * 32, 'kind': 'warning', 'wallTimeNs': int(101e9)}])
   clock[0] = 102.
-  owner.tick(); owner.tick()
+  owner.tick()
+  owner.tick()
   assert len(calls) == 1
   assert owner.snapshot()['appSubscriptions'][0]['lastResult'] == 'Delivered to relay'
   owner.close()
@@ -352,7 +353,9 @@ def test_app_success_dedupe_selfie_and_migration(tmp_path):
   assert reopened.available and len(reopened.snapshot()['appSubscriptions']) == 1
   reopened.close()
   state = json.loads((root / 'state.json').read_text())
-  state.pop('appSubscriptions'); state['channels'].pop('appPush'); state['jobs'] = {}
+  state.pop('appSubscriptions')
+  state['channels'].pop('appPush')
+  state['jobs'] = {}
   (root / 'state.json').write_text(json.dumps(state))
   migrated = NotificationOwner(root, store())
   assert migrated.available and migrated.snapshot()['appSubscriptions'] == []

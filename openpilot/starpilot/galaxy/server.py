@@ -786,7 +786,8 @@ def make_server(*, port=8082, host='127.0.0.1', monitor=None, owner=None, crashe
           matrix = _Qr(version, raw).modules
           size = len(matrix) + 8
           cells = ''.join(f'<path d="M{x + 4} {y + 4}h1v1h-1z"/>' for y, row in enumerate(matrix) for x, active in enumerate(row) if active)
-          svg = f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {size} {size}"><rect width="100%" height="100%" fill="white"/><g fill="black">{cells}</g></svg>'
+          svg = (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {size} {size}">' +
+                 f'<rect width="100%" height="100%" fill="white"/><g fill="black">{cells}</g></svg>')
           self.respond(200, svg.encode(), 'image/svg+xml', cache_control='no-store')
         else:
           self.json(200, {'paired': True, 'slug': record['slug'], 'url': pairing.url(record['slug']),

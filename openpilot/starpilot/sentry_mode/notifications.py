@@ -236,8 +236,11 @@ class NotificationOwner:
                 'subscriptionCount': len(self.state['subscriptions']),
                 'subscriptions': [{'id': sub['id']} for sub in self.state['subscriptions']],
                 'deliverySemantics': 'Retries may repeat delivery after an interrupted remote response.'}
-      result['appSubscriptions'] = [{key: sub[key] for key in ('id', 'label', 'appId', 'addedAt', 'lastResult', 'lastAt')} for sub in self.state['appSubscriptions']]
-      result['removedAppSubscriptions'] = [{'id': job['subscriptionId'], 'lastResult': 'Phone unregistered — removed', 'lastAt': job['next']} for job in jobs.values() if job['channel'] == 'appPush' and job['error'] == 'expired'][-8:]
+      result['appSubscriptions'] = [{key: sub[key] for key in ('id', 'label', 'appId', 'addedAt', 'lastResult', 'lastAt')}
+                                    for sub in self.state['appSubscriptions']]
+      result['removedAppSubscriptions'] = [
+        {'id': job['subscriptionId'], 'lastResult': 'Phone unregistered — removed', 'lastAt': job['next']}
+        for job in jobs.values() if job['channel'] == 'appPush' and job['error'] == 'expired'][-8:]
       result['appPushAvailable'] = self.state['channels']['appPush']['enabled'] and bool(self.state['channels']['appPush']['url'] or APP_PUSH_RELAY_URL)
       for name, cfg in self.state['channels'].items():
         relevant = [j for j in jobs.values() if j['channel'] == name and j['generation'] == cfg['generation']]
@@ -378,7 +381,8 @@ class NotificationOwner:
     for name, cfg in self.state['channels'].items():
       if not cfg['enabled'] or (only is not None and only != name):
         continue
-      targets = self.state['subscriptions'] if name == 'webPush' else self.state['appSubscriptions'] if name == 'appPush' else [{'id': '', 'since': cfg['since']}]
+      targets = (self.state['subscriptions'] if name == 'webPush' else self.state['appSubscriptions']
+                 if name == 'appPush' else [{'id': '', 'since': cfg['since']}])
       for target in targets:
         if target_id is not None and target['id'] != target_id:
           continue

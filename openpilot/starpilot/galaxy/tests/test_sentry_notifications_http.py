@@ -45,7 +45,9 @@ class NotificationHTTPTests(unittest.TestCase):
         self.assertTrue(owner.store.snapshot()['events'][0]['simulated'])
         self.assertEqual(request({'action': 'simulate'}, cookie)[0], 429)
       finally:
-        server.shutdown(); thread.join(timeout=2); server.server_close()
+        server.shutdown()
+        thread.join(timeout=2)
+        server.server_close()
 
   def test_auth_origin_secret_redaction_and_session_change(self):
     with tempfile.TemporaryDirectory() as directory:

@@ -673,7 +673,7 @@ class SettingsGateway:
           if pages:
             result["sections"].append({"id": section_id, "title": title, "pages": pages})
       else:
-        for source, projected in zip(state.rows, result["rows"]):
+        for source, projected in zip(state.rows, result["rows"], strict=False):
           if source.page:
             projected["carVisible"] = has_car_control(source.page)
     if page == "vasm":
