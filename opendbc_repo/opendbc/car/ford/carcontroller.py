@@ -338,9 +338,11 @@ class CarController(CarControllerBase):
     ### ui ###
     # Acquire the display after the first active replacement, then retain it while
     # AOL stays active, including a manual-turn steering handoff (as on Dom).
-    aol_mache_ui = self.CP.carFingerprint == CAR.FORD_MUSTANG_MACH_E_MK1 and qualified_aol(self.CP, marked_only=True)
-    ui_enabled = CC.latActive and (not aol_mache_ui or self.mache_ui_owned)
-    if not aol_mache_ui or ui_enabled:
+    aol_owned_ui = qualified_aol(self.CP, marked_only=True) and any(
+      s.safetyModel == structs.CarParams.SafetyModel.ford and (s.safetyParam & ~(1 | 128 | 256)) in (18, 66)
+      for s in self.CP.safetyConfigs)
+    ui_enabled = CC.latActive and (not aol_owned_ui or self.mache_ui_owned)
+    if not aol_owned_ui or ui_enabled:
       send_ui = (self.main_on_last != main_on) or (self.lkas_enabled_last != ui_enabled) or (self.steer_alert_last != steer_alert)
       # send lkas ui msg at 1Hz or if ui state changes
       if (self.frame % CarControllerParams.LKAS_UI_STEP) == 0 or send_ui:

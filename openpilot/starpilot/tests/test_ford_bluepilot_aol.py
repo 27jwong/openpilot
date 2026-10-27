@@ -228,3 +228,23 @@ def test_route22_native_fault_still_withdraws_aol(ford_joined, monkeypatch, faul
   monkeypatch.ford_nonzero = True
   monkeypatch.ford_route22_final_fault = fault
   run_actual_producer(ford_joined, monkeypatch, scenario='route22')
+
+
+@pytest.mark.parametrize('identity', [(CAR.FORD_F_150_LIGHTNING_MK1, 66), (CAR.FORD_ESCAPE_MK4_5, 66),
+                                     (CAR.FORD_EXPEDITION_MK4, 66), (CAR.FORD_F_150_MK14, 66), (CAR.FORD_RANGER_MK2, 66)])
+@pytest.mark.parametrize('alpha', [False, True])
+@pytest.mark.parametrize('hands_free', [False, True])
+@pytest.mark.parametrize('topology', ['automatic'])
+def test_lightning_cluster_startup_and_aol_recovery(ford_joined, monkeypatch):
+  monkeypatch.ford_nonzero = True
+  run_actual_producer(ford_joined, monkeypatch, scenario='configuration-parity')
+
+
+@pytest.mark.parametrize('identity', [(CAR.FORD_F_150_LIGHTNING_MK1, 66)])
+@pytest.mark.parametrize('alpha', [False])
+@pytest.mark.parametrize('hands_free', [False, True])
+@pytest.mark.parametrize('topology', ['automatic'])
+@pytest.mark.parametrize('armed', [False, True])
+def test_lightning_unarmed_startup_does_not_show_armed_eps_warning(ford_joined, monkeypatch, armed):
+  monkeypatch.ford_startup_armed = armed
+  run_actual_producer(ford_joined, monkeypatch, scenario='startup-warning')
