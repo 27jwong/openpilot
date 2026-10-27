@@ -37,7 +37,12 @@ def loader(source, *, demo=False, bundled=False, failure=None):
   outer.body.insert(2, function)
   module = ast.fix_missing_locations(ast.Module(body=[outer], type_ignores=[]))
   exec(compile(module, str(source), 'exec'), namespace)
-  callback, state = namespace['outer']()
+  outer_function = namespace['outer']
+  assert callable(outer_function)
+  loaded = outer_function()
+  assert isinstance(loaded, tuple) and len(loaded) == 2
+  callback, state = loaded
+  assert callable(callback) and callable(state)
   return callback, state, calls
 
 
