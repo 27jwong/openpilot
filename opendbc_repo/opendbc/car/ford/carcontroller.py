@@ -142,10 +142,11 @@ class CarController(CarControllerBase):
 
     ### lateral control ###
     # send steer msg at 20Hz
-    if (self.frame % CarControllerParams.STEER_STEP) == 0 and self.bp_lat is not None:
-      can_sends += self.bp_lat.step_lateral(CC, CS, self.packer, self.CAN, self.frame, now_nanos)
+    if self.bp_lat is not None:
+      lateral_sends = self.bp_lat.step_lateral(CC, CS, self.packer, self.CAN, self.frame, now_nanos)
+      can_sends += lateral_sends
       self.apply_curvature_last = self.bp_lat.apply_curvature_last
-      self.mache_ui_owned |= bool(self.bp_lat.announced.active and self.bp_lat.pending.active)
+      self.mache_ui_owned |= bool(lateral_sends and self.bp_lat.announced.active and self.bp_lat.pending.active)
     elif (self.frame % CarControllerParams.STEER_STEP) == 0 and self.CP.flags & FordFlags.LKA_STEERING:
       # Preserve the stock LMC heartbeat without requesting lateral action.
       can_sends.append(fordcan.create_lat_ctl_msg(self.packer, self.CAN, False, 0., 0., 0., 0.,
@@ -254,7 +255,7 @@ class CarController(CarControllerBase):
         can_sends.append(fordcan.create_lat_ctl_msg(self.packer, self.CAN, lateral_active, 0., 0., -self.apply_curvature_last, 0.))
 
     # send lka msg at 33Hz
-    if (self.frame % CarControllerParams.LKA_STEP) == 0:
+    if self.bp_lat is not None or (self.frame % CarControllerParams.LKA_STEP) == 0:
       if self.bp_lat is not None:
         can_sends += self.bp_lat.step_lka(self.packer, self.CAN, now_nanos)
       elif self.CP.flags & FordFlags.LKA_STEERING:

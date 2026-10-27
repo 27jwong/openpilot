@@ -248,3 +248,71 @@ def test_lightning_cluster_startup_and_aol_recovery(ford_joined, monkeypatch):
 def test_lightning_unarmed_startup_does_not_show_armed_eps_warning(ford_joined, monkeypatch, armed):
   monkeypatch.ford_startup_armed = armed
   run_actual_producer(ford_joined, monkeypatch, scenario='startup-warning')
+
+
+@pytest.mark.parametrize('identity', [(CAR.FORD_MUSTANG_MACH_E_MK1, 18), (CAR.FORD_ESCAPE_MK4, 32), (CAR.FORD_F_150_MK14, 66)])
+@pytest.mark.parametrize('alpha', [False, True])
+@pytest.mark.parametrize('hands_free', [True])
+@pytest.mark.parametrize('topology', ['automatic', 'manual-multi'])
+@pytest.mark.parametrize('can_clock_offset_ns', [0, 9_000_000_000])
+def test_angle_transport_batching_keeps_native_spacing(ford_joined, monkeypatch, can_clock_offset_ns):
+  from opendbc.car import structs
+  from opendbc.safety.tests.libsafety import libsafety_py
+  from openpilot.cereal import messaging
+
+  joined = ford_joined
+  native, safety, ci = joined.native, joined.safety, joined.host.CI
+  native.arm()
+  adapter = ci.CC.bp_lat
+  inputs = adapter.host.inputs
+  monkeypatch.setattr(inputs, 'update', lambda: None)
+  monkeypatch.setattr(inputs, 'lateral_snapshot', lambda speed, *, angle=False: None)
+  monkeypatch.setattr(inputs, 'native_permission', lambda cp, max_age_ns: bool(safety.aol_get_permission_mask() & 1))
+  control = structs.CarControl(enabled=True, latActive=True)
+  control.actuators.curvature = .0001
+  state = structs.CarState(canValid=True, vEgoRaw=15., gearShifter=structs.CarState.GearShifter.drive)
+  state.cruiseState.available = True
+  queue, echoes, rejected = [], [], []
+  active_count = 0
+  control_address = 0x3D6 if adapter.canfd else 0x3D3
+  last_delivery = 0
+  for frame in range(300):
+    now_us = 1_000_000 + (native.tick + 1) * 10_000
+    while queue and queue[0][0] <= now_us:
+      delivered, address, data, bus = queue.pop(0)
+      safety.set_timer(delivered)
+      accepted = safety.safety_tx_hook(libsafety_py.make_CANPacket(address, bus - joined.offset, data))
+      if not accepted:
+        rejected.append((frame, hex(address), data.hex()))
+      elif address == control_address:
+        active_count += int(((data[0] >> 4) & 7) == 1) if adapter.canfd else int(bool(data[4] & 4))
+      echoes.append((delivered * 1000 + can_clock_offset_ns, [(address, data, bus | (0x80 if accepted else 0xC0))]))
+    native.pump(1, mask=1, speed=15.)
+    # Exercise the actual interface-to-controller feedback path, including Panda
+    # bus offsets. Only echoes produced by real native TX acceptance count.
+    ci.update(echoes)
+    echoes.clear()
+    ci.CS.out = state
+    now_ns = now_us * 1000
+    panda = messaging.new_message('pandaStates', 1, valid=True, logMonoTime=now_ns)
+    panda.pandaStates[0].safetyTxBlocked = len(rejected)
+    inputs.sm.update_msgs(now_ns / 1e9, [panda.as_reader()])
+    _, packets = ci.CC.update(control.as_reader(), ci.CS, now_ns)
+    for address, data, bus in packets:
+      if address not in (control_address, 0x3CA):
+        continue
+      # A delayed FIFO batch followed by an immediate one compresses a nominal
+      # 50/30ms send cadence below Panda's unchanged 40/20ms minima.
+      delivered = max(last_delivery, now_us + (25_000 if frame % 10 == 5 else 0))
+      last_delivery = delivered
+      queue.append((delivered, address, data, bus))
+  assert not rejected, rejected[:8]
+  assert active_count > 25
+  safety.aol_set_host_request(0)
+  native.pump(10, mask=0, speed=15.)
+  ci.CS.out = state
+  now_ns = (1_000_000 + native.tick * 10_000) * 1000
+  packets = adapter.step_lateral(control, ci.CS, native.packer, ci.CC.CAN, 310, now_ns)
+  assert packets and safety.aol_get_permission_mask() == 0
+  for address, data, bus in packets:
+    assert safety.safety_tx_hook(libsafety_py.make_CANPacket(address, bus - joined.offset, data))
