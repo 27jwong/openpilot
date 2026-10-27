@@ -200,7 +200,9 @@ def test_sign_text_stays_centered_without_an_arrow(profile, vienna, reason, draw
     if reason in ('equal_speed', 'unknown_speed'):
       continue
     left, right = font.horizontal_ink(text, role, size)
-    assert abs(x + (left + right) / 2 - (389 if profile == Profile.COMPACT else 345.75)) <= .5
+    from openpilot.starpilot.ui.large_speed_geometry import LIMIT_RECTS, LARGE_SIGN_SCALE
+    center = LIMIT_RECTS[profile][0] + 59 * (1 if profile == Profile.COMPACT else LARGE_SIGN_SCALE)
+    assert abs(x + (left + right) / 2 - center) <= .5
 
 
 @pytest.mark.parametrize('profile', list(Profile))

@@ -114,7 +114,7 @@ def test_large_sign_is_secondary_to_set_speed_at_the_saved_position():
     rl.init_window(128, 128, "Native speed-group placement fixture")
   try:
     with BitmapFonts(Profile.LARGE, default_font_directory()) as fonts:
-      for metric, value, show_set in product((False, True), (60, 100, 199, None), (False, True)):
+      for metric, value, show_set in product((False, True), (60, 99, 100, 199, None), (False, True)):
         document = default_document()
         document['showMaxSpeed'] = show_set
         document['layouts']['large']['cruise_limits'].update(x=188, y=95)
@@ -128,26 +128,54 @@ def test_large_sign_is_secondary_to_set_speed_at_the_saved_position():
         with patch.object(fonts, 'draw', lambda *args, calls=calls: calls.append(args)):
           UnifiedSpeedWidget(fonts).render(rl.Rectangle(30, 30, 1800, 1020), current)
         calls = [call for call in calls if call[-1].a == 255]
-        posted = next(call for call in calls if call[0] == '120' and call[1] == FontRole.BOLD)
+        posted = next(call for call in calls if call[0] == '120' and call[1] == FontRole.SET_SPEED)
         left, right = fonts.horizontal_ink(posted[0], posted[1], posted[2])
         assert right-left <= 96*1.25
-        assert posted[2] <= 64*1.25*Profile.COMPACT.font_scale/Profile.LARGE.font_scale
-        left, right = fonts.horizontal_ink('120', FontRole.BOLD, posted[2])
-        assert abs(posted[3] + (left + right) / 2 - 445.75) <= .5
-        a, b = fonts.vertical_ink('120', FontRole.BOLD, posted[2])
+        assert abs(posted[3] + (left + right) / 2 - 491.75) <= .5
+        a, b = fonts.vertical_ink('120', FontRole.SET_SPEED, posted[2])
+        assert b - a == pytest.approx(60, abs=.1)
         assert abs(posted[4]+(a+b)/2-(95+67*1.25)) <= .5
-        set_calls = [call for call in calls if call[1] == FontRole.SET_SPEED]
+        set_calls = [call for call in calls if call[1] == FontRole.SET_SPEED and call[3] < 388]
         assert bool(set_calls) == show_set
         if set_calls:
           text, role, size, x, y, _ = set_calls[0]
-          assert x == 212 and fonts.measure(text, role, size).width <= 148
-          assert y + fonts.vertical_ink(text, role, size)[0] == 146
-          assert size == (120 if value in (60, None) else 87)
+          assert fonts.measure(text, role, size).width <= 200
           left, right = fonts.horizontal_ink(text, role, size)
-          assert x + right + 16 <= 372
+          assert x + (left + right) / 2 == pytest.approx(308)
+          assert x + right + 20 <= 418
+          top, bottom = fonts.vertical_ink(text, role, size)
+          if value is not None:
+            assert bottom - top == pytest.approx(88, abs=1)
+            assert y + (top + bottom) / 2 == pytest.approx(196)
+          else:
+            assert y + top + size * fonts.profile.font_scale * 15 / 400 == pytest.approx(196)
           unit = next(call for call in calls if call[0] == ('km/h' if metric else 'mph'))
           assert unit[2] == 28
-          assert unit[4] + fonts.vertical_ink(unit[0], unit[1], unit[2])[1] < 146
+          assert unit[4] + fonts.vertical_ink(unit[0], unit[1], unit[2])[1] + 12 <= y + top
+  finally:
+    if owns_context:
+      rl.close_window()
+
+
+def test_pending_confirmation_keeps_three_digit_set_speed_clear():
+  from unittest.mock import patch
+  from openpilot.starpilot.ui.onroad_large_widgets import UnifiedSpeedWidget
+  from openpilot.starpilot.ui.tests.test_unified_speed_native import state
+  owns_context = not rl.is_window_ready()
+  if owns_context:
+    rl.init_window(128, 128, 'Pending confirmation spacing fixture')
+  try:
+    with BitmapFonts(Profile.LARGE, default_font_directory()) as fonts:
+      for metric in (False, True):
+        factor = 3.6 if metric else 2.2369362921
+        current = state(metric=metric, cruise_kph=100 / factor * 3.6)
+        bounds = speed_limit_bounds(Profile.LARGE, current)
+        assert bounds is not None
+        calls = []
+        with patch.object(fonts, 'draw', lambda *args, sink=calls: sink.append(args)):
+          UnifiedSpeedWidget(fonts).render(rl.Rectangle(30, 30, 1800, 1020), current)
+        number = next(call for call in calls if call[0] == '100' and call[1] == FontRole.SET_SPEED and call[-1].a == 255)
+        assert number[3] + fonts.horizontal_ink(number[0], number[1], number[2])[1] < bounds[0]
   finally:
     if owns_context:
       rl.close_window()
@@ -420,7 +448,7 @@ def test_both_sign_styles_contain_text_and_arrows_at_each_profile_scale():
           current = state(observed_ns=10_000_000_000+elapsed)
           key = 'cruise_limits' if profile == Profile.LARGE else 'speed_limit'
           current.customization['layouts'][profile][key].update(x=saved_x, y=y)
-          x = saved_x+184 if profile == Profile.LARGE else saved_x
+          x = saved_x+230 if profile == Profile.LARGE else saved_x
           current = replace(current, speed_mps=(posted+offset+direction*2)/3.6,
             appearance=replace(current.appearance, use_vienna_sign=vienna),
             speed_limit=replace(current.speed_limit, source=source, speed_limit_mps=posted/3.6,
@@ -512,14 +540,21 @@ def test_sign_profiles_share_layout_and_snap_only_final_pixels():
           with patch.object(fonts, 'draw', lambda *args, sink=calls: sink.append(args)):
             widget.render(current)
           assert all(float(call[3]).is_integer() and float(call[4]).is_integer() for call in calls)
-          assert abs(calls[0][2]/widget.text_scale-18) < 1e-9
+          if fonts.profile == Profile.LARGE and not vienna and not pending:
+            assert calls[0][2] <= 28
+          else:
+            assert abs(calls[0][2]/widget.text_scale-18) < 1e-9
           drawn.append((widget, calls))
         small_widget, small_calls = drawn[0]
         large_widget, large_calls = drawn[1]
         assert [call[0] for call in small_calls] == [call[0] for call in large_calls]
+        if not vienna and not pending:
+          assert small_calls[1][1] == FontRole.BOLD
+          assert large_calls[1][1] == FontRole.SET_SPEED
+          continue
         for a, b in zip(small_calls, large_calls, strict=True):
           assert abs(a[2]/small_widget.text_scale-b[2]/large_widget.text_scale) < 1e-9
-          assert abs((a[3]-330)-(b[3]-272)/1.25) <= 1
+          assert abs((a[3]-330)-(b[3]-318)/1.25) <= 1
           assert abs((a[4]-20)-(b[4]-75)/1.25) <= 1
           assert (a[-1].r, a[-1].g, a[-1].b, a[-1].a) == (b[-1].r, b[-1].g, b[-1].b, b[-1].a)
         if pending:
