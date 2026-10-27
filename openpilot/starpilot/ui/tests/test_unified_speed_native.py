@@ -175,6 +175,7 @@ def test_wheel_cues_follow_confirmation_availability(profile, available, drawing
   assert [call.args[0] for call in calls] == ([True, False] if available else [])
   if available:
     bounds = speed_limit_bounds(profile, current)
+    assert bounds is not None
     assert all(call.args[2] == pytest.approx(bounds[1] + 135.5 * CONFIRMATION_SCALE[profile]) for call in calls)
     assert bounds[0] < calls[0].args[1] < calls[1].args[1] < bounds[2]
 
@@ -302,6 +303,7 @@ def test_chooser_has_separate_tonal_actions_and_immediate_pressed_feedback(profi
   assert backgrounds[3] == (77, 46, 57, 255)
   bounds = speed_limit_bounds(profile, current)
   drawing['confirmation'].assert_called_once_with(bounds, opened=True)
+  assert bounds is not None
   x, y, right, bottom = bounds
   panel = rl.Rectangle(x, y, right - x, bottom - y)
   accept, _, reject, _ = [call.args[0] for call in drawing['draw_rectangle_rounded'].call_args_list]

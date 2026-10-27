@@ -286,7 +286,7 @@ class CompanionTests(unittest.TestCase):
     host._shared_bluetooth_owner = self.owner
     host.auto = Mock()
     alive = {'value': True}
-    host._session_alive = lambda: alive['value']
+    host._session_alive = Mock(side_effect=lambda: alive['value'])
     host.stop = Mock(side_effect=lambda: alive.update(value=False))
     host.forget_receiver = Mock(return_value=True)
     self.owner.request = Mock(return_value={'devices': []})  # test double

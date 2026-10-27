@@ -46,6 +46,7 @@ def helper(request):
   assert eligible(cp)
   result = VCruiseHelper(cp)
   result.v_cruise_kph = result.v_cruise_cluster_kph = 50.0
+  assert result.toyota is not None
   result.toyota.engaged = result.toyota.owns_target = True
   return result
 

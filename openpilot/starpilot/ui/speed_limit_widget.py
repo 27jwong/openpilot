@@ -1,6 +1,7 @@
 """The latest limit, its attention animation and override mark on both screens."""
 
 import time
+from typing import cast
 
 import pyray as rl
 
@@ -156,8 +157,9 @@ class SpeedLimitWidget:
     number_top, number_bottom = self.fonts.vertical_ink(shown.posted_text, FontRole.BOLD, text_size(64))
     text(shown.posted_text, 64, start + nw / 2, 84 - (number_bottom - number_top) / scale / 2, white, FontRole.BOLD)
     if ow:
-      top, bottom = self.fonts.vertical_ink(shown.offset_text, FontRole.MEDIUM, text_size(32))
-      text(shown.offset_text, 32, start + nw + 10 + ow / 2, 84 - (bottom - top) / scale / 2, secondary)
+      offset_text = cast(str, shown.offset_text)
+      top, bottom = self.fonts.vertical_ink(offset_text, FontRole.MEDIUM, text_size(32))
+      text(offset_text, 32, start + nw + 10 + ow / 2, 84 - (bottom - top) / scale / 2, secondary)
     caption = ink_width('New Limit', 30, FontRole.SEMI_BOLD)
     cx = (width - caption - 10) / 2
     accent = rl.Color(214, 188, 240, 255)
