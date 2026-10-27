@@ -811,7 +811,9 @@ class SelfdriveD:
 
   def source_deadline_deferral_supported(self):
     from openpilot.starpilot.car.hyundai.aol import source_deadline_supported
-    return qualified_ioniq6(self.CP) or qualified_gm(self.CP) or source_deadline_supported(self.CP)
+    from openpilot.starpilot.car.toyota.aol import qualified as qualified_toyota
+    return (qualified_ioniq6(self.CP) or qualified_gm(self.CP) or source_deadline_supported(self.CP) or
+            qualified_toyota(self.CP, marked_only=True))
 
   def held_axis_override_wait(self, CS, proof, now_ns, *, fresh_successor=False):
     """Recognize an already applied override; never admit a new physical edge."""
@@ -991,7 +993,9 @@ class SelfdriveD:
     source = self.aol_car_state_log_ns
     source_valid = self.conditional_car_state_valid
     from openpilot.starpilot.car.hyundai.aol import source_deadline_supported
-    if (source_deadline_supported(self.CP) and source == 0 and not source_valid and
+    from openpilot.starpilot.car.toyota.aol import qualified as qualified_toyota
+    if ((source_deadline_supported(self.CP) or qualified_toyota(self.CP, marked_only=True)) and
+        source == 0 and not source_valid and
         getattr(self, 'aol_expired_healthy_source', False) and
         not getattr(self, 'car_state_samples', ()) and not getattr(self, 'car_state_queue_invalid', False) and
         getattr(self, 'car_state_retained_valid', False)):
