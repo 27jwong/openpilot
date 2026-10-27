@@ -1,7 +1,6 @@
 """Actual typed Params, Galaxy parked write, and startup configuration for pinion."""
 from pathlib import Path
 import tempfile
-from types import SimpleNamespace
 
 import pytest
 from opendbc.car import gen_empty_fingerprint
@@ -20,8 +19,11 @@ def test_real_galaxy_typed_parked_selection_and_stale_dependency():
     params.put_bool('AlwaysOnLateral', False, block=True)
     cp = ford_params(CAR.FORD_EXPLORER_MK6)
     parked = True
-    context = SimpleNamespace(sample=lambda: AuthorityContext(parked, cp, cp.as_reader().as_builder().to_bytes()))
-    gateway = SettingsGateway(params, context)
+    class TestContext:
+      def sample(self) -> AuthorityContext:
+        return AuthorityContext(parked, cp, cp.as_reader().as_builder().to_bytes())
+
+    gateway = SettingsGateway(params, TestContext())
     try:
       page = gateway.page('torque', 'pinion-test', b'generation')
       index, row = next((i, row) for i, row in enumerate(page['rows']) if row['label'] == 'Use Pinion Yaw Sensor')

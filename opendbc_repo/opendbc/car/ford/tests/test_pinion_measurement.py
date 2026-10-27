@@ -155,3 +155,23 @@ def test_angle_selection_preserves_pinion_and_aol_exact_profile(car, long):
   cp.alternativeExperience = 32
   assert cp.safetyConfigs[-1].safetyParam in AOL_WORDS
   assert configured(cp) and angle_qualified(cp) and qualified(cp, marked_only=True)
+
+
+@pytest.mark.parametrize('word', [32 | ENABLE, 32 | (1 << SHIFT), 32 | ENABLE | (13 << SHIFT),
+                                  66 | ENABLE | (1 << SHIFT), 32 | ENABLE | (1 << SHIFT) | 0x4000,
+                                  32 | ENABLE | (1 << SHIFT) | 0x8000])
+def test_invalid_pinion_native_profile_denies_all_commands(word):
+  n = libsafety_py.libsafety
+  n.set_alternative_experience(32)
+  n.set_safety_hooks(structs.CarParams.SafetyModel.ford, word)
+  n.set_controls_allowed(True)
+  assert not n.get_ford_pinion_enabled()
+  for address in (0x3D3, 0x3D6, 0x3CA, 0x186, 0x18A, 0x3D8):
+    assert not n.safety_tx_hook(libsafety_py.make_CANPacket(address, 0, bytes(8)))
+
+
+def test_pinion_rx_capacity_guard_withdraws_authority_without_overwrite():
+  n = libsafety_py.libsafety
+  n.set_alternative_experience(32)
+  n.set_safety_hooks(structs.CarParams.SafetyModel.ford, 66 | ENABLE | (7 << SHIFT))
+  assert n.test_ford_pinion_rx_overflow()

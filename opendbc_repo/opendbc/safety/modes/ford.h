@@ -114,11 +114,12 @@ static const CurvatureSteeringLimits FORD_STEERING_LIMITS = {
 };
 
 static CurvatureSteeringLimits ford_measurement_limits(CurvatureSteeringLimits limits) {
+  const int max_curvature_error = (ford_pinion_enabled && (limits.max_curvature_error < 150)) ? 150 : limits.max_curvature_error;
   return (CurvatureSteeringLimits){
     .max_curvature = limits.max_curvature,
     .curvature_to_can = limits.curvature_to_can,
     .frequency = limits.frequency,
-    .max_curvature_error = ford_pinion_enabled ? SAFETY_MAX(limits.max_curvature_error, 150) : limits.max_curvature_error,
+    .max_curvature_error = max_curvature_error,
     .curvature_error_min_speed = limits.curvature_error_min_speed,
     .max_steer_power = limits.max_steer_power,
   };
@@ -532,14 +533,31 @@ static void ford_aol_bind_tx(safety_config *ret, CanMsg workspace[7]) {
   }
 }
 
-static RxCheck ford_rx_workspace[11];
+
+static void ford_append_pinion_rx(safety_config *config, RxCheck workspace[11]) {
+  if (config->rx_checks_len <= 10) {
+    const int count = config->rx_checks_len;
+    for (int i = 0; i < count; i++) {
+      workspace[i] = config->rx_checks[i];
+    }
+    workspace[count] = (RxCheck){.msg = {{FORD_SteeringPinion_Data, 0, 8, 100U,
+      .max_counter = 15U, .ignore_checksum = true}, {0}, {0}}};
+    config->rx_checks = workspace;
+    config->rx_checks_len = count + 1;
+  } else {
+    config->tx_msgs = NULL;
+    config->tx_msgs_len = 0;
+    ford_aol_reset();
+  }
+}
 
 static safety_config ford_init(uint16_t configured_param) {
+  static RxCheck ford_rx_workspace[11];
   const bool pinion_valid = ford_pinion_word_valid(configured_param);
   const uint16_t profile_param = ford_pinion_base_word(configured_param);
   const uint16_t geometry = (configured_param >> 10U) & 15U;
   ford_pinion_enabled = pinion_valid && ((configured_param & FORD_PINION_ENABLE) != 0U);
-  ford_pinion_params = ford_pinion_enabled ? &ford_pinion_geometry[geometry] : &ford_pinion_geometry[0];
+  ford_pinion_params = ford_pinion_geometry_at(ford_pinion_enabled ? geometry : 0U);
   const uint16_t bp_param = profile_param & ~256U;
   const bool joint_angle = ((unsigned int)alternative_experience == 32U) &&
     ((bp_param == 146U) || (bp_param == 147U) || (bp_param == 160U) || (bp_param == 161U) || (bp_param == 194U) || (bp_param == 195U));
@@ -746,20 +764,7 @@ static safety_config ford_init(uint16_t configured_param) {
   }
   if (ford_pinion_enabled) {
     // Append after profile-specific RX selection so AOL retains every existing check.
-    if (ret.rx_checks_len <= 10) {
-      const int count = ret.rx_checks_len;
-      for (int i = 0; i < count; i++) {
-        ford_rx_workspace[i] = ret.rx_checks[i];
-      }
-      ford_rx_workspace[count] = (RxCheck){.msg = {{FORD_SteeringPinion_Data, 0, 8, 100U,
-        .max_counter = 15U, .ignore_checksum = true}, {0}, {0}}};
-      ret.rx_checks = ford_rx_workspace;
-      ret.rx_checks_len = count + 1;
-    } else {
-      ret.tx_msgs = NULL;
-      ret.tx_msgs_len = 0;
-      ford_aol_reset();
-    }
+    ford_append_pinion_rx(&ret, ford_rx_workspace);
   }
   if (!pinion_valid) {
     ret.tx_msgs = NULL;
