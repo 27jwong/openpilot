@@ -64,6 +64,8 @@ class CarController(CarControllerBase):
     # seconds for a full crossfade in either direction; recomputed every cycle
     self.transition_time = TRANSITION_TIME_MIN
     self.distance_last = None
+    # openpilot owns the launch from a stop until the car is past crawl speed
+    self.launch_to_op = False
 
 
 
@@ -197,6 +199,16 @@ class CarController(CarControllerBase):
 
         mrcc_crawl = CS.out.vEgo < MRCC_CRAWL_SPEED and CS.radar_lead
 
+        # MRCC does drive away when the planner leaves stopping (it follows the RESUME bit sent
+        # below), but left with the crawl zone it creeps and brakes back toward a stop while the
+        # lead is still pulling away. So the launch is openpilot's: latched when the planner leaves
+        # stopping at standstill, held until the car is past crawl speed or openpilot stops again.
+        op_going = CC.longActive and CC.actuators.longControlState in (LongCtrlState.starting, LongCtrlState.pid)
+        if CS.out.standstill and op_going:
+          self.launch_to_op = True
+        elif not op_going or CS.out.vEgo >= MRCC_CRAWL_SPEED:
+          self.launch_to_op = False
+
         # Every status above USER_OVERRIDDEN is an automatic reason CEM resolved experimental
         # mode on; OFF and USER_DISABLED both mean it is off. In the crawl zone only a manual
         # override still hands over, since the automatic reasons and the approaching lead are
@@ -205,7 +217,7 @@ class CarController(CarControllerBase):
         cem_to_op = ce_status > CEStatus["USER_OVERRIDDEN"] and not mrcc_crawl
         ttc_to_op = lead_ttc < LEAD_ENGAGE_TTC and not mrcc_crawl
         headway_to_op = lead_headway < LEAD_ENGAGE_HEADWAY and not mrcc_crawl
-        blend_to_op = manual_to_op or cem_to_op or ttc_to_op or headway_to_op
+        blend_to_op = manual_to_op or cem_to_op or ttc_to_op or headway_to_op or self.launch_to_op
 
         # A closing lead shortens the crossfade whatever else is asking; a close one only
         # lengthens it when it is the sole reason, so it never slows a manual or CEM handover.
@@ -216,9 +228,11 @@ class CarController(CarControllerBase):
           transition_time *= LEAD_HEADWAY_TRANSITION_SCALE
 
         # transition_time sets the fastest crossfade; the jerk cap slows it when the two
-        # commands are far apart. A closing lead is urgent and keeps the full rate.
+        # commands are far apart. A closing lead is urgent and keeps the full rate, and so does a
+        # launch: the car is standing, so the swap jolts nothing, and a slow crossfade would leave
+        # MRCC's brake-back in the command.
         blend_step = DT_CTRL / transition_time
-        if acc_gap and not ttc_to_op:
+        if acc_gap and not (ttc_to_op or self.launch_to_op):
           blend_step = min(blend_step, BLEND_JERK_MAX * DT_CTRL / acc_gap)
 
         # blend in openpilot long
