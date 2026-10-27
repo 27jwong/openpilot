@@ -1,4 +1,5 @@
 """Installed source closure only; no kernel or model-output equivalence proof."""
+from openpilot.starpilot.flm.tests._drain_fixture import separate_drain_fixture
 import hashlib
 from pathlib import Path
 
@@ -139,7 +140,7 @@ def test_actual_daemon_reports_startup_source_refusal_without_issuing_a_trial(mo
       identity='f'*64, generation=1, domain='normalized_torque', stage_revision='stage', response_revision='response',
       controller_mode='starpilot', policy='declared-unit-policy', baseline_revision='baseline', controller_revision='controller', turn_assist=False)
 
-  monkeypatch.setattr(steerlearnerd, 'drain', drain)
+  monkeypatch.setattr(steerlearnerd, 'drain_pair', separate_drain_fixture(drain))
   monkeypatch.setattr(steerlearnerd, 'read_control', read_control)
   with pytest.raises(LoopComplete):
     steerlearnerd.run(SimpleNamespace(), SM(), control_socket, output_socket,
