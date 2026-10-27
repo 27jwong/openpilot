@@ -34,6 +34,14 @@ def saved(candidate: Candidate = HIGH) -> State:
 
 
 class TestAcceptance(unittest.TestCase):
+  def test_set_alignment_requires_an_explicit_boolean(self):
+    for malformed in (None, 0, 1, 'yes'):
+      with self.subTest(value=malformed):
+        result = step(saved(), valid(LOW), ACTIVE, Policy(), now_ns=0, set_speed_matches=cast(Any, malformed))
+        self.assertTrue(result.errors)
+        self.assertIsNone(result.history_write)
+        self.assertIsNone(result.control_target_mps)
+
   def test_sources_share_confirmation_across_disengage_and_source_loss(self):
     for source, confirmation, fallback in itertools.product(('dashboard', 'map', 'vision', 'online'), (False, True), (False, True)):
       policy = Policy(confirmation, confirmation, fallback)

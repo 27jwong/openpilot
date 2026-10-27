@@ -341,7 +341,7 @@ def _reject(state: State, candidate: Candidate) -> State:
 
 
 def step(state: State, observation: Observation, authority: Authority, policy: Policy, *, now_ns: int,
-         action: DriverAction | None = None, adopt: AdoptRequest | None = None) -> Decision:
+         action: DriverAction | None = None, adopt: AdoptRequest | None = None, set_speed_matches: bool = False) -> Decision:
   """Return a decision, never a cruise command. Invalid input produces no control target."""
   state_errors = _state_errors(state)
   if state_errors:
@@ -360,6 +360,8 @@ def step(state: State, observation: Observation, authority: Authority, policy: P
     errors.append("invalid adopt request")
   if action is not None and adopt is not None:
     errors.append("ambiguous action and adopt request")
+  if type(set_speed_matches) is not bool:
+    errors.append("invalid SET alignment")
   if errors:
     # Do not defer a stale prompt or credit the invalid interval on recovery.
     invalid = replace(state, observation=Observation(ObservationKind.UNKNOWN), pending=None, timer_running=False, presentation=None)
@@ -468,4 +470,10 @@ def step(state: State, observation: Observation, authority: Authority, policy: P
   if pending.active_elapsed_ns >= CONFIRMATION_NS:
     state = _reject(state, candidate)
     return finish("timeout_reject", target=None if state.rejection_capacity_exhausted else previous_target())
+
+  # An explicit choice above wins; alignment is approval only while we own speed control.
+  if set_speed_matches and authority.can_control:
+    state, history = _accept(state, candidate, now_ns)
+    return finish("accepted", target=candidate.speed_mps, history=history)
+
   return finish("pending", target=previous_target())

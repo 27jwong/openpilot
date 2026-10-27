@@ -113,8 +113,11 @@ class Runtime:
   """Own a unique drive session, action ledger and current-frame UI receipt."""
 
   def __init__(self, settings: Settings, *, session_id: str | None = None, vision_enabled: bool = False,
-               vision_control_qualified: bool = False, vision_display_qualified: bool = False):
+               vision_control_qualified: bool = False, vision_display_qualified: bool = False, is_metric: bool = False):
+    if type(is_metric) is not bool:
+      raise ValueError('SLC display units must be Boolean')
     self.settings = settings
+    self.is_metric = is_metric
     self.map_source = MapSource()
     self.vision_enabled = vision_enabled
     # Exact saved Vision opt-in may grant control; source identity and current
@@ -139,6 +142,7 @@ class Runtime:
     self._ui_receipt = None
     self.command_issued_ns = 0
     self.command_expiry_ns = 0
+    self.set_speed_after_ns = 0
     self.command_expected_mps = 0.0
     self.command_target_mps = 0.0
     self.command_card_producer = ''
@@ -162,6 +166,7 @@ class Runtime:
     self.last_ui_sequence = -1
     self.last_cruise_event = -1
     self.last_cruise_producer = None
+    # Keep the SET deadline: the previous session's command may still be in flight.
     self.last_command_id = 0
     self.command_status = ''
     self._command_ui_sequence = 0
@@ -176,15 +181,22 @@ class Runtime:
     self.toyota_projection = None
     self.commanded_generation = -1
 
-  def update_offsets(self, offsets: sd.OffsetSchedule) -> None:
+  def update_offsets(self, offsets: sd.OffsetSchedule, *, is_metric: bool | None = None) -> None:
+    if is_metric is not None:
+      if type(is_metric) is not bool:
+        raise ValueError('SLC display units must be Boolean')
+      self.is_metric = is_metric
+    changed_offsets = offsets != self.settings.offsets
     self.settings = replace(self.settings, offsets=offsets)
-    # Renew action IDs when the adjusted target changes, keeping accepted/rejected limits.
+    # Renew actions for new offsets/units without forgetting driver choices.
     acceptance = replace(self.state.acceptance, observation=acc.Observation(acc.ObservationKind.UNKNOWN),
                          pending=None, presentation=None, timer_running=False)
     self.state = replace(self.state, acceptance=acceptance)
     self._ui_receipt = None
-    self.command_status = ''
-    self.commanded_acceptance = None
+    # Display units alone must not reapply an accepted SET in different rounding.
+    if changed_offsets:
+      self.command_status = ''
+      self.commanded_acceptance = None
 
   def _event_current(self, event: CruiseEvent, sm, now_ns: int) -> bool:
     return (bool(event.producer_session) and 0 < event.observed_ns <= now_ns and
@@ -265,10 +277,16 @@ class Runtime:
             abs(event.selected_mps - self.command_target_mps) > 0.5):
           return
         self.command_status = 'applied'
+        self.set_speed_after_ns = event.observed_ns
         if self.commanded_acceptance == self.state.acceptance.accepted:
           self.state = replace(self.state, override=replace(self.state.override, applied_selected_mps=event.selected_mps))
       else:
         self.command_status = 'rejected'
+        self.set_speed_after_ns = event.observed_ns
+
+  def _set_speed_ready(self, sm) -> bool:
+    # A prior command may apply after the SET sample, even if its receipt has arrived.
+    return int(sm.logMonoTime.get('carState', 0)) > self.set_speed_after_ns
 
   def _observations(self, sm, CP, now_ns: int, now_boot_ns: int | None = None) -> dict[sel.Source, acc.Observation]:
     unknown = acc.Observation(acc.ObservationKind.UNKNOWN)
@@ -356,7 +374,7 @@ class Runtime:
                       self.settings.acceptance, self.settings.offsets,
                       sd.DomainStatus.VALID if car_fresh and selected_cluster is not None else sd.DomainStatus.STALE,
                       ego, bool(car_state.gasPressed) if car_fresh else False, host, action=action, adopt=adopt,
-                      classified_cruise=classified)
+                      classified_cruise=classified, is_metric=self.is_metric, set_speed_ready=self._set_speed_ready(sm))
 
   def _action(self, request: Action | None, now_ns: int) -> tuple[acc.DriverAction | None, acc.AdoptRequest | None, int | None]:
     if request is None or request.session_id != self.session_id or request.kind not in ("accept", "reject", "adopt"):
@@ -447,14 +465,16 @@ class Runtime:
     if (not _number(target, positive=True) or not _number(selected_kph, positive=True) or
         selected_kph >= 255 or not V_CRUISE_MIN / 3.6 <= target <= V_CRUISE_MAX / 3.6):
       return None
-    if self.commanded_acceptance == decision.state.accepted and decision.adoption is None:
-      if self.command_status in ('issued', 'applied') or abs(selected_kph / 3.6 - self.command_expected_mps) > 0.1:
+    if sd.set_speed_matches(target, selected_kph, float(sm['carState'].vCruiseCluster), self.is_metric):
+      if not self._set_speed_ready(sm):
         return None
-    if abs(target - selected_kph / 3.6) <= 0.1:
       self.commanded_acceptance = decision.state.accepted
       self.command_status = 'applied'
       self.state = replace(self.state, override=replace(self.state.override, applied_selected_mps=selected_kph / 3.6))
       return None
+    if self.commanded_acceptance == decision.state.accepted and decision.adoption is None:
+      if self.command_status in ('issued', 'applied') or abs(selected_kph / 3.6 - self.command_expected_mps) > 0.1:
+        return None
     evidence = sm['slcDashboardObservation']
     expiry = now_ns + int(2e9 / SERVICE_LIST['slcState'].frequency)
     if result.selection.selected_source is sel.Source.DASHBOARD:
@@ -469,6 +489,7 @@ class Runtime:
     self.command_status = 'issued'
     self.command_issued_ns = now_ns
     self.command_expiry_ns = expiry
+    self.set_speed_after_ns = max(self.set_speed_after_ns, expiry)
     self.command_expected_mps = selected_kph / 3.6
     self.command_target_mps = target
     self.command_card_producer = str(sm['slcDashboardObservation'].producerSessionId)
