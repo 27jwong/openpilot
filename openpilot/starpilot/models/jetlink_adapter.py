@@ -93,8 +93,7 @@ def _adapter_class():
       from openpilot.starpilot.models.jetlink_warp import CatalogWarp
       warp = CatalogWarp(small, (model_w, model_h))
       self.log.warning("jetlink: the link sends the small model's warp (%s, %d bytes a frame, %s)",
-                       small.camera_warp_descriptor.output_shape, warp.output.nbytes,
-                       "sent from coherent memory" if warp.copied is None else f"copied out: {warp.copied}")
+                       small.camera_warp_descriptor.output_shape, warp.output.nbytes, warp.sending)
       return warp
 
     def small_reset(self, small):
@@ -157,6 +156,21 @@ def link_on() -> bool:
       return f.read().strip() in ("1", "2")
   except OSError:
     return False
+
+
+def coherent_warp():
+  """What modeld's small model moves its warp's output with before warmup links the warp: Jetlink's
+  make_coherent, with Jetlink on and off legacy9d, where the link sends that output (jetlink_warp). Else None."""
+  if not link_on():
+    return None
+  from openpilot.starpilot.models.runtime_bridge.runtime import selected_legacy
+  if selected_legacy():
+    return None
+  try:
+    from jetlink.openpilot.warp import make_coherent
+  except Exception:
+    return None
+  return make_coherent
 
 
 def _cloudlog():

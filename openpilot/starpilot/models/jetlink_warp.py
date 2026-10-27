@@ -10,9 +10,8 @@ Only one of the small and the large model runs a frame (JoiningModelState), so t
 output buffer are never in use by both at once. The small model rewrites its transforms every frame it runs.
 
 tinygrad maps a QCOM output write-combined, which the CPU reads uncached: 2.9 ms to copy the frame out. As
-Jetlink's own warp does (jetlink.openpilot.warp.Warp), the output moves to IO-coherent write-back memory
-(warp.make_coherent) and the link sends straight from it, 0.22 ms. The warp has run by now, so it links again on
-its next call. TinyJit's own per-call input checks are left alone: 0.05 ms a call on a Mac under this tinygrad.
+Jetlink's own warp does (jetlink.openpilot.warp.Warp), the small model moves its warp's output to IO-coherent
+write-back memory when it loads (CatalogModelState, with Jetlink on), and the link sends straight from it.
 """
 from __future__ import annotations
 
@@ -39,26 +38,23 @@ class CatalogWarp:
     pointers = tuple(frame.ctypes.data for frame in frames)
     eye = np.eye(3, dtype=np.float32)
     buffer = small.warp_frames(pointers, eye, eye).uop.base.buffer
-    self._device = buffer.allocator.dev
-    # why each frame is copied out, None when it is not
-    self.copied = None if buffer.device.startswith("QCOM") else f"a {buffer.device} buffer"
-    if self.copied is None:
-      from jetlink.openpilot.warp import make_coherent
-      try:
-        make_coherent(buffer)
-      except RuntimeError as e:   # the buffer stays where it was, read the slow way
-        self.copied = str(e)
-      else:
-        # the linked program holds the old address; tinygrad links again on the next call, as after free_intermediates
-        small.warp_enqueue.captured.__dict__.pop("linear", None)
     mapped = np.frombuffer(buffer.as_memoryview(allow_zero_copy=True), dtype=np.uint8)
     expected = int(np.prod(shape))
     if buffer.nbytes != expected or mapped.nbytes < expected:
       raise RuntimeError(f"the warp's output is {buffer.nbytes} bytes ({mapped.nbytes} mapped), not {expected}")
-    self._mapped = mapped[:expected]
-    # coherent, the link sends from the GPU's buffer; otherwise from host memory it is read into after each frame
-    self._host = None if self.copied is None else np.empty(expected, dtype=np.uint8)
-    self.output = memoryview(self._mapped if self._host is None else self._host)
+    mapped, synchronize = mapped[:expected], buffer.allocator.dev.synchronize
+    if small.warp_copied is None:
+      self.sending = "from coherent memory"
+      self.output, self.wait = memoryview(mapped), synchronize
+    else:
+      self.sending = f"copied out: {small.warp_copied}"
+      host = np.empty(expected, dtype=np.uint8)
+      self.output = memoryview(host)
+
+      def wait():
+        synchronize()
+        np.copyto(host, mapped)
+      self.wait = wait
     for frame in frames:
       frame.fill(PROBE)
     self.start(*pointers, eye, eye)
@@ -72,8 +68,3 @@ class CatalogWarp:
   def start(self, frame: int, big_frame: int, tfm, big_tfm) -> None:
     """Warp the camera buffers at these addresses under their transforms; `output` holds it once wait() returns."""
     self._small.warp_frames((frame, big_frame), tfm, big_tfm)
-
-  def wait(self) -> None:
-    self._device.synchronize()
-    if self._host is not None:
-      np.copyto(self._host, self._mapped)

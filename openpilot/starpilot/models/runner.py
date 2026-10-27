@@ -4,6 +4,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 import os
 from pathlib import Path
+from typing import Any
 import weakref
 
 import numpy as np
@@ -44,7 +45,8 @@ class SharedCameraWarp:
 
 
 def load_verified_model(cam_w: int, cam_h: int, artifact_path: Path, behavior_version: str, chestnut: bool,
-                        model_id: str, expected_sha256: str | None, *, root: Path | None = None) -> tuple["CatalogModelState", PreparedArtifact]:
+                        model_id: str, expected_sha256: str | None, *, root: Path | None = None,
+                        coherent_warp: Callable[[Any], None] | None = None) -> tuple["CatalogModelState", PreparedArtifact]:
   from openpilot.starpilot.models.manager import ROOT, state_lock
 
   if expected_sha256 is None:
@@ -55,6 +57,8 @@ def load_verified_model(cam_w: int, cam_h: int, artifact_path: Path, behavior_ve
     if prepared.sha256 != expected_sha256:
       raise ValueError("selected catalog model changed before loading")
     model = CatalogModelState(cam_w, cam_h, artifact_path, behavior_version, chestnut)
+    if coherent_warp is not None:
+      model.move_warp_output(coherent_warp)
     model.warmup()
     if artifact_identity(artifact_path) != identity:
       raise ValueError("selected catalog model changed while loading")
@@ -188,7 +192,23 @@ class CatalogModelState:
     self.camera_warp_descriptor = (CameraWarpDescriptor((cam_w, cam_h), get_nv12_info(cam_w, cam_h), image_layouts,
                                                        (2, 6, *image_layouts[0]), dtypes.uint8, self.warp_device)
                                    if self.image_history_pipeline == "policy" else None)
+    # why Jetlink's link copies this warp's output out every frame (jetlink_warp); None once it is moved
+    self.warp_copied: str | None = "Jetlink was off when the model loaded"
     self._reset_state()
+
+  def move_warp_output(self, coherent_warp: Callable[[Any], None]) -> None:
+    """On a comma, move this warp's output to memory the CPU reads cached with `coherent_warp` (Jetlink's
+    make_coherent), for the link to send from. Before warmup(), whose first call links the warp to its address."""
+    buffer = self.warp_enqueue.captured.ret.uop.base.buffer
+    if not buffer.device.startswith("QCOM"):
+      self.warp_copied = f"a {buffer.device} buffer"
+      return
+    try:
+      coherent_warp(buffer)
+    except RuntimeError as e:   # the buffer stays where it was
+      self.warp_copied = str(e)
+      return
+    self.warp_copied = None
 
   def _reset_state(self) -> None:
     from openpilot.starpilot.models.compile import make_stateful_input_queues, make_supercombo_input_queues, make_split_input_queues
