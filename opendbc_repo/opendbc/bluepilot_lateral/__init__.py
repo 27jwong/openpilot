@@ -23,13 +23,17 @@ class BluePilotLateral:
     self.shadow_returned_ns = 0
     self.control_echo_pending = False
     self.shadow_echo_pending = False
+    self.control_return_payload = None
+    self.shadow_return_payload = None
     self.pending_generation = 0
     self.announced_generation = -1
     self.sent_generation = -2
     self.apply_curvature_last = 0.0
 
   def observe_can(self, can_packets, main_bus):
-    # Only accepted Panda returns pace output. Preserve their ordering here;
+    # Forwarded stock traffic also returns with src|0x80. Consume one matching
+    # return for our actual emitted payload; unrelated stock echoes cannot pace us.
+    # Preserve return ordering here;
     # start the delay when consumed, in the controller's own clock domain.
     control_address = 0x3D6 if self.canfd else 0x3D3
     for timestamp, frames in can_packets:
@@ -38,10 +42,12 @@ class BluePilotLateral:
       for address, data, source in frames:
         if source != (main_bus | 0x80) or len(data) != 8:
           continue
-        if address == control_address and timestamp > self.control_returned_ns:
+        if address == control_address and data == self.control_return_payload and timestamp > self.control_returned_ns:
+          self.control_return_payload = None
           self.control_returned_ns = timestamp
           self.control_echo_pending = True
-        elif address == 0x3CA and timestamp > self.shadow_returned_ns:
+        elif address == 0x3CA and data == self.shadow_return_payload and timestamp > self.shadow_returned_ns:
+          self.shadow_return_payload = None
           self.shadow_returned_ns = timestamp
           self.shadow_echo_pending = True
 
@@ -66,6 +72,7 @@ class BluePilotLateral:
     self.control_sent_ns = now_ns
     self.sent_generation = self.announced_generation
     message = lateral(packer, CAN.main, command, canfd=self.canfd, counter=self.control_counter)
+    self.control_return_payload = message[1]
     self.control_counter = (self.control_counter + 1) % 16
     return [message]
 
@@ -83,5 +90,6 @@ class BluePilotLateral:
     self.announced_ns = now_ns
     self.shadow_sent_ns = now_ns
     message = lka(packer, CAN.main, self.announced.shadow_curvature, self.lka_counter)
+    self.shadow_return_payload = message[1]
     self.lka_counter = (self.lka_counter + 1) % 8
     return [message]
