@@ -1,3 +1,4 @@
+import gzip
 
 from dataclasses import replace
 import json
@@ -403,7 +404,7 @@ def test_recorded_ford_stopped_geometry_does_not_release_native_stop(request):
   from openpilot.starpilot.conditional_mode.tests.test_projection import owner_context
   from openpilot.starpilot.longitudinal.tests.test_lead_approach_planner import Frame, DRIVE_NS
 
-  recorded = json.loads((Path(__file__).parent / 'testdata/ford_stationary_stop.json').read_text())['frames']
+  recorded = json.loads(gzip.decompress((Path(__file__).parent / 'testdata/ford_stationary_stop.json.gz').read_bytes()))['frames']
   fingerprint = gen_empty_fingerprint()
   fingerprint[0][0x5A] = 8
   cp = CarInterface.get_params(CAR.FORD_MUSTANG_MACH_E_MK1, fingerprint, [], True, False, False)
