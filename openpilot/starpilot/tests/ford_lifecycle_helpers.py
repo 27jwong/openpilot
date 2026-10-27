@@ -182,6 +182,7 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
   case = availability.IoniqAvailabilityTests(methodName='runTest')
   now = [10_000_000_000]
   queued, published, previous_sd = [], {}, {}
+  delayed_native = {}
   steps = start_tick = native.tick
   warmup_waits = qualified_samples = 0
   active_lat_frames = active_long_frames = 0
@@ -392,7 +393,15 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
           panda.pandaStates[0].alternativeExperience = 32
         device = messaging.new_message('deviceState', valid=True, logMonoTime=now[0])
         device.deviceState.started, device.deviceState.startedMonoTime = True, 9_000_000_000
-        events = [wire.as_reader(), panda.as_reader(), device.as_reader()]
+        # Match pandad's 10Hz native publication, including a pedal-first USB read.
+        # Values are actual native results; retained messages keep their stamps.
+        if getattr(monkeypatch, 'ford_native_10hz', False):
+          if not delayed_native or steps % 10 == 0 or brake and not permission & 2 and delayed_native.get('permission', 3) & 2:
+            delayed_native.update(wire=wire.as_reader(), panda=panda.as_reader(), permission=permission)
+          wire_message, panda_message = delayed_native['wire'], delayed_native['panda']
+        else:
+          wire_message, panda_message = wire.as_reader(), panda.as_reader()
+        events = [wire_message, panda_message, device.as_reader()]
         for name in ('selfdriveState', 'aolAxisState', 'onroadEvents'):
           if name in previous_sd:
             events.append(previous_sd[name])  # Original publication/source stamps.
@@ -443,8 +452,8 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
           native_request_long=bool(native_request & 2),
           panda_controls_allowed=bool(safety.get_controls_allowed()),
           panda_fault=slot.safetyRxChecksInvalid,
-          panda_state_message=panda,
-          safety_message=wire,
+          panda_state_message=panda_message.as_builder(),
+          safety_message=wire_message.as_builder(),
         )
         if delayed_pedal_frames:
           assert command.latActive and host.aol_card_intent.allowed_latch, 'Native-first pedal erased granted lateral intent'
@@ -462,7 +471,7 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
           owner = host.CI.CC.bp_lat.host.inputs
           # Real controller input reader consumes the same original fresh native
           # receipt, Panda inventory and synthetic model boundary as Controls.
-          messages = [wire.as_reader(), panda.as_reader()]
+          messages = [wire_message, panda_message]
           for service in ('modelV2', 'lateralDelay'):
             message = messaging.new_message(service, valid=True, logMonoTime=source_ns)
             setattr(message, service, controls.sm[service])
@@ -730,6 +739,20 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
         if delivery != 'paired':
           assert route45_mixed[0]
         joined.route45_trace = route45_trace
+        return
+      if scenario == 'brake-native-cadence':
+        for _ in range(41):
+          state, axis, sd_state, command = step(engaged=True)
+        assert command.latActive and command.longActive and host.aol_card_intent.allowed_latch
+        for _ in range(35):
+          state, axis, sd_state, command = step(brake=True)
+          assert host.aol_card_intent.allowed_latch, (host.aol_card_intent.latch_clear_reason, transition_trace[-12:])
+          assert command.latActive, transition_trace[-12:]
+          if state.brakePressed or not joined.last_permission & 2:
+            assert not command.longActive
+        for _ in range(35):
+          state, axis, sd_state, command = step()
+          assert host.aol_card_intent.allowed_latch and command.latActive and not command.longActive
         return
       if scenario == 'configuration-parity':
         for _ in range(40):

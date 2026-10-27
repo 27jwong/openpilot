@@ -351,7 +351,14 @@ class TransportPauseFeedback:
     from opendbc.car import structs
     ev9 = cp.brand == 'hyundai' and ev9_qualified(cp, marked_only=True)
     from openpilot.starpilot.car.ford.aol import early_native_long_withdrawal_supported as ford_early_long
-    early_long = gm or cp.brand == 'hyundai' and early_native_long_withdrawal_supported(cp) or ev9 or ford_early_long(cp)
+    from opendbc.car.ford.aol import qualified as ford_qualified
+    # Brake can withdraw LONG before the next 10Hz request echo. This uses
+    # an actual independently granted LAT proof and retains intent only.
+    ford_brake = bool(cp.brand == 'ford' and ford_qualified(cp, marked_only=True) and cp.openpilotLongitudinalControl and
+      cs.brakePressed and not cs.gasPressed and not cs.regenBraking and
+      cs.cruiseState.available and not cs.doorOpen and not cs.seatbeltUnlatched and
+      not cs.vehicleSensorsInvalid and cs.gearShifter == structs.CarState.GearShifter.drive)
+    early_long = gm or cp.brand == 'hyundai' and early_native_long_withdrawal_supported(cp) or ev9 or ford_early_long(cp) or ford_brake
     from openpilot.starpilot.car.gm.aol import f1_conventional_lateral_owner, gm_physical_pedal_withdrawal
     gm_pedal = gm_physical_pedal_withdrawal(cp, cs) and not f1_conventional_lateral_owner(cp)
     event_ns = int(sm.logMonoTime['onroadEvents'])
@@ -378,7 +385,8 @@ class TransportPauseFeedback:
         now_ns - int(sm.logMonoTime['onroadEvents']) > 1_500_000_000 or
         any(event.immediateDisable or event.softDisable or
             event.userDisable and not (ev9_main_off and event.name == log.OnroadEvent.EventName.wrongCarMode or
-              gm_pedal and event.name == log.OnroadEvent.EventName.pedalPressed)
+              gm_pedal and event.name == log.OnroadEvent.EventName.pedalPressed or
+              ford_brake and event.name in (log.OnroadEvent.EventName.pedalPressed, log.OnroadEvent.EventName.pcmDisable))
             for event in sm['onroadEvents'])):
       return None
     native = independent_lateral_health(sm, cp, cs, self.session, now_ns)
