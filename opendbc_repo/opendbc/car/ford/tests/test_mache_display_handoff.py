@@ -72,6 +72,18 @@ def run_turn(*, hands_free, angle, torque, desired, speed, yaw, identity=CAR.FOR
       native.pump(1, mask=int(command.latActive), speed=speed, curvature=yaw / speed)
       state.out = cs.as_reader()
       _, frames = controller.update(command.as_reader(), state, (1_000_000 + native.tick * 10_000) * 1000)
+      if identity != CAR.FORD_MUSTANG_MACH_E_MK1:
+        lateral_frames = [(index, data) for index, (address, data, _) in enumerate(frames) if address == 0x3D6]
+        announcements = [(index, data) for index, (address, data, _) in enumerate(frames) if address == 0x3CA]
+        assert len(announcements) <= 1
+        for index, data in lateral_frames:
+          active = ((data[0] >> 4) & 7) != 0
+          previous_active = bool(steering and ((steering[-1][0] >> 4) & 7))
+          if active != previous_active:
+            assert announcements and announcements[0][0] < index
+            assert bool(announcements[0][1][4] & 2) == active
+        if not command.latActive:
+          assert all(not (data[4] & 2) for _, data in announcements)
       for address, data, bus in frames:
         assert native.safety.safety_tx_hook(libsafety_py.make_CANPacket(address, bus, data))
         if address == 0x3D6:
@@ -165,6 +177,7 @@ def test_cluster_preference_survives_native_cleanup(tmp_path, saved, flag):
 @pytest.mark.parametrize('identity', [CAR.FORD_ESCAPE_MK4_5, CAR.FORD_EXPEDITION_MK4, CAR.FORD_F_150_MK14,
                                       CAR.FORD_F_150_LIGHTNING_MK1, CAR.FORD_RANGER_MK2])
 def test_generic_curvature_native_display_handoff_retains_hands_free_during_manual_turn(identity):
+  # Nonzero demand exercises the bounded first-active command, not just UI.
   inputs = dict(identity=identity, angle=-55., torque=-2., desired=.000041086183, speed=2.55, yaw=-.006)
   hands_free = run_turn(hands_free=True, **inputs)
   plain = run_turn(hands_free=False, **inputs)
