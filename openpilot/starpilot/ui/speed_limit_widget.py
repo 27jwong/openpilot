@@ -4,8 +4,8 @@ import time
 
 import pyray as rl
 
-from openpilot.starpilot.ui.large_speed_geometry import LARGE_SIGN_SCALE
-from openpilot.starpilot.ui.onroad_state import OnroadState, speed_limit_bounds
+from openpilot.starpilot.ui.large_speed_geometry import LARGE_SIGN_SCALE, CONFIRMATION_SCALE, CONFIRMATION_PADDING
+from openpilot.starpilot.ui.onroad_state import OnroadState, manual_slc_confirmation, speed_limit_bounds, slc_controls
 from openpilot.starpilot.ui.presentation import BitmapFonts, FontRole, Profile
 from openpilot.starpilot.ui.speed_limit_pulse import SpeedLimitPulse
 from openpilot.starpilot.ui.speed_limit_shapes import SpeedLimitShapes
@@ -68,13 +68,111 @@ class SpeedLimitWidget:
   def close(self):
     self.shapes.close()
 
-  def render(self, state: OnroadState) -> None:
+  def render(self, state: OnroadState, *, defer_confirmation=False) -> None:
     bounds = speed_limit_bounds(self.profile, state)
     now = state.observed_ns / 1e9 if state.observed_ns else time.monotonic()
     self.pulse.update(state, now, visible=bounds is not None)
     if bounds is None:
       return
+    if manual_slc_confirmation(self.profile, state):
+      if not defer_confirmation:
+        self.render_confirmation(state)
+      return
     self._sign(state, bounds, now)
+
+  def render_confirmation(self, state: OnroadState, pressed=None):
+    bounds = speed_limit_bounds(self.profile, state)
+    if bounds is None or not manual_slc_confirmation(self.profile, state):
+      return
+    now = state.observed_ns / 1e9 if state.observed_ns else time.monotonic()
+    self.pulse.update(state, now)
+    scale = CONFIRMATION_SCALE[self.profile]
+    x, y, right, _ = bounds
+    width = (right - x) / scale
+    shown = resolve_unified_speed(state)
+    source = SOURCE_LABELS.get(shown.source, 'SPEED')
+    white = rl.Color(242, 246, 244, 255)
+    secondary = rl.Color(209, 222, 218, 255)
+
+    def text_size(size):
+      return size * scale * Profile.COMPACT.font_scale / self.profile.font_scale
+
+    def ink_width(text, size, role=FontRole.MEDIUM):
+      left, right = self.fonts.horizontal_ink(text, role, text_size(size))
+      return (right - left) / scale
+
+    def text(label, size, cx, cy, color=white, role=FontRole.MEDIUM):
+      size = text_size(size)
+      left, right = self.fonts.horizontal_ink(label, role, size)
+      top, bottom = self.fonts.vertical_ink(label, role, size)
+      self.fonts.draw(label, role, size, x + cx * scale - (left + right) / 2,
+                      y + cy * scale - (top + bottom) / 2, color)
+
+    def rounded(left, top, w, h, color, radius=8):
+      rect = rl.Rectangle(x + left * scale, y + top * scale, w * scale, h * scale)
+      rl.draw_rectangle_rounded(rect, 2 * radius / min(w, h), 12, color)
+
+    if state.slc_prompt_open:
+      self.shapes.confirmation(bounds, opened=True)
+      target_size = 40
+      nw, uw = ink_width(shown.proposal_text, target_size, FontRole.BOLD), ink_width(shown.unit, 20)
+      context = source + (f' {shown.posted_text} {shown.offset_text}' if shown.offset_text else '')
+      context_size = 20 * min(1, (width - 24 - nw - 6 - uw - 16) / max(1, ink_width(context, 20)))
+      context_width = ink_width(context, context_size)
+      start = (width - nw - 6 - uw - 16 - context_width) / 2
+      text(shown.proposal_text, target_size, start + nw / 2, 24, white, FontRole.BOLD)
+      nt, nb = self.fonts.vertical_ink(shown.proposal_text, FontRole.BOLD, text_size(target_size))
+      ut, ub = self.fonts.vertical_ink(shown.unit, FontRole.MEDIUM, text_size(20))
+      text(shown.unit, 20, start + nw + 6 + uw / 2, 24 + (nb - nt - ub + ut) / scale / 2, secondary)
+      text(context, context_size, start + nw + 6 + uw + 16 + context_width / 2, 24, rl.Color(203, 197, 215, 255))
+      for control, (fill, border, ink) in zip(slc_controls(self.profile, state), (
+          ((35, 74, 57), (106, 153, 127), (224, 243, 232)),
+          ((77, 46, 57), (173, 122, 134), (248, 229, 234))), strict=True):
+        left = (control.bounds[0] - x) / scale
+        top = (control.bounds[1] - y) / scale
+        w, h = (control.bounds[2] - control.bounds[0]) / scale, (control.bounds[3] - control.bounds[1]) / scale
+        # Keep the full touch area around the shorter, visually balanced face.
+        face_top, face_height = top + CONFIRMATION_PADDING, h - 2 * CONFIRMATION_PADDING
+        rounded(left, face_top, w, face_height, rl.Color(*border, 255), 16)
+        color = tuple(min(255, channel + 14) for channel in fill) if pressed == control.request else fill
+        rounded(left + 1.5, face_top + 1.5, w - 3, face_height - 3, rl.Color(*color, 255), 14.5)
+        text(control.label, 37, left + w / 2, top + h / 2, rl.Color(*ink, 255))
+      return
+
+    self.shapes.confirmation(bounds, strength=self.pulse.confirmation_strength(now))
+    source_color = rl.Color(197, 212, 208, 255)
+    label_width = ink_width(source, 22, FontRole.SEMI_BOLD)
+    target = displayed_adjusted_limit_mps(state.speed_limit)
+    direction = (-1 if target > state.speed_mps else 1) if target is not None and state.speed_mps is not None and target != state.speed_mps else 0
+    start = (width - label_width - (19.2 if direction else 0)) / 2
+    text(source, 22, start + label_width / 2, 22, source_color, FontRole.SEMI_BOLD)
+    if direction:
+      self.shapes.arrow('confirmation', x + (start + label_width + 12.6) * scale, y + 22.5 * scale,
+                        direction, source_color, scale=1.1 * scale)
+    nw = ink_width(shown.posted_text, 64, FontRole.BOLD)
+    ow = ink_width(shown.offset_text, 32) if shown.offset_text else 0
+    start = (width - nw - (10 + ow if ow else 0)) / 2
+    # Align the posted value and offset at their visible lower edge.
+    number_top, number_bottom = self.fonts.vertical_ink(shown.posted_text, FontRole.BOLD, text_size(64))
+    text(shown.posted_text, 64, start + nw / 2, 84 - (number_bottom - number_top) / scale / 2, white, FontRole.BOLD)
+    if ow:
+      top, bottom = self.fonts.vertical_ink(shown.offset_text, FontRole.MEDIUM, text_size(32))
+      text(shown.offset_text, 32, start + nw + 10 + ow / 2, 84 - (bottom - top) / scale / 2, secondary)
+    caption = ink_width('New Limit', 30, FontRole.SEMI_BOLD)
+    cx = (width - caption - 10) / 2
+    accent = rl.Color(214, 188, 240, 255)
+    text('New Limit', 30, cx + caption / 2, 104, accent, FontRole.SEMI_BOLD)
+    ax, ay = x + (cx + caption + 8) * scale, y + 104 * scale
+    rl.draw_line_ex(rl.Vector2(ax - 2 * scale, ay - 4 * scale), rl.Vector2(ax + 2 * scale, ay), 1.5 * scale, accent)
+    rl.draw_line_ex(rl.Vector2(ax + 2 * scale, ay), rl.Vector2(ax - 2 * scale, ay + 4 * scale), 1.5 * scale, accent)
+    if state.slc_wheel_confirmation_available:
+      accept, reject = ink_width('Accept', 26), ink_width('Reject', 26)
+      start = (width - 18 - 4 - accept - 10 - 18 - 4 - reject) / 2
+      for left, plus in ((start, True), (start + 18 + 4 + accept + 10, False)):
+        self.shapes.wheel_key(plus, x + (left + 9) * scale, y + 135.5 * scale, scale=scale)
+      hint_ink = rl.Color(210, 216, 216, 255)
+      text('Accept', 26, start + 22 + accept / 2, 135.5, hint_ink)
+      text('Reject', 26, start + 18 + 4 + accept + 10 + 22 + reject / 2, 135.5, hint_ink)
 
   def _sign(self, state: OnroadState, bounds, now: float) -> None:
     shown, obs = resolve_unified_speed(state), state.speed_limit

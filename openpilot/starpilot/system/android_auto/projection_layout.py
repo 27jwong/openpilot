@@ -11,7 +11,8 @@ from openpilot.starpilot.ui.onroad_customization import (CEM_GAUGE_WIDGET, CLOCK
                                                          SPEED_ALIGNMENTS, customization_metadata, validate_map_box, validate_widget_order)
 from openpilot.starpilot.ui.onroad_stopped_timer import timer_size
 from openpilot.starpilot.ui.onroad_torque_geometry import maximum_footprint
-from openpilot.starpilot.ui.onroad_customization import SPEED_LAYOUT_V7, migrate_speed_layout, migrate_large_sign_layout, place_attached_slc_actions
+from openpilot.starpilot.ui.onroad_customization import (SPEED_LAYOUT_V7, migrate_speed_layout, migrate_large_sign_layout,
+                                                        place_attached_slc_actions, migrate_confirmation_layout)
 from openpilot.starpilot.ui.large_speed_geometry import sources_extent
 
 MAX_BYTES = 16384
@@ -80,6 +81,7 @@ def layout_metadata_for_viewport(viewport):
   widgets['driver_monitor']['default']['y'] += height - 1080
   x, y, w, h = maximum_footprint(30, 30, width - 60, height - 60, width)
   widgets['torque_bar'].update(width=w, height=h)
+  widgets['torque_bar'].pop('confirmationObstacle', None)
   widgets['torque_bar']['default'].update(x=x, y=y)
   timer_w, _ = timer_size('large')
   widgets[STOPPED_TIMER_WIDGET]['default'].update(x=(width - timer_w) / 2, y=520)
@@ -328,6 +330,7 @@ def validate_layout_for_viewport(value, viewport, *, _legacy_geometry=False):
     if (actions['x'], actions['y']) == (100, 296):
       actions.update(x=metadata['widgets']['speed_limit_actions']['default']['x'], y=metadata['widgets']['speed_limit_actions']['default']['y'])
     result['version'] = 5
+  migrate_confirmation_layout(result['widgets'], 'large', metadata['widgets'], bounds, extra_height=sources_extent(result))
   place_attached_slc_actions(result['widgets'], bounds, sources_extent(result))
   if len(json.dumps(result, separators=(',', ':'), allow_nan=False).encode()) > MAX_BYTES:
     raise ValueError('Projection layout too large')

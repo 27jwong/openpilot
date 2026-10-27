@@ -107,7 +107,11 @@ def resolve_unified_speed(state) -> UnifiedSpeedPresentation:
   max_text = speed(state.cruise_kph / 3.6) if positive(state.cruise_kph) else '–'
   source = obs.source if str(obs.kind) == 'valid' else (
     obs.last_received_source if positive(obs.last_received_speed_limit_mps) else obs.accepted_source)
+  proposal = None
+  if pending:
+    proposal = obs.pending_adjusted_limit_mps or (
+      target if obs.pending_speed_limit_mps == posted else obs.pending_speed_limit_mps + (obs.offset_mps or 0))
   return UnifiedSpeedPresentation(mode, max_text, speed(posted), offset, 'km/h' if state.metric else 'mph',
                                   source, pending,
                                   'max' if state.cruise_active else 'none', speed(target), status,
-                                  speed(getattr(obs, 'pending_adjusted_limit_mps', None) or obs.pending_speed_limit_mps) if pending else '–')
+                                  speed(proposal))

@@ -211,7 +211,7 @@ def test_compact_rejection_or_timeout_keeps_set_speed_until_explicit_adoption(tm
 
   proposed, view, target = drive.step(100, limit=limit)
   assert slc_controls(Profile.COMPACT, view) == ()
-  assert [control.label for control in slc_controls(Profile.COMPACT, replace(view, slc_prompt_open=True))] == ['Accept', 'Decline']
+  assert [control.label for control in slc_controls(Profile.COMPACT, replace(view, slc_prompt_open=True))] == ['Accept', 'Reject']
   assert target == pytest.approx(published_cruise_mph(50, metric=metric), rel=0, abs=1e-10)
   request = None
   if answer == 'reject':

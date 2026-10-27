@@ -892,12 +892,15 @@ export const OnroadLayoutPage = {
       const widgets = this.state.data.metadata.profiles[this.state.profile].widgets
       const dx = widgets.speed_limit_actions.default.x - widgets.cruise_limits.default.x
       const gap = widgets.speed_limit_actions.default.y - widgets.cruise_limits.default.y - widgets.cruise_limits.height
+      const sourceGap = widgets.cruise_limits.sourcesExtent?.actionGap ?? gap
+      const oldGap = this.state.draft.speedSources === true ? sourceGap : gap
       this.state.draft[key] = value === true
       const card = this.layout.cruise_limits, actions = this.layout.speed_limit_actions, height = this.profile.widgets.cruise_limits.height
       // Actions that sat right under the card follow its new bottom; both stay on screen.
-      if (actions && actions.x === card.x + dx && actions.y === card.y + oldHeight + gap) {
-        card.y = Math.min(card.y, placementLimits(this.limitProfile, "speed_limit_actions", this.layout).maxY - height - gap)
-        actions.y = card.y + height + gap
+      if (actions && actions.x === card.x + dx && actions.y === card.y + oldHeight + oldGap) {
+        const nextGap = this.state.draft.speedSources === true ? sourceGap : gap
+        card.y = Math.min(card.y, placementLimits(this.limitProfile, "speed_limit_actions", this.layout).maxY - height - nextGap)
+        actions.y = card.y + height + nextGap
       }
       for (const id of ["cruise_limits", "speed_limit_actions"].filter(id => this.layout[id])) {
         const limits = placementLimits(this.limitProfile, id, this.layout)

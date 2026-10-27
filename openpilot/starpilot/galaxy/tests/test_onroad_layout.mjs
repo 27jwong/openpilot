@@ -94,6 +94,26 @@ withMode.document.layouts.compact[modeId].enabled = true
 assert.equal(validDocument(withMode.document, withMode.metadata), false)
 withMode.document.layouts.compact[modeId].y = 110
 assert.equal(validDocument(withMode.document, withMode.metadata), true)
+
+// Hidden widgets free their space, but adding them back still requires a valid placement.
+{
+  const sample = copy(data), layout = sample.document.layouts.compact, profile = sample.metadata.profiles.compact
+  layout.max_speed.enabled = false
+  assert.deepEqual(clampPlacement(profile, "speed_limit_actions", 80, 80, layout), { x: 80, y: 80 })
+  Object.assign(layout.speed_limit_actions, { x: 80, y: 80 })
+  assert.equal(validSnapshot(sample), true)
+  assert.equal(clampPlacement(profile, "max_speed", 0, 0, layout), null)
+  layout.max_speed.enabled = true
+  assert.equal(validDocument(sample.document, sample.metadata), false)
+  assert.equal(clampPlacement(profile, "speed_limit_actions", 80, 80, layout), null)
+  layout.max_speed.enabled = false
+  layout.max_speed.x = -1
+  assert.equal(validDocument(sample.document, sample.metadata), false)
+  layout.max_speed.x = 0
+  layout.max_speed.enabled = "false"
+  assert.equal(validDocument(sample.document, sample.metadata), false)
+}
+
 assert.equal(withAlpha("#AABBCC80", 200 / 255), "#AABBCC64")
 assert.equal(withAlpha("#AABBCCFF", .9), "#AABBCCe5")
 assert.equal(validSnapshot(data), true)
@@ -1187,3 +1207,16 @@ failedSave.feed.save(failedSave.feed.data.document)
 await failedSave.reply(1, { ...withDisplayData(), failed: ["Lead Info"] })
 assert.match(failedSave.updates.at(-1).notice, /did not change: Lead Info/)
 console.log('Display options, target switching and reload during polling passed')
+
+// A closed developer sidebar makes the torque arc taller than its narrow-road box.
+{
+  const sample = snapshot(), profile = sample.metadata.profiles.large
+  profile.widgets.cruise_limits.height = 168
+  profile.widgets.cruise_limits.confirmation = { x: 172, y: -12, width: 419, height: 204 }
+  profile.widgets.torque_bar.confirmationObstacle = { x: 0, y: -48, width: 1250, height: 289 }
+  assert.equal(documentHelpers.overlapsReserved(profile, 'cruise_limits', 88, 550, sample.document.layouts.large), true)
+  delete profile.widgets.torque_bar.confirmationObstacle
+  assert.equal(documentHelpers.overlapsReserved(profile, 'cruise_limits', 88, 550, sample.document.layouts.large), false)
+  profile.widgets.cruise_limits.height = 276
+  assert.equal(documentHelpers.overlapsReserved(profile, 'cruise_limits', 88, 500, sample.document.layouts.large), true)
+}

@@ -649,6 +649,12 @@ class RuntimeSnapshotAdapter:
       display_car_valid and getattr(display_car, 'gasPressed', False) and long_engaged and
       str(getattr(display_selfdrive, 'state', '')) == 'overriding' and
       cp is not None and cp.openpilotLongitudinalControl)
+    cruise_state = getattr(car, 'cruiseState', None)
+    wheel_confirmation = bool(
+      system_long and control is not None and getattr(control, 'enabled', False) and
+      cruise_state is not None and getattr(cruise_state, 'available', False) and
+      not (cp is not None and getattr(cp, 'brand', '') == 'toyota' and
+           (car.standstill or cruise_state.standstill or not cruise_state.enabled)))
     developer_metrics = self._developer_metrics.observe(
       drive=after if started else None, car=display_car if display_car_valid else None,
       delay=current_message(sm, 'lateralDelay', now_ns, after_frame=after) if started else None,
@@ -681,6 +687,7 @@ class RuntimeSnapshotAdapter:
                            (display_long_active or longitudinal_overridden) and getattr(display_car, 'gasPressed', False))),
                          stock_cruise_active=stock_cruise,
                          slc_system_long_available=system_long,
+                         slc_wheel_confirmation_available=wheel_confirmation,
                          curve=curve, show_curve_status=_flag(params, "ShowCSCStatus"),
                          conditional_configured=self._conditional_choice, conditional_effective=conditional,
                          conditional_perception=perception,

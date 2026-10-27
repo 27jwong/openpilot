@@ -39,7 +39,7 @@ def main() -> None:
       view = ShellView(fonts, args.asset_directory)
       try:
         scenes = {}
-        for name, pending in (("pending", True), ("automatic", False), ("adoptable", False), ("override", False)):
+        for name, pending in (("notice", True), ("notice_peak", True), ("pending", True), ("automatic", False), ("adoptable", False), ("override", False)):
           observation = SpeedLimitObservation(kind=ObservationKind.VALID, source="dashboard", speed_limit_mps=22.0,
                                               accepted_speed_limit_mps=22.0 if name == 'automatic' else 18.0, accepted_source="dashboard",
                                               accepted_adjusted_limit_mps=24.0 if name == 'automatic' else 20.0,
@@ -53,8 +53,8 @@ def main() -> None:
                                               pending_since_ns=10_000_000_000 if pending else 0,
                                               driver_override_active=name == "override")
           onroad = replace(reference_onroad("onroad_engaged_no_camera"), speed_limit=observation,
-                           longitudinal_active=True, slc_system_long_available=True, slc_prompt_open=name == "pending",
-                           observed_ns=10_500_000_000)
+                           longitudinal_active=True, slc_system_long_available=True, slc_wheel_confirmation_available=True, slc_prompt_open=name == "pending",
+                           observed_ns=10_000_000_000 if name == "notice" else 10_350_000_000)
           if name == 'automatic':
             onroad = replace(onroad, cruise_kph=24. * 3.6)
           snapshot = ShellSnapshot(ShellMode.ONROAD, reference_state(), reference_settings_state(), onroad,

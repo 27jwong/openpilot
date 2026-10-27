@@ -37,20 +37,20 @@ class TestTorqueLayout(unittest.TestCase):
         document = default_document()
         base = document['layouts'][profile]['torque_bar']
         base['x'] += 10
-        base['y'] -= 40
+        base['y'] += 10
         document = validate_document(document)
         original, original_dots = geometry(profile, scene())
         moved, moved_dots = geometry(profile, scene(document))
         for (old_rect, old_points, old_style), (new_rect, new_points, new_style) in zip(original, moved, strict=True):
-          np.testing.assert_array_equal(new_points, old_points + np.array([10, -40], dtype=np.float32))
+          np.testing.assert_array_equal(new_points, old_points + np.array([10, 10], dtype=np.float32))
           self.assertEqual((new_rect.x, new_rect.y, new_rect.width, new_rect.height),
-                           (old_rect.x + 10, old_rect.y - 40, old_rect.width, old_rect.height))
+                           (old_rect.x + 10, old_rect.y + 10, old_rect.width, old_rect.height))
           if 'gradient' in old_style:
             for field in ('start', 'end', 'stops'):
               self.assertEqual(getattr(new_style['gradient'], field), getattr(old_style['gradient'], field))
             self.assertEqual([tuple(getattr(color, channel) for channel in 'rgba') for color in new_style['gradient'].colors],
                              [tuple(getattr(color, channel) for channel in 'rgba') for color in old_style['gradient'].colors])
-        self.assertEqual(moved_dots, [(x + 10, y - 40, radius) for x, y, radius in original_dots])
+        self.assertEqual(moved_dots, [(x + 10, y + 10, radius) for x, y, radius in original_dots])
 
   def test_metadata_bounds_enclose_all_legal_polygon_and_dot_states(self):
     for profile, data in PROFILES.items():

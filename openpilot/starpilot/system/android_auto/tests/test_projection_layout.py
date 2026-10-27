@@ -26,7 +26,7 @@ class TestProjectionLayout(unittest.TestCase):
         with self.subTest(viewport=viewport, separate=separate):
           document = default_layout_for_viewport(viewport, {'speedSources': True, 'speedSourcesCard': separate})
           actions = document['widgets']['speed_limit_actions']
-          self.assertEqual(actions['y'], 351 if separate else 343)
+          self.assertEqual(actions['y'], 367 if separate else 359)
           self.assertEqual(validate_layout_for_viewport(document, viewport), document)
           native = projection_customization(document, default_document())
           self.assertEqual(placement(native, 'large', 'speed_limit_actions'), actions)
@@ -34,7 +34,7 @@ class TestProjectionLayout(unittest.TestCase):
           actions['y'] = 882
           saved = validate_layout_for_viewport(document, viewport)
           card, actions = (saved['widgets'][key] for key in ('cruise_limits', 'speed_limit_actions'))
-          self.assertEqual(actions['y'], card['y'] + 192 + (84 if separate else 76))
+          self.assertEqual(actions['y'], card['y'] + 284 + (8 if separate else 0))
           self.assertLessEqual(actions['y'] + 168, viewport[1] - 30)
           self.assertEqual(validate_layout_for_viewport(saved, viewport), saved)
 
@@ -49,7 +49,7 @@ class TestProjectionLayout(unittest.TestCase):
     migrated = validate_layout(document, SCREEN)
     self.assertEqual(document, before)
     self.assertEqual(migrated['version'], 5)
-    self.assertEqual(migrated['widgets']['cruise_limits']['y'], bottom - 168)
+    self.assertEqual(migrated['widgets']['cruise_limits']['y'], bottom - 192)
     self.assertEqual(migrated['widgets']['speed_limit_actions'], document['widgets']['speed_limit_actions'])
     self.assertEqual(validate_layout(migrated, SCREEN), migrated)
 

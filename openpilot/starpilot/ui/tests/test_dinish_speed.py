@@ -8,10 +8,11 @@ from types import SimpleNamespace
 from PIL import Image
 import numpy as np
 import pyray as rl
+import pytest
 
 from openpilot.starpilot.ui.presentation import BitmapFonts, FontRole, Profile, default_font_directory, font_filename, font_path, validate_bitmap_font
 from openpilot.starpilot.ui.onroad_customization import default_document, validate_document
-from openpilot.starpilot.ui.onroad_state import ObservationKind, slc_controls
+from openpilot.starpilot.ui.onroad_state import ObservationKind, slc_controls, speed_limit_bounds
 from openpilot.starpilot.ui.tests.test_speed_stack import road
 from openpilot.starpilot.system.android_auto.projection_layout import default_layout_for_viewport, validate_layout_for_viewport
 
@@ -229,6 +230,7 @@ def test_native_signs_offsets_and_captions_fit_their_touch_targets():
       with BitmapFonts(profile, default_font_directory()) as fonts:
         for metric, moved, elapsed in product((False, True), (False, True), (0, 750_000_000, 1_500_000_000)):
           current = state(metric=metric, observed_ns=10_000_000_000+elapsed)
+          current = replace(current, speed_limit=replace(current.speed_limit, action_enabled=False))
           factor = 3.6 if metric else 2.2369362921
           current = replace(current, speed_limit=replace(current.speed_limit, speed_limit_mps=120/factor,
             pending_speed_limit_mps=120/factor, pending_adjusted_limit_mps=130/factor, presentation_adjusted_limit_mps=130/factor))
@@ -262,8 +264,7 @@ def test_native_signs_offsets_and_captions_fit_their_touch_targets():
           for label in ('OSM', '120', '+10'):
             x1, y1, x2, y2 = ink[label]
             assert left < x1 < x2 < right and top <= y1 < y2 < bottom
-          controls = slc_controls(profile, replace(current, slc_prompt_open=True))
-          assert ink['120'][3] + 4 < controls[0].bounds[1] or controls[-1].bounds[2] + 4 < ink['120'][0]
+          assert not slc_controls(profile, replace(current, slc_prompt_open=True))
   finally:
     if owns_context:
       rl.close_window()
@@ -278,7 +279,7 @@ def test_compact_preview_sprite_keeps_the_sign_offset_arrow_and_override_cross()
     rl.init_window(128, 128, 'SLC preview crop fixture')
   canvas = _Canvas(Profile.COMPACT)
   try:
-    for y, scene in product((20, 0, 64, 108), ('slc_pending', 'slc_retained')):
+    for y, scene in product((20, 24), ('slc_pending', 'slc_retained')):
       document = default_document()
       document['layouts']['compact']['speed_limit']['y'] = y
       assert validate_document(document)['layouts']['compact']['speed_limit']['y'] == y
@@ -296,8 +297,11 @@ def test_compact_preview_sprite_keeps_the_sign_offset_arrow_and_override_cross()
       finally:
         rl.unload_image(image)
       assert np.array_equal(direct[..., 3], np.asarray(rebuilt)[..., 3])
-      assert slot['offsetX'] == slot['offsetY'] == 0
-      assert (slot['width'], slot['height']) == (118, min(132, 240-y))
+      if scene == 'slc_pending':
+        assert (slot['offsetX'], slot['offsetY'], slot['width'], slot['height']) == (-182, -12, 312, 152)
+      else:
+        assert slot['offsetX'] == slot['offsetY'] == 0
+        assert (slot['width'], slot['height']) == (118, min(132, 240-y))
       if scene == 'slc_retained':
         assert np.any(direct[..., 3]), (y, scene)
   finally:
@@ -308,7 +312,6 @@ def test_compact_preview_sprite_keeps_the_sign_offset_arrow_and_override_cross()
 
 def test_large_sources_and_confirmation_text_have_clearance_below_both_signs():
   from unittest.mock import patch
-  from openpilot.starpilot.ui.large_speed_geometry import CARD_HEIGHT, GAP, SOURCE_ROW_HEIGHT
   from openpilot.starpilot.ui.onroad import OnroadView
   from openpilot.starpilot.ui.onroad_large_widgets import UnifiedSpeedWidget
   from openpilot.starpilot.ui.onroad_state import SourceReading
@@ -321,6 +324,7 @@ def test_large_sources_and_confirmation_text_have_clearance_below_both_signs():
       widget = UnifiedSpeedWidget(fonts)
       view = OnroadView.__new__(OnroadView)
       view.fonts = fonts
+      view.unified_speed = widget
       for vienna, separate in product((False, True), repeat=2):
         current = state(slc_prompt_open=True)
         current.customization.update(speedSources=True, speedSourcesCard=separate)
@@ -333,10 +337,11 @@ def test_large_sources_and_confirmation_text_have_clearance_below_both_signs():
           widget.render(rl.Rectangle(30, 30, 1800, 1020), current)
           view._slc_actions(current)
         foreground = [call for call in calls if call[-1].a == 255]
-        action_top = min(y+fonts.vertical_ink(text, role, size)[0]
-                         for text, role, size, _, y, _ in foreground if text in ('Accept', 'Decline'))
-        source_bottom = 75+CARD_HEIGHT+(GAP if separate else 0)+SOURCE_ROW_HEIGHT
-        assert source_bottom+8 <= action_top
+        action_bottom = max(y+fonts.vertical_ink(text, role, size)[1]
+                            for text, role, size, _, y, _ in foreground if text in ('Accept', 'Reject'))
+        source_top = min(y+fonts.vertical_ink(text, role, size)[0]
+                         for text, role, size, _, y, _ in foreground if text in ('Dash', 'Map', 'Vision'))
+        assert action_bottom+8 <= source_top
       widget.close()
   finally:
     if owns_context:
@@ -361,18 +366,21 @@ def test_source_card_action_sprite_contains_both_actual_button_rows():
       state = sample_state('slc_pending', document)
       view = OnroadView.__new__(OnroadView)
       view.fonts = fonts
+      from openpilot.starpilot.ui.onroad_large_widgets import UnifiedSpeedWidget
+      view.unified_speed = UnifiedSpeedWidget(fonts)
       canvas = _Canvas.__new__(_Canvas)
       canvas.profile, canvas.viewport, canvas.fonts, canvas.target = Profile.LARGE, None, fonts, target
       with patch.object(canvas, 'view', SimpleNamespace(_ordered_widgets=lambda content, state, **kw: view._slc_actions(state)), create=True), \
            patch.object(canvas, '_settle', lambda state: None), \
-           patch.dict('openpilot.starpilot.ui.layout_preview_renderer.RUNTIME_PREVIEW_WIDGETS', large=('speed_limit_actions',)):
+           patch.dict('openpilot.starpilot.ui.layout_preview_renderer.RUNTIME_PREVIEW_WIDGETS', large=('cruise_limits',)):
         png = canvas.render_widget_art(state, document['layouts']['large'])
       with Image.open(io.BytesIO(png)) as image:
-        slot = json.loads(image.info['starpilot-widget-art'])['sprites']['speed_limit_actions']
-        assert (slot['width'], slot['height'], slot['offsetY']) == (308, 168, 0)
+        slot = json.loads(image.info['starpilot-widget-art'])['sprites']['cruise_limits']
+        assert slot['width'] >= 591 and slot['offsetY'] == -12
         alpha = np.asarray(image.convert('RGBA'))[..., 3]
-      assert (alpha[:80] > 200).any(), 'Accept must remain in its sprite'
-      assert (alpha[88:] > 200).any(), 'Decline must remain in its sprite'
+      assert alpha[100, 220] > 200, 'Accept must remain in its sprite'
+      assert alpha[100, 450] > 200, 'Reject must remain in its sprite'
+      assert alpha[100, 382] > 200, 'The shared surface must remain in its sprite'
   finally:
     rl.unload_render_texture(target)
     if owns_context:
@@ -416,7 +424,7 @@ def test_both_sign_styles_contain_text_and_arrows_at_each_profile_scale():
           current = replace(current, speed_mps=(posted+offset+direction*2)/3.6,
             appearance=replace(current.appearance, use_vienna_sign=vienna),
             speed_limit=replace(current.speed_limit, source=source, speed_limit_mps=posted/3.6,
-              pending_speed_limit_mps=posted/3.6, presentation_adjusted_limit_mps=(posted+offset)/3.6))
+              pending_speed_limit_mps=posted/3.6, action_enabled=False, presentation_adjusted_limit_mps=(posted+offset)/3.6))
           if retained:
             current = replace(current, speed_limit=replace(current.speed_limit, kind=ObservationKind.STALE,
               speed_limit_mps=None, pending_speed_limit_mps=None, last_received_speed_limit_mps=posted/3.6,
@@ -495,7 +503,7 @@ def test_sign_profiles_share_layout_and_snap_only_final_pixels():
         current = state()
         current = replace(current, appearance=replace(current.appearance, use_vienna_sign=vienna),
           speed_limit=replace(current.speed_limit, source=source, speed_limit_mps=value/3.6,
-            pending_speed_limit_mps=value/3.6 if pending else None, presentation_adjusted_limit_mps=(value+offset)/3.6))
+            pending_speed_limit_mps=value/3.6 if pending else None, action_enabled=False, presentation_adjusted_limit_mps=(value+offset)/3.6))
         drawn = []
         for fonts in (small, large):
           widget = SpeedLimitWidget(fonts, fonts.profile)
@@ -533,24 +541,24 @@ def test_v5_geometry_migrates_and_keeps_custom_actions_independent():
   doc['layouts']['large']['cruise_limits'].update(x=1550, y=638)
   doc['layouts']['large']['speed_limit_actions'].update(x=1550, y=954)
   migrated = validate_document(doc)
-  assert migrated['version'] == 11
-  assert migrated['layouts']['large']['cruise_limits'] == {'x': 1550, 'y': 638, 'enabled': True}
+  assert migrated['version'] == 12
+  assert migrated['layouts']['large']['cruise_limits'] == default_document()['layouts']['large']['cruise_limits']
   assert migrated['layouts']['large']['speed_limit_actions'] == {'x': 1550, 'y': 882, 'enabled': True}
   assert migrated['speedSources'] is True
   assert doc['layouts']['large']['cruise_limits']['x'] == 1550
   assert validate_document(migrated) == migrated
   doc['layouts']['large']['cruise_limits'].update(x=88, y=75)
   doc['layouts']['large']['speed_limit_actions'].update(x=88, y=447)
-  assert validate_document(doc)['layouts']['large']['speed_limit_actions']['y'] == 343
+  assert validate_document(doc)['layouts']['large']['speed_limit_actions']['y'] == 359
 
 
-def test_pending_choices_are_plain_accept_and_decline_with_padded_targets():
+def test_pending_choices_use_the_sign_with_separated_horizontal_targets():
   state = road()
   state = replace(state, slc_prompt_open=True, speed_limit=replace(state.speed_limit, pending_speed_limit_mps=25))
   accept, decline = slc_controls(Profile.LARGE, state)
-  assert accept.bounds == (112, 267, 420, 347)
-  assert decline.bounds == (112, 355, 420, 435)
-  assert (accept.label, decline.label) == ('Accept', 'Decline')
+  assert accept.bounds[2] < decline.bounds[0]
+  assert accept.bounds[1] == decline.bounds[1] and accept.bounds[3] == decline.bounds[3]
+  assert (accept.label, decline.label) == ('Accept', 'Reject')
 
 
 def test_projection_v1_layout_migrates_without_losing_other_widgets():
@@ -573,6 +581,84 @@ def test_committed_projection_v1_right_edge_is_preserved_and_clamped():
   doc['widgets']['cruise_limits'].update(x=1654, y=75)
   doc['widgets']['speed_limit_actions'].update(x=1654, y=500)
   migrated = validate_layout_for_viewport(doc, viewport)
-  assert migrated['widgets']['cruise_limits']['x'] == 1342
-  assert migrated['widgets']['speed_limit_actions'] == {'x': 1510, 'y': 267, 'enabled': True}
+  assert migrated['widgets']['cruise_limits']['x'] == 1239
+  assert migrated['widgets']['speed_limit_actions'] == {'x': 1510, 'y': 500, 'enabled': True}
 
+
+
+def test_chooser_target_header_and_padded_labels_fit_the_native_ink():
+  from unittest.mock import patch
+  from openpilot.starpilot.ui.large_speed_geometry import CONFIRMATION_SCALE
+  from openpilot.starpilot.ui.speed_limit_widget import SpeedLimitWidget
+  from openpilot.starpilot.ui.tests.test_slc_ui_actions import state
+  owns_context = not rl.is_window_ready()
+  if owns_context:
+    rl.init_window(128, 128, 'Confirmation typography fixture')
+  try:
+    for profile in Profile:
+      scale = CONFIRMATION_SCALE[profile]
+      with BitmapFonts(profile, default_font_directory()) as fonts:
+        widget = SpeedLimitWidget(fonts, profile)
+        try:
+          for metric, posted, offset, show_offset in ((False, 65, 5, True), (True, 120, 10, True),
+                                                       (True, 50, -5, True), (False, 65, 5, False),
+                                                       (True, 120, 10, False), (True, 50, -5, False)):
+            current = state()
+            factor = 3.6 if metric else 2.2369362921
+            obs = replace(current.speed_limit, source='vision', speed_limit_mps=posted / factor,
+                          pending_speed_limit_mps=posted / factor,
+                          pending_adjusted_limit_mps=(posted + offset) / factor,
+                          presentation_adjusted_limit_mps=(posted + offset) / factor)
+            current = replace(current, speed_limit=obs, metric=metric, show_slc_offset=show_offset,
+                              slc_wheel_confirmation_available=True)
+            notice_calls = []
+            with patch.object(fonts, 'draw', lambda *args, sink=notice_calls: sink.append(args)):
+              widget.render_confirmation(current)
+            notice_bounds = speed_limit_bounds(profile, current)
+            assert notice_bounds is not None
+            boxes = {}
+            for text, role, size, x, y, _ in notice_calls:
+              left, right = fonts.horizontal_ink(text, role, size)
+              top, bottom = fonts.vertical_ink(text, role, size)
+              boxes[text] = (x + left, y + top, x + right, y + bottom)
+              assert notice_bounds[0] + 8 * scale <= x + left < x + right <= notice_bounds[2] - 8 * scale
+              assert notice_bounds[1] + 8 * scale <= y + top < y + bottom <= notice_bounds[3] - 4 * scale
+            number = boxes[str(posted)]
+            right = boxes[f'{offset:+d}'][2] if show_offset else number[2]
+            assert (number[0] + right) / 2 == pytest.approx((notice_bounds[0] + notice_bounds[2]) / 2)
+            assert boxes['VISION'][3] + 6 * scale <= number[1]
+            assert number[3] + 6 * scale <= boxes['New Limit'][1]
+            assert boxes['New Limit'][3] + 6 * scale <= boxes['Accept'][1]
+            if show_offset:
+              assert boxes[f'{offset:+d}'][3] == pytest.approx(number[3])
+            else:
+              assert f'{offset:+d}' not in boxes
+            current = replace(current, slc_prompt_open=True)
+            calls = []
+            with patch.object(fonts, 'draw', lambda *args, sink=calls: sink.append(args)), patch.object(rl, 'draw_rectangle_rounded'):
+              widget.render_confirmation(current)
+            assert calls[0][0] == str(posted + offset)
+            assert calls[1][0] == ('km/h' if metric else 'mph')
+            assert calls[2][0] == (f'VISION {posted} {offset:+d}' if show_offset else 'VISION')
+            bounds = speed_limit_bounds(profile, current)
+            assert bounds is not None
+            previous_right = bounds[0]
+            for text, role, size, x, y, _ in calls[:3]:
+              left, right = fonts.horizontal_ink(text, role, size)
+              top, bottom = fonts.vertical_ink(text, role, size)
+              assert x + left >= previous_right
+              assert x + right <= bounds[2] - 10 * scale
+              assert bounds[1] + 8 * scale <= y + top < y + bottom <= bounds[1] + 40 * scale
+              previous_right = x + right
+            for control, (text, role, size, x, y, _) in zip(slc_controls(profile, current), calls[-2:], strict=True):
+              left, right = fonts.horizontal_ink(text, role, size)
+              top, bottom = fonts.vertical_ink(text, role, size)
+              assert x + left - control.bounds[0] >= 12 * scale
+              assert control.bounds[2] - x - right >= 12 * scale
+              assert control.bounds[1] + 10 * scale <= y + top < y + bottom <= control.bounds[3] - 10 * scale
+              assert (bottom - top) / scale * 25.4 / 300 >= 2.8
+        finally:
+          widget.close()
+  finally:
+    if owns_context:
+      rl.close_window()

@@ -86,13 +86,13 @@ class TestSlcTouch(unittest.TestCase):
         self.assertFalse(emitted)
         self.assertIsNone(touch.pressed_action)
       tap_sign(touch, current)
-      x = (controls[0].bounds[0] + controls[0].bounds[2]) / 2
-      y = (controls[0].bounds[3] + controls[1].bounds[1]) / 2
+      x = (controls[0].bounds[2] + controls[1].bounds[0]) / 2
+      y = (controls[0].bounds[1] + controls[0].bounds[3]) / 2
       touch.press(x, y, current)
       touch.release(x, y, current)
       self.assertFalse(emitted)
 
-  def test_both_profiles_offer_accept_and_decline_only_after_tapping_the_sign(self):
+  def test_both_profiles_offer_accept_and_reject_only_after_tapping_the_sign(self):
     for profile in Profile:
       current, emitted = state(), []
       touch = OnroadInput(emitted.append, profile)
@@ -100,7 +100,7 @@ class TestSlcTouch(unittest.TestCase):
       tap_sign(touch, current)
       self.assertFalse(emitted)
       controls = slc_controls(profile, touch.present(current))
-      self.assertEqual([control.label for control in controls], ['Accept', 'Decline'])
+      self.assertEqual([control.label for control in controls], ['Accept', 'Reject'])
       self.assertEqual(controls[0].request.candidate_speed_mps, 22.)
       tap_control(touch, current, SlcActionKind.ACCEPT)
       self.assertEqual(emitted[-1].kind, SlcActionKind.ACCEPT)
@@ -152,7 +152,7 @@ class TestSlcTouch(unittest.TestCase):
       x, y = (left + right) / 2, (top + bottom) / 2
       touch.press(x, y, current)
       document = copy.deepcopy(current.customization)
-      document['layouts'][str(profile)]['speed_limit_actions']['x'] += 1
+      document['layouts'][str(profile)]['cruise_limits' if profile == Profile.LARGE else 'speed_limit']['x'] += 1
       touch.release(x, y, replace(current, customization=document))
       self.assertFalse(emitted)
 
@@ -249,7 +249,7 @@ def test_large_attached_actions_follow_source_row_and_custom_actions_stay_put():
   state.customization['speedSources'] = True
   state = replace(state, customization=validate_document(state.customization))
   after = slc_action_bounds(Profile.LARGE, state)
-  assert after[0][1] - before[0][1] == sources_extent(state.customization)
+  assert after[0][1] - before[0][1] == sources_extent(state.customization) - 16
   assert after[0][:2] == tuple(placement(state.customization, Profile.LARGE, 'speed_limit_actions')[key] for key in ('x', 'y'))
   state.customization['layouts']['large']['speed_limit_actions'].update(x=600, y=500)
   assert slc_action_bounds(Profile.LARGE, state)[0][:2] == (600, 500)
