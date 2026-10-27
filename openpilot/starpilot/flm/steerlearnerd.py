@@ -132,13 +132,13 @@ def _source_config_known(source, now_ns):
     type(source.observed_ns) is int and type(source.expires_ns) is int and
     0 < source.observed_ns <= now_ns <= source.expires_ns <= source.observed_ns + SOURCE_LEASE_NS and
     type(source.cp_sha256) is str and len(source.cp_sha256) == 64 and
-    all(char in '0123456789abcdef' for char in source.cp_sha256) and
+    not source.cp_sha256.strip('0123456789abcdef') and
     type(source.reset) is str and 1 <= len(source.reset) <= 64 and
-    all(char in '0123456789abcdef' for char in source.reset) and
+    not source.reset.strip('0123456789abcdef') and
     type(source.calibration_generation) is str and (not source.calibration_generation or
-      len(source.calibration_generation) == 32 and all(char in '0123456789abcdef' for char in source.calibration_generation)) and
+      len(source.calibration_generation) == 32 and not source.calibration_generation.strip('0123456789abcdef')) and
     type(source.persistent_source_epoch) is str and (not source.persistent_source_epoch or
-      len(source.persistent_source_epoch) == 64 and all(char in '0123456789abcdef' for char in source.persistent_source_epoch)) and
+      len(source.persistent_source_epoch) == 64 and not source.persistent_source_epoch.strip('0123456789abcdef')) and
     type(source.manual_baseline) is tuple and len(source.manual_baseline) in (0, 3) and
     all(type(value) in (int, float) and math.isfinite(value) for value in source.manual_baseline))
 
@@ -433,7 +433,7 @@ def run(
       return False, now
     valid = bool(known and source.enabled and not source.manual and
       type(source.source_epoch) is str and len(source.source_epoch) == 64 and
-      all(char in '0123456789abcdef' for char in source.source_epoch) and
+      not source.source_epoch.strip('0123456789abcdef') and
       (source_cp_sha256 is None or source.cp_sha256 == source_cp_sha256))
     if not valid:
       source_rejected = True
