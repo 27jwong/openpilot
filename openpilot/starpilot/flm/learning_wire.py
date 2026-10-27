@@ -200,8 +200,9 @@ def write_control(parent, evidence):
   wire = parent.init('learningEvidence')
   for name, value in payload.items():
     if name in ('replaySnapshot', 'replayInputs', 'stageValues'):
-      rows = wire.init(name, len(value))
-      for row, fields in zip(rows, value, strict=True):
+      nested_values = cast(list[dict[str, object]], value)
+      rows = wire.init(name, len(nested_values))
+      for row, fields in zip(rows, nested_values, strict=True):
         for field, item in fields.items():
           setattr(row, field, item)
     else:

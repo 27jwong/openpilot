@@ -36,14 +36,14 @@ def test_actual_merged_daemon_callbacks_keep_fresh_tail_and_current_native_check
       return value
 
   class Collector(FullrateCollector):
-    def control(self, value, stamp):
-      accepted = super().control(value, stamp)
-      calls.append(('control', value.control_ns, self._learning_current_native_allowed, accepted, stamp))
+    def control(self, value, now_ns):
+      accepted = super().control(value, now_ns)
+      calls.append(('control', value.control_ns, self._learning_current_native_allowed, accepted, now_ns))
       return accepted
 
-    def output(self, value, stamp):
-      accepted = super().output(value, stamp)
-      calls.append(('output', value.apply_ns, self._learning_current_native_allowed, accepted, stamp))
+    def output(self, value, now_ns):
+      accepted = super().output(value, now_ns)
+      calls.append(('output', value.apply_ns, self._learning_current_native_allowed, accepted, now_ns))
       return accepted
 
   def factory(adapter):
