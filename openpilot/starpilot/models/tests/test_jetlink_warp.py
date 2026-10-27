@@ -1,4 +1,5 @@
-"""Jetlink borrows the small model's camera warp: the one JIT, its inputs and its output, read into host memory."""
+"""Jetlink borrows the small model's camera warp: the one JIT, its inputs and its output, which on a comma moves to
+memory the CPU reads cached and is sent from where it is."""
 import ctypes
 from types import MethodType, SimpleNamespace as NS
 from unittest.mock import Mock, patch
@@ -15,11 +16,11 @@ SHAPE = (2, 6, 4, 8)
 
 
 class FakeBuffer:
-  def __init__(self, live=True):
+  def __init__(self, live=True, device="CPU"):
     self.mapped = np.zeros(int(np.prod(SHAPE)), dtype=np.uint8)
     self.nbytes = self.mapped.nbytes
     self.allocator = NS(dev=NS(synchronize=Mock()))
-    self.live = live
+    self.live, self.device = live, device
 
   def as_memoryview(self, allow_zero_copy=False):
     assert allow_zero_copy
@@ -31,8 +32,8 @@ def output(buffer):
   return NS(uop=NS(base=NS(buffer=buffer)), shape=SHAPE)
 
 
-def small_model(descriptor_shape=SHAPE, descriptor=True, live=True):
-  calls, buffers = [], [FakeBuffer(live)]
+def small_model(descriptor_shape=SHAPE, descriptor=True, live=True, device="CPU"):
+  calls, buffers = [], [FakeBuffer(live, device)]
   npy = {"tfm": np.zeros((3, 3), np.float32), "big_tfm": np.zeros((3, 3), np.float32)}
 
   def enqueue(**kw):
@@ -41,6 +42,7 @@ def small_model(descriptor_shape=SHAPE, descriptor=True, live=True):
     buffers[-1].mapped[:] = ctypes.c_uint8.from_address(kw["frame"][1]).value
     return output(buffers[-1])
 
+  enqueue.captured = NS(linear="linked")   # TinyJit's capture, its program linked by the warmup
   small = NS(camera_warp_descriptor=NS(output_shape=descriptor_shape, dtype=np.dtype(np.uint8)) if descriptor else None,
              warp_enqueue=enqueue, vision_input_names=("img", "big_img"), npy=npy,
              input_queues={"tfm": "tfm queue", "big_tfm": "big_tfm queue", "img_q": "history"},
@@ -81,6 +83,39 @@ def test_warps_with_the_small_models_jit_inputs_and_cache():
   assert set(bytes(warp.output)) == {7}
   warp.wait()
   assert set(bytes(warp.output)) == {9}
+
+
+def moved(buffer):
+  # make_coherent: the same Buffer, its memory somewhere else
+  buffer.mapped = np.zeros_like(buffer.mapped)
+
+
+def test_on_a_comma_the_output_moves_and_is_sent_from_where_it_is():
+  small, _, buffers = small_model(device="QCOM")
+  with patch("jetlink.openpilot.warp.make_coherent", side_effect=moved) as make_coherent:
+    warp = CatalogWarp(small, GEOMETRY)
+  make_coherent.assert_called_once_with(buffers[-1])
+  assert warp.copied is None
+  assert "linear" not in vars(small.warp_enqueue.captured)   # linked again, onto the moved memory
+  road, wide = frames(7)
+  warp.start(road.ctypes.data, wide.ctypes.data, np.eye(3), np.eye(3))
+  warp.wait()
+  assert set(bytes(warp.output)) == {7}
+  assert np.shares_memory(np.frombuffer(warp.output, np.uint8), buffers[-1].mapped)   # no copy a frame
+
+
+def test_memory_the_kernel_will_not_make_coherent_is_copied_out_instead():
+  small, _, buffers = small_model(device="QCOM")
+  refused = RuntimeError("the GPU driver kept back IO-coherent memory (flags 0x100c0000)")
+  with patch("jetlink.openpilot.warp.make_coherent", side_effect=refused):
+    warp = CatalogWarp(small, GEOMETRY)
+  assert warp.copied == str(refused)
+  assert vars(small.warp_enqueue.captured) == {"linear": "linked"}
+  road, wide = frames(5)
+  warp.start(road.ctypes.data, wide.ctypes.data, np.eye(3), np.eye(3))
+  warp.wait()
+  assert set(bytes(warp.output)) == {5}
+  assert not np.shares_memory(np.frombuffer(warp.output, np.uint8), buffers[-1].mapped)
 
 
 def test_refuses_an_output_it_cannot_read_live():
