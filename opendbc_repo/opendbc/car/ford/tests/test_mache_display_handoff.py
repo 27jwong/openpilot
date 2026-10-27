@@ -27,7 +27,8 @@ class RecordedPreview:
     pass
 
   def apply_blend_settings(self, controller):
-    controller.mache_lateral.set_blend_settings(.4, .4, .85)
+    lateral = controller.mache_lateral or controller.classic_lateral
+    lateral.set_blend_settings(.4, .4, .85)
 
   def lateral_snapshot(self, speed):
     return self.model, ModelConstants.T_IDXS, .2, True
@@ -36,10 +37,10 @@ class RecordedPreview:
     return (), False
 
 
-def run_turn(*, hands_free, angle, torque, desired, speed, yaw):
+def run_turn(*, hands_free, angle, torque, desired, speed, yaw, identity=CAR.FORD_MUSTANG_MACH_E_MK1):
   native = test_ford_aol.TestFordAolDriverIntent()
   native.setUp()
-  native.reset(18)
+  native.reset(18 if identity == CAR.FORD_MUSTANG_MACH_E_MK1 else 66)
   native.arm()
   with OpenpilotPrefix():
     saved = Params()
@@ -47,9 +48,9 @@ def run_turn(*, hands_free, angle, torque, desired, speed, yaw):
     fingerprint = gen_empty_fingerprint()
     fingerprint[0].update({0x5A: 8, 0x3A6: 8, 0x3A7: 8})
     fingerprint[2].update({0x3D6: 8, 0x186: 8})
-    cp = CarInterface.get_params(CAR.FORD_MUSTANG_MACH_E_MK1, fingerprint, [], False, False, False)
+    cp = CarInterface.get_params(identity, fingerprint, [], False, False, False)
     cp.alternativeExperience = 32
-    assert cp.safetyConfigs[-1].safetyParam == 18
+    assert cp.safetyConfigs[-1].safetyParam == (18 if identity == CAR.FORD_MUSTANG_MACH_E_MK1 else 66)
     assert cp.flags == 3
     controller = CarController(DBC[cp.carFingerprint], cp)
     controller.hands_free_cluster_input = FordClusterPreference(saved)
@@ -97,6 +98,10 @@ def run_turn(*, hands_free, angle, torque, desired, speed, yaw):
     cs.steeringAngleDeg = angle
     cs.steeringTorque = torque
     cs.rightBlinker = True
+    if identity != CAR.FORD_MUSTANG_MACH_E_MK1:
+      # Generic curvature retains its existing 45deg/3s preturned detector.
+      for _ in range(310):
+        step()
     count = len(displays)
     for _ in range(40):
       frames = step()
@@ -155,3 +160,12 @@ def test_cluster_preference_survives_native_cleanup(tmp_path, saved, flag):
   assert reopened.get(key) == saved
   assert Path(reopened.get_param_path(key)).read_bytes() == (b'1' if saved else b'0')
   assert FordClusterPreference(reopened).enabled == saved
+
+
+@pytest.mark.parametrize('identity', [CAR.FORD_ESCAPE_MK4_5, CAR.FORD_EXPEDITION_MK4, CAR.FORD_F_150_MK14,
+                                      CAR.FORD_F_150_LIGHTNING_MK1, CAR.FORD_RANGER_MK2])
+def test_generic_curvature_native_display_handoff_retains_hands_free_during_manual_turn(identity):
+  inputs = dict(identity=identity, angle=-55., torque=-2., desired=.000041086183, speed=2.55, yaw=-.006)
+  hands_free = run_turn(hands_free=True, **inputs)
+  plain = run_turn(hands_free=False, **inputs)
+  assert plain == hands_free

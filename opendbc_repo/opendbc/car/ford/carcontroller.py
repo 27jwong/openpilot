@@ -185,6 +185,7 @@ class CarController(CarControllerBase):
       self.classic_lateral_demand = demanded
       self.apply_curvature_last = lateral.curvature
       if self.generic_canfd:
+        self.mache_ui_owned |= bool(lateral.active)
         counter = (self.frame // CarControllerParams.STEER_STEP) % 0x10
         can_sends.append(create_extended_canfd_msg(
           self.packer, self.CAN, lateral.active, lateral.ramp_type, lateral.precision_type,
