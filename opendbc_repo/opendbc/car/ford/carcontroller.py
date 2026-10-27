@@ -143,6 +143,8 @@ class CarController(CarControllerBase):
     ### lateral control ###
     # send steer msg at 20Hz
     if self.bp_lat is not None:
+      # Publish a due shadow before its dependent actuator, not after a stale-lease withdrawal.
+      can_sends += self.bp_lat.step_lka(self.packer, self.CAN, now_nanos)
       lateral_sends = self.bp_lat.step_lateral(CC, CS, self.packer, self.CAN, self.frame, now_nanos)
       can_sends += lateral_sends
       self.apply_curvature_last = self.bp_lat.apply_curvature_last

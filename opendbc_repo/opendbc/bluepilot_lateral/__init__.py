@@ -74,9 +74,15 @@ class BluePilotLateral:
     command = self.announced
     # A pending permission withdrawal is immediate; an increase waits until
     # the 33Hz side channel has announced the matching final actuator.
-    if not self.pending.active or not 0 < self.announced_ns <= now_ns <= self.announced_ns + 60_000_000:
+    fresh = 0 < self.announced_ns <= now_ns <= self.announced_ns + 60_000_000
+    if not self.pending.active or not fresh:
       command = Command()
       self.announced = command
+      if not fresh:
+        # Native records the neutral actuator as zero. Do not resume an old
+        # nonzero path after a new announcement; restart through the normal limits.
+        self.host.controller.reset_actuator()
+        self.pending = Command()
     self.control_sent_ns = now_ns
     self.sent_generation = self.announced_generation
     message = lateral(packer, CAN.main, command, canfd=self.canfd, counter=self.control_counter)
