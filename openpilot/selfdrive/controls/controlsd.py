@@ -221,16 +221,6 @@ class Controls:
           apply=lambda: self.LaC.update_torque_parameters(torque_params.latAccelFactorFiltered, torque_params.latAccelOffsetFiltered,
                                                         torque_params.frictionCoefficientFiltered))
 
-    if late_gm_refresh:
-      # Consume queued evidence after optional preparation, immediately before
-      # authority selection. Preparation may outlive the previously fresh proof.
-      # The helper never extends a deadline or receives for active LONG.
-      lateral_inputs_refreshed = refresh_expired_lateral_snapshot(self.sm, now_ns=time.monotonic_ns())
-      if lateral_inputs_refreshed:
-        CS = self.sm['carState']
-        steer_angle_without_offset = math.radians(CS.steeringAngleDeg - lp.angleOffsetDeg)
-        self.curvature = -self.VM.calc_curvature(steer_angle_without_offset, CS.vEgo, lp.roll)
-
     long_plan = self.sm['longitudinalPlan']
     model_v2 = self.sm['modelV2']
 
@@ -245,6 +235,17 @@ class Controls:
     CC.longActive = self.longitudinal_inputs.qualify_active(CC.longActive)
     if self.aol_replay:
       now_ns = int(self.sm.logMonoTime['carState']) if os.getenv('REPLAY') == '1' else time.monotonic_ns()
+      if late_gm_refresh:
+        # Use the authority check's clock sample: a proof can expire after the
+        # earlier preparation/qualification work, even when it was fresh on entry.
+        lateral_inputs_refreshed = refresh_expired_lateral_snapshot(self.sm, now_ns=now_ns)
+        if lateral_inputs_refreshed:
+          CS = self.sm['carState']
+          CC.enabled = self.sm['selfdriveState'].enabled
+          standstill = abs(CS.vEgo) <= max(self.CP.minSteerSpeed, 0.3) or CS.standstill
+          steer_angle_without_offset = math.radians(CS.steeringAngleDeg - lp.angleOffsetDeg)
+          self.curvature = -self.VM.calc_curvature(steer_angle_without_offset, CS.vEgo, lp.roll)
+          now_ns = time.monotonic_ns()
       axis = current_axis(self.sm, now_ns=now_ns)
       native = current_native(self.sm, self.CP, now_ns=now_ns,
                               axis_session_id=str(axis.sessionId) if axis is not None else None)
