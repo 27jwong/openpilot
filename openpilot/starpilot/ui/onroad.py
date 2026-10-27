@@ -143,6 +143,7 @@ class OnroadView:
       from openpilot.starpilot.ui.onroad_now_playing import NowPlayingWidget
       self.now_playing = NowPlayingWidget(fonts)
     self.torque_bar = TorqueBarWidget()
+    gui_app.add_render_prepare(self.torque_bar.prepare, self.torque_bar.close)
     if fonts.profile == Profile.LARGE:
       self.unified_speed = UnifiedSpeedWidget(fonts)
       self.current_speed = CurrentSpeedHud(fonts)
@@ -584,6 +585,8 @@ class OnroadView:
   def close(self) -> None:
     gui_app.remove_render_prepare(self._corner_cache.prepare)
     self._corner_cache.close()
+    gui_app.remove_render_prepare(self.torque_bar.prepare)
+    self.torque_bar.close()
     self.navigation.close()
     if self.fonts.profile == Profile.LARGE:
       self.unified_speed.close()
