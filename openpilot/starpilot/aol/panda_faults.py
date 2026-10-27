@@ -21,17 +21,9 @@ def _diagnostic_mask(cp):
                          int(cp.flags) & int(HondaFlags.BOSCH) and qualified(cp, marked_only=True)) else 0
     if cp.brand == 'hyundai':
       from opendbc.car.hyundai.values import CAR, HyundaiFlags
-      from opendbc.car.hyundai.classic_scc_aol import qualified
-      if cp.carFingerprint == CAR.HYUNDAI_ELANTRA_2021:
-        # Route08's stock-SCC firmware-matched profile: Dom reports this latched
-        # camera-side CAN1 diagnostic without withdrawing actuator authority.
-        # Keep the raw bit and require the ordinary native/RX/heartbeat guards.
-        recorded_flags = HyundaiFlags.SEND_LFA | HyundaiFlags.USE_FCA | HyundaiFlags.CHECKSUM_CRC8 | HyundaiFlags.HAS_LDA_BUTTON
-        return (1 << 2) if (str(cp.fingerprintSource) == 'fw' and int(cp.flags) == int(recorded_flags) and
-                           len(cp.safetyConfigs) == 1 and int(cp.safetyConfigs[0].safetyParam) == 0xC00 and
-                           cp.alternativeExperience == 32 and qualified(cp, marked_only=True)) else 0
       if cp.carFingerprint != CAR.HYUNDAI_SONATA_HYBRID:
         return 0
+      from opendbc.car.hyundai.classic_scc_aol import qualified
       recorded_flags = (HyundaiFlags.HYBRID | HyundaiFlags.SEND_LFA | HyundaiFlags.USE_FCA |
                         HyundaiFlags.MANDO_RADAR | HyundaiFlags.CHECKSUM_CRC8 | HyundaiFlags.HAS_LDA_BUTTON)
       return (1 << 3) if (int(cp.flags) == int(recorded_flags) and

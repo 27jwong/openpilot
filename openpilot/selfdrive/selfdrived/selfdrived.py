@@ -33,6 +33,7 @@ from openpilot.starpilot.models import jetlink_adapter
 from openpilot.system.manager.process_health import driving_process_failures
 from openpilot.selfdrive.selfdrived.state import StateMachine
 from opendbc.car.gm.aol import qualified_gm
+from openpilot.starpilot.aol.panda_faults import blocking_fault_list
 from openpilot.starpilot.aol.vehicle import native_bootstrap_supported
 from opendbc.car.gm.steering_authority import monitored_profile
 from openpilot.starpilot.car.gm.steering_companion import SteeringCompanion
@@ -475,7 +476,8 @@ class SelfdriveD:
         safety_mismatch = pandaState.safetyModel not in IGNORED_SAFETY_MODES
 
       # safety mismatch allows some time for pandad to set the safety mode and publish it back from panda
-      if (safety_mismatch and self.sm.frame*DT_CTRL > 10.) or pandaState.safetyRxChecksInvalid or self.mismatch_counter >= 200:
+      if ((safety_mismatch and self.sm.frame*DT_CTRL > 10.) or pandaState.safetyRxChecksInvalid or self.mismatch_counter >= 200 or
+          (pandaState.faults and blocking_fault_list(pandaState.faults, self.CP))):
         self.events.add(EventName.controlsMismatch)
 
       if log.PandaState.FaultType.relayMalfunction in pandaState.faults:

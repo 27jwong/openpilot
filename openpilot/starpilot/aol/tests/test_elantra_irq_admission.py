@@ -1,4 +1,4 @@
-"""Elantra route08: retain Dom diagnostic semantics without granting native authority."""
+"""Elantra CAN interrupt faults block steering regardless of otherwise valid authority."""
 from contextlib import ExitStack
 from dataclasses import replace
 from unittest import mock
@@ -29,9 +29,11 @@ def recorded_cp():
   return cp
 
 
+@pytest.mark.parametrize('fault_source', ['none', 'panda', 'native', 'both'])
 @pytest.mark.parametrize('full', [False, True])
 @pytest.mark.parametrize('fault', ['none', 'rx', 'relay', 'denied', 'request', 'expired-wire'])
-def test_recorded_irq_through_selfdrived_and_controls_keeps_native_vetoes(full, fault):
+def test_recorded_irq_through_selfdrived_and_controls_blocks_faulted_steering(full, fault, fault_source):
+  irq = fault_source != 'none'
   cp = recorded_cp()
   before = cp.to_dict()
   case = fixture.IoniqAvailabilityTests(methodName='runTest')
@@ -42,13 +44,14 @@ def test_recorded_irq_through_selfdrived_and_controls_keeps_native_vetoes(full, 
     new_message = messaging.new_message
     def with_irq(service=None, size=None, **kwargs):
       message = new_message(service, size, **kwargs)
-      if service == 'pandaStates':
+      if fault_source in ('panda', 'both') and service == 'pandaStates':
         for panda in message.pandaStates:
           panda.faults = ['interruptRateCan1']
       return message
     encode = fixture.encode_safety
     def wire_irq(state):
-      state = replace(state, pandaInventory=tuple(replace(slot, faults=slot.faults | 4) for slot in state.pandaInventory))
+      if fault_source in ('native', 'both'):
+        state = replace(state, pandaInventory=tuple(replace(slot, faults=slot.faults | 4) for slot in state.pandaInventory))
       if fault == 'expired-wire':
         state = replace(state, observedMonoTime=state.observedMonoTime - 300_000_000,
                         validUntilMonoTime=state.validUntilMonoTime - 300_000_000)
@@ -67,16 +70,20 @@ def test_recorded_irq_through_selfdrived_and_controls_keeps_native_vetoes(full, 
       if fault == 'request':
         options.update(native_request_lat=False, native_request_long=False)
       axis, state, command = drive(tick, **options)
-    if fault == 'none':
-      assert axis.lateralActive and command.latActive, 'RECORDED_ELANTRA_IRQ_DIAGNOSTIC_REJECTED'
+    if fault == 'none' and not irq:
+      assert axis.lateralActive and command.latActive, 'HEALTHY_ELANTRA_AUTHORITY_REJECTED'
       assert log.OnroadEvent.EventName.controlsMismatch not in sd.events.names
       native = current_native(sd.sm, sd.CP, now_ns=stamp, axis_session_id=sd.aol_session_id)
-      assert native is not None and native.pandaInventory[0].faults == 4
-      assert list(sd.sm['pandaStates'][0].faults) == [log.PandaState.FaultType.interruptRateCan1]
+      assert native is not None and native.pandaInventory[0].faults == 0
+      assert list(sd.sm['pandaStates'][0].faults) == []
       assert not axis.longitudinalActive and not command.longActive
       assert state.enabled == full
     else:
-      assert not axis.lateralActive and not command.latActive
+      assert not axis.lateralActive and not command.latActive, 'ELANTRA_HARDWARE_FAULT_MUST_BLOCK'
+      if irq and fault == 'none':
+        assert log.OnroadEvent.EventName.controlsMismatch in sd.events.names
+        expected_faults = [log.PandaState.FaultType.interruptRateCan1] if fault_source in ('panda', 'both') else []
+        assert list(sd.sm['pandaStates'][0].faults) == expected_faults
       assert not axis.longitudinalActive and not command.longActive
     assert cp.to_dict() == before
 
@@ -84,7 +91,7 @@ def test_recorded_irq_through_selfdrived_and_controls_keeps_native_vetoes(full, 
 @pytest.mark.parametrize('name,value', tuple(log.PandaState.FaultType.schema.enumerants.items()))
 def test_other_and_mixed_faults_still_block(name, value):
   cp = recorded_cp()
-  expected = name != 'interruptRateCan1'
+  expected = True
   assert blocking_fault_mask(1 << value, cp) == expected
   assert blocking_fault_mask((1 << value) | 4, cp) == expected
   assert blocking_fault_list([value], cp) == expected
