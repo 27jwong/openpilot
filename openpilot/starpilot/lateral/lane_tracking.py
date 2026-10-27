@@ -14,6 +14,7 @@ class TrackingTarget:
 
 class SingleLineTracker:
   ACQUIRE_SECONDS = 0.20
+  DEFAULT_SPACING = 1.7
   MAX_SOURCE_GAP = 0.15
   WIDTH_MAX_AGE = 5.0
   WIDTH_MAX_DISTANCE = 75.0
@@ -153,7 +154,9 @@ class SingleLineTracker:
           self.acquired_at = self.clock
           self.pending = max(self.MIN_CLEARANCE, sorted(distances)[1])
         else:
-          self.spacing = self.pending
+          # Pending spacing checks acquisition stability. It must not make
+          # the model's existing lateral position the tracking objective.
+          self.spacing = self.DEFAULT_SPACING
       self.last_good_at, self.last_near, self.last_slope = self.clock, near, slope
       self.blocked = jump
       if self.spacing is None:
@@ -167,7 +170,8 @@ class SingleLineTracker:
       self.path = target_x, target_y
       target = self._target(lookahead, offset)
       model_y = self._at(position, lookahead)
-      if target.y is None or abs(target.y - model_y) > self.MAX_PATH_DISAGREEMENT:
+      # Allow for Float32 model-coordinate rounding at the disagreement bound.
+      if target.y is None or abs(target.y - model_y) > self.MAX_PATH_DISAGREEMENT + 1e-6:
         raise ValueError
       # An observed road edge vetoes a conflicting target. A distant edge is
       # not interpreted as the missing lane line or a lane-width measurement.

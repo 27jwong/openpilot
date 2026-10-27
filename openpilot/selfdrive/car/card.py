@@ -575,7 +575,11 @@ class Car:
     if self.slc_replay:
       pending = slc_physical.pending_confirmation(
         self.sm, now_ns, long_active=slc_long_active, after_ns=floor_ns)
-    self.update_cruise_speed(CS, pending)
+    approved = (slc_physical.state_current(self.sm, observation, self.slc_producer_session, now_ns)
+                if self.v_cruise_helper.toyota is not None and self.slc_control_enabled else None)
+    if approved is not None and int(approved.frameMonoTime) <= floor_ns:
+      approved = None
+    self.update_cruise_speed(CS, pending, approved=approved)
     if self.controller_cruise_sock is not None:
       for _ in range(8):
         request = messaging.recv_one_or_none(self.controller_cruise_sock)
@@ -813,6 +817,8 @@ class Car:
           command, state, observation, self.slc_producer_session, now_ns, previous_mps,
           long_active=slc_long_active,
           button_event=intervening_button)
+        if self.v_cruise_helper.toyota is not None:
+          applicable = applicable and self.v_cruise_helper.toyota.can_apply(float(command.targetMps))
         if applicable:
           self.v_cruise_helper.apply_slc_target(float(command.targetMps), self.is_metric)
         self.slc_receipts.append(('commandApplied' if applicable else 'commandRejected', command,
@@ -832,9 +838,10 @@ class Car:
 
     return CS, RD
 
-  def update_cruise_speed(self, CS, pending=None):
+  def update_cruise_speed(self, CS, pending=None, *, approved=None):
     self.v_cruise_helper.update_v_cruise(CS, self.sm['carControl'].enabled, self.is_metric, pending,
-                                       slc_enabled=getattr(self, 'slc_control_enabled', getattr(self, 'slc_replay', False)))
+                                       slc_enabled=getattr(self, 'slc_control_enabled', getattr(self, 'slc_replay', False)),
+                                       slc_approved=approved)
     if self.sm['carControl'].enabled and not self.CC_prev.enabled:
       # Initialization owns this edge; evaluate commands against its final speed.
       self.v_cruise_helper.initialize_v_cruise(self.CS_prev, self.experimental_mode,
@@ -1095,6 +1102,11 @@ class Car:
     if self.CP.brand == 'mazda':
       from openpilot.starpilot.car.mazda.dashboard import compose
       companion = compose(self.CP, self.CI.CS, CS, companion, car_state_stamp=int(cs_send.logMonoTime))
+    if self.v_cruise_helper.toyota is not None:
+      if companion is None:
+        companion = messaging.new_message('starpilotCarState', valid=bool(cs_send.valid), logMonoTime=int(cs_send.logMonoTime))
+      companion.starpilotCarState.sourceCarStateMonoTime = int(cs_send.logMonoTime)
+      self.v_cruise_helper.toyota.publish(companion.starpilotCarState.toyotaCruise)
     self.car_gps_publisher.update(self.CI.CS, self.pm, companion)
     self.pm.send('carState', cs_send)
     if getattr(self, 'learning_stamp_observer', None) is not None:

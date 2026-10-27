@@ -240,6 +240,13 @@ static uint8_t hyundai_canfd_angle_model = 0U;
 static uint8_t hyundai_canfd_carnival_consumed_counter = 0U;
 static uint8_t hyundai_canfd_carnival_source[16] = {0};
 
+// Standard CRUISE_BUTTONS sources use either 0..14 or 0..15. Only the
+// observed terminal rollover may omit 15; repeats and other gaps stay invalid.
+static bool hyundai_canfd_button_counter_follows(uint8_t previous, uint8_t current, uint8_t maximum) {
+  return (current == (uint8_t)((previous + 1U) & maximum)) ||
+         ((maximum == 0xFU) && (previous == 0xEU) && (current == 0U));
+}
+
 static void aol_ioniq6_enable_reset(void) {
   aol_ioniq6_enable_counter_seen = false;
   aol_ioniq6_enable_neutral = false;
@@ -589,7 +596,7 @@ static void hyundai_canfd_rx_hook(const CANPacket_t *msg) {
       const uint32_t now = microsecond_timer_get();
       const uint32_t elapsed = safety_get_ts_elapsed(now, aol_ioniq6_enable_ts);
       const bool fresh = aol_ioniq6_enable_counter_seen &&
-        (counter == ((aol_ioniq6_enable_counter + 1U) & 0xFU)) && (elapsed > 0U) && (elapsed <= 100000U);
+        hyundai_canfd_button_counter_follows(aol_ioniq6_enable_counter, counter, 0xFU) && (elapsed > 0U) && (elapsed <= 100000U);
       if (!fresh || main_button || GET_BIT(msg, 23U)) {
         aol_ioniq6_enable_pending = false;
         aol_ioniq6_enable_release = false;
@@ -626,7 +633,7 @@ static void hyundai_canfd_rx_hook(const CANPacket_t *msg) {
         const uint32_t sample_ts = microsecond_timer_get();
         const uint32_t elapsed = safety_get_ts_elapsed(sample_ts, aol_optional_release_sample_ts);
         const bool fresh = !aol_optional_release_counter_seen ||
-          (((uint8_t)((aol_optional_release_counter + 1U) & maximum) == counter) &&
+          (hyundai_canfd_button_counter_follows(aol_optional_release_counter, counter, maximum) &&
            (elapsed > 0U) && (elapsed <= 100000U));
         aol_optional_release_counter_seen = true;
         aol_optional_release_counter = counter;

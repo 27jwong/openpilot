@@ -408,7 +408,7 @@ class LongitudinalPlanner:
                    output_should_stop_mpc or cruise_should_stop or self.mpc.solution_status != 0 or
                    curve.effective_mps is not None or traffic_mode is not False))
     manual_model = self.accel_boost.update(sm, output_a_target_e2e, output_a_target_mpc, self.a_cruise)
-    output_a_target_e2e = manual_model + (encouraged_model - output_a_target_e2e)
+    output_a_target_e2e = max(manual_model, encouraged_model)
 
     candidates = [(output_a_target_mpc, self.mpc.source, output_should_stop_mpc),
                   (self.a_cruise, LongitudinalPlanSource.cruise, cruise_should_stop)]

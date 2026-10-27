@@ -280,7 +280,8 @@ class StarShellSession:
     self._wheel_personality = None
     self.conditional_actions: ConditionalUiActionOwner | None = None
     self.cruise_actions = CruiseActionPublisher()
-    self.favorites_owner = FavoritesOwner(ui_state.params, self._favorite_actions, self._favorite_authority, self._favorite_render_actions)
+    self.favorites_owner = FavoritesOwner(ui_state.params, self._favorite_actions, self._favorite_authority, self._favorite_render_actions,
+                                         current_action=lambda key: self._resolve_favorite_actions(frozenset((key,))).get(key))
     self.favorites = OnroadFavorites(self.fonts, self._favorite_request)
     self._favorite_snapshot = None
     self._favorite_data = None
@@ -616,9 +617,10 @@ class StarShellSession:
     else:
       return False
     if success:
-      self._favorite_snapshot = self.favorites_owner.snapshot()
+      include_options = request.kind != "activate"
+      self._favorite_snapshot = self.favorites_owner.snapshot(include_options=include_options)
       self._favorite_data = asdict(self._favorite_snapshot)
-      self._favorite_include_options = True
+      self._favorite_include_options = include_options
       self.favorites.data = self._favorite_data
       self._favorite_read_at = time.monotonic()
     else:

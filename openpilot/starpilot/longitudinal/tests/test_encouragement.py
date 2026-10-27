@@ -246,6 +246,38 @@ def test_native_planner_limits_and_immediate_withdrawal(case):
       assert current.output_should_stop == original.output_should_stop
 
 
+@pytest.mark.parametrize('factory,car', [(HondaInterface, HONDA.HONDA_CIVIC),
+                                       (HyundaiInterface, HYUNDAI.HYUNDAI_IONIQ_6),
+                                       (ToyotaInterface, TOYOTA.TOYOTA_RAV4_TSS2)])
+def test_native_planner_override_release_uses_higher_request_without_stacking(factory, car):
+  params = factory.get_non_essential_params(car)
+  params.openpilotLongitudinalControl = True
+  planner = LongitudinalPlanner(params, init_v=20.)
+  for tick in range(220):
+    sm, now = frame(tick)
+    planner.update(sm, now_ns=now)
+  assert planner.encouragement.boost == pytest.approx(MAX_BOOST)
+  for tick in range(220, 260):
+    sm, now = frame(tick)
+    sm['carState'].gasPressed = True
+    planner.update(sm, now_ns=now)
+    assert planner.encouragement.boost == 0.
+  assert planner.accel_boost.total_boost == pytest.approx(.05)
+  for tick in range(260, 480):
+    sm, now = frame(tick)
+    planner.update(sm, now_ns=now)
+    assert planner.mpc.solution_status == 0
+    assert planner.accel_boost.total_boost == pytest.approx(.05)
+    assert planner.output_a_target <= max(.05, planner.encouragement.boost) + 1e-6
+    assert planner.output_a_target <= planner.a_cruise + 1e-6
+  assert planner.encouragement.boost == pytest.approx(MAX_BOOST)
+  assert planner.output_a_target == pytest.approx(MAX_BOOST, abs=.01)
+  sm, now = frame(480)
+  sm['selfdriveState'].enabled = False
+  planner.update(sm, now_ns=now)
+  assert planner.accel_boost.total_boost == planner.encouragement.boost == 0.
+
+
 def test_native_planner_preserves_manual_override_input_and_boost():
   planner = LongitudinalPlanner(cp(), init_v=20.)
   for tick in range(120):

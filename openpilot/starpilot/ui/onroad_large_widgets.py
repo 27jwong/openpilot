@@ -64,7 +64,7 @@ class UnifiedSpeedWidget:
         draw_text(self.fonts, text, role, font_size, box.x + (box.width - width) / 2, y, color)
 
   def render(self, content: rl.Rectangle, state: OnroadState) -> None:
-    from openpilot.starpilot.ui.large_speed_geometry import GAP, WIDTH, PADDING, SOURCE_ROW_HEIGHT, card_height
+    from openpilot.starpilot.ui.large_speed_geometry import GAP, WIDTH, PADDING, SOURCE_ROW_HEIGHT, SOURCE_TOP, card_height
     from openpilot.starpilot.ui.onroad_customization import placement
     shown = resolve_unified_speed(state)
     if shown.mode == 'hidden':
@@ -84,11 +84,11 @@ class UnifiedSpeedWidget:
       while size > 72 and self.fonts.measure(shown.max_text, FontRole.SET_SPEED, size).width > 148:
         size -= 1
       draw_ink(self.fonts, shown.max_text, FontRole.SET_SPEED, size, x, rect.y + 51, text)
-    self.sign.render(state)
+    self.sign.render(state, defer_confirmation=True)
     if shown.mode == 'limit_only' and (bounds := speed_limit_bounds(Profile.LARGE, state)) is not None:
       draw_ink(self.fonts, shown.unit, FontRole.NORMAL, 24, bounds[2], bounds[3] - 32)
     if sources:
-      row = rl.Rectangle(rect.x, rect.y + height + (GAP if separate else 0), WIDTH, SOURCE_ROW_HEIGHT)
+      row = rl.Rectangle(rect.x, rect.y + max(height, SOURCE_TOP) + (GAP if separate else 0), WIDTH, SOURCE_ROW_HEIGHT)
       if separate:
         draw_control_card(row, fill=fill, border=border, border_width=1, roundness=.2)
       else:

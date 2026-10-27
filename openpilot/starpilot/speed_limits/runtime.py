@@ -10,7 +10,6 @@ from openpilot.selfdrive.car.cruise import V_CRUISE_MIN, V_CRUISE_MAX
 from openpilot.starpilot.speed_limits import acceptance as acc
 from openpilot.starpilot.speed_limits import action_arbitration as arb
 from openpilot.starpilot.speed_limits import composition as comp
-from openpilot.starpilot.speed_limits import lead_relaxation as lr
 from openpilot.starpilot.speed_limits import selection as sel
 from openpilot.starpilot.speed_limits import speed_domain as sd
 from openpilot.starpilot.speed_limits.runtime_settings import Settings
@@ -61,20 +60,6 @@ def dashboard_observation(evidence, *, car_fingerprint: str, session_id: str, no
                                      value=f"{session_id}:{producer_session}:{car_fingerprint}:{int(evidence.episode)}")
   return acc.Observation(acc.ObservationKind.VALID,
                          acc.Candidate(sel.Source.DASHBOARD.value, identity, float(evidence.speedMps)))
-
-
-def _lead(sm, now_ns: int) -> lr.LeadEvidence:
-  if not _fresh(sm, "radarState", now_ns):
-    return lr.LeadEvidence(lr.LeadKind.STALE if sm.logMonoTime.get("radarState", 0) else lr.LeadKind.UNKNOWN)
-  lead = sm["radarState"].leadOne
-  if not lead.present:
-    return lr.LeadEvidence(lr.LeadKind.VALID, False, False, 0.0, 0.0, 0.0)
-  if not all(_number(value, positive=(name == "distance")) for name, value in
-             (("distance", lead.dRel), ("speed", lead.vLeadK))):
-    return lr.LeadEvidence(lr.LeadKind.UNKNOWN)
-  if type(lead.aLeadK) not in (int, float) or not math.isfinite(lead.aLeadK):
-    return lr.LeadEvidence(lr.LeadKind.UNKNOWN)
-  return lr.LeadEvidence(lr.LeadKind.VALID, True, True, float(lead.dRel), float(lead.vLeadK), float(lead.aLeadK))
 
 
 def _authority(CP, sm, host_long: bool, lateral: bool, *, long_enabled: bool) -> acc.Authority:
@@ -159,6 +144,9 @@ class Runtime:
     self.command_card_producer = ''
     self.commanded_acceptance: acc.AcceptedLimit | None = None
     self.last_received: acc.Candidate | None = None
+    self.toyota_eligible = False
+    self.toyota_projection = None
+    self.commanded_generation = -1
 
   def reset(self) -> None:
     self.map_source.reset()
@@ -185,6 +173,8 @@ class Runtime:
     self.command_card_producer = ''
     self.commanded_acceptance = None
     self.last_received = None
+    self.toyota_projection = None
+    self.commanded_generation = -1
 
   def update_offsets(self, offsets: sd.OffsetSchedule) -> None:
     self.settings = replace(self.settings, offsets=offsets)
@@ -365,8 +355,7 @@ class Runtime:
     return comp.Frame(now_ns, self._observations(sm, CP, now_ns, now_boot_ns), self.settings.selection, authority,
                       self.settings.acceptance, self.settings.offsets,
                       sd.DomainStatus.VALID if car_fresh and selected_cluster is not None else sd.DomainStatus.STALE,
-                      ego, bool(car_state.gasPressed) if car_fresh else False,
-                      _lead(sm, now_ns), self.settings.lead_policy, host, action=action, adopt=adopt,
+                      ego, bool(car_state.gasPressed) if car_fresh else False, host, action=action, adopt=adopt,
                       classified_cruise=classified)
 
   def _action(self, request: Action | None, now_ns: int) -> tuple[acc.DriverAction | None, acc.AdoptRequest | None, int | None]:
@@ -394,6 +383,9 @@ class Runtime:
 
   def step(self, sm, CP, *, now_ns: int, now_boot_ns: int | None = None, request: Action | None = None,
            cruise_event: CruiseEvent | None = None) -> Output:
+    from openpilot.starpilot.speed_limits.toyota import eligible, projection
+    self.toyota_eligible = eligible(CP)
+    self.toyota_projection = projection(sm, now_ns) if self.toyota_eligible else None
     old_pending = self.state.acceptance.pending
     if self.command_status == 'issued' and now_ns > self.command_expiry_ns:
       self.command_status = 'expired'
@@ -439,6 +431,18 @@ class Runtime:
         result.state.override.persistent_selected_mps is not None):
       return None
     target = result.domain.context.effective_cluster_mps
+    if self.toyota_eligible:
+      row = self.toyota_projection
+      accepted = decision.state.accepted
+      if (row is None or row.status != 'ready' or row.sessionId != self.session_id or
+          int(row.acceptedMonoTime) != accepted.accepted_at_ns or
+          abs(float(row.approvedTargetMps) - target) > 0.02):
+        self.commanded_acceptance = None
+        self.command_status = ''
+        return None
+      if self.commanded_generation != result.state.control_generation:
+        self.commanded_acceptance = None
+      self.commanded_generation = result.state.control_generation
     selected_kph = float(sm['carState'].vCruise)
     if (not _number(target, positive=True) or not _number(selected_kph, positive=True) or
         selected_kph >= 255 or not V_CRUISE_MIN / 3.6 <= target <= V_CRUISE_MAX / 3.6):
@@ -520,6 +524,7 @@ class Runtime:
     accepted = result.state.acceptance.accepted
     if accepted is not None:
       state.hasAccepted = True
+      state.acceptedMonoTime = accepted.accepted_at_ns
       state.acceptedSpeedLimit = accepted.candidate.speed_mps
       state.acceptedSource = accepted.candidate.source
     if result.domain is not None and result.domain.context is not None:

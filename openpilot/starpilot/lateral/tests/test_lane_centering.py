@@ -477,6 +477,47 @@ class TestSingleBoundary(unittest.TestCase):
 
 
 class TestSingleLineTracking(unittest.TestCase):
+  def test_without_width_tracks_independent_spacing_in_both_directions(self):
+    from openpilot.starpilot.lateral.lane_tracking import SingleLineTracker
+    for missing_right, sign in ((True, 1), (False, -1)):
+      for distance in (1.45, 1.5, 1.55):
+        with self.subTest(missing_right=missing_right, distance=distance):
+          tracker = SingleLineTracker()
+          m = single(missing_right=missing_right, line=-distance, edge=10.)
+          for frame in range(8):
+            target = tracker.target(m, frame, 20., .05, 0.)
+          self.assertIsNone(tracker.width)
+          assert tracker.pending is not None and tracker.spacing is not None and target.y is not None
+          self.assertAlmostEqual(tracker.pending, distance)
+          self.assertAlmostEqual(tracker.spacing, 1.7)
+          self.assertFalse(target.blocked)
+          self.assertAlmostEqual(target.y, sign * (1.7 - distance))
+          raw = raw_correction(m, 20., 0., 0., _single_target=target.y)
+          assert raw is not None
+          self.assertGreater(sign * raw, 0.)
+
+  def test_observed_narrow_width_precedes_nominal_and_edge_still_vetoes(self):
+    from openpilot.starpilot.lateral.lane_tracking import SingleLineTracker
+    for known_width in (False, True):
+      with self.subTest(known_width=known_width):
+        tracker = SingleLineTracker()
+        if known_width:
+          tracker.target(model(left=-1.35, right=1.35), 0, 20., .05, 0.)
+        blocked = False
+        for frame in range(1, 10):
+          target = tracker.target(single(line=-1.35, edge=1.35), frame, 20., .05, 0.)
+          blocked |= target.blocked
+          if not known_width:
+            self.assertIsNone(target.y)
+        if known_width:
+          self.assertFalse(target.blocked)
+          assert tracker.spacing is not None and target.y is not None
+          self.assertAlmostEqual(tracker.spacing, 1.35)
+          self.assertAlmostEqual(target.y, 0.)
+        else:
+          self.assertTrue(blocked)
+          self.assertIsNone(target.y)
+
   def test_spacing_preference_cannot_bypass_current_line_geometry_or_path_uncertainty(self):
     m = single(line=-1.2, edge=10.)
     m.laneLines[1].x = XS[:10]
