@@ -15,7 +15,7 @@ GAP = 8
 SOURCE_ROW_HEIGHT = 76
 PADDING = 24
 
-LIMIT_RECTS = {'large': (272, 75, 148, 165), 'compact': (330, 20, 118, 132)}
+LIMIT_RECTS = {'large': (318, 75, 148, 165), 'compact': (330, 20, 118, 132)}
 ACTION_BOUNDS = {
   'large': ((112, ACTION_Y, 420, ACTION_Y + 80), (112, ACTION_Y + 88, 420, ACTION_Y + ACTION_HEIGHT)),
   'compact': ((146, 44, 330, 102), (146, 106, 330, 164)),

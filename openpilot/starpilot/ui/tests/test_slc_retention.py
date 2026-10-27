@@ -71,10 +71,11 @@ def test_live_offset_edits_keep_the_accepted_limit_and_native_ceiling(tmp_path, 
   session = runtime.session_id
   for milliseconds, offset in ((1000, 5), (2000, -5)):
     params.put('SLCOffsetSchedule', od.to_value(od.adopt_legacy(False, (0, 0, 0, offset, 0, 0, 0))), block=True)
-    actions, cruise = [object()], [object()]
+    receipt = object()
+    actions, cruise = [object()], [receipt]
     refreshed, changed = lifecycle.refresh(NOW + milliseconds * 1_000_000, pending_actions=actions, pending_cruise=cruise)
     assert changed and refreshed is runtime
-    assert not actions and not cruise
+    assert not actions and cruise == [receipt]
     output, _, target = drive.step(milliseconds, received=not source_gap)
     assert not output.result.errors
     assert runtime.session_id == session
@@ -340,8 +341,24 @@ def test_unchanged_map_speed_does_not_accept_new_identity_or_keep_old_prompt(tmp
   pending, _, _ = drive.step(150, limit=50, wayId=124)
   assert pending.message.slcState.hasPending
   recovered, _, target = drive.step(200)
-  assert target == pytest.approx(published_cruise_mph(45), rel=0, abs=1e-10) and recovered.message.slcState.hasPending
+  assert target == pytest.approx(published_cruise_mph(45), rel=0, abs=1e-10)
+  assert not recovered.message.slcState.hasPending and recovered.command is None
+  assert recovered.message.slcState.acceptedSpeedLimit == pytest.approx(45 * MPH)
+  assert recovered.message.slcState.decisionId != pending.message.slcState.decisionId
+  assert recovered.message.slcState.presentationId != pending.message.slcState.presentationId
   assert not drive.step(250)[0].result.errors
+
+
+def test_returned_map_limit_still_requires_confirmation_when_set_is_unaligned(tmp_path):
+  drive = RetentionDrive(tmp_path, confirm=True)
+  first, _, _ = drive.step(0)
+  pending, _, _ = drive.step(50, limit=50, wayId=124)
+  returned, _, target = drive.step(100)
+  assert first.message.slcState.hasPending and pending.message.slcState.hasPending
+  assert returned.message.slcState.hasPending and not returned.message.slcState.hasAccepted
+  assert returned.command is None and returned.result.acceptance.history_write is None
+  assert returned.message.slcState.decisionId != pending.message.slcState.decisionId
+  assert target == pytest.approx(published_cruise_mph(70, software_target=False), rel=0, abs=1e-10)
 
 
 def test_retention_respects_lower_max_secondary_source_and_reset(tmp_path):

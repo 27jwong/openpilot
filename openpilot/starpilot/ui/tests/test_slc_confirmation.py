@@ -136,6 +136,8 @@ def test_compact_driver_camera_has_no_hidden_confirmation_targets(reverse):
                     appearance=replace(current.appearance, camera_view=CameraViewChoice.AUTO if reverse else CameraViewChoice.DRIVER))
   assert not manual_slc_confirmation(Profile.COMPACT, current)
   assert not slc_controls(Profile.COMPACT, replace(current, slc_prompt_open=True))
-  touch = OnroadInput(lambda request: pytest.fail('Hidden confirmation emitted an action'), Profile.COMPACT)
+  def unexpected_action(_request):
+    raise AssertionError('Hidden confirmation emitted an action')
+  touch = OnroadInput(unexpected_action, Profile.COMPACT)
   touch.press(250, 90, current)
   assert not touch.claimed

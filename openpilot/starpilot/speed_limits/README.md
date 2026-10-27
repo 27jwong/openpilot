@@ -15,6 +15,18 @@ numeric limit does not start another decision. A decline remains effective acros
 a source gap or same-value provider change; a later different limit starts a new
 window, including when an earlier numeric limit returns.
 
+While StarPilot owns speed control, a proposed limit whose adjusted, rounded target
+already matches both current SET values is recorded without another confirmation
+or cruise command. The comparison uses the same mph/km/h rounding as Card, not
+actual traveling speed. A presented Accept or Decline takes priority, and a decline
+remains effective for that proposal. If SET reaches the target during a prompt,
+the prompt closes without changing speed. An earlier command must first settle,
+and SET must be observed after its receipt or expiry, before alignment is trusted.
+Received-limit memory still manages proposal changes and declined choices.
+An expired confirmation stays declined even if SET now matches. Changing only
+display units renews pending actions while preserving accepted limits, declines, manual
+overrides and the already applied SET.
+
 With Automatic adoption on, qualified new limits are adopted immediately.
 With it off, the stationary widget pulses purple twice slowly (700 ms
 each), rests for one second, pulses twice quickly (300 ms each), and rests for one

@@ -1,6 +1,7 @@
 """Native Toyota cruise prerequisites, owned beside Card's software SET."""
 
 import math
+from typing import cast
 
 from openpilot.selfdrive.car.cruise import ButtonType, SlcPendingConfirmation, V_CRUISE_UNSET, slc_target_kph
 
@@ -66,8 +67,9 @@ class ToyotaCruise:
       step = self.manual_step
       if step is not None:
         previous_kph, previous_cluster_kph, button, long_press = step
-        ready = self.capacity(self.requested[1])
-        helper.v_cruise_kph, helper.v_cruise_cluster_kph = self.requested if ready or button == 'decel' else (previous_kph, previous_cluster_kph)
+        requested = cast(tuple[float, float], self.requested)
+        ready = self.capacity(requested[1])
+        helper.v_cruise_kph, helper.v_cruise_cluster_kph = requested if ready or button == 'decel' else (previous_kph, previous_cluster_kph)
       helper.v_cruise_kph = min(helper.v_cruise_kph, self.native_kph)
       helper.v_cruise_cluster_kph = min(helper.v_cruise_cluster_kph, self.native_cluster_kph)
       if step is not None:

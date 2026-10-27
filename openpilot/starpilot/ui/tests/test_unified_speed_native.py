@@ -175,6 +175,7 @@ def test_wheel_cues_follow_confirmation_availability(profile, available, drawing
   assert [call.args[0] for call in calls] == ([True, False] if available else [])
   if available:
     bounds = speed_limit_bounds(profile, current)
+    assert bounds is not None
     assert all(call.args[2] == pytest.approx(bounds[1] + 135.5 * CONFIRMATION_SCALE[profile]) for call in calls)
     assert bounds[0] < calls[0].args[1] < calls[1].args[1] < bounds[2]
 
@@ -199,7 +200,9 @@ def test_sign_text_stays_centered_without_an_arrow(profile, vienna, reason, draw
     if reason in ('equal_speed', 'unknown_speed'):
       continue
     left, right = font.horizontal_ink(text, role, size)
-    assert abs(x + (left + right) / 2 - (389 if profile == Profile.COMPACT else 345.75)) <= .5
+    from openpilot.starpilot.ui.large_speed_geometry import LIMIT_RECTS, LARGE_SIGN_SCALE
+    center = LIMIT_RECTS[profile][0] + 59 * (1 if profile == Profile.COMPACT else LARGE_SIGN_SCALE)
+    assert abs(x + (left + right) / 2 - center) <= .5
 
 
 @pytest.mark.parametrize('profile', list(Profile))
@@ -302,6 +305,7 @@ def test_chooser_has_separate_tonal_actions_and_immediate_pressed_feedback(profi
   assert backgrounds[3] == (77, 46, 57, 255)
   bounds = speed_limit_bounds(profile, current)
   drawing['confirmation'].assert_called_once_with(bounds, opened=True)
+  assert bounds is not None
   x, y, right, bottom = bounds
   panel = rl.Rectangle(x, y, right - x, bottom - y)
   accept, _, reject, _ = [call.args[0] for call in drawing['draw_rectangle_rounded'].call_args_list]

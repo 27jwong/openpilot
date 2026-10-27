@@ -1,6 +1,7 @@
 """The latest limit, its attention animation and override mark on both screens."""
 
 import time
+from typing import cast
 
 import pyray as rl
 
@@ -41,16 +42,21 @@ def draw_ink(fonts, text, role, size, x, top, color=INK):
   return fonts.measure(text, role, size).width, ink_bottom - ink_top
 
 
-def draw_caption(fonts, label, x, top, color=MUTED, *, unit=None):
+def draw_caption(fonts, label, x, top, color=MUTED, *, unit=None, size=None, centered=False):
   large = fonts.profile == Profile.LARGE
-  width, height = draw_ink(fonts, label, FontRole.MEDIUM, 32 if large else 24, x, top, color)
+  label_size = size or (28 if large else 24)
+  unit_size, gap = (28, 12) if large else (20, 8)
+  if centered:
+    width = fonts.measure(label, FontRole.MEDIUM, label_size).width
+    if unit:
+      width += gap + fonts.measure(unit, FontRole.NORMAL, unit_size).width
+    x -= width / 2
+  width, height = draw_ink(fonts, label, FontRole.MEDIUM, label_size, x, top, color)
   if unit:
-    size = 28 if large else 20
-    unit_top, _ = fonts.vertical_ink(unit, FontRole.NORMAL, size)
+    unit_top, _ = fonts.vertical_ink(unit, FontRole.NORMAL, unit_size)
     # Exclude the p descender when aligning mph to the caption baseline.
-    _, baseline = fonts.vertical_ink('mh' if unit == 'mph' else unit, FontRole.NORMAL, size)
-    gap = 12 if large else 8
-    unit_width, _ = draw_ink(fonts, unit, FontRole.NORMAL, size, x + width + gap,
+    _, baseline = fonts.vertical_ink('mh' if unit == 'mph' else unit, FontRole.NORMAL, unit_size)
+    unit_width, _ = draw_ink(fonts, unit, FontRole.NORMAL, unit_size, x + width + gap,
                              top + height - (baseline - unit_top), color)
     width += gap + unit_width
   return width, height
@@ -156,8 +162,9 @@ class SpeedLimitWidget:
     number_top, number_bottom = self.fonts.vertical_ink(shown.posted_text, FontRole.BOLD, text_size(64))
     text(shown.posted_text, 64, start + nw / 2, 84 - (number_bottom - number_top) / scale / 2, white, FontRole.BOLD)
     if ow:
-      top, bottom = self.fonts.vertical_ink(shown.offset_text, FontRole.MEDIUM, text_size(32))
-      text(shown.offset_text, 32, start + nw + 10 + ow / 2, 84 - (bottom - top) / scale / 2, secondary)
+      offset_text = cast(str, shown.offset_text)
+      top, bottom = self.fonts.vertical_ink(offset_text, FontRole.MEDIUM, text_size(32))
+      text(offset_text, 32, start + nw + 10 + ow / 2, 84 - (bottom - top) / scale / 2, secondary)
     caption = ink_width('New Limit', 30, FontRole.SEMI_BOLD)
     cx = (width - caption - 10) / 2
     accent = rl.Color(214, 188, 240, 255)
@@ -204,27 +211,34 @@ class SpeedLimitWidget:
                  for px in (left, right) for py in (a, b))
 
     vienna = state.appearance.use_vienna_sign
+    large_steady = self.profile == Profile.LARGE and not vienna and not shown.pending
     color = rl.Color(0, 0, 0, 255) if vienna else white
     if vienna:
       self.shapes.circle(x + 59 * scale, top + 67 * scale, self.pulse.color(rl.Color(201, 34, 49, 255), now))
     else:
       self.shapes.outline(x + 59 * scale, top + 66 * scale, white)
 
-    left, right, a, b = ink(heading, FontRole.SEMI_BOLD, 18)
+    heading_size = 28 / self.text_scale if large_steady else 18
+    left, right, a, b = ink(heading, FontRole.SEMI_BOLD, heading_size)
+    if large_steady and right - left > 96:
+      heading_size *= 96 / (right - left)
+      left, right, a, b = ink(heading, FontRole.SEMI_BOLD, heading_size)
     heading_width = right - left
-    header_y = 47 if vienna else 26
+    header_y = 47 if vienna else 21 if large_steady else 26
     # The small arrow's visible ink is 12 x 16, with a six-pixel label gap.
     header_left = 59 - (heading_width + (18 if arrow_direction else 0)) / 2
-    centered(heading, FontRole.SEMI_BOLD, 18, header_y - (b - a) / 2, color, header_left + heading_width / 2)
+    heading_color = self.pulse.color(MUTED, now) if large_steady else color
+    centered(heading, FontRole.SEMI_BOLD, heading_size, header_y - (b - a) / 2, heading_color, header_left + heading_width / 2)
     if arrow_direction:
       self.shapes.arrow('compact', round(x + (header_left + heading_width + 12) * scale),
                         round(top + header_y * scale), arrow_direction, color)
 
-    size = 58 if vienna else 64
+    role = FontRole.SET_SPEED if large_steady else FontRole.BOLD
+    size = 77.92 / self.text_scale if large_steady else 58 if vienna else 64
     offset_size = 30 if vienna else 27
     number_center = (73 if shown.offset_text else 80) if vienna else (67 if shown.offset_text else 81)
     while True:
-      left, right, a, b = ink(shown.posted_text, FontRole.BOLD, size)
+      left, right, a, b = ink(shown.posted_text, role, size)
       width, height = right - left, b - a
       number_top = number_center - height / 2
       if vienna:
@@ -240,7 +254,7 @@ class SpeedLimitWidget:
       size *= .95
       if vienna:
         offset_size *= .95
-    number = centered(shown.posted_text, FontRole.BOLD, size, number_top, color)
+    number = centered(shown.posted_text, role, size, number_top, color)
     if shown.offset_text:
       if not vienna:
         left, right, a, b = ink(shown.offset_text, FontRole.MEDIUM, offset_size)
