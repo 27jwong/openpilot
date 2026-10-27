@@ -806,6 +806,35 @@ class LaneRuntimeTests(unittest.TestCase):
         self.assertEqual(candidate.lane_centering_applied, 0.)
         getattr(candidate.sm, flag)['selfdriveState'] = True
 
+  def test_actual_single_line_cold_start_moves_from_biased_path_and_clears_for_lane_change(self):
+    from openpilot.starpilot.lateral.tests.test_lane_centering import single
+    for missing_right, sign in ((True, 1), (False, -1)):
+      with self.subTest(missing_right=missing_right), OpenpilotPrefix(), \
+           mock.patch.dict(os.environ, {'AOL_REPLAY_RUNTIME': '0', 'REPLAY': '1'}), \
+           mock.patch('openpilot.selfdrive.controls.controlsd.messaging.PubMaster'):
+        params = Params()
+        publish_corolla_params(params)
+        params.put_bool('LaneCentering', True, block=True)
+        params.put('LaneCenteringE2EAuthority', 0., block=True)
+        candidate = Controls()
+        m = single(missing_right=missing_right, line=-1.5, edge=10.)
+        with mock.patch(f'{__name__}.model', return_value=m):
+          for tick in range(100):
+            feed(candidate, 1_000_000_000 + tick * 10_000_000, tick)
+            candidate.state_control()
+          self.assertGreater(sign * candidate.last_lane_centering_result.correction, 0.)
+          self.assertGreater(sign * candidate.lane_centering_applied, 0.)
+          self.assertIsNone(candidate.lane_centering_controller._tracker.width)
+          assert candidate.lane_centering_controller._tracker.spacing is not None
+          self.assertAlmostEqual(candidate.lane_centering_controller._tracker.spacing, 1.7)
+          m.meta.laneChangeState = 'laneChangeStarting'
+          feed(candidate, 2_000_000_000, 100)
+          candidate.state_control()
+          self.assertEqual(candidate.last_lane_centering_result.reason, 'lane_change')
+          self.assertEqual(candidate.lane_centering_applied, 0.)
+          self.assertEqual(candidate.lane_centering_controller._correction, 0.)
+          self.assertIsNone(candidate.lane_centering_controller._tracker.path)
+
 
   def test_ordinary_centering_and_explicit_prediction_on_close_observed_edge(self):
     from opendbc.car.hyundai.tests.test_lane_body import identity
