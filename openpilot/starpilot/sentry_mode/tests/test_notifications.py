@@ -319,9 +319,11 @@ def test_app_subscription_dispatch_redaction_and_expired_removal(tmp_path):
   clock = [100.]
   owner = NotificationOwner(tmp_path / 'notifications', store(), clock=lambda: clock[0], transport=lambda *args: calls.append(args) or 410)
   try:
-    snapshot = owner.action({'action': 'appSubscribe', 'token': 'private-fcm-token', 'appId': 'link.firestar.galaxy', 'label': 'Phone'})
+    snapshot = owner.action({'action': 'appSubscribe', 'token': 'private-fcm-token', 'appId': 'com.starpilot.galaxy', 'label': 'Phone'})
     sub_id = snapshot['appSubscriptions'][0]['id']
     assert len(sub_id) == 12 and 'private-fcm-token' not in json.dumps(snapshot)
+    assert not snapshot['appPushAvailable']
+    owner.action({'action': 'configure', 'channel': 'appPush', 'enabled': True, 'url': 'https://relay.example', 'token': ''})
     with pytest.raises(LookupError):
       owner.action({'action': 'test', 'target': 'app', 'id': 'missing'})
     owner.action({'action': 'test', 'target': 'app', 'id': sub_id})
@@ -338,7 +340,8 @@ def test_app_success_dedupe_selfie_and_migration(tmp_path):
   events = []
   root = tmp_path / 'notifications'
   owner = NotificationOwner(root, store(events), clock=lambda: clock[0], transport=lambda *args: calls.append(args) or 200)
-  owner.action({'action': 'appSubscribe', 'token': 'token', 'appId': 'link.firestar.companion', 'label': 'Phone'})
+  owner.action({'action': 'appSubscribe', 'token': 'token', 'appId': 'com.starpilot.galaxy', 'label': 'Phone'})
+  owner.action({'action': 'configure', 'channel': 'appPush', 'enabled': True, 'url': 'https://relay.example', 'token': ''})
   events.extend([{'eventId': 'a' * 32, 'kind': 'selfie', 'wallTimeNs': int(101e9)}, {'eventId': 'b' * 32, 'kind': 'warning', 'wallTimeNs': int(101e9)}])
   clock[0] = 102.
   owner.tick(); owner.tick()
@@ -354,6 +357,20 @@ def test_app_success_dedupe_selfie_and_migration(tmp_path):
   migrated = NotificationOwner(root, store())
   assert migrated.available and migrated.snapshot()['appSubscriptions'] == []
   migrated.close()
+
+
+def test_webhook_job_survives_restart_with_empty_subscription_id(tmp_path):
+  root = tmp_path / 'notifications'
+  owner = NotificationOwner(root, store())
+  configure(owner, 'webhook')
+  owner.action({'action': 'test', 'channel': 'webhook'})
+  owner.close()
+  reopened = NotificationOwner(root, store())
+  try:
+    assert reopened.available
+    assert reopened.snapshot()['channels']['webhook']['pending'] == 1
+  finally:
+    reopened.close()
 
 
 def test_ios_bundle_id_can_subscribe(tmp_path):

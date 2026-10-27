@@ -781,7 +781,7 @@ def make_server(*, port=8082, host='127.0.0.1', monitor=None, owner=None, crashe
         token = quote(f"{record['slug']}:{record['session']}", safe='')
         if path.endswith('/qr.svg'):
           from openpilot.common.qrcode import _Qr, _capacity
-          raw = ('starpilot-remote://add?key=' + quote(token, safe='')).encode()
+          raw = ('starpilot-remote://add?key=' + token).encode()
           version = next(version for version in range(1, 21) if 4 + 8 + len(raw) * 8 <= _capacity(version) * 8)
           matrix = _Qr(version, raw).modules
           size = len(matrix) + 8

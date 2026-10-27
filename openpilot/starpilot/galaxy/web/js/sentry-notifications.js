@@ -61,7 +61,7 @@ export const SentryNotifications = {
   components: { GxNotice },
   name: "SentryNotifications",
   props: { mode: { type: String, required: true }, unauthorized: { type: Function, required: true } },
-  data: () => ({ nativePush: !!window.StarPilotApp?.sentryPush, pushState: {}, testPoll: null, channels, labels, notifications: null, notificationBusy: false, notificationError: "",
+  data: () => ({ nativePush: !!window.StarPilotApp?.sentryPush, pushState: {}, testPoll: null, relayUrl: '', channels, labels, notifications: null, notificationBusy: false, notificationError: "",
     drafts: Object.fromEntries(channels.map(name => [name, { url: "", token: "" }])) }),
   created() { this.client = new NotificationClient({ publish: update => Object.assign(this.$data, update), unauthorized: this.unauthorized }) },
   mounted() {
@@ -83,6 +83,9 @@ export const SentryNotifications = {
     removePhone(id) { return this.client.run({ action: 'appUnsubscribe', id }) },
     simulate() { return this.client.run({ action: 'simulate' }) },
     canSimulate() { return !!window.StarPilotApp || location.protocol === 'http:' },
+    async saveRelay() {
+      if (await this.client.run({ action: 'configure', channel: 'appPush', enabled: true, url: this.relayUrl, token: '' })) this.relayUrl = ''
+    },
     start() {
       clearInterval(this.poll)
       this.refreshPush()
@@ -132,13 +135,15 @@ export const SentryNotifications = {
         <GxNotice tone="danger" v-if="notifications?.queueFull">The notification queue is full. Some events could not be queued.</GxNotice>
         <template v-if="notifications">
           <p class="gx-note">{{ notifications.deliverySemantics }}</p>
-          <section v-if="nativePush || notifications.appSubscriptions?.length" class="gx-card gx-panel gx-stack">
-            <h3>This phone (Galaxy app)</h3>
-            <button v-if="nativePush" class="gx-btn" @click="togglePhone">{{ pushState.enabled ? 'Disable phone alerts' : 'Enable phone alerts' }}</button>
-            <button v-if="pushState.registered && pushState.id" class="gx-btn" @click="testPhone(pushState.id)">Send test to this phone</button>
-            <p v-if="!notifications.appPushAvailable" class="gx-note">Push not set up — the app will pick up real alerts by polling.</p>
+          <section class="gx-card gx-panel gx-stack">
+            <h3>Galaxy app phones</h3>
+            <label>HTTPS push relay URL <input v-model="relayUrl" class="gx-field" type="password" autocomplete="off" placeholder="Leave blank to keep saved URL"></label>
+            <button type="button" class="gx-btn gx-btn--tonal" @click="saveRelay">Save push relay</button>
+            <p v-if="!notifications.appPushAvailable" class="gx-note">Configure a push relay to deliver phone alerts.</p>
+            <button v-if="nativePush" type="button" class="gx-btn" :disabled="!notifications.appPushAvailable" @click="togglePhone">{{ pushState.enabled ? 'Disable phone alerts' : 'Enable phone alerts' }}</button>
+            <button v-if="notifications.appPushAvailable && pushState.registered && pushState.id" type="button" class="gx-btn" @click="testPhone(pushState.id)">Send test to this phone</button>
             <p v-for="phone in (notifications.appSubscriptions || [])" :key="phone.id">{{ phone.label }} · {{ phone.lastResult || 'Not tested' }} · {{ phone.lastAt ? new Date(phone.lastAt * 1000).toLocaleString() : '' }}
-              <button class="gx-btn" @click="testPhone(phone.id)">Test</button><button class="gx-btn" @click="removePhone(phone.id)">Remove</button>
+              <button type="button" class="gx-btn" :disabled="!notifications.appPushAvailable" @click="testPhone(phone.id)">Test</button><button type="button" class="gx-btn" @click="removePhone(phone.id)">Remove</button>
             </p>
             <p v-for="phone in (notifications.removedAppSubscriptions || [])" :key="phone.id">{{ phone.lastResult }}</p>
             <button v-if="canSimulate()" class="gx-btn" @click="simulate">Simulate event</button>

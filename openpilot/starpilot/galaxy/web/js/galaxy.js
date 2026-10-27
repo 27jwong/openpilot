@@ -1,7 +1,7 @@
 import { GxState } from "./state.js"
 import { GxNotice } from "./notice.js"
 import { requestJson } from "./startup.js"
-import { InstallApp, isIosDevice } from "./install-app.js"
+import { ANDROID_BETA_URL, InstallApp, isIosDevice } from "./install-app.js"
 import { GalaxyCompanion, newerCompanionVersion } from "./companion.js"
 import { GalaxyHotspot } from "./hotspot.js"
 import { LocalAccess } from "./local-access.js"
@@ -15,7 +15,7 @@ export const GalaxyPage = {
   components: { GxState, GxNotice, BluetoothNotice, InstallApp, GalaxyHotspot, GalaxyCompanion, LocalAccess },
   props: { mode: { type: String, required: true }, unauthorized: { type: Function, required: true } },
   data: () => ({ loading: true, paired: false, url: "", tunnelClientAvailable: false, legacyPassword: false,
-    appKey: '', keyVisible: false, legacyPairingAvailable: false, password: "", busy: false, error: "", companionStatus: null,
+    appKey: '', keyVisible: false, betaUrl: ANDROID_BETA_URL, legacyPairingAvailable: false, password: "", busy: false, error: "", companionStatus: null,
     bluetooth: bluetoothConnection(), nativeVersion: window.StarPilotApp?.version?.() || '', dismissedUpdateVersion: dismissedUpdate(),
     ios: isIosDevice() }),
   computed: {
@@ -33,7 +33,8 @@ export const GalaxyPage = {
   mounted() { this.load() },
   methods: {
     async showAppKey() {
-      try { const data = await this.request('./api/galaxy/session'); this.appKey = data.paired ? decodeURIComponent(data.sessionToken) : ''; this.keyVisible = !!this.appKey }
+      const url = this.url
+      try { const data = await this.request('./api/galaxy/session'); if (this.url !== url || !this.paired) return; this.appKey = data.paired ? decodeURIComponent(data.sessionToken) : ''; this.keyVisible = !!this.appKey }
       catch (error) { this.error = error.message }
     },
     async copyAppKey() {
@@ -73,6 +74,8 @@ export const GalaxyPage = {
         const data = await this.request("./api/galaxy/pair", { password: this.password })
         this.paired = data.paired
         this.url = data.url
+        this.appKey = ''
+        this.keyVisible = false
         this.password = ""
       } catch (error) { this.error = error.message }
       finally { this.busy = false }
@@ -85,6 +88,8 @@ export const GalaxyPage = {
         await this.request("./api/galaxy/unpair", {})
         this.paired = false
         this.url = ""
+        this.appKey = ''
+        this.keyVisible = false
       } catch (error) { this.error = error.message }
       finally { this.busy = false }
     },
@@ -100,7 +105,7 @@ export const GalaxyPage = {
       <GxNotice v-else-if="showAppUpdate && !ios" tone="warn" title="Android app update available">
         Version {{ availableAppVersion }} is available. Installed: {{ installedAppVersion }}.
         <template #actions><button v-if="nativeInstallerAvailable" type="button" class="gx-btn" @click="installAppUpdate">Update app</button>
-          <a v-else class="gx-btn" href="https://groups.google.com/g/galaxy-starpilot-android-beta" target="_blank" rel="noopener">Update app</a>
+          <a v-else class="gx-btn" :href="betaUrl" target="_blank" rel="noopener">Update app</a>
           <button type="button" class="gx-btn gx-btn--tonal" aria-label="Dismiss app update notice" @click="dismissAppUpdate">Dismiss</button></template>
       </GxNotice>
       <GxState v-if="mode !== 'local'">Connect to your comma to set up remote access.</GxState>

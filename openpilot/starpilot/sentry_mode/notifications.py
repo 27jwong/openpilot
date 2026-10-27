@@ -25,7 +25,7 @@ from openpilot.starpilot.sentry_mode import web_push
 
 CHANNELS = ('webPush', 'discord', 'webhook', 'ntfy', 'appPush')
 APP_PUSH_RELAY_URL = ''
-APP_IDS = ('link.firestar.companion', 'link.firestar.galaxy', 'link.galaxy.bluetooth.natehuby76')
+APP_IDS = ('com.starpilot.galaxy', 'link.firestar.companion', 'link.galaxy.bluetooth.natehuby76')
 MAX_STATE_BYTES = 1024 * 1024
 MAX_JOBS = 512
 MAX_AGE = 86400
@@ -192,7 +192,8 @@ class NotificationOwner:
           type(key) is not str or len(key) != 64 or type(job['eventId']) is not str or ID.fullmatch(job['eventId']) is None or
           job['kind'] not in ('warning', 'alarm', 'test') or job['channel'] not in CHANNELS or
           type(job['generation']) is not str or ID.fullmatch(job['generation']) is None or
-          (type(job['subscriptionId']) is not str or (job['subscriptionId'] and re.fullmatch(r'[0-9a-f]{12}' if job['channel'] == 'appPush' else r'[0-9a-f]{32}', job['subscriptionId']) is None)) or
+          (type(job['subscriptionId']) is not str or (re.fullmatch(r'[0-9a-f]{12}' if job['channel'] == 'appPush' else
+                                                                  r'[0-9a-f]{32}' if job['channel'] == 'webPush' else r'', job['subscriptionId']) is None)) or
           type(job['attempts']) is not int or not 0 <= job['attempts'] <= MAX_ATTEMPTS or
           job['state'] not in ('queued', 'sending', 'sent', 'failed', 'cancelled') or
           job['error'] not in ('', 'http', 'expired', 'timeout', 'transport', 'delivery_unknown', 'stale') or
@@ -237,7 +238,7 @@ class NotificationOwner:
                 'deliverySemantics': 'Retries may repeat delivery after an interrupted remote response.'}
       result['appSubscriptions'] = [{key: sub[key] for key in ('id', 'label', 'appId', 'addedAt', 'lastResult', 'lastAt')} for sub in self.state['appSubscriptions']]
       result['removedAppSubscriptions'] = [{'id': job['subscriptionId'], 'lastResult': 'Phone unregistered — removed', 'lastAt': job['next']} for job in jobs.values() if job['channel'] == 'appPush' and job['error'] == 'expired'][-8:]
-      result['appPushAvailable'] = bool(self.state['channels']['appPush']['url'] or APP_PUSH_RELAY_URL)
+      result['appPushAvailable'] = self.state['channels']['appPush']['enabled'] and bool(self.state['channels']['appPush']['url'] or APP_PUSH_RELAY_URL)
       for name, cfg in self.state['channels'].items():
         relevant = [j for j in jobs.values() if j['channel'] == name and j['generation'] == cfg['generation']]
         latest = max(relevant, key=lambda j: j['created'], default=None)
@@ -281,7 +282,7 @@ class NotificationOwner:
         # Empty fields preserve configured credentials; explicit disable does not delete them.
         url = url or old['url']
         token = payload['token'] or old['token']
-        if payload['enabled'] and name not in ('webPush', 'appPush') and not url:
+        if payload['enabled'] and name != 'webPush' and not url:
           raise ValueError('Enter a notification URL')
         self.state['channels'][name] = {'enabled': payload['enabled'], 'url': url, 'token': token,
                                         'generation': uuid.uuid4().hex, 'since': now}
@@ -319,7 +320,8 @@ class NotificationOwner:
       elif action == 'appSubscribe':
         if (set(payload) != {'action', 'token', 'appId', 'label'} or type(payload['token']) is not str or
             not 1 <= len(payload['token']) <= 4096 or any(ord(c) <= 32 for c in payload['token']) or
-            payload['appId'] not in APP_IDS or type(payload['label']) is not str or len(payload['label']) > 64):
+            type(payload['appId']) is not str or payload['appId'] not in APP_IDS or
+            type(payload['label']) is not str or len(payload['label']) > 64):
           raise ValueError('Invalid app subscription')
         current = self.state['appSubscriptions']
         existing = next((sub for sub in current if sub['token'] == payload['token']), None)
@@ -332,8 +334,7 @@ class NotificationOwner:
         else:
           raise ValueError('Remove a phone before adding another')
         cfg = self.state['channels']['appPush']
-        cfg['enabled'] = True
-        cfg['url'] = cfg['url'] or APP_PUSH_RELAY_URL
+        cfg['enabled'] = bool(cfg['url'] or APP_PUSH_RELAY_URL)
       elif action == 'appUnsubscribe':
         if set(payload) not in ({'action', 'token'}, {'action', 'id'}):
           raise ValueError('Choose a phone subscription')

@@ -33,7 +33,7 @@ class NotificationHTTPTests(unittest.TestCase):
         return result
       try:
         cookie = request()[2]['Set-Cookie'].split(';', 1)[0]
-        code, result, _ = request({'action': 'appSubscribe', 'token': 'test-token', 'appId': 'link.firestar.galaxy', 'label': 'Phone'}, cookie)
+        code, result, _ = request({'action': 'appSubscribe', 'token': 'test-token', 'appId': 'com.starpilot.galaxy', 'label': 'Phone'}, cookie)
         self.assertEqual(code, 200)
         self.assertNotIn('test-token', json.dumps(result))
         self.assertEqual(request({'action': 'test', 'target': 'app', 'id': 'missing'}, cookie)[0], 404)

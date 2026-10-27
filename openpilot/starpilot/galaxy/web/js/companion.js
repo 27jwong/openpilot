@@ -1,6 +1,7 @@
 import { requestJson } from './startup.js'
 import { GxNotice } from './notice.js'
 import { BluetoothNotice, bluetoothConnection } from './bluetooth-notice.js'
+import { ANDROID_BETA_URL } from './install-app.js'
 
 export function newerCompanionVersion(available, installed) {
   const parts = version => typeof version === 'string' && /^\d+(?:\.\d+){1,3}$/.test(version) ? version.split('.').map(Number) : []
@@ -23,7 +24,7 @@ export const GalaxyCompanion = {
   components: { GxNotice, BluetoothNotice },
   emits: ['status'],
   props: { mode: String, unauthorized: Function },
-  data: () => ({ status: null, error: '', native: !!window.StarPilotApp?.uplinkState, sharing: false, autoStart: false,
+  data: () => ({ status: null, error: '', betaUrl: ANDROID_BETA_URL, native: !!window.StarPilotApp?.uplinkState, sharing: false, autoStart: false,
     bluetooth: bluetoothConnection(), nativeBytes: 0, busy: false, generation: 0, alive: false }),
   computed: { windowAutoStart() { return !!window.StarPilotApp?.setAutoStart } },
   mounted() { this.start() },
@@ -87,7 +88,7 @@ export const GalaxyCompanion = {
     <p v-if="native"><button class="gx-btn gx-btn--tonal" @click="connectionOptions">Bluetooth, Galaxy Wi-Fi or LAN</button></p>
     <BluetoothNotice v-if="bluetooth" feature="Media transfers and phone internet">Phone internet requires the Galaxy hotspot. Settings and small requests remain available.</BluetoothNotice>
     <template v-if="!native"><p>Join the Android beta on Google Groups to get the app, then join TheGalaxy Wi-Fi.</p>
-      <a class="gx-btn" href="https://groups.google.com/g/galaxy-starpilot-android-beta" target="_blank" rel="noopener">Join the Android beta</a>
+      <a class="gx-btn" :href="betaUrl" target="_blank" rel="noopener">Join the Android beta</a>
     </template>
     <template v-if="status && mode === 'local'"><p>Status: <strong>{{ status.state }}</strong> {{ status.reason }} · {{ ((native ? nativeBytes : status.bytes) / 1048576).toFixed(1) }} MB today</p>
     </template><GxNotice v-if="error" tone="danger">{{ error }}</GxNotice>
