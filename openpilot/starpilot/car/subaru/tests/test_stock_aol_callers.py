@@ -192,7 +192,7 @@ def test_actual_full_engage_brake_reverse_temporary_recovery_mainoff(candidate, 
         row = {
           'tick': tick,
           'elapsed': elapsed,
-          'clearReason': card.aol_card_intent.latch_clear_reason,
+          'clearReason': card.aol_card_intent.latch_clear_reason if card.aol_card_intent is not None else None,
           'hardStopOrder': hard_order if hard_stop_receipt else None,
           'intent': bool(intent and intent.allowedLatch),
           'armed': bool(intent and intent.lateralArmed),
