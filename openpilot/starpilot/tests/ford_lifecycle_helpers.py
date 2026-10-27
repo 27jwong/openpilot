@@ -205,6 +205,8 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
       local.setenv('SIMULATION', '0')
       sd, controls, drive = case._authority_callers(False, cp=host.CP.as_reader().as_builder(), genuine_events=True)
       assert sd.CP.to_dict() == controls.CP.to_dict() == host.CP.to_dict()
+      from openpilot.starpilot.aol.intent import read_settings
+      sd.aol_settings = read_settings(host.params)
       local.setattr(card_module, 'REPLAY', False)
       local.setattr(card_module.time, 'monotonic_ns', lambda: now[0])
       local.setattr(card_module.time, 'clock_gettime_ns', lambda clock: now[0])
@@ -288,7 +290,7 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
             fields['CcStat_D_Actl'] = 0
           if scenario == 'route45' and refusal == 'cancel' and name == 'Steering_Data_FD1':
             fields['CcAslButtnCnclPress'] = 1
-          if scenario == 'route49' and name == 'Steering_Data_FD1':
+          if scenario in ('route49', 'cancel-native-cadence') and name == 'Steering_Data_FD1':
             fields['CcAslButtnCnclResPress'] = int(cancel)
           if scenario in ('route45', 'route49', 'route22') and name == 'EPAS_INFO':
             fields['SteeringColumnTorque'] = 2 if steering else 0
@@ -396,7 +398,7 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
         # Match pandad's 10Hz native publication, including a pedal-first USB read.
         # Values are actual native results; retained messages keep their stamps.
         if getattr(monkeypatch, 'ford_native_10hz', False):
-          if not delayed_native or steps % 10 == 0 or brake and not permission & 2 and delayed_native.get('permission', 3) & 2:
+          if not delayed_native or steps % 10 == 0 or (brake or cancel) and not permission & 2 and delayed_native.get('permission', 3) & 2:
             delayed_native.update(wire=wire.as_reader(), panda=panda.as_reader(), permission=permission)
           wire_message, panda_message = delayed_native['wire'], delayed_native['panda']
         else:
@@ -739,6 +741,23 @@ def run_actual_producer(ford_joined, monkeypatch, *, scenario='reverse', reengag
         if delivery != 'paired':
           assert route45_mixed[0]
         joined.route45_trace = route45_trace
+        return
+      if scenario == 'cancel-native-cadence':
+        for _ in range(41):
+          state, axis, sd_state, command = step(engaged=True)
+        assert command.latActive and host.aol_card_intent.allowed_latch
+        for _ in range(12):
+          state, axis, sd_state, command = step(engaged=True, cancel=True)
+          assert host.aol_card_intent.allowed_latch, (host.aol_card_intent.latch_clear_reason, transition_trace[-12:])
+          assert command.latActive
+          if not joined.last_permission & 2:
+            assert not command.longActive
+        for _ in range(35):
+          state, axis, sd_state, command = step()
+          assert host.aol_card_intent.allowed_latch and command.latActive and not command.longActive, transition_trace[-12:]
+        for _ in range(30):
+          state, axis, sd_state, command = step(main_off=True)
+        assert not host.aol_card_intent.allowed_latch and not command.latActive and not command.longActive
         return
       if scenario == 'brake-native-cadence':
         for _ in range(41):
