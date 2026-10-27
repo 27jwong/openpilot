@@ -183,7 +183,7 @@ class CarController(CarControllerBase):
       demanded = self.classic_lateral.update(CC, CS, actuators) if self.classic_extended_announced or self.generic_canfd else FordLateralResult()
       bound = generic_canfd_bounded_command if self.generic_canfd else classic_bounded_command
       lateral = bound(self.classic_lateral, demanded, previous, CS.out.vEgoRaw,
-                                         -CS.out.yawRate / max(CS.out.vEgoRaw, 0.1))
+                                         self.classic_lateral._current_curvature(CS))
       self.classic_lateral_demand = demanded
       self.apply_curvature_last = lateral.curvature
       if self.generic_canfd:
@@ -209,7 +209,7 @@ class CarController(CarControllerBase):
       previous = self.new_port_curvature.curvature_last
       demanded = self.new_port_curvature.update(CC, CS, actuators)
       lateral = new_port_bounded_command(self.new_port_curvature, demanded, previous, CS.out.vEgoRaw,
-                                        -CS.out.yawRate / max(CS.out.vEgoRaw, 0.1))
+                                        self.new_port_curvature._current_curvature(CS))
       self.new_port_curvature_demand = demanded
       self.apply_curvature_last = lateral.curvature
       if self.CP.flags & FordFlags.CANFD:

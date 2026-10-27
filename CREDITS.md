@@ -33,3 +33,7 @@ Spotify's Bluetooth output binds the comma's BlueALSA A2DP source to the selecte
 ## Tesla Pre-AP pedal control
 
 The Pre-AP configuration, pedal codec/feedback, VirtualDAS feedforward table, grade compensation, torque-zero estimator and vehicle-specific gains preserve firestar5683's intentional Dom work, including `7837a3c1aab`, `aed0b7fdb9e9` and pinned `b220a37f4bd119e402225a7aa16a7cd84878d0af`. Original author attribution: firestar5683 <168790843+firestar5683@users.noreply.github.com>. Startup/calibration ownership, current upstream button/PID interfaces and native command bounds are adapted to the current StarPilot architecture; the old permissive native gateway is not transplanted. Existing source/license notices remain intact.
+
+## Ford optional pinion measurement
+
+The default-off Use Pinion Yaw Sensor measurement option is adapted from jrneulight’s BluePilot PR #145 (https://github.com/BluePilotDev/bluepilot/pull/145), merged as `fe5b019568c8c13fb894dc6d8d779d60985051a8`. Its per-platform geometry, native pinion measurement, integrity requirements and host vehicle-model compensation are retained. StarPilot adapts the option to its existing exact safety-profile word, modern curvature checks, AOL authority and Galaxy/native settings; the upstream maintainers do not maintain this integration. Existing upstream copyright and license notices remain in THIRD_PARTY_NOTICES.md.

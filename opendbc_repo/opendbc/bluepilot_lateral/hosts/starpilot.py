@@ -4,6 +4,7 @@ Only exact final CP words derived from the existing five classic/six CANFD
 extended profiles can select angle. Combined AOL retains its original Ford profile identity.
 """
 from opendbc.car import structs
+from opendbc.car.ford.pinion import base_word, configured, MASK as PINION_MASK
 from opendbc.car.ford.values import CAR, FordFlags
 from opendbc.bluepilot_lateral.core.angle import AngleController, Inputs
 from opendbc.bluepilot_lateral.core.trim import LaneGeometry
@@ -39,7 +40,9 @@ def mode_word(cp, *, selected):
     expected = original | (256 if manual else 0) | (ANGLE_FLAG if selected else 0)
   else:
     expected = ANGLE_FLAG + (2 if fd else 0) + long if selected else original
-  return expected if safety.safetyModel == structs.CarParams.SafetyModel.ford and safety.safetyParam == expected else None
+  valid = (safety.safetyModel == structs.CarParams.SafetyModel.ford and base_word(safety.safetyParam) == expected and
+           (safety.safetyParam == expected or configured(cp)))
+  return expected if valid else None
 
 
 def supported(cp):
@@ -58,7 +61,8 @@ def select(cp, raw):
   if cp.alternativeExperience == 32:
     cp.safetyConfigs[-1].safetyParam |= ANGLE_FLAG
   else:
-    cp.safetyConfigs[-1].safetyParam = ANGLE_FLAG + (2 if cp.flags & FordFlags.CANFD else 0) + int(cp.openpilotLongitudinalControl)
+    metadata = cp.safetyConfigs[-1].safetyParam & PINION_MASK
+    cp.safetyConfigs[-1].safetyParam = (ANGLE_FLAG + (2 if cp.flags & FordFlags.CANFD else 0) + int(cp.openpilotLongitudinalControl)) | metadata
   cp.steerActuatorDelay = 0.22
   return True
 
@@ -86,6 +90,8 @@ class Host:
       raise ValueError("BluePilot angle requires an exact admitted Ford safety word")
     low, high = (0.95, 0.95) if cp.carFingerprint in TRUCKS else ((1.0, 1.05) if cp.carFingerprint in CANFD else (1.0, 1.15))
     self.cp = cp
+    from opendbc.car.ford.pinion import Measurement
+    self.measurement = Measurement(cp)
     self.controller = AngleController(low_gain=low, high_gain=high)
     self.inputs = None
     self.steering_rejected = False
@@ -93,6 +99,7 @@ class Host:
   def update(self, CC, CS):
     if self.inputs is not None:
       self.inputs.update()
+      self.measurement.update_parameters(getattr(self.inputs, "vehicle_parameters", None))
     snapshot = self.inputs.lateral_snapshot(CS.out.vEgoRaw, angle=True) if self.inputs is not None else None
     model, times, delay, _ = snapshot if snapshot is not None else (None, (), 0.15, True)
     aol = self.cp.alternativeExperience == 32
@@ -121,7 +128,7 @@ class Host:
       speed_max = max(high, CS.out.vEgoRaw, 0.1) + margin
     meta = model.meta if model is not None else None
     return self.controller.step(Inputs(
-      active=ready, speed=CS.out.vEgoRaw, measured_curvature=-CS.out.yawRate / max(CS.out.vEgoRaw, 0.1),
+      active=ready, speed=CS.out.vEgoRaw, measured_curvature=self.measurement.curvature(CS.out),
       desired_curvature=CC.actuators.curvature, steering_pressed=CS.out.steeringPressed,
       steering_angle=CS.out.steeringAngleDeg, yaw_predictions=tuple(model.orientationRate.z) if model is not None else (),
       time_indices=tuple(times), lateral_delay=delay,
