@@ -811,16 +811,24 @@ class SelfdriveD:
 
     return CS
 
+  def ford_source_deadline_supported(self):
+    from opendbc.car.ford.aol import qualified
+    from opendbc.car.ford.values import CAR
+    return (qualified(self.CP, marked_only=True) and
+            self.CP.carFingerprint == CAR.FORD_MUSTANG_MACH_E_MK1 and
+            len(self.CP.safetyConfigs) == 1 and self.CP.safetyConfigs[0].safetyParam == 19)
+
   def source_deadline_deferral_supported(self):
     from openpilot.starpilot.car.hyundai.aol import source_deadline_supported
     from openpilot.starpilot.car.toyota.aol import qualified as qualified_toyota
     return (qualified_ioniq6(self.CP) or qualified_gm(self.CP) or source_deadline_supported(self.CP) or
-            qualified_toyota(self.CP, marked_only=True))
+            qualified_toyota(self.CP, marked_only=True) or self.ford_source_deadline_supported())
 
   def held_axis_override_wait(self, CS, proof, now_ns, *, fresh_successor=False):
     """Recognize an already applied override; never admit a new physical edge."""
     if (proof is None or not (qualified_ioniq6(self.CP) or qualified_gm(self.CP) or
-        (self.CP.brand == 'hyundai' and self.source_deadline_deferral_supported())) or not self.sm.seen['carControl'] or
+        (self.CP.brand == 'hyundai' and self.source_deadline_deferral_supported()) or
+        self.ford_source_deadline_supported()) or not self.sm.seen['carControl'] or
         not self.sm.valid['carControl'] or self.sm['carControl'].longActive or
         not 0 < int(self.sm.logMonoTime['carControl']) <= now_ns or
         not fresh_successor and now_ns - int(self.sm.logMonoTime['carControl']) > INTENT_MAX_AGE_NS):
@@ -828,7 +836,7 @@ class SelfdriveD:
     previous = self.CS_prev
     # A missed socket read may retain only the original healthy receipt. This
     # recognizes an already-held override; the caller still checks its expiry.
-    retained_valid = bool(self.CP.brand == 'hyundai' and
+    retained_valid = bool((self.CP.brand == 'hyundai' or self.ford_source_deadline_supported()) and
       getattr(self, 'aol_expired_healthy_source', False) and not getattr(self, 'car_state_queue_invalid', False) and
       getattr(self, 'car_state_retained_valid', False) and getattr(self, 'car_state_retained_source_ns', 0) == proof[1])
     samples = getattr(self, 'car_state_samples', ()) or ((CS, self.conditional_car_state_valid or retained_valid),)
@@ -868,6 +876,7 @@ class SelfdriveD:
     stock_cruise_off = bool(proof is not None and proof[8] and not proof[9] and
       not self.enabled and not self.active and not CS.cruiseState.enabled and
       (qualified_stock_hkg(self.CP, marked_only=True) or
+       (self.ford_source_deadline_supported() and held_brake) or
        qualified_angle_aol(self.CP, marked_only=True) and self.CP.pcmCruise and not self.CP.openpilotLongitudinalControl) and
       EventName.pcmDisable in self.events_prev and self.events.names == self.events_prev)
     user_disable = any(event.userDisable and
@@ -1002,7 +1011,8 @@ class SelfdriveD:
     source_valid = self.conditional_car_state_valid
     from openpilot.starpilot.car.hyundai.aol import source_deadline_supported
     from openpilot.starpilot.car.toyota.aol import qualified as qualified_toyota
-    if ((source_deadline_supported(self.CP) or qualified_toyota(self.CP, marked_only=True)) and
+    if ((source_deadline_supported(self.CP) or qualified_toyota(self.CP, marked_only=True) or
+         self.ford_source_deadline_supported()) and
         source == 0 and not source_valid and
         getattr(self, 'aol_expired_healthy_source', False) and
         not getattr(self, 'car_state_samples', ()) and not getattr(self, 'car_state_queue_invalid', False) and
@@ -1363,8 +1373,9 @@ class SelfdriveD:
       # A fresh same-owner source can establish its own LAT permission after
       # an old output expires. Held-brake continuity does not renew that output;
       # the current native proof below still has to grant the new decision.
-      stock_already_off = bool(fresh_successor and qualified_gm(self.CP) and self.CP.pcmCruise and
-        not self.CP.openpilotLongitudinalControl and not CS.cruiseState.enabled and
+      stock_already_off = bool(fresh_successor and
+        ((qualified_gm(self.CP) and self.CP.pcmCruise and not self.CP.openpilotLongitudinalControl) or
+         self.ford_source_deadline_supported()) and not CS.cruiseState.enabled and
         not self.CS_prev.cruiseState.enabled and all(valid and not sample.cruiseState.enabled
           for sample, valid in getattr(self, 'car_state_samples', ())))
       user_disable = any(event.userDisable and event.name != EventName.pedalPressed and not
