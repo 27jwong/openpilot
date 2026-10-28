@@ -152,7 +152,7 @@ The installer runs in a worker thread inside that temporary process so its main 
 
 Closing or losing the owner cancels preparation. PID 1 bounds teardown of the complete service cgroup, including extraction subprocesses. A 15-minute service runtime limit also prevents an installation attempt from running indefinitely.
 
-The browser's two frame buffers are not allocated during preparation. After a successful preparation message, the client stops/reaps that service before starting the separate unprivileged Firefox service. Cancelling during this handoff prevents a hidden browser launch.
+The browser's two frame buffers are not allocated during preparation. After a successful preparation message, the client stops/reaps that service before starting the separate unprivileged Firefox service. Canceling during this handoff prevents a hidden browser launch.
 
 ## The browser runtime
 

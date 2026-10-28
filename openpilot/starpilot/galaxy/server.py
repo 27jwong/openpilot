@@ -374,7 +374,7 @@ def make_server(*, port=8082, host='127.0.0.1', monitor=None, owner=None, crashe
                   Path('/dev/dri/renderD128').exists())
         def service_ready():
           try:
-            return bool(starport_client().call('status')['status'])
+            return bool(starport_client_owner().call('status')['status'])
           except (OSError, RuntimeError, KeyError, TypeError):
             return False
         def enable_bluetooth(identity):
@@ -408,7 +408,7 @@ def make_server(*, port=8082, host='127.0.0.1', monitor=None, owner=None, crashe
         server.starport_source_registry = starport_registry_source
     return starport_registry_source
 
-  def starport_client():
+  def starport_client_owner():
     nonlocal starport_client_source
     with starport_source_lock:
       if starport_client_source is None:
@@ -445,7 +445,7 @@ def make_server(*, port=8082, host='127.0.0.1', monitor=None, owner=None, crashe
       if settings_gateway is None:
         from openpilot.common.params import Params
         params = Params()
-        settings_gateway = SettingsGateway(params, context_source(params), starport=starport_client)
+        settings_gateway = SettingsGateway(params, context_source(params), starport=starport_client_owner)
         server.settings_source = settings_gateway
       return settings_gateway
 
@@ -620,7 +620,7 @@ def make_server(*, port=8082, host='127.0.0.1', monitor=None, owner=None, crashe
       try:
         if self.settings_session() != identity:
           raise ValueError('Galaxy session changed')
-        return starport_client().call(command, source=source, **arguments)
+        return starport_client_owner().call(command, source=source, **arguments)
       finally:
         starport_source_registry().revoke_source(source)
 
@@ -648,7 +648,7 @@ def make_server(*, port=8082, host='127.0.0.1', monitor=None, owner=None, crashe
       try:
         if self.settings_session() != identity:
           raise ValueError('Galaxy session changed')
-        delegated = starport_client().call('phone_window', source=source, operation=operation, **arguments)
+        delegated = starport_client_owner().call('phone_window', source=source, operation=operation, **arguments)
       except (OSError, RuntimeError) as error:
         # Falling back to this process cannot work while Android Auto holds the adapter, so say why it was skipped.
         cloudlog.warning(f'android auto phone window {operation} not delegated: {error!r}')
@@ -1038,13 +1038,13 @@ def make_server(*, port=8082, host='127.0.0.1', monitor=None, owner=None, crashe
           return
         source = starport_source_registry().current(identity)
         try:
-          result: dict = starport_client().call('pairing_status', source=source) if source and configuration_allowed() else \
+          result: dict = starport_client_owner().call('pairing_status', source=source) if source and configuration_allowed() else \
                    {'pairing': {'active': False, 'receiver': None, 'prompt': None, 'approved': False}}
         except (OSError, RuntimeError):
           self.json(503, {'error': 'StarPort pairing service is unavailable'})
         else:
           try:
-            runtime = starport_client().call('status')['status']
+            runtime = starport_client_owner().call('status')['status']
           except (OSError, RuntimeError, ValueError, KeyError, TypeError):
             runtime = None
           result['selectedReceiver'] = None
@@ -1065,7 +1065,7 @@ def make_server(*, port=8082, host='127.0.0.1', monitor=None, owner=None, crashe
           self.json(401, {'error': 'Sign in to Galaxy'})
           return
         try:
-          runtime = starport_client().call('status')['status']
+          runtime = starport_client_owner().call('status')['status']
           if runtime.get('pairing_ready'):
             raise ValueError('Finish or cancel pairing before choosing a car')
           if not starport_setup_owner().enabled():
@@ -2289,7 +2289,7 @@ def make_server(*, port=8082, host='127.0.0.1', monitor=None, owner=None, crashe
         if action == 'stop' and set(payload) == {'action'}:
           try:
             self.starport_command(identity, 'stop')
-            current = starport_client().call('status').get('status', {})
+            current = starport_client_owner().call('status').get('status', {})
           except ValueError as error:
             self.json(409, {'error': str(error)})
           except (OSError, RuntimeError):
@@ -2345,7 +2345,7 @@ def make_server(*, port=8082, host='127.0.0.1', monitor=None, owner=None, crashe
           self.json(400, {'error': 'Invalid Android Auto control request'})
           return
         try:
-          runtime = starport_client().call('status')['status']
+          runtime = starport_client_owner().call('status')['status']
           if runtime.get('pairing_ready'):
             raise ValueError('Finish or cancel pairing first')
           if command == 'start' and not runtime.get('receiver_address') and runtime.get('connection') == 'wireless':
@@ -2353,7 +2353,7 @@ def make_server(*, port=8082, host='127.0.0.1', monitor=None, owner=None, crashe
           if command == 'start' and not starport_setup_owner().identity_status().get('installed'):
             raise ValueError('Verify your Android Auto package first')
           self.starport_command(identity, command, **arguments)
-          current = starport_client().call('status')['status']
+          current = starport_client_owner().call('status')['status']
         except ValueError as error:
           self.json(409, {'error': str(error)})
         except (OSError, RuntimeError, KeyError, TypeError):
@@ -2395,7 +2395,7 @@ def make_server(*, port=8082, host='127.0.0.1', monitor=None, owner=None, crashe
           source = starport_source_registry().mint(identity)
           if self.settings_session() != identity or not configuration_allowed():
             raise ValueError('Galaxy session or Park state changed')
-          starport_client().call('prepare_pairing', source=source)
+          starport_client_owner().call('prepare_pairing', source=source)
         except ValueError as error:
           if source is not None:
             starport_source_registry().revoke_source(source)
@@ -2447,7 +2447,7 @@ def make_server(*, port=8082, host='127.0.0.1', monitor=None, owner=None, crashe
         try:
           if self.settings_session() != identity or not configuration_allowed():
             raise ValueError('Galaxy session or Park state changed')
-          starport_client().call(command, source=source, **arguments)
+          starport_client_owner().call(command, source=source, **arguments)
         except ValueError as error:
           self.json(409, {'error': str(error)})
         except (OSError, RuntimeError):
@@ -2815,7 +2815,7 @@ def make_server(*, port=8082, host='127.0.0.1', monitor=None, owner=None, crashe
       def disconnect():
         if self.settings_session() != identity:
           raise SetupRejected('Galaxy session expired; sign in again')
-        client = starport_client()
+        client = starport_client_owner()
         if client.available:
           runtime = client.call('status')['status']
           if not isinstance(runtime, dict) or type(runtime.get('running')) is not bool:
