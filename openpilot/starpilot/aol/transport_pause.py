@@ -1702,6 +1702,10 @@ class TransportPauseFeedback:
         return False
       current = bool(current and (transport_healthy or cancel_native is not None))
       if current and baseline and not latched:
+        # A healthy idle baseline ends the previous cold MAIN recovery. Do not
+        # reject the next request using a wait owned by the cleared intent.
+        self.cold_main_wait_ns = 0
+        self.cold_main_sparse_waiting = False
         self.cold_park_waiting = False
         self.temporary_eps_event_ns = 0
         self.session = ''
