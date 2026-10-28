@@ -466,11 +466,11 @@ def _question(row: FeatureRow, request: FeatureSettingsRequest) -> str:
 
 
 class SettingsGateway:
-  def __init__(self, params, context: ContextSource | None = None, *, clock=time.monotonic, android_auto=None):
+  def __init__(self, params, context: ContextSource | None = None, *, clock=time.monotonic, starport=None):
     self.params = params
     self.context = context if context is not None else LiveContextSource(params)
     self.clock = clock
-    self.android_auto = android_auto
+    self.starport = starport
     self.lock = threading.Lock()
     self.views: dict[str, _View] = {}
     self.intents: dict[str, _Intent] = {}
@@ -585,7 +585,7 @@ class SettingsGateway:
       return bool(fresh.parked and not fresh.editing_saved_vehicle and fresh.cp_raw == ctx.cp_raw)
     return DeveloperSettingsOwner(self.params, authorized,
                                   panda_wake=self._owner(ctx, live=live, session_valid=session_valid).panda_wake,
-                                  android_auto=self.android_auto)
+                                  starport=self.starport)
 
   def _state(self, page: str, ctx: AuthorityContext):
     if page == "developer":

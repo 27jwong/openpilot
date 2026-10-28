@@ -194,7 +194,7 @@ class TestSlcUiRuntime(unittest.TestCase):
 
   def test_projected_use_limit_disappears_after_card_applies_rounded_set_speed(self):
     from openpilot.selfdrive.car.cruise import VCruiseHelper
-    from openpilot.starpilot.system.android_auto.projection_onroad import ProjectionOnroad
+    from openpilot.starpilot.system.starport.projection_onroad import ProjectionOnroad
 
     for metric, limit in ((False, 70 / 2.2369362921), (True, 90.4 / 3.6)):
       with self.subTest(metric=metric):

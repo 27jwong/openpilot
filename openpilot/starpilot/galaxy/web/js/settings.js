@@ -347,7 +347,7 @@ export const SettingsPage = {
     },
     async openCropEditor() { (await import("./router.js")).navigate("/cameras/pip") },
     // The embedded editor switches targets through the routed editor, which keeps the leave guard.
-    async openLayoutTarget(target) { (await import("./router.js")).navigate(target === "projection" ? "/theme_maker/android_auto" : "/theme_maker") },
+    async openLayoutTarget(target) { (await import("./router.js")).navigate(target === "projection" ? "/theme_maker/starport" : "/theme_maker") },
     rowKey(row, index) { return `${this.state.data.page}:${row.key || row.page || index}` },
     closeLayout() { this.state.layoutOpen = false; this.state.section = "visual"; this.feed.start(this.initialPage) },
     closeFavorites() { this.state.favoritesOpen = false; this.state.section = "visual"; this.feed.start("hub") },
