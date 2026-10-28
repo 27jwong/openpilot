@@ -22,6 +22,7 @@ export const SETTINGS_SECTIONS = Object.freeze([
   { id: "visual", label: "Visual (Display & UI)", icon: "bi-eye", pages: ["appearance", "ui_layout", "favorites", "pip"] },
   { id: "sounds", label: "Sounds & Alerts", icon: "bi-volume-up", pages: ["sounds"] },
   { id: "device", label: "Device & Data", icon: "bi-hdd", pages: ["display", "data"] },
+  { id: "localization", label: "Localization", icon: "bi-globe", pages: ["localization"] },
   { id: "developer", label: "Developer", icon: "bi-code-slash", pages: ["developer"] },
 ])
 

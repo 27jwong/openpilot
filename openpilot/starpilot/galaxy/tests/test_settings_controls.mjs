@@ -177,17 +177,17 @@ assert.deepEqual(SettingsPage.computed.visibleRows.call(page).map(({ index }) =>
 const destinations = []
 const navigation = { busy: false, state: { query: "old", section: "lateral", data: { page: "lane" } },
   feed: { active: true, load: (target) => destinations.push(target) } }
-for (const id of ["wheel", "sounds", "device", "visual"]) {
+for (const id of ["wheel", "sounds", "device", "visual", "localization"]) {
   const section = SETTINGS_SECTIONS.find((item) => item.id === id)
   SettingsPage.methods.selectSection.call(navigation, section)
   assert.equal(navigation.state.section, id)
   assert.equal(navigation.state.query, "")
 }
-assert.deepEqual(destinations, ["wheel", "sounds", "hub", "hub"])
+assert.deepEqual(destinations, ["wheel", "sounds", "hub", "hub", "localization"])
 navigation.busy = true
 SettingsPage.methods.selectSection.call(navigation, lateral)
-assert.equal(destinations.length, 4, "a save cannot be retired by section navigation")
-for (const id of ["wheel", "sounds"]) {
+assert.equal(destinations.length, 5, "a save cannot be retired by section navigation")
+for (const id of ["wheel", "sounds", "localization"]) {
   const section = SETTINGS_SECTIONS.find((item) => item.id === id)
   assert.equal(SettingsPage.computed.atSectionRoot.call({ activeSection: section,
     state: { data: { page: section.pages[0] } } }), true)

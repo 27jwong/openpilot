@@ -36,6 +36,8 @@
   "HideLeadMarker",
   "HidePersonalityAlerts",
   "IgnoreIgnitionLine",
+  "IsMetric",
+  "IsRhdDetected",
   "KeepScreenOnGpuLoading",
   "LaneCenterOffset",
   "LaneCentering",
