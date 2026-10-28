@@ -1,3 +1,5 @@
+import json
+from pathlib import Path
 from typing import TypedDict
 from unittest.mock import patch
 
@@ -309,3 +311,34 @@ def test_native_planner_reaches_clear_road_boost_plateau(factory, car):
     assert planner.output_a_target <= planner.a_cruise + 1e-6
   assert planner.encouragement.boost == pytest.approx(MAX_BOOST)
   assert planner.output_a_target == pytest.approx(MAX_BOOST, abs=.01)
+
+
+@pytest.mark.parametrize('factory,car', [(HondaInterface, HONDA.HONDA_CIVIC),
+                                       (HyundaiInterface, HYUNDAI.HYUNDAI_IONIQ_6),
+                                       (ToyotaInterface, TOYOTA.TOYOTA_RAV4_TSS2)])
+def test_native_planner_recovers_despite_recorded_acceleration_noise(factory, car):
+  tape = json.loads((Path(__file__).parent / 'fixtures' / 'encouragement_clear_road_noise.json').read_text())
+  params = factory.get_non_essential_params(car)
+  params.openpilotLongitudinalControl = True
+  planner = LongitudinalPlanner(params, init_v=tape['rows'][0][0])
+  maximum_boost = maximum_extra = 0.
+  for tick in range(40):
+    sm, now = frame(tick)
+    sm['carState'].vEgo = tape['rows'][0][0]
+    sm['modelV2'].action.desiredAcceleration = -.1
+    planner.update(sm, now_ns=now, curve_ceiling=CurveCeiling(20., sm.logMonoTime['modelV2']))
+    assert planner.encouragement.boost == 0.
+    assert planner.output_a_target <= planner.a_cruise + 1e-6
+  for offset, (speed, accel, model_accel, set_kph, experimental) in enumerate(tape['rows']):
+    sm, now = frame(offset + 40)
+    sm['carState'].vEgo, sm['carState'].aEgo, sm['carState'].vCruise = speed, accel, set_kph
+    sm['selfdriveState'].experimentalMode = experimental
+    sm['modelV2'].action.desiredAcceleration = model_accel
+    planner.update(sm, now_ns=now)
+    assert planner.mpc.solution_status == 0
+    assert planner.output_a_target <= planner.a_cruise + 1e-6
+    assert not planner.output_should_stop
+    maximum_boost = max(maximum_boost, planner.encouragement.boost)
+    maximum_extra = max(maximum_extra, planner.output_a_target - model_accel)
+  assert maximum_boost > .1
+  assert maximum_extra > .05

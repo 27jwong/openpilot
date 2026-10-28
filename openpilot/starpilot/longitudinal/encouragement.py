@@ -10,6 +10,7 @@ SETTLE_SECONDS = 3.
 MIN_HESITATION_GAP = 1.
 HESITATION_ACCEL = .15
 RECOVERY_ACCEL = .3
+HESITATION_FILTER_SECONDS = .5
 
 
 class Encouragement:
@@ -18,6 +19,7 @@ class Encouragement:
     self.boost = 0.
     self.drive_id = None
     self.last_model_ns = 0
+    self.hesitation_accel: float | None = None
 
   def update(self, sm, cp, *, now_ns, drive_id, dt, target_speed, model_accel, mpc_accel, cruise_accel,
              lateral_accel, blocked):
@@ -52,8 +54,14 @@ class Encouragement:
     self.last_model_ns = model_ns
     if not eligible:
       self.clear_seconds = self.boost = 0.
+      self.hesitation_accel = None
       return model_accel
-    if self.boost == 0. and (target_speed - car.vEgo < MIN_HESITATION_GAP or car.aEgo > HESITATION_ACCEL):
+    if self.hesitation_accel is None:
+      self.hesitation_accel = car.aEgo
+    else:
+      self.hesitation_accel += dt / (HESITATION_FILTER_SECONDS + dt) * (car.aEgo - self.hesitation_accel)
+    if self.boost == 0. and (target_speed - car.vEgo < MIN_HESITATION_GAP or
+                            car.aEgo >= RECOVERY_ACCEL or self.hesitation_accel > HESITATION_ACCEL):
       self.clear_seconds = 0.
       return model_accel
     self.clear_seconds += dt
