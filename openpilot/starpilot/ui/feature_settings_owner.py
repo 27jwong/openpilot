@@ -465,7 +465,7 @@ class FeatureSettingsOwner:
     if toyota_cruise_capability(cp) is not None:
       return None
     try:
-      if (cp is None or not cp.carFingerprint or not self.longitudinal_available() or (cp.pcmCruise and not self.configuration_longitudinal()) or
+      if (cp is None or not cp.carFingerprint or not self.longitudinal_available() or
           cp.notCar or cp.passive or cp.dashcamOnly):
         return None
       return (str(cp.carFingerprint), self.longitudinal_available(), bool(cp.pcmCruise and not self.configuration_longitudinal()),
@@ -501,7 +501,7 @@ class FeatureSettingsOwner:
       value, raw, valid = self._value("ReverseCruise")
       rows.append(FeatureRow("ReverseCruise", "Swap Toyota Cruise Steps", "On" if value == "1" else "Off" if value == "0" else "Invalid saved value",
                              raw, ("Off", "On") if valid else (), available=allowed and valid,
-                             reason="Short press changes the dash set speed by 5; hold changes it by 1",
+                             reason="Short press changes set speed by 5; hold changes it by 1",
                              capability=toyota_capability, dependencies=()))
       return rows
     for key, label, default in (("CustomCruise", "Short press", 1.0), ("CustomCruiseLong", "Hold", 5.0)):

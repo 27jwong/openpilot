@@ -71,6 +71,13 @@ applied set speed clears it, using card's receipt to account for whole-unit roun
 a new limit also clears it. Adoption retains the ordinary buttons' 0.1 km/h internal
 precision, including for mph targets. New-limit decisions continue during override.
 
+Ordinary software SET adjustments use the saved short-press and held-press intervals
+on every make, including PCM vehicles while SLC owns SET. Toyota uses Swap Toyota
+Cruise Steps for both native cruise and software SET: off selects short 1 / hold 5,
+and on selects short 5 / hold 1. Other makes use CustomCruise and CustomCruiseLong.
+Confirmation presses and native resume keep their existing meanings; they do not
+also apply an interval step. Toyota's native cruise ceiling still limits software SET.
+
 The accelerator temporarily allows higher vehicle speed without changing set speed
 or creating an SLC override. Adoption and confirmation can update software set
 speed while accelerator override temporarily suspends actuator output. On release the ordinary planner approaches set speed
