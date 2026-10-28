@@ -1733,6 +1733,13 @@ class SelfdriveD:
     mismatch counter retain their original fault ownership.
     """
     from openpilot.starpilot.aol.transport_pause import independent_lateral_health
+    from opendbc.car.ford.values import CAR as FORD_CAR
+    from openpilot.starpilot.car.ford.aol import native_accepts_cp as ford_native_accepts_cp
+    # Established ordinary Mach-E cruise does not require an independent AOL latch.
+    # Its native LONG pedal withdrawal may precede Card; the original combined
+    # publication, live LAT grant and every health/deadline check below still apply.
+    ordinary_ford = bool(self.CP.carFingerprint == FORD_CAR.FORD_MUSTANG_MACH_E_MK1 and
+                         ford_native_accepts_cp(self.CP, int(car.CarParams.SafetyModel.ford), 19))
     proof = getattr(self, 'aol_published_input_proof', None)
     prior = getattr(self, 'aol_published_input_native', None)
     anchor = getattr(self, 'aol_ordinary_source_anchor', None)
@@ -1746,7 +1753,7 @@ class SelfdriveD:
         anchor[3] != cp_identity(self.CP) or proof[0] != self.aol_session_id or
         not proof[8] or not proof[9] or not 0 < proof[2] <= now_ns <= proof[3] or
         intent is None or companion is None or proof[4] != intent.producerSessionId or
-        proof[5] != companion.integrity_epoch or not intent.allowedLatch or not intent.lateralArmed or
+        proof[5] != companion.integrity_epoch or not ((intent.allowedLatch and intent.lateralArmed) or ordinary_ford) or
         not native.requestedLateral or not native.lateralAllowed or
         not native.requestedLongitudinal or native.longitudinalAllowed or not native.pandaInventory or
         CS.brakePressed or CS.regenBraking or CS.gasPressed or CS.steeringPressed or
@@ -1780,7 +1787,7 @@ class SelfdriveD:
     # Retain only its already granted LAT; all proof, health and LONG withdrawal gates remain.
     # The exact vehicle policies and all proof/health checks above remain required.
     from openpilot.starpilot.car.ford.aol import early_native_long_withdrawal_supported as ford_early_long
-    return bool(gm_native_accepts_cp(self.CP, native.safetyModel, native.safetyParam) or
+    return bool(ordinary_ford or gm_native_accepts_cp(self.CP, native.safetyModel, native.safetyParam) or
                 early_native_long_withdrawal_supported(self.CP) or ford_early_long(self.CP) or
                 toyota_aol_qualified(self.CP, marked_only=True) or
                 not native.pandaInventory[owners[0]].controlsAllowed and
