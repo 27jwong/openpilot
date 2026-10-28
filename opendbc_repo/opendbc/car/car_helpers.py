@@ -45,13 +45,15 @@ interface_names = _get_interface_names()
 interfaces = load_interfaces(interface_names)
 
 
-def can_fingerprint(can_recv: CanRecvCallable) -> tuple[str | None, dict[int, dict]]:
+def can_fingerprint(can_recv: CanRecvCallable, *, vin: str = VIN_UNKNOWN,
+                    camera_cruise_messages: set[bytes] | None = None) -> tuple[str | None, dict[int, dict]]:
   finger = gen_empty_fingerprint()
   candidate_cars = {i: all_legacy_fingerprint_cars() for i in [0, 1]}  # attempt fingerprint on both bus 0 and 1
   frame = 0
   car_fingerprint = None
   done = False
-  camera_cruise_states = set()
+  if camera_cruise_messages is None:
+    camera_cruise_messages = set()
 
   while not done:
     # can_recv(wait_for_one=True) may return zero or multiple packets, so we increment frame for each one we receive
@@ -60,7 +62,7 @@ def can_fingerprint(can_recv: CanRecvCallable) -> tuple[str | None, dict[int, di
       for can in can_packet:
         # Stock camera only: host echoes and malformed DLCs are not capability evidence.
         if can.src == 2 and can.address == 0x370 and len(can.dat) == 6:
-          camera_cruise_states.add(can.dat[1] & 0x7)
+          camera_cruise_messages.add(bytes(can.dat))
         # The fingerprint dict is generated for all buses, this way the car interface
         # can use it to detect a (valid) multipanda setup and initialize accordingly
         if can.src < 128:
@@ -88,7 +90,7 @@ def can_fingerprint(can_recv: CanRecvCallable) -> tuple[str | None, dict[int, di
       frame += 1
 
   car_fingerprint = automatic_volt_candidate(car_fingerprint, finger, candidate_cars)
-  return automatic_bolt_candidate(car_fingerprint, finger, camera_cruise_states), finger
+  return automatic_bolt_candidate(car_fingerprint, finger, camera_cruise_messages, vin), finger
 
 
 def _gm_fw_uses_normal_bus0() -> bool:
@@ -186,7 +188,8 @@ def fingerprint(can_recv: CanRecvCallable, can_send: CanSendCallable, set_obd_mu
   # CAN fingerprint
   # drain CAN socket so we get the latest messages
   can_recv()
-  car_fingerprint, finger = can_fingerprint(can_recv)
+  camera_cruise_messages: set[bytes] = set()
+  car_fingerprint, finger = can_fingerprint(can_recv, vin=vin, camera_cruise_messages=camera_cruise_messages)
 
   exact_match = True
   source = CarParams.FingerprintSource.can
@@ -196,6 +199,11 @@ def fingerprint(can_recv: CanRecvCallable, can_send: CanSendCallable, set_obd_mu
     car_fingerprint = list(fw_candidates)[0]
     source = CarParams.FingerprintSource.fw
     exact_match = exact_fw_match
+
+  # Firmware catalogues can use the same broad Bolt aliases as legacy CAN.
+  # Refine after both automatic sources, before the explicit override below.
+  if not fixed_fingerprint:
+    car_fingerprint = automatic_bolt_candidate(car_fingerprint, finger, camera_cruise_messages, vin)
 
   if fixed_fingerprint:
     car_fingerprint = fixed_fingerprint
@@ -243,7 +251,8 @@ def get_car(can_recv: CanRecvCallable, can_send: CanSendCallable, set_obd_multip
     candidate = "MOCK"
 
   CarInterface = interfaces[candidate]
-  CP: CarParams = CarInterface.get_params(candidate, fingerprints, car_fw, alpha_long_allowed, is_release, docs=False)
+  params_options = {'auto_pedal': False} if source == CarParams.FingerprintSource.fixed and candidate in interface_names['gm'] else {}
+  CP: CarParams = CarInterface.get_params(candidate, fingerprints, car_fw, alpha_long_allowed, is_release, docs=False, **params_options)
   CP.carVin = vin
   CP.carFw = car_fw
   CP.fingerprintSource = source
