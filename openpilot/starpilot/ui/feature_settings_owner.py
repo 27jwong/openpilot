@@ -1160,7 +1160,8 @@ class FeatureSettingsOwner:
                                preset_label(selected) if valid else 'Invalid document', raw,
                                tuple(preset_label(choice) for choice in choices) if valid else (),
                                available=allowed and valid,
-                               reason='Personalities set to Selected Profile follow this choice; explicit overrides stay unchanged.',
+                               reason=(CATEGORY_HELP[category] if category == 'braking' else
+                                       'Personalities set to Selected Profile follow this choice; explicit overrides stay unchanged.'),
                                default_value=preset_label('dom_default' if category == 'acceleration' else DEFAULT_DECELERATION_PROFILE)))
       health = read_profile_health(self.params)
       master = health.values["CustomPersonalities"]
