@@ -2,6 +2,10 @@
 
 import math
 
+from openpilot.starpilot.saved_source import read_saved
+
+KEY = "ExperimentalSpeedNudge"
+
 SOURCES = ('carState', 'carControl', 'controlsState', 'selfdriveState', 'radarState', 'modelV2')
 MAX_SOURCE_AGE_NS = 250_000_000
 MAX_BOOST = .6
@@ -69,3 +73,24 @@ class Encouragement:
       self.boost = min(MAX_BOOST, self.boost + BOOST_RATE * dt)
     gap_scale = min(1., max(0., (target_speed - car.vEgo - .2) / 1.8))
     return min(max(model_accel, self.boost * gap_scale), mpc_accel, cruise_accel)
+
+
+class NudgePreferences:
+  def __init__(self, params):
+    self.params = params
+    self.enabled = False
+    self.next_ns = 0
+    self.last_ns = 0
+
+  def sample(self, now_ns):
+    if now_ns < self.last_ns:
+      self.next_ns = 0
+    self.last_ns = now_ns
+    if now_ns >= self.next_ns:
+      self.next_ns = now_ns + 1_000_000_000
+      try:
+        raw, readable = read_saved(self.params, KEY, 16)
+        self.enabled = readable and raw in (None, b'1')
+      except (OSError, RuntimeError, TypeError, ValueError):
+        self.enabled = False
+    return self.enabled

@@ -144,7 +144,7 @@ class LongitudinalPlanner:
              lead_approach_key: LeadApproachKey | None = None,
              force_stop_provider: Callable[[float], StopPlan] | None = None,
              faster_lead_takeoff: bool = False, takeoff_drive_id: int = 0,
-             now_ns: int | None = None, drive_id: int = 0, wheel_coast=None):
+             now_ns: int | None = None, drive_id: int = 0, wheel_coast=None, experimental_speed_nudge: bool = True):
     if curve_ceiling is not None and curve_provider is not None:
       raise ValueError('choose explicit Curve ceiling or same-cycle provider')
     if self.plan_drive_id != drive_id:
@@ -394,7 +394,7 @@ class LongitudinalPlanner:
       model_accel=output_a_target_e2e, mpc_accel=output_a_target_mpc, cruise_accel=self.a_cruise,
       lateral_accel=(v_ego ** 2 * steer_angle_without_offset * CV.DEG_TO_RAD / (self.CP.steerRatio * self.CP.wheelbase)
                      if self.CP.steerRatio > 0 and self.CP.wheelbase > 0 else math.inf),
-      blocked=bool(reset_state or self.fcw or not self.allow_throttle or self.force_stop_plan.forcing or
+      blocked=bool(experimental_speed_nudge is not True or reset_state or self.fcw or not self.allow_throttle or self.force_stop_plan.forcing or
                    output_should_stop_mpc or cruise_should_stop or self.mpc.solution_status != 0 or
                    curve.effective_mps is not None or traffic_mode is not False))
     manual_model = self.accel_boost.update(sm, output_a_target_e2e, output_a_target_mpc, self.a_cruise)
@@ -443,7 +443,7 @@ class LongitudinalPlanner:
       takeoff_frame = project_takeoff(
         sm, self.CP, now_ns=sample_now_ns, drive_id=takeoff_drive_id, stop_plan=self.force_stop_plan,
         acceleration_max=takeoff_max, mpc_accel=output_a_target_mpc, follow_seconds=float(self.mpc.params[0, 4]),
-        blocked=bool(reset_state or self.fcw or not self.allow_throttle or traffic_mode is not False or
+        blocked=bool(experimental_speed_nudge is not True or reset_state or self.fcw or not self.allow_throttle or traffic_mode is not False or
                      self.mpc.solution_status != 0))
       output_a_target, self.output_should_stop = self.lead_takeoff.step(
         True, takeoff_frame, output_a_target, self.output_should_stop)

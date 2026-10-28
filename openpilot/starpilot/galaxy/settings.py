@@ -38,7 +38,8 @@ from openpilot.starpilot.ui.sentry_owner import RESET as SENTRY_RESET, SentryOwn
 from openpilot.starpilot.ui.vasm_owner import ANNOTATION as VASM_ANNOTATION, RESET as VASM_RESET, VASMOwner, validated_annotation
 
 
-PAGES = frozenset(("hub", "localization", "developer", "vehicle", "slc", "lane", "lane_change", "profiles", "traffic", "aggressive", "standard", "relaxed",
+PAGES = frozenset(("hub", "localization", "developer", "vehicle", "slc", "lane", "lane_change", "profiles", "personalities",
+                   "traffic", "aggressive", "standard", "relaxed",
                    "curve", "torque", "aol", "wheel", "appearance", "display", "data", "sounds", "pip", "sentry", "vasm",
                    "conditional", "conditional/cem", "conditional/ccm",
                    *(f"{name}/{category}" for name in ("traffic", "aggressive", "standard", "relaxed")

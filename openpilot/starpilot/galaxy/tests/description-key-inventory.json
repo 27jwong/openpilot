@@ -23,6 +23,7 @@
   "DriverCamera",
   "EVTuning",
   "EngageVolume",
+  "ExperimentalSpeedNudge",
   "FasterLeadTakeoff",
   "ForceAutoTuneOff",
   "ForceStopDistanceOffset",

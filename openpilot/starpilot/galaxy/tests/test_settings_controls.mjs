@@ -208,3 +208,16 @@ assert.equal(SettingsPage.computed.atSectionRoot.call({initialPage:'hub',state:{
   'section tabs stay mounted while loading a new section')
 assert.equal(SettingsPage.computed.atSectionRoot.call({initialPage:'hub',activeSection:lateral,state:{data:null,parents:['hub']}}),false,
   'nested page loading does not become a section root')
+
+const longitudinal = SETTINGS_SECTIONS.find(section => section.id === "longitudinal")
+const personalityRows = ["aggressive", "standard", "relaxed", "traffic"].map(page => ({page, label: page}))
+const longRoot = SettingsPage.computed.visibleRows.call({initialPage: "hub", activeSection: longitudinal,
+  state: {query: "", data: {page: "hub", rows: [
+    {page: "profiles", label: "Long Planner"}, {page: "personalities", label: "Driving Personalities"},
+  ]}}})
+assert.deepEqual(longRoot.map(({row}) => row.page), ["profiles", "personalities"])
+assert.deepEqual(SettingsPage.computed.visibleRows.call({initialPage: "hub", activeSection: longitudinal,
+  state: {query: "", data: {page: "personalities", rows: personalityRows}}}).map(({row}) => row.page),
+  ["aggressive", "standard", "relaxed", "traffic"])
+assert.equal(SettingsPage.computed.activeSection.call({sections: SETTINGS_SECTIONS,
+  state: {data: {page: "personalities"}}}).id, "longitudinal")
