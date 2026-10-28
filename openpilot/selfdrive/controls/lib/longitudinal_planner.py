@@ -26,7 +26,7 @@ from openpilot.starpilot.longitudinal.vehicle_policy import forecast_should_stop
 from openpilot.starpilot.longitudinal.cruise_ceiling import CruiseCeiling, CurveCeiling, select_cruise_ceiling, select_curve_ceiling
 from openpilot.starpilot.longitudinal.profile_runtime import (AppliedProfile, ProfileSmoother, ProfileTuning, SelectedProfileTuning,
                                                              TRAFFIC_CRUISE_BRAKE_MAGNITUDE)
-from openpilot.starpilot.longitudinal.slc_coast import braking_lead_relevant, slc_coast_floor
+from openpilot.starpilot.longitudinal.slc_coast import braking_lead_relevant
 from openpilot.starpilot.longitudinal.throttle_gate import ModelThrottleGate
 from openpilot.starpilot.longitudinal.ioniq6_start import eligible as ioniq6_long_eligible
 from openpilot.starpilot.longitudinal.lane_change_gap import LaneChangeGap, project as project_lane_gap
@@ -64,7 +64,7 @@ def get_coast_accel(pitch):
   return np.sin(pitch) * -5.65 - 0.3  # fitted from data using xx/projects/allow_throttle/compute_coast_accel.py
 
 def get_cruise_accel(e2e, v_cruise, v_ego, a_cruise_prev, angle_steers, CP, dt, accel_coast, allow_throttle,
-                     profile: AppliedProfile | None = None, cruise_brake_floor: float | None = None,
+                     profile: AppliedProfile | None = None,
                      base_brake_floor: float = A_CRUISE_MIN, selected_acceleration_max: float | None = None, faster_takeoffs: bool = False,
                      *, a_target_prev: float | None = None):
   max_accel = ACCEL_MAX if e2e else get_max_accel(v_ego)
@@ -87,8 +87,6 @@ def get_cruise_accel(e2e, v_cruise, v_ego, a_cruise_prev, angle_steers, CP, dt, 
       max_accel = min(max_accel, coast_limit)
 
   cruise_min = max(ACCEL_MIN, -profile.cruise_brake_magnitude) if profile is not None else max(ACCEL_MIN, base_brake_floor)
-  if cruise_brake_floor is not None:
-    cruise_min = max(cruise_min, cruise_brake_floor)
   target_accel = np.clip(v_cruise - v_ego, cruise_min, max_accel)
   j_cruise = np.interp(v_ego, A_CRUISE_MAX_BP, J_CRUISE_VALS)
   decel_start = a_cruise_prev if a_target_prev is None else min(a_cruise_prev, a_target_prev)
@@ -179,7 +177,6 @@ class LongitudinalPlanner:
                                                        traffic_mode=traffic_mode)
     else:
       self.profile_smoother.applied = None
-      self.profile_smoother.slc_braking_style = 'standard'
       self.last_profile = None
 
     # Reset current state when not engaged, or user is controlling the speed
@@ -376,30 +373,18 @@ class LongitudinalPlanner:
                                                                           abs(A_CRUISE_MIN)))
     if ceiling.effective_mps is not None or curve.effective_mps is not None:
       global_floor = min(global_floor, A_CRUISE_MIN)
-    slc_floor = slc_coast_floor(
-      v_ego=v_ego, slc_target=ceiling.effective_mps if curve.effective_mps is None and not traffic_mode else None,
-      driver_cruise=v_cruise_kph * CV.KPH_TO_MS,
-      full_brake_floor=max(ACCEL_MIN, -cruise_profile.cruise_brake_magnitude) if cruise_profile is not None else global_floor,
-      relevant_lead=relevant_lead,
-      stop_context=bool(sm['carState'].standstill or sm['controlsState'].forceDecel or
-                        self.force_stop_plan.forcing or sm['modelV2'].action.shouldStop or output_should_stop_mpc or
-                        sm['selfdriveState'].experimentalMode or not sm['carControl'].longActive or not self.allow_throttle),
-      braking_style=(global_braking_response if global_selected and global_braking_response is not None else
-                     self.profile_smoother.slc_braking_style if self.last_profile is not None else 'standard'),
-    )
     if selected_acceleration is not None and cruise_profile is not None:
       # The selected curve owns acceleration; following/jerks retain their owner.
       cruise_profile = replace(cruise_profile, acceleration_max=selected_acceleration)
     if coast_plan is not None and coast_plan.brake_floor is not None:
       global_floor = coast_plan.brake_floor
       cruise_profile = None
-      slc_floor = None
     if preap_acceleration_cap is not None:
       selected_acceleration = (preap_acceleration_cap if selected_acceleration is None else
                                min(selected_acceleration, preap_acceleration_cap))
     self.a_cruise = get_cruise_accel(sm['selfdriveState'].experimentalMode, v_cruise, v_ego,
                                      self.a_cruise, steer_angle_without_offset, self.CP, self.dt,
-                                     accel_coast, self.allow_throttle, cruise_profile, slc_floor,
+                                     accel_coast, self.allow_throttle, cruise_profile,
                                      base_brake_floor=global_floor, selected_acceleration_max=selected_acceleration, faster_takeoffs=faster_takeoffs,
                                      a_target_prev=self.output_a_target)
     cruise_should_stop = should_stop(v_ego, self.a_cruise)

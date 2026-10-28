@@ -12,10 +12,11 @@ Policy order matters. Target shaping precedes PID preparation; vehicle output sh
 
 `LongitudinalPlanner.update(sm, *, cruise_ceiling=None, profile_tuning=None)` accepts an optional
 `CruiseCeiling(speed_mps, authority)` in addition to the existing driver cruise
-message. The default caller supplies no ceiling. The planner still reads
+message. The live caller supplies no ceiling. The planner still reads
 `carState.vCruise` for the driver's selected ceiling and leaves every supplied
-Cap'n Proto message unchanged. The opt-in SLC runtime in `plannerd` supplies
-the ceiling after source, acceptance and authority qualification.
+Cap'n Proto message unchanged. [SLC](../speed_limits/README.md) adopts accepted
+limits into Card's ordinary cruise SET; it supplies no additional planner ceiling.
+The optional input remains available to explicit callers and replay tests.
 
 The `CruiseCeiling` dataclass validates no source or acceptance history by
 construction. Its caller must first establish a fresh, accepted, normalized
@@ -31,13 +32,10 @@ The planner records the decision in `last_cruise_ceiling_status`; it does not
 publish that diagnostic or alter the longitudinal plan schema.
 
 This optional input changes only the cruise candidate before the planner's
-existing jerk limiting. A qualified SLC ceiling below driver cruise uses the
-frozen coast window above 4 m/s to soften only that candidate's
-braking floor. An enabled, validated named Eco or Sport braking personality
-selects its original window and coast floor; custom and default personalities
-use Standard. A relevant braking lead, stop intent, force deceleration or
-throttle veto retains its ordinary floor; Traffic's separate floor is unchanged.
-The native MPC, lead, e2e, stop and acceleration
+existing jerk limiting. SLC uses the ordinary cruise braking response and selected
+profile after its SET adoption. Lead-relevance checks still prevent cruise comfort
+tuning from weakening braking for a close, slow or braking lead; malformed lead
+evidence also vetoes that tuning. The native MPC, lead, e2e, stop and acceleration
 arbitration remain in place. An inactive planner may still compute a nonzero
 target; the host owns actuation gating. Stock setpoint control has a different
 output domain.
@@ -81,8 +79,8 @@ acceleration upper bound and jerk costs, plus the cruise candidate's
 acceleration/braking limits. It cannot widen the native car acceleration range.
 Valid saved curves above native acceleration bounds are intersected with those
 bounds without dropping their other tuning or rewriting the saved document.
-Lead, e2e and SLC candidates still arbitrate normally. A lower accepted SLC
-ceiling retains at least native cruise braking even when a saved profile asks
+Lead, e2e and cruise candidates still arbitrate normally. A lower explicit
+cruise or curve ceiling retains at least native cruise braking even when a saved profile asks
 for a softer approach; stronger configured braking may still apply.
 `forceDecel` keeps the native cruise braking response. Stock ACC and lateral-only control receive
 no profile effect. The acados model and cereal schemas are unchanged.
@@ -103,8 +101,8 @@ unknown or stale Traffic authority clears the applied profile immediately.
 Ordinary personalities keep their existing 45/70 mph follow curve. The saved
 Long Planner document also carries an independent global braking response.
 Standard is the default and preserves the native cruise floor; choosing Eco
-or Sport requests the frozen -0.6 or -2.4 m/s² cruise floor and matching SLC
-coast style without enabling Custom Personalities. A validated personality
+or Sport requests the frozen -0.6 or -2.4 m/s² cruise floor
+without enabling Custom Personalities. A validated personality
 braking category, then Traffic, takes priority. A braking-relevant lead,
 force deceleration or stop context returns the global choice to native
 braking; a lower accepted speed ceiling retains at least native approach
