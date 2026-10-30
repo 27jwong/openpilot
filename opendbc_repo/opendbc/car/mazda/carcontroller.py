@@ -69,6 +69,7 @@ class CarController(CarControllerBase):
     _projection = self.learning_projection_observer
     if _projection is not None:
       _projection.begin(CC.actuators.torque, self.frame)
+    sent_accel = None
     # card surfaces radarState's leadOne and the resolved experimental mode (after conditional
     # experimental/chill arbitration) on CS, so opendbc stays free of messaging
     experimental_mode = bool(getattr(CS, "openpilot_experimental_mode", False))
@@ -176,6 +177,11 @@ class CarController(CarControllerBase):
         else:
           CS.acc["ACCEL_CMD"] = op_acc
 
+        # report the command the car actually gets, stock share included, so carOutput is what
+        # longlagd learns from; the 4000 sentinel before MRCC engages is no command at all
+        if CS.acc["ACC_ENABLED"]:
+          sent_accel = (CS.acc["ACCEL_CMD"] - 2000) / ACCEL_CMD_SCALE
+
       if blended_acc and self.CP.openpilotLongitudinalControl:
         # Tracked every cycle, engaged or not, so engaging picks up the coefficient the
         # situation calls for rather than whatever was frozen at the last disengage.
@@ -282,6 +288,8 @@ class CarController(CarControllerBase):
     new_actuators = CC.actuators.as_builder()
     new_actuators.torque = apply_torque / self.ccp.STEER_MAX
     new_actuators.torqueOutputCan = apply_torque
+    if sent_accel is not None:
+      new_actuators.accel = sent_accel
 
     self.long_active_last = CC.longActive
     self.frame += 1
