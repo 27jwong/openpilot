@@ -256,6 +256,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     // TODO: rename the Live* learner cache keys to match their Cereal services, with migration for persisted values.
     {"LiveDelay", {PERSISTENT, BYTES}},
     {"LiveDelaySpeedBins", {PERSISTENT, JSON}},
+    {"LiveLongitudinalDelay", {PERSISTENT, JSON}},
     {"LiveParametersV2", {PERSISTENT, BYTES}},
     {"LivestreamEncoderBitrate", {CLEAR_ON_MANAGER_START | DONT_LOG, INT}},
     {"LivestreamRequestKeyframe", {CLEAR_ON_MANAGER_START | DONT_LOG, BOOL}},
