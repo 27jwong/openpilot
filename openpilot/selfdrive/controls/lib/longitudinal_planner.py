@@ -46,6 +46,7 @@ from openpilot.starpilot.car.ford.stopped_lead import owner_for as ford_stop_own
 from openpilot.starpilot.car.volkswagen.stopped_lead import owner_for as vw_stop_owner
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import STOP_DISTANCE
 from openpilot.starpilot.longitudinal.lead_approach import LeadApproach, LeadApproachKey, project as project_approach
+from openpilot.starpilot.longitudinal.learned_delay import get_accel_from_plan_split
 from openpilot.starpilot.lateral.lane_change_preferences import LaneChangePolicy
 
 A_CRUISE_MAX_VALS = [1.6, 1.2, 0.8, 0.6]
@@ -151,6 +152,9 @@ class LongitudinalPlanner:
     self.lane_change_gap = LaneChangeGap()
     self.experimental_release = ExperimentalRelease()
     self.lead_approach = LeadApproach(dt, CP.longitudinalActuatorDelay)
+    # lookaheads for requests the powertrain meets and ones that need the brakes (plannerd sets them
+    # from longlagd's learned split); both are the car's delay until then
+    self.gas_delay = self.brake_delay = float(CP.longitudinalActuatorDelay)
 
     self.v_desired_filter = FirstOrderFilter(init_v, 2.0, self.dt)
     self.a_cruise = init_a
@@ -179,6 +183,11 @@ class LongitudinalPlanner:
     self.vision_stop_buffer = vision_stop_owner(CP)
     self.ford_stop_approach = ford_stop_owner(CP, STOP_DISTANCE - .5) or vw_stop_owner(CP, STOP_DISTANCE - .5)
     self.preap_adaptive = preap_adaptive_owner(CP)
+
+  def set_long_delays(self, gas_delay: float, brake_delay: float):
+    self.gas_delay, self.brake_delay = float(gas_delay), float(brake_delay)
+    # lead reaction time is about how soon braking takes hold
+    self.lead_approach.actuator_delay = self.brake_delay
 
   def update(self, sm, *, cruise_ceiling: CruiseCeiling | None = None,
              profile_tuning: ProfileTuning | None = None, curve_ceiling: CurveCeiling | None = None,
@@ -379,13 +388,18 @@ class LongitudinalPlanner:
     # Save starting point for next iteration
     a_prev = self.output_a_target
 
-    action_delay = self.CP.longitudinalActuatorDelay if self.action_delay_override is None else self.action_delay_override
-    action_t = action_delay + DT_MDL
-    output_a_target_mpc = get_accel_from_plan(self.v_desired_trajectory, self.a_desired_trajectory, CONTROL_N_T_IDX,
-                                              action_t=action_t)
-    output_should_stop_mpc = forecast_should_stop(
-      self.CP, self.v_desired_trajectory, CONTROL_N_T_IDX, action_t,
-      fallback=should_stop(v_ego, output_a_target_mpc, self.stop_speed))
+    def accel_from_delay(delay):
+      action_t = delay + DT_MDL
+      a_target = get_accel_from_plan(self.v_desired_trajectory, self.a_desired_trajectory, CONTROL_N_T_IDX,
+                                     action_t=action_t)
+      return a_target, forecast_should_stop(self.CP, self.v_desired_trajectory, CONTROL_N_T_IDX, action_t,
+                                            fallback=should_stop(v_ego, a_target, self.stop_speed))
+    # A developer-tuned delay is a fixed override of both learned delays
+    gas_delay = brake_delay = self.action_delay_override
+    if gas_delay is None:
+      gas_delay, brake_delay = self.gas_delay, self.brake_delay
+    output_a_target_mpc, output_should_stop_mpc = get_accel_from_plan_split(accel_from_delay, v_ego,
+                                                                            gas_delay, brake_delay)
     output_a_target_e2e = sm['modelV2'].action.desiredAcceleration
     output_should_stop_e2e = sm['modelV2'].action.shouldStop
     if (self.force_stop_plan.resume_override and not self.force_stop_plan.forcing and

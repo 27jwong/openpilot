@@ -23,6 +23,7 @@ from openpilot.starpilot.longitudinal.encouragement import NudgePreferences
 from openpilot.starpilot.longitudinal.force_stop_runtime import ForceStopRuntime
 from openpilot.starpilot.longitudinal.stop_resume import collect_resume
 from openpilot.starpilot.longitudinal.lead_approach_runtime import LeadApproachPreferences
+from openpilot.starpilot.longitudinal.learned_delay import LearnedDelayHost
 from openpilot.starpilot.curve_speed.host import CurveHost
 from openpilot.starpilot.curve_speed.runtime import DriverEvent as CurveDriverEvent
 from openpilot.starpilot.curve_speed.preferences import PreferenceHost as CurvePreferenceHost
@@ -340,6 +341,7 @@ def starpilot_main():
   downhill_request_ns = -1_000_000_000
   if downhill_available and 'REPLAY' in os.environ:
     longitudinal_planner.downhill_surplus_mps = read_surplus(params)
+  learned_delay = LearnedDelayHost(params, CP)
   nudge_preferences = NudgePreferences(params)
   # Saved-on features start only for a finalized, supported driving owner. Their
   # current-source and longitudinal authority checks still run every frame.
@@ -423,6 +425,8 @@ def starpilot_main():
         if downhill_available and not 0 <= settings_now_ns - downhill_request_ns < 1_000_000_000:
           downhill_request_ns = settings_now_ns
           longitudinal_planner.downhill_surplus_mps = read_surplus(params)
+      # longlagd's saved gas/brake split, re-read every few seconds, also before the batch
+      longitudinal_planner.set_long_delays(*learned_delay.refresh(time.monotonic_ns()))
       sm.update()
       if sm.updated['modelV2']:
         # Only explicit replay uses the recorded model timeline. In a live host,
