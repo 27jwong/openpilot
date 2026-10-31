@@ -7,10 +7,14 @@ comma's Hugging Face LFS server, not GitHub, so GitHub rejects any push that
 contains it (GH008). CUTOFF is the commit where StarPilot moved everything into
 plain git, so this script rewrites upstream history with CUTOFF as a root commit.
 
-Only pre-CUTOFF parents and commit signatures are dropped; trees, authors,
-dates and messages are byte-identical. The same upstream commit therefore
-always maps to the same rewritten SHA, and each sync extends the mirror branch
-instead of replacing it.
+Only pre-CUTOFF parents and commit signatures are dropped; authors, dates and
+messages are byte-identical, and so are trees, with one exception: upstream
+sometimes commits a file as a Git LFS pointer for a few commits before fixing
+it, and GitHub rejects pushes that reference LFS objects it does not store. In
+those commits the pointer is replaced by the blob the file had in the first
+parent (see lfs_fixups). The same upstream commit therefore always maps to the
+same rewritten SHA, and each sync extends the mirror branch instead of
+replacing it.
 
 Usage:
   scripts/starpilot_sync.py             # fetch upstream, update the starpilot-upstream branch
@@ -52,7 +56,84 @@ def read_commits(shas: list[str]) -> dict[str, bytes]:
   return commits
 
 
-def rewrite(raw: bytes, parents: list[str]) -> bytes:
+def unpublished_pointers(tip: str, old_tip: str, exclude: list[str]) -> set[str]:
+  """Git LFS pointer blobs reachable from tip that the mirror does not already contain."""
+  objects = git("rev-list", "--objects", "--no-object-names", tip, "--not", *([old_tip] if old_tip else []), *exclude, "--")
+  sizes = git("cat-file", "--batch-check=%(objecttype) %(objectname) %(objectsize)", stdin=objects).decode().splitlines()
+  small = [s.split()[1] for s in sizes if s.startswith("blob ") and int(s.split()[2]) < 1024]
+  if not small:
+    return set()
+  out = git("cat-file", "--batch", stdin="\n".join(small).encode() + b"\n")
+  pointers, pos = set(), 0
+  while pos < len(out):
+    nl = out.index(b"\n", pos)
+    sha, _, size = out[pos:nl].split()
+    start = nl + 1
+    if LFS_POINTER in out[start:start + int(size)]:
+      pointers.add(sha.decode())
+    pos = start + int(size) + 1
+  return pointers
+
+
+def tree_entry(tree: str, path: str) -> tuple[str, str] | None:
+  """(mode, sha) of path in tree, or None."""
+  out = git("ls-tree", "-z", tree, "--", path)
+  if not out:
+    return None
+  meta = out.split(b"\t", 1)[0].decode().split()
+  return meta[0], meta[2]
+
+
+def set_blob(tree: str, parts: list[str], mode: str, blob: str) -> str:
+  """tree with the entry at parts replaced by (mode, blob), rebuilding the trees above it."""
+  out = []
+  for e in git("ls-tree", "-z", tree).split(b"\x00"):
+    if not e:
+      continue
+    meta, name = e.split(b"\t", 1)
+    emode, etype, esha = meta.decode().split()
+    if name.decode() == parts[0]:
+      if len(parts) == 1:
+        e = f"{mode} blob {blob}".encode() + b"\t" + name
+      else:
+        assert etype == "tree", (parts, etype)
+        e = f"{emode} tree {set_blob(esha, parts[1:], mode, blob)}".encode() + b"\t" + name
+    out.append(e)
+  return git("mktree", "-z", stdin=b"\x00".join(out) + b"\x00").decode().strip()
+
+
+def lfs_fixup(commit: str, parents: list[str], pointers: set[str], live: dict[str, dict[str, tuple[str, str]]]) -> str | None:
+  """Tree of commit with each pointer in `pointers` swapped for the blob its path had before the pointer, or None.
+
+  live maps commit -> {path: (mode, replacement blob)} along the first-parent chain, so a pointer is
+  replaced where it appears and again in every later commit that inherits it, until upstream replaces the file.
+  """
+  inherited = dict(live.get(parents[0], {})) if parents else {}
+  if parents and (inherited or pointers):
+    changed = git("diff-tree", "-r", "-z", "--no-commit-id", "--raw", parents[0], commit).split(b"\x00")
+    for i in range(0, len(changed) - 1, 2):
+      _, mode, _, sha, status = changed[i].decode().split()
+      path = changed[i + 1].decode()
+      previous = inherited.pop(path, None)
+      if status[0] == "D" or sha not in pointers:
+        continue
+      old = tree_entry(parents[0], path)
+      if previous is not None:
+        inherited[path] = (mode, previous[1])
+      elif old is not None and old[1] not in pointers:
+        inherited[path] = (mode, old[1])
+      else:
+        sys.exit(f"{path} is a Git LFS pointer in {commit[:12]} with no real version before it")
+  live[commit] = inherited
+  if not inherited:
+    return None
+  tree = git("rev-parse", f"{commit}^{{tree}}").decode().strip()
+  for path, (mode, blob) in inherited.items():
+    tree = set_blob(tree, path.split("/"), mode, blob)
+  return tree
+
+
+def rewrite(raw: bytes, parents: list[str], tree: str | None = None) -> bytes:
   header, sep, message = raw.partition(b"\n\n")
   lines, in_signature = [], False
   for line in header.split(b"\n"):
@@ -64,7 +145,7 @@ def rewrite(raw: bytes, parents: list[str]) -> bytes:
     in_signature = key in (b"gpgsig", b"gpgsig-sha256")
     if key == b"parent" or in_signature:
       continue
-    lines.append(line)
+    lines.append(b"tree " + tree.encode() if key == b"tree" and tree else line)
     if key == b"tree":
       lines += [b"parent " + p.encode() for p in parents]
   return b"\n".join(lines) + sep + message
@@ -98,14 +179,29 @@ def main() -> int:
     sys.exit(f"{upstream_ref} does not contain cutoff {CUTOFF[:12]}; upstream history was rewritten, update CUTOFF")
 
   algo = git("rev-parse", "--show-object-format").decode().strip()
+  branch_ref = f"refs/heads/{args.branch}"
+  old_tip = git("rev-parse", "--verify", "--quiet", branch_ref).decode().strip() if has_object(branch_ref) else ""
+  known = set(git("rev-list", old_tip).decode().split()) if old_tip else set()  # commits already in the mirror
+  pointers = unpublished_pointers(tip, old_tip, exclude)
+  live: dict[str, dict[str, tuple[str, str]]] = {}
+
   raw = read_commits([c for c, *_ in history])
   rewritten: dict[str, str] = {}
+
+  def commit_sha(new_raw: bytes) -> str:
+    return hashlib.new(algo, b"commit %d\0" % len(new_raw) + new_raw).hexdigest()
+
   with tempfile.TemporaryDirectory() as tmp:
     paths = []
     for i, (commit, *parents) in enumerate(history):
       # parents outside the rewritten range are pre-cutoff history and get dropped
-      new_raw = rewrite(raw[commit], [rewritten[p] for p in parents if p in rewritten])
-      rewritten[commit] = hashlib.new(algo, b"commit %d\0" % len(new_raw) + new_raw).hexdigest()
+      kept = [rewritten[p] for p in parents if p in rewritten]
+      new_raw = rewrite(raw[commit], kept)
+      if commit_sha(new_raw) not in known:
+        tree = lfs_fixup(commit, parents, pointers, live)
+        if tree:
+          new_raw = rewrite(raw[commit], kept, tree)
+      rewritten[commit] = commit_sha(new_raw)
       path = Path(tmp, str(i))
       path.write_bytes(new_raw)
       paths.append(str(path))
@@ -114,9 +210,6 @@ def main() -> int:
   assert written == [rewritten[c] for c, *_ in history], "rewritten commit hashes do not match"
 
   new_tip = rewritten[tip]
-  branch_ref = f"refs/heads/{args.branch}"
-  old_tip = git("rev-parse", "--verify", "--quiet", branch_ref).decode().strip() if has_object(branch_ref) else ""
-
   # GitHub rejects pushes that reference LFS objects it does not store
   objects = git("rev-list", "--objects", "--no-object-names", new_tip, *(["--not", old_tip] if old_tip else []))
   sizes = git("cat-file", "--batch-check=%(objecttype) %(objectname) %(objectsize)", stdin=objects).decode().split("\n")
