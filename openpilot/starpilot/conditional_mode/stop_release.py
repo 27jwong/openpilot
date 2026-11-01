@@ -6,11 +6,12 @@ from openpilot.selfdrive.controls.radard import get_RadarState_from_vision
 from openpilot.starpilot.model_geometry import STANDSTILL_RELEASE_SPEED_MPS
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.starpilot.conditional_mode.projection import _standstill_path_extent
-from openpilot.starpilot.conditional_mode.stop import FROZEN_RAW_STOP_DISTANCE_M, STOP_MODEL_RELEASE_MARGIN_M
+from openpilot.starpilot.conditional_mode.stop import STOP_MODEL_RELEASE_MARGIN_M
 
 SOURCES = ('carState', 'carControl', 'controlsState', 'selfdriveState', 'radarState', 'modelV2')
 MAX_AGE_NS = 150_000_000
 CLEAR_DWELL_NS = 500_000_000
+LEAD_PASS_MARGIN_M = 20.0  # Plan must pass the departing lead's current spot by this much.
 
 
 def _supported(cp):
@@ -22,6 +23,17 @@ def _supported(cp):
 
 def owner_for(cp):
   return StoppedLeadRelease() if _supported(cp) else None
+
+
+def _min_release_extent_m(commit_distance_m, leads):
+  """Shortest model path that still proves the committed stop is behind us.
+
+  `leads` are already corroborated departing leads (6.3-18 m, vLead >= 0.6, not
+  braking, model-correlated). A model that follows one of them plans ~40-48 m
+  over its 10 s horizon, so the raw 50 m stop distance alone can never clear.
+  Instead the plan must carry ego past the farthest lead's current position.
+  """
+  return max(commit_distance_m, max(lead.dRel for lead in leads) + LEAD_PASS_MARGIN_M) + STOP_MODEL_RELEASE_MARGIN_M
 
 
 class StoppedLeadRelease:
@@ -53,10 +65,6 @@ class StoppedLeadRelease:
           model.action.shouldStop or not math.isfinite(model.action.desiredAcceleration) or model.action.desiredAcceleration < .3):
         self.reset()
         return False
-      extent = _standstill_path_extent(model)
-      if extent is None or extent < max(FROZEN_RAW_STOP_DISTANCE_M, detector.commit_distance_m) + STOP_MODEL_RELEASE_MARGIN_M:
-        self.reset()
-        return False
       velocities, times = tuple(model.velocity.x), tuple(ModelConstants.T_IDXS)
       if len(velocities) != 33 or len(times) != 33 or not all(math.isfinite(v) and -.05 <= v <= 100. for v in velocities):
         self.reset()
@@ -84,6 +92,10 @@ class StoppedLeadRelease:
                   for field in ('dRel', 'yRel', 'vLead', 'aLeadK'))):
             self.reset()
             return False
+      extent = _standstill_path_extent(model)
+      if extent is None or extent < _min_release_extent_m(detector.commit_distance_m, [lead for _, lead in leads]):
+        self.reset()
+        return False
       key = (drive_id, cp.carFingerprint, tuple((str(config.safetyModel), config.safetyParam) for config in cp.safetyConfigs),
              tuple((slot, bool(lead.radar), lead.radarTrackId if lead.radar else -1) for slot, lead in leads))
       stamp = int(sm.logMonoTime['modelV2'])
