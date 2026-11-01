@@ -33,7 +33,8 @@ from types import SimpleNamespace
 from functools import lru_cache
 from openpilot.cereal import messaging
 from openpilot.selfdrive.controls.radard import get_RadarState_from_vision
-from openpilot.starpilot.conditional_mode.stop_release import StoppedLeadRelease
+from openpilot.starpilot.conditional_mode.stop import STOP_MODEL_RELEASE_MARGIN_M
+from openpilot.starpilot.conditional_mode.stop_release import LEAD_PASS_MARGIN_M, StoppedLeadRelease
 from openpilot.starpilot.longitudinal.tests import test_cem_green_release as green
 from openpilot.starpilot.tests.test_ford_recorded_departure import _motion_payloads, _samples
 
@@ -118,6 +119,43 @@ def test_vision_release_requires_continuous_corroboration_and_native_go(defect):
       sm = scene(now, False)
     results.append(owner.sample(sm, cp, planner, detector, now_ns=now, drive_id=green.MONO-1_000_000_000))
   assert not any(results)
+
+
+def _lead_following_path(sm, extent):
+  # A model following a departing lead plans well short of the raw 50 m stop distance.
+  model = sm['modelV2']
+  distances = list(model.position.x)
+  model.position.x = [x * extent / max(distances) for x in distances]
+
+
+def _release_ticks(extent_from_lead, commit_distance_m=3.):
+  cp = CarParams(openpilotLongitudinalControl=True, carFingerprint='MAZDA_CX30')
+  owner = StoppedLeadRelease()
+  detector = SimpleNamespace(committed=True, standstill_committed=True, standstill_reason='light', commit_distance_m=commit_distance_m)
+  planner = SimpleNamespace(mpc=SimpleNamespace(solution_status=0), output_should_stop=False, output_a_target=.5,
+                            force_stop_plan=SimpleNamespace(forcing=False, should_stop=False))
+  results = []
+  for tick in range(13):
+    now = green.MONO + 1_000_000_000 + tick * 50_000_000
+    sm = scene(now, True)
+    lead_m = max(lead.dRel for lead in (sm['radarState'].leadOne, sm['radarState'].leadTwo) if lead.present)
+    _lead_following_path(sm, extent_from_lead(lead_m))
+    results.append(owner.sample(sm, cp, planner, detector, now_ns=now, drive_id=green.MONO-1_000_000_000))
+  return results
+
+
+def test_lead_following_path_short_of_raw_stop_distance_releases():
+  # CX-30 2026-10-31: lead 6-10 m away at 0.6-1.8 m/s, model path 42-48 m; held until the driver pressed gas.
+  results = _release_ticks(lambda lead_m: 45.)
+  assert not any(results[:10]) and all(results[10:])
+
+
+def test_path_that_does_not_clear_the_lead_never_releases():
+  assert not any(_release_ticks(lambda lead_m: lead_m + LEAD_PASS_MARGIN_M + STOP_MODEL_RELEASE_MARGIN_M - .5))
+
+
+def test_committed_stop_beyond_the_lead_still_holds():
+  assert not any(_release_ticks(lambda lead_m: 45., commit_distance_m=60.))
 
 
 @pytest.mark.parametrize('vision', [False, True])
