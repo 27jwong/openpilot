@@ -191,7 +191,8 @@ def main() -> int:
   def commit_sha(new_raw: bytes) -> str:
     return hashlib.new(algo, b"commit %d\0" % len(new_raw) + new_raw).hexdigest()
 
-  with tempfile.TemporaryDirectory() as tmp:
+  # on Windows another process can still hold a temp file open at cleanup, which must not abort the sync
+  with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
     paths = []
     for i, (commit, *parents) in enumerate(history):
       # parents outside the rewritten range are pre-cutoff history and get dropped
