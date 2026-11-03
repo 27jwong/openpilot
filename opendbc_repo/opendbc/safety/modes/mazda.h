@@ -276,14 +276,11 @@ static safety_config mazda_init(uint16_t param) {
     {.msg = {{MAZDA_2019_STEER_TORQUE,  1, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
   };
 
-  // An RxCheck is 88 bytes, 28 of them mutable status, and every firmware links this file. Four writable
-  // tables cost 1.7 KB of RAM and overflow DTCMRAM on body_h7, so the variants stay in flash and the one
-  // the param selects is copied into this workspace. set_safety_hooks() clears every status after init.
-  static RxCheck mazda_rx_checks[5];
-  _Static_assert(sizeof(mazda_gen1_rx_checks) == sizeof(mazda_rx_checks), "Mazda GEN1 RX count");
-  _Static_assert(sizeof(mazda_ti_rx_checks) == sizeof(mazda_rx_checks), "Mazda TI RX count");
-  _Static_assert(sizeof(mazda_2019_rx_checks) == sizeof(mazda_rx_checks), "Mazda 2019 RX count");
-  _Static_assert(sizeof(mazda_2023_rx_checks) == sizeof(mazda_rx_checks), "Mazda 2023 RX count");
+  // RxCheck is constant (the mutable state lives in rx_status), so the variants stay in flash and the param
+  // just selects one. Every variant must have the same count, or the selected table would not fit the config.
+  _Static_assert(sizeof(mazda_ti_rx_checks) == sizeof(mazda_gen1_rx_checks), "Mazda TI RX count");
+  _Static_assert(sizeof(mazda_2019_rx_checks) == sizeof(mazda_gen1_rx_checks), "Mazda 2019 RX count");
+  _Static_assert(sizeof(mazda_2023_rx_checks) == sizeof(mazda_gen1_rx_checks), "Mazda 2023 RX count");
 
   // Check flags
   gen1 = GET_FLAG(param, FLAG_GEN1);
@@ -304,9 +301,6 @@ static safety_config mazda_init(uint16_t param) {
   if (gen3) {
     selected_rx = mazda_2023_rx_checks;
   }
-  for (unsigned int i = 0U; i < (sizeof(mazda_rx_checks) / sizeof(mazda_rx_checks[0])); i++) {
-    mazda_rx_checks[i] = selected_rx[i];
-  }
 
   // AOL is qualified for exactly two words: 0 (stock-camera GEN1) and GEN2 alone (CX-30 over the torque interceptor).
   mazda_aol_gen2 = (param == (uint16_t)FLAG_GEN2);
@@ -324,7 +318,7 @@ static safety_config mazda_init(uint16_t param) {
     };
     aol_policy = &policy;
   }
-  safety_config ret = BUILD_SAFETY_CFG(mazda_rx_checks, MAZDA_TX_MSGS);
+  safety_config ret = BUILD_SAFETY_CFG(mazda_gen1_rx_checks, MAZDA_TX_MSGS);
 
   if (gen1) {
     if (radar_interceptor && torque_interceptor) {
@@ -339,16 +333,17 @@ static safety_config mazda_init(uint16_t param) {
   }
 
   if (gen2) {
-    ret = BUILD_SAFETY_CFG(mazda_rx_checks, MAZDA_2019_TX_MSGS);
+    ret = BUILD_SAFETY_CFG(mazda_gen1_rx_checks, MAZDA_2019_TX_MSGS);
   }
   if (gen3) {
-    ret = BUILD_SAFETY_CFG(mazda_rx_checks, MAZDA_2019_TX_MSGS);
+    ret = BUILD_SAFETY_CFG(mazda_gen1_rx_checks, MAZDA_2019_TX_MSGS);
   }
 
   if (((unsigned int)alternative_experience == 32U) && !mazda_aol_enabled) {
     ret.tx_msgs = NULL;
     ret.tx_msgs_len = 0;
   }
+  ret.rx_checks = selected_rx;
   return ret;
 }
 
