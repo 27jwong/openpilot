@@ -637,6 +637,9 @@ class EmissionDecoder:
         raw, active = values['LKAS_Output'], bool(values['LKAS_Request'])
     elif family == 'mazda':
       raw, active = values['LKAS_REQUEST'], witness.steer_requested
+      if witness.codec_id == 'mazda.EPS_LKAS' and raw >= 0x8000:
+        # mazda_2019 declares the GEN2 request unsigned; the wire carries int16 (as the safety TX check reads it).
+        raw -= 0x10000
     elif family == 'chrysler':
       raw, active = values['STEERING_TORQUE'], bool(values['LKAS_CONTROL_BIT'])
     elif family == 'mg':

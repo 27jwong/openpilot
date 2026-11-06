@@ -21,6 +21,7 @@ from opendbc.car.rivian.values import CAR as RIVIAN
 from opendbc.car.subaru.values import CAR as SUBARU
 from opendbc.car.toyota.values import CAR as TOYOTA
 from opendbc.car.volkswagen.values import CAR as VOLKSWAGEN
+from openpilot.common.realtime import ControlsTimer
 from opendbc.car.steering_projection import (
   inspect_projection,
   install_observer,
@@ -43,6 +44,7 @@ PLATFORMS = (
   VOLKSWAGEN.AUDI_Q5_MK1,
   SUBARU.SUBARU_IMPREZA,
   MAZDA.MAZDA_CX5_2022,
+  MAZDA.MAZDA_CX_30,
   CHRYSLER.CHRYSLER_PACIFICA_2018,
   RIVIAN.RIVIAN_R1,
 )
@@ -138,8 +140,13 @@ def check_packet(ci, frames, witness):
       torque, request = values['LKAS_Output'], bool(values['LKAS_Request'])
   elif family == 'mazda':
     torque, request = values['LKAS_REQUEST'], witness.steer_requested
-    # GEN1 forwards camera status; the codec has no separate CC request bit.
-    assert values['BIT_1'] == ci.CS.cam_lkas['BIT_1']
+    if witness.codec_id == 'mazda.EPS_LKAS':
+      # GEN2 sends the request to the interceptor as int16; mazda_2019 declares it unsigned.
+      assert witness.can_address == 0x249 and witness.can_bus == 1
+      torque = torque - 0x10000 if torque >= 0x8000 else torque
+    else:
+      # GEN1 forwards camera status; the codec has no separate CC request bit.
+      assert values['BIT_1'] == ci.CS.cam_lkas['BIT_1']
   elif family == 'chrysler':
     torque, request = values['STEERING_TORQUE'], bool(values['LKAS_CONTROL_BIT'])
   elif family == 'mg':
@@ -183,17 +190,24 @@ def test_actual_factory_quantization_and_packet(platform, units):
 
 @pytest.mark.parametrize('platform', PLATFORMS)
 def test_observer_has_no_command_effect_and_inactive_veto(platform):
-  observed, plain = make_interface(platform), make_interface(platform)
-  assert plain.CC.learning_projection is None
-  assert install_observer(observed)
-  for tick in range(280):
-    cc = control(0.04 if tick < 260 else -0.02, active=tick < 275)
-    out_a, frames_a, witness = apply(observed, cc)
-    out_b, frames_b, _ = apply(plain, cc)
-    assert out_a.to_dict() == out_b.to_dict()
-    assert frames_a == frames_b
-    if tick >= 275 and witness is not None:
-      assert inspect_projection(observed, cc, out_a, witness) is False
+  # Mazda's ControlsTimer is class-level, so two interleaved controllers would double-tick each other's
+  # ACC cadence. Run each controller alone from a fresh timer and compare the two transcripts.
+  def run(observe):
+    ControlsTimer.frame, ControlsTimer.objects = 0, []
+    ci = make_interface(platform)
+    assert ci.CC.learning_projection is None
+    if observe:
+      assert install_observer(ci)
+    transcript = []
+    for tick in range(280):
+      cc = control(0.04 if tick < 260 else -0.02, active=tick < 275)
+      out, frames, witness = apply(ci, cc)
+      transcript.append((out.to_dict(), frames))
+      if observe and tick >= 275 and witness is not None:
+        assert inspect_projection(ci, cc, out, witness) is False
+    return transcript
+
+  assert run(True) == run(False)
 
 
 def test_one_integer_rate_cut_is_rejected_without_epsilon():
@@ -299,3 +313,17 @@ def test_bounded_wire_decoder_refuses_unknown_or_malformed(field, value):
   assert data is not None
   data[field] = value
   assert projection_from_dict(data) is None
+
+
+@pytest.mark.parametrize('units', (-1.5, 1.5))
+def test_gen2_mazda_emission_decoder_reads_the_signed_interceptor_request(units):
+  # The CX-30 steers through EPS_LKAS on bus 1; Auto Learn's replay must decode the int16 the wire carries.
+  from types import SimpleNamespace
+  from openpilot.starpilot.flm.torque_emission_replay import EmissionDecoder
+
+  ci = make_interface(MAZDA.MAZDA_CX_30)
+  assert install_observer(ci)
+  seed = settle(ci, control(0.01))[-1][2]
+  _, _, witness = settle(ci, control(units / seed.effective_max))[-1]
+  assert witness.codec_id == 'mazda.EPS_LKAS' and (witness.final_raw < 0) == (units < 0)
+  EmissionDecoder(ci.CP).check(SimpleNamespace(witness=witness, apply_ns=BASE_NS + witness.frame * 10_000_000))
