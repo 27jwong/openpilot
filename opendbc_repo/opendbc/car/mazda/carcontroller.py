@@ -280,10 +280,14 @@ class CarController(CarControllerBase):
     steering_msgs = mazdacan.create_steering_control(self.packer, self.CP,
                                                      self.frame, apply_torque, CS.cam_lkas)
     can_sends.extend(steering_msgs)
-    # The projection describes the stock CAM_LKAS torque encoding only. It must not observe
-    # interceptor, GEN2/GEN3 or FSC-less configurations, whose steering message is something else.
-    if _projection is not None and int(self.CP.flags) == int(MazdaSafetyFlags.GEN1) and steering_msgs:
-      _projection.emit('mazda.CAM_LKAS', apply_torque, CC.latActive, steering_msgs[0])
+    # The projection describes one exact torque encoding per configuration: the stock CAM_LKAS on plain GEN1, and the
+    # GEN2 EPS_LKAS (LKAS_REQUEST = apply_torque, two's complement) to the CX-30's interceptor. GEN1 interceptor, GEN3
+    # and FSC-less configurations send something else and stay unobserved.
+    if _projection is not None and steering_msgs:
+      if int(self.CP.flags) == int(MazdaSafetyFlags.GEN1):
+        _projection.emit('mazda.CAM_LKAS', apply_torque, CC.latActive, steering_msgs[0])
+      elif int(self.CP.flags) == int(MazdaSafetyFlags.GEN2):
+        _projection.emit('mazda.EPS_LKAS', apply_torque, CC.latActive, steering_msgs[0])
 
     new_actuators = CC.actuators.as_builder()
     new_actuators.torque = apply_torque / self.ccp.STEER_MAX
