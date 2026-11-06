@@ -217,12 +217,16 @@ static void mazda_aol_rx(const CANPacket_t *msg) {
 // Observe the ordinary receiver's accepted cruise edge, not a host assertion.
 // A healthy inactive observation is required; startup-active and held-active
 // packets cannot create or restore an independent token after a disarming fault.
+// On GEN2 a held accelerator does not block the token: SET with the pedal down engages as gas override (CRZ_STATE 4),
+// which the ordinary receiver already accepts, and the token carries lateral only. Longitudinal permission still needs
+// controls_allowed, which the ordinary gas checks own. Without this the host armed on that engage and the panda did not,
+// so lateral ended at the first cancel. Same rule as Ford's cruise-edge token.
 static void mazda_aol_engagement(const CANPacket_t *msg, bool cruise_engaged, bool normal_engagement) {
   if (mazda_aol_enabled && msg_matches(msg, mazda_aol_gen2 ? 0x44AU : 0x21CU, 0U, 8U)) {
     const bool request_current = !mazda_aol_requested ||
       (safety_get_ts_elapsed(microsecond_timer_get(), aol_host_request_ts) <= AOL_HOST_REQUEST_TIMEOUT_US);
     const bool healthy = !(mazda_aol_session && !heartbeat_engaged) && acc_main_on && (mazda_aol_sources == 1U) &&
-      !brake_pressed && !gas_pressed && !relay_malfunction && !safety_rx_checks_invalid &&
+      !brake_pressed && (mazda_aol_gen2 || !gas_pressed) && !relay_malfunction && !safety_rx_checks_invalid &&
       request_current && aol_rx_healthy() && mazda_aol_current();
     if (!healthy) {
       mazda_aol_cruise_neutral = false;
