@@ -191,15 +191,33 @@ class TestMazdaGen2Aol(unittest.TestCase):
     self.frame(state=ENGAGED)
     self.assertEqual(self.safety.aol_get_permission_mask(), 0)
 
-  def test_engaging_with_the_pedal_down_is_ordinary_engagement_but_cannot_grant(self):
+  def test_engaging_with_the_pedal_down_grants_lateral_only(self):
+    # SET with the accelerator held engages as gas override; the host arms on it, so the panda must too.
     self.configure()
     self.warm()
     self.warm(frames=3, gas=True)
-    self.frame(state=GAS_OVERRIDE, gas=True)
+    self.frame(state=GAS_OVERRIDE, gas=True, request=3)
     self.assertTrue(self.safety.get_controls_allowed())
-    self.assertEqual(self.safety.aol_get_permission_mask(), 1)  # controls_allowed, as in the ordinary profile
-    self.frame(state=READY, gas=True)
-    self.assertEqual(self.safety.aol_get_permission_mask(), 0)  # no token was ever minted
+    self.assertEqual(self.safety.aol_get_permission_mask(), 3)
+    self.frame(state=ENGAGED, request=3)
+    self.assertEqual(self.safety.aol_get_permission_mask(), 3)
+    # cancel ends the ordinary engagement; the token keeps lateral and never longitudinal
+    self.frame(state=READY, request=3)
+    self.assertFalse(self.safety.get_controls_allowed())
+    self.assertEqual(self.safety.aol_get_permission_mask(), 1)
+    self.assertTrue(self.steer(10))
+
+  def test_gas_held_engage_still_needs_a_neutral_observation_and_no_brake(self):
+    self.configure()
+    self.warm(state=GAS_OVERRIDE, gas=True)  # already engaged when observation began: no edge, no token
+    self.frame(state=READY, gas=True, brake=False)
+    self.assertEqual(self.safety.aol_get_permission_mask(), 0)
+    self.configure()
+    self.warm()
+    self.frame(state=READY, gas=True, brake=True)
+    self.frame(state=GAS_OVERRIDE, gas=True, brake=True, request=3)
+    self.frame(state=READY, request=3)
+    self.assertEqual(self.safety.aol_get_permission_mask(), 0)  # the brake still blocks the grant
 
   def test_main_off_revokes_and_requires_a_new_edge(self):
     self.configure()
