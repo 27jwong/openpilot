@@ -12,6 +12,12 @@ SOURCES = ('carState', 'carControl', 'controlsState', 'selfdriveState', 'radarSt
 MAX_AGE_NS = 150_000_000
 CLEAR_DWELL_NS = 500_000_000
 LEAD_PASS_MARGIN_M = 20.0  # Plan must pass the departing lead's current spot by this much.
+# Nearest a departing lead may be. Upstream's 6.3 m is openpilot's own 6 m stop distance plus a
+# margin, so it reads "the lead has left its stopped spot". A CX-30 stop under blended ACC rests
+# 4-5.6 m behind the lead, and the lead then has to cover that difference before the dwell can
+# even start: 2026-11-11 it added 0.9 s and the driver pressed the gas first. The lead's speed,
+# the model path and the planner's own go decision already prove the departure.
+LEAD_MIN_GAP_M = 4.0
 
 
 def _supported(cp):
@@ -28,7 +34,7 @@ def owner_for(cp):
 def _min_release_extent_m(commit_distance_m, leads):
   """Shortest model path that still proves the committed stop is behind us.
 
-  `leads` are already corroborated departing leads (6.3-18 m, vLead >= 0.6, not
+  `leads` are already corroborated departing leads (4-18 m, vLead >= 0.6, not
   braking, model-correlated). A model that follows one of them plans ~40-48 m
   over its 10 s horizon, so the raw 50 m stop distance alone can never clear.
   Instead the plan must carry ego past the farthest lead's current position.
@@ -76,7 +82,7 @@ class StoppedLeadRelease:
       leads = [(slot, lead) for slot, lead in enumerate((sm['radarState'].leadOne, sm['radarState'].leadTwo)) if lead.present]
       if not leads or any(lead.radar and lead.radarTrackId < 0 or not all(math.isfinite(v) for v in
           (lead.dRel, lead.vLead, lead.aLeadK, lead.yRel, lead.modelProb)) or
-          not 6.3 <= lead.dRel <= 18. or lead.vLead < .6 or lead.aLeadK < -.15 or
+          not LEAD_MIN_GAP_M <= lead.dRel <= 18. or lead.vLead < .6 or lead.aLeadK < -.15 or
           abs(lead.yRel) > 1. or lead.modelProb < .95 for _, lead in leads):
         self.reset()
         return False

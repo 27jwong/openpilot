@@ -34,7 +34,7 @@ from functools import lru_cache
 from openpilot.cereal import messaging
 from openpilot.selfdrive.controls.radard import get_RadarState_from_vision
 from openpilot.starpilot.conditional_mode.stop import STOP_MODEL_RELEASE_MARGIN_M
-from openpilot.starpilot.conditional_mode.stop_release import LEAD_PASS_MARGIN_M, StoppedLeadRelease
+from openpilot.starpilot.conditional_mode.stop_release import LEAD_MIN_GAP_M, LEAD_PASS_MARGIN_M, StoppedLeadRelease
 from openpilot.starpilot.longitudinal.tests import test_cem_green_release as green
 from openpilot.starpilot.tests.test_ford_recorded_departure import _motion_payloads, _samples
 
@@ -128,7 +128,7 @@ def _lead_following_path(sm, extent):
   model.position.x = [x * extent / max(distances) for x in distances]
 
 
-def _release_ticks(extent_from_lead, commit_distance_m=3.):
+def _release_ticks(extent_from_lead, commit_distance_m=3., lead_gap_m=None):
   cp = CarParams(openpilotLongitudinalControl=True, carFingerprint='MAZDA_CX30')
   owner = StoppedLeadRelease()
   detector = SimpleNamespace(committed=True, standstill_committed=True, standstill_reason='light', commit_distance_m=commit_distance_m)
@@ -137,7 +137,12 @@ def _release_ticks(extent_from_lead, commit_distance_m=3.):
   results = []
   for tick in range(13):
     now = green.MONO + 1_000_000_000 + tick * 50_000_000
-    sm = scene(now, True)
+    sm = scene(now, lead_gap_m is None)
+    if lead_gap_m is not None:
+      # radar leads, so the distance can move without the vision correlation objecting
+      for lead in (sm['radarState'].leadOne, sm['radarState'].leadTwo):
+        if lead.present:
+          lead.dRel = lead_gap_m
     lead_m = max(lead.dRel for lead in (sm['radarState'].leadOne, sm['radarState'].leadTwo) if lead.present)
     _lead_following_path(sm, extent_from_lead(lead_m))
     results.append(owner.sample(sm, cp, planner, detector, now_ns=now, drive_id=green.MONO-1_000_000_000))
@@ -152,6 +157,17 @@ def test_lead_following_path_short_of_raw_stop_distance_releases():
 
 def test_path_that_does_not_clear_the_lead_never_releases():
   assert not any(_release_ticks(lambda lead_m: lead_m + LEAD_PASS_MARGIN_M + STOP_MODEL_RELEASE_MARGIN_M - .5))
+
+
+def test_lead_departing_from_a_close_stop_releases():
+  # CX-30 2026-11-11: stopped 4.1 m behind the lead, which crept to 5.5 m and later left from there.
+  # It was doing 0.6-1.3 m/s with a 38-44 m model path for 1.1 s before it reached upstream's 6.3 m.
+  results = _release_ticks(lambda lead_m: 40., lead_gap_m=5.7)
+  assert not any(results[:10]) and all(results[10:])
+
+
+def test_lead_inside_the_minimum_gap_never_releases():
+  assert not any(_release_ticks(lambda lead_m: 40., lead_gap_m=LEAD_MIN_GAP_M - .1))
 
 
 def test_committed_stop_beyond_the_lead_still_holds():
