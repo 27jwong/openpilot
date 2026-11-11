@@ -63,6 +63,7 @@ class CarController(CarControllerBase):
     self.transition_time = TRANSITION_TIME_MIN
     # openpilot owns the launch from a stop until the car is past crawl speed
     self.launch_to_op = False
+    self.op_stopping_last = False
 
 
   def update(self, CC, CS, now_nanos):
@@ -198,11 +199,15 @@ class CarController(CarControllerBase):
         # below), but left with the crawl zone it creeps and brakes back toward a stop while the
         # lead is still pulling away. So the launch is openpilot's: latched when the planner leaves
         # stopping at standstill, held until the car is past crawl speed or openpilot stops again.
+        # A launch can be interrupted: the planner drops back into stopping for a moment while the
+        # RESUME already sent has MRCC rolling the car, so the second go comes at 0.3-0.5 m/s. That
+        # is the same launch, so leaving stopping anywhere in the crawl zone latches it too.
         op_going = CC.longActive and CC.actuators.longControlState in (LongCtrlState.starting, LongCtrlState.pid)
-        if CS.out.standstill and op_going:
+        if op_going and CS.out.vEgo < MRCC_CRAWL_SPEED and (CS.out.standstill or self.op_stopping_last):
           self.launch_to_op = True
         elif not op_going or CS.out.vEgo >= MRCC_CRAWL_SPEED:
           self.launch_to_op = False
+        self.op_stopping_last = CC.longActive and CC.actuators.longControlState == LongCtrlState.stopping
 
         # The closest distance setting on the stalk is the driver demanding openpilot long, a
         # manual override that still hands over in the crawl zone. Resolved experimental mode is
@@ -224,8 +229,8 @@ class CarController(CarControllerBase):
 
         # transition_time sets the fastest crossfade; the jerk cap slows it when the two
         # commands are far apart. A closing lead is urgent and keeps the full rate, and so does a
-        # launch: the car is standing, so the swap jolts nothing, and a slow crossfade would leave
-        # MRCC's brake-back in the command.
+        # launch: the car is standing or barely rolling, so the swap jolts little, and a slow
+        # crossfade would leave MRCC's brake-back in the command.
         blend_step = DT_CTRL / transition_time
         if acc_gap and not (ttc_to_op or self.launch_to_op):
           blend_step = min(blend_step, BLEND_JERK_MAX * DT_CTRL / acc_gap)

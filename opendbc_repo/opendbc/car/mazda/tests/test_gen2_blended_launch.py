@@ -67,3 +67,35 @@ def test_stopping_again_releases_the_launch():
   assert cc.launch_to_op
   step(cc, 0.5, LongCtrlState.stopping, -0.5)
   assert not cc.launch_to_op
+
+
+def test_interrupted_launch_is_picked_up_again_while_rolling():
+  # CX-30 2026-11-11: openpilot left stopping, fell back into it for 0.6 s, and by its second go
+  # MRCC had the car rolling at 0.4 m/s. MRCC then braked at -0.5 m/s^2 while the lead drove off.
+  cc = blended_controller()
+  for _ in range(500):
+    step(cc, 0., LongCtrlState.stopping, -0.5)
+  for _ in range(20):
+    step(cc, 0., LongCtrlState.pid, 0.2)
+  for _ in range(60):
+    step(cc, 0.3, LongCtrlState.stopping, -0.5)
+  assert not cc.launch_to_op and cc.blend_coeff == 0.
+
+  for _ in range(60):
+    sent = step(cc, 0.4, LongCtrlState.pid, 1.0)
+  assert cc.launch_to_op and cc.blend_coeff == 1. and sent == 2000 + ACCEL_CMD_SCALE
+
+
+def test_crawling_without_a_stop_stays_with_mrcc():
+  # following a creeping radar lead with no stopping phase is the crawl zone's, not a launch
+  cc = blended_controller()
+  for _ in range(200):
+    step(cc, 1.0, LongCtrlState.pid, 0.3)
+  assert not cc.launch_to_op and cc.blend_coeff == 0.
+
+
+def test_leaving_stopping_above_crawl_speed_is_not_a_launch():
+  cc = blended_controller()
+  step(cc, MRCC_CRAWL_SPEED + 0.5, LongCtrlState.stopping, -0.5)
+  step(cc, MRCC_CRAWL_SPEED + 0.5, LongCtrlState.pid, 0.3)
+  assert not cc.launch_to_op
