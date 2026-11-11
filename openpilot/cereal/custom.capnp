@@ -223,6 +223,7 @@ struct StarPilotCarState @0xf35cc4560bbf6ec2 {
   steeringLimitInfo @39 :StarPilotCarControl.SteeringLimitInfo;
   toyotaCruise @38 :ToyotaCruise;
   gmRegenGear @40 :Bool;
+  forceExperimental @41 :Bool;  # Mazda GEN2: the stalk sits at the closest distance setting, demanding experimental mode
 
   struct ToyotaCruise {
     version @0 :UInt16;
