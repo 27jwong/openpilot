@@ -9,7 +9,7 @@ from openpilot.common.test import OpenpilotTestCase
 from openpilot.common.parameterized import parameterized
 from openpilot.cereal import messaging, log
 from opendbc.car.structs import car
-from openpilot.selfdrive.locationd.lagd import LateralLagEstimator, retrieve_initial_lag, retrieve_speed_bins, \
+from openpilot.selfdrive.locationd.lagd import LateralLagEstimator, retrieve_initial_lag, retrieve_speed_bins, drop_state_from_other_default, \
                                                masked_normalized_cross_correlation, speed_bin_idx, \
                                                BLOCK_NUM_NEEDED, BLOCK_SIZE, MIN_OKAY_WINDOW_SEC, VERSION, MIN_LAG, MAX_LAG, \
                                                SPEED_BIN_SPEEDS, SPEED_BIN_MIN_VEGO, SPEED_BIN_ENTRY_BUFFER_SEC, SPEED_BINS_PARAM
@@ -259,6 +259,28 @@ class TestLagd(OpenpilotTestCase):
       params.put(SPEED_BINS_PARAM, {**state, **change})
       assert retrieve_speed_bins(params, CP) is None
       assert params.get(SPEED_BINS_PARAM) is None
+
+  def test_state_dropped_when_default_changes(self):
+    params = Params()
+    CP = get_test_car_params()
+    estimator = LateralLagEstimator(CP, DT)
+    estimator.reset(0.3, 2, [None, (0.4, 2), None, None, None, None])
+    state = estimator.get_speed_bins_state(CP)
+
+    def save(bins_state):
+      params.put(SPEED_BINS_PARAM, bins_state)
+      params.put("LiveDelay", estimator.get_msg(True).to_bytes(), block=True)
+
+    # same default: what was learned is kept
+    save(state)
+    drop_state_from_other_default(params, estimator.initial_lag)
+    assert params.get(SPEED_BINS_PARAM) is not None and params.get("LiveDelay") is not None
+
+    # another default, or a table saved before the default was recorded: start over
+    for other in ({**state, 'initialLag': estimator.initial_lag + 0.085}, {k: v for k, v in state.items() if k != 'initialLag'}):
+      save(other)
+      drop_state_from_other_default(params, estimator.initial_lag)
+      assert params.get(SPEED_BINS_PARAM) is None and params.get("LiveDelay") is None
 
   @unittest.skipIf(PC, "only on device")
   def test_estimator_performance(self):

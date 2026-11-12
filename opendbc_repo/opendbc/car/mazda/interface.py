@@ -127,7 +127,9 @@ class CarInterface(CarInterfaceBase):
       ret.longitudinalTuning.kiBP = [0., 35.]
       ret.longitudinalTuning.kiV = [0.1, 0.1]
       ret.deprecated.startingState = True
-      ret.steerActuatorDelay = 0.335
+      # lagd starts from this + 0.2 and has never reached 'estimated' on this layout, so this is the delay
+      # that is applied. 0.25 gives the 0.45 s the legacy branch learned on this car (0.43-0.47).
+      ret.steerActuatorDelay = 0.25
       ret.steerAtStandstill = True
 
       if candidate == CAR.MAZDA_CX_30:
