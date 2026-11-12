@@ -300,6 +300,7 @@ class LateralLagEstimator:
     return {
       'version': VERSION,
       'carFingerprint': CP.carFingerprint,
+      'initialLag': float(self.initial_lag),
       'bins': [{
         'speed': speed_bin.speed,
         'lateralDelay': float(bin_lag),
@@ -482,6 +483,22 @@ def retrieve_initial_lag(params: Params, CP: car.CarParams):
   return None
 
 
+def drop_state_from_other_default(params: Params, initial_lag: float):
+  # The controller tracks the request delayed by the applied delay, so what gets measured follows the
+  # default the car starts from. Blocks learned under another default would drag the new one back.
+  saved = params.get(SPEED_BINS_PARAM)
+  if saved is None:
+    return
+  try:
+    same_default = bool(np.isclose(saved['initialLag'], initial_lag))
+  except Exception:
+    same_default = False
+  if not same_default:
+    cloudlog.warning("lagd: default delay changed, dropping saved delay state")
+    params.remove(SPEED_BINS_PARAM)
+    params.remove("LiveDelay")
+
+
 def retrieve_speed_bins(params: Params, CP: car.CarParams) -> list[tuple[float, int] | None] | None:
   # saved bins are only reused for the same car, version and bin layout
   saved = params.get(SPEED_BINS_PARAM)
@@ -516,6 +533,7 @@ def main():
   lag_learner = LateralLagEstimator(CP, 1. / SERVICE_LIST['deviceMotion'].frequency)
   from openpilot.starpilot.lateral.gm_geometry_runtime import GeometryPublicationOwner
   geometry_owner = GeometryPublicationOwner(params, CP)
+  drop_state_from_other_default(params, lag_learner.initial_lag)
   if (initial_lag_params := retrieve_initial_lag(params, CP)) is not None:
     lag, valid_blocks = initial_lag_params
     lag_learner.reset(lag, valid_blocks, retrieve_speed_bins(params, CP))
