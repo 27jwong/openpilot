@@ -34,7 +34,8 @@ from functools import lru_cache
 from openpilot.cereal import messaging
 from openpilot.selfdrive.controls.radard import get_RadarState_from_vision
 from openpilot.starpilot.conditional_mode.stop import STOP_MODEL_RELEASE_MARGIN_M
-from openpilot.starpilot.conditional_mode.stop_release import LEAD_MIN_GAP_M, LEAD_PASS_MARGIN_M, StoppedLeadRelease
+from openpilot.starpilot.conditional_mode.stop_release import (LEAD_MIN_GAP_M, LEAD_PASS_MARGIN_M, MODEL_SPEED_FLOOR_MPS,
+                                                                StoppedLeadRelease)
 from openpilot.starpilot.longitudinal.tests import test_cem_green_release as green
 from openpilot.starpilot.tests.test_ford_recorded_departure import _motion_payloads, _samples
 
@@ -128,7 +129,7 @@ def _lead_following_path(sm, extent):
   model.position.x = [x * extent / max(distances) for x in distances]
 
 
-def _release_ticks(extent_from_lead, commit_distance_m=3., lead_gap_m=None):
+def _release_ticks(extent_from_lead, commit_distance_m=3., lead_gap_m=None, near_speed=None):
   cp = CarParams(openpilotLongitudinalControl=True, carFingerprint='MAZDA_CX30')
   owner = StoppedLeadRelease()
   detector = SimpleNamespace(committed=True, standstill_committed=True, standstill_reason='light', commit_distance_m=commit_distance_m)
@@ -145,6 +146,9 @@ def _release_ticks(extent_from_lead, commit_distance_m=3., lead_gap_m=None):
           lead.dRel = lead_gap_m
     lead_m = max(lead.dRel for lead in (sm['radarState'].leadOne, sm['radarState'].leadTwo) if lead.present)
     _lead_following_path(sm, extent_from_lead(lead_m))
+    if near_speed is not None:
+      # the model's speed ~0.16 s out, where its standstill jitter peaks
+      sm['modelV2'].velocity.x[4] = near_speed
     results.append(owner.sample(sm, cp, planner, detector, now_ns=now, drive_id=green.MONO-1_000_000_000))
   return results
 
@@ -164,6 +168,24 @@ def test_lead_departing_from_a_close_stop_releases():
   # It was doing 0.6-1.3 m/s with a 38-44 m model path for 1.1 s before it reached upstream's 6.3 m.
   results = _release_ticks(lambda lead_m: 40., lead_gap_m=5.7)
   assert not any(results[:10]) and all(results[10:])
+
+
+def test_lead_departing_from_a_bumper_close_stop_releases():
+  # CX-30 2026-11-13: rested 1.8-3.6 m behind the lead three times. The lead was doing 0.6-2 m/s
+  # for 0.4-1.6 s before it reached the 4 m floor, and the driver pressed the gas first each time.
+  results = _release_ticks(lambda lead_m: 40., lead_gap_m=2.3)
+  assert not any(results[:10]) and all(results[10:])
+
+
+def test_standstill_model_speed_jitter_does_not_restart_the_dwell():
+  # CX-30 2026-11-13: the model's near-term speed read -0.05..-0.10 m/s on 3-6 % of standstill
+  # frames; upstream's -0.05 bound restarted the dwell three times in 0.8 s with the lead leaving.
+  results = _release_ticks(lambda lead_m: 45., near_speed=-.09)
+  assert not any(results[:10]) and all(results[10:])
+
+
+def test_model_planning_to_reverse_never_releases():
+  assert not any(_release_ticks(lambda lead_m: 45., near_speed=MODEL_SPEED_FLOOR_MPS - .05))
 
 
 def test_lead_inside_the_minimum_gap_never_releases():

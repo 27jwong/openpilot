@@ -14,10 +14,17 @@ CLEAR_DWELL_NS = 500_000_000
 LEAD_PASS_MARGIN_M = 20.0  # Plan must pass the departing lead's current spot by this much.
 # Nearest a departing lead may be. Upstream's 6.3 m is openpilot's own 6 m stop distance plus a
 # margin, so it reads "the lead has left its stopped spot". A CX-30 stop under blended ACC rests
-# 4-5.6 m behind the lead, and the lead then has to cover that difference before the dwell can
-# even start: 2026-11-11 it added 0.9 s and the driver pressed the gas first. The lead's speed,
-# the model path and the planner's own go decision already prove the departure.
-LEAD_MIN_GAP_M = 4.0
+# wherever MRCC put it: 4-5.6 m behind the lead on 2026-11-11, 1.8-3.6 m on 2026-11-13. Any floor
+# above the resting gap makes the lead cover the difference before the dwell can even start
+# (0.4-1.6 s on 11-13, the driver pressed the gas first every time). The lead's speed over the
+# dwell, the model path and the planner's own go decision already prove the departure, so the
+# floor only rejects a lead with no usable distance.
+LEAD_MIN_GAP_M = 1.0
+# Lowest speed the model may report anywhere on its plan. At a standstill its near-term speed
+# (peaking ~0.16 s out) jitters down to -0.10 m/s on the CX-30; upstream's -0.05 failed 3-6 % of
+# standstill frames and one such frame restarts the dwell (three times in 0.8 s on 2026-11-13).
+# The plan from 2 s on must still be >= 0.3 m/s and rising, which is what rules out a reversing plan.
+MODEL_SPEED_FLOOR_MPS = -0.2
 
 
 def _supported(cp):
@@ -34,7 +41,7 @@ def owner_for(cp):
 def _min_release_extent_m(commit_distance_m, leads):
   """Shortest model path that still proves the committed stop is behind us.
 
-  `leads` are already corroborated departing leads (4-18 m, vLead >= 0.6, not
+  `leads` are already corroborated departing leads (1-18 m, vLead >= 0.6, not
   braking, model-correlated). A model that follows one of them plans ~40-48 m
   over its 10 s horizon, so the raw 50 m stop distance alone can never clear.
   Instead the plan must carry ego past the farthest lead's current position.
@@ -72,7 +79,7 @@ class StoppedLeadRelease:
         self.reset()
         return False
       velocities, times = tuple(model.velocity.x), tuple(ModelConstants.T_IDXS)
-      if len(velocities) != 33 or len(times) != 33 or not all(math.isfinite(v) and -.05 <= v <= 100. for v in velocities):
+      if len(velocities) != 33 or len(times) != 33 or not all(math.isfinite(v) and MODEL_SPEED_FLOOR_MPS <= v <= 100. for v in velocities):
         self.reset()
         return False
       tail = [v for v, t in zip(velocities, times, strict=True) if t >= 2.]
