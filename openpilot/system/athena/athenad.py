@@ -92,6 +92,7 @@ UPLOAD_URL = regex(r'https?://[\x21-\x7e]+')
 UPLOAD_HEADERS = dict_of(regex(r'[\w\-]+'), regex(r'[\x20-\x7e]*'))
 UPLOAD_ID = regex(r'[0-9a-f]{40}')
 CLIP_FILENAME = regex(r'[\w\-][\w\-.]*')
+# Konik signs the URL itself and sends no headers; UploadFile.from_dict defaults them to {}
 UPLOAD_FILE = struct({"fn": regex(DATA_PATH), "url": UPLOAD_URL},
                      {"headers": UPLOAD_HEADERS, "allow_cellular": boolean, "priority": integer(0, DEFAULT_UPLOAD_PRIORITY)})
 
