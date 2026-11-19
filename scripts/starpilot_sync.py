@@ -29,7 +29,7 @@ import tempfile
 from pathlib import Path
 
 UPSTREAM_URL = "https://github.com/StarPilotHQ/StarPilot"
-UPSTREAM_BRANCH = "Dom"  # SecretGoodStarPilot until 2026-10-28; Dom continues its history
+UPSTREAM_BRANCH = "testing"  # Dom until 2026-11-17, SecretGoodStarPilot until 2026-10-28; each continues its predecessor's history
 CUTOFF = "22a8575199bfb5676da392cdc2281ef8c06533e8"  # "Vendor dependencies and resources for standalone builds"
 SHALLOW_SINCE = "2026-09-25"  # comfortably before CUTOFF, for shallow clones
 LFS_POINTER = b"version https://git-lfs.github.com/spec/v1"
