@@ -10,6 +10,20 @@ ButtonType = structs.CarState.ButtonEvent.Type
 
 DASHBOARD_CARS = frozenset(CAR)
 
+# GEN2 crawl zone: below this openpilot owns the car outright under blended ACC, held in experimental mode.
+# MRCC used to keep crawl-speed following because openpilot's stops were the harsher ones (09-29: -1.42 vs
+# -0.97 m/s^2, jerk 2.47 vs 0.76). On the 11-19 drives openpilot's experimental stop requests were the gentler
+# ones (-1.09 vs -1.26, worst -2.00 vs -3.54), and what jerked the car at crawl was chill/experimental flipping
+# under openpilot plus the handover back to MRCC for each stop.
+OP_CRAWL_SPEED = 6.5 * CV.MPH_TO_MS
+# Left only above this, so traffic hovering at the entry speed does not swap controllers and planner
+# modes on every crossing.
+OP_CRAWL_EXIT_SPEED = 8.0 * CV.MPH_TO_MS
+
+
+def op_crawl_zone(v_ego: float, in_zone: bool) -> bool:
+  return v_ego < (OP_CRAWL_EXIT_SPEED if in_zone else OP_CRAWL_SPEED)
+
 
 class DashboardCameraParser(CANParser):
   def __init__(self, dbc_name):
@@ -44,7 +58,7 @@ class CarState(CarStateBase):
 
     self.distance_button = 0
     self.distance_setting = 0
-    self.radar_lead = False
+    self.op_crawl = False
     self.accel_button = 0
     self.decel_button = 0
     self.cancel_button = 0
@@ -220,6 +234,8 @@ class CarState(CarStateBase):
     # the UI speed agreeing with the dash. Reciprocal by construction, not a second constant.
     # No-op on the 1.0 default.
     ret.vEgoCluster = ret.vEgo / (self.CP.wheelSpeedFactor or 1.0)
+    # read by both the blend and the experimental-mode demand, so they always agree on the zone
+    self.op_crawl = op_crawl_zone(ret.vEgo, self.op_crawl)
 
     ret.steeringTorque = cp_body.vl["TI_FEEDBACK"]["STEER_TORQUE_SENSOR"]
     ret.steeringPressed = abs(ret.steeringTorque) > self.params.STEER_DRIVER_ALLOWANCE
@@ -247,8 +263,6 @@ class CarState(CarStateBase):
       ret.cruiseState.enabled = (cp.vl["CRUZE_STATE"]["CRZ_STATE"] >= 2)
       ret.cruiseState.available = (cp.vl["CRUZE_STATE"]["CRZ_STATE"] != 0)
       self.distance_setting = int(cp.vl["CRUZE_STATE"]["DISTANCE_SETTING"])
-      # the radar's own lead flag, which only reads while ACC is engaged
-      self.radar_lead = bool(cp.vl["CRUZE_STATE"]["LEAD_DETECTED"])
     else:
       ret.cruiseState.speed = cp_body.vl["CRUZE_STATE"]["CRZ_SPEED"] * unit_conversion
       ret.cruiseState.enabled = (cp_body.vl["CRUZE_STATE"]["CRZ_STATE"] >= 3)

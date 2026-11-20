@@ -21,8 +21,9 @@ def _state(*, available=True, can_valid=True):
   return cs.as_reader()
 
 
-def _flag(cp, setting, **state):
-  message = compose(cp, SimpleNamespace(distance_setting=setting), _state(**state), None, car_state_stamp=STAMP)
+def _flag(cp, setting, op_crawl=False, **state):
+  message = compose(cp, SimpleNamespace(distance_setting=setting, op_crawl=op_crawl), _state(**state), None,
+                    car_state_stamp=STAMP)
   return None if message is None else message.starpilotCarState.forceExperimental
 
 
@@ -35,6 +36,14 @@ def test_gen2_demand_needs_valid_can_and_main_on():
   cp = _params(CAR.MAZDA_CX_30)
   assert _flag(cp, 1, can_valid=False) is False
   assert _flag(cp, 1, available=False) is False
+  assert _flag(cp, 4, op_crawl=True, can_valid=False) is False
+  assert _flag(cp, 4, op_crawl=True, available=False) is False
+
+
+@pytest.mark.parametrize('setting', (1, 2, 3, 4))
+def test_gen2_crawl_zone_demands_experimental_at_any_setting(setting):
+  # openpilot owns the crawl zone under blended ACC; CEM flipping modes there steps the plan
+  assert _flag(_params(CAR.MAZDA_CX_30), setting, op_crawl=True) is True
 
 
 def test_gen1_has_no_stalk_demand(monkeypatch):
