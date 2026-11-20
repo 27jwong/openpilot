@@ -78,6 +78,25 @@ def test_positive_target_is_not_clamped():
   assert got.max() > 0.5
 
 
+def test_brake_floor_holds_for_a_target_asking_for_gas():
+  # CX-30 2026-11-19, 14:42: the car's launch lurch read +1.5..1.7 m/s^2 against a +0.06 target, and with
+  # the floor gated on target < 0 the integrator wound the command down to -0.67
+  policy = policy_for(make_cp())
+  pid = PIDController(KP, KI, pos_limit=2.0, neg_limit=-3.5, rate=1 / DT_CTRL)
+  got = run(policy, pid, np.full(100, 0.06), np.full(100, 1.6), speed=0.5)
+  assert got.min() >= -MAX_BRAKE_OVERSHOOT - 1e-9
+
+
+def test_brake_floor_is_continuous_where_the_target_crosses_zero():
+  # the same windup, then the target dips just below zero: the old clamp switched on in that frame and
+  # snapped the command from -0.66 to -0.10
+  policy = policy_for(make_cp())
+  pid = PIDController(KP, KI, pos_limit=2.0, neg_limit=-3.5, rate=1 / DT_CTRL)
+  targets = np.concatenate([np.full(100, 0.01), np.full(20, -0.01)])
+  got = run(policy, pid, targets, np.full(120, 0.8), speed=0.8)
+  assert np.abs(np.diff(got)).max() < 0.02
+
+
 def test_reset_rearms_the_filter():
   policy = policy_for(make_cp())
   pid = PIDController(KP, 0.0, rate=1 / DT_CTRL)
