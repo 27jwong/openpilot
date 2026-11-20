@@ -67,8 +67,13 @@ class Gen2LongitudinalPolicy:
     # Stop feedback from out-braking the planner by more than a fixed margin. The integrator is
     # back-calculated to whatever was actually sent, so releasing the clamp cannot hand back a step
     # that the driver feels as a second jab.
-    if target < 0.0 and self.pid is not None:
-      floor = target - MAX_BRAKE_OVERSHOOT
+    # A target at or above zero asks for no braking at all, so the same margin holds below zero. The
+    # floor is then continuous in the target: gating it on target < 0 let feedback brake without bound
+    # while the planner asked for gas, and the clamp snapped the command up in one frame (-0.66 to
+    # -0.10) the moment the target dipped below zero. That bit after the CX-30's launch lurch and
+    # after every stretch of MRCC driving, when the integrator had wound against MRCC's own accel.
+    if self.pid is not None:
+      floor = min(target, 0.0) - MAX_BRAKE_OVERSHOOT
       if output < floor:
         self.pid.i += floor - output
         output = floor
