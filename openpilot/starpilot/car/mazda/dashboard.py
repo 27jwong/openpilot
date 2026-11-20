@@ -1,4 +1,5 @@
-"""Optional Mazda camera observation and GEN2 distance-stalk demand; never a longitudinal control grant."""
+"""Optional Mazda camera observation and GEN2 experimental-mode demand (distance stalk, crawl zone); never a
+longitudinal control grant."""
 import time
 
 from opendbc.car.mazda.values import CAR, MazdaFlags
@@ -38,11 +39,15 @@ def _companion(state, message, car_state_stamp):
 
 def write_stalk_experimental(parsed, state, message, *, car_state_stamp):
   """GEN2 has no distance button on the bus, only the setting it cycles. Parking the stalk on
-  the closest setting demands experimental mode for as long as it stays there."""
+  the closest setting demands experimental mode for as long as it stays there.
+
+  The crawl zone demands it too. openpilot owns the car there under blended ACC, and left to
+  itself CEM's slow-lead trigger flips chill/experimental about once a second behind a creeping
+  lead (20/min on the 11-19 drives), each flip stepping the plan 0.3-0.5 m/s^2 in one frame."""
   message = _companion(state, message, car_state_stamp)
   message.starpilotCarState.forceExperimental = bool(
     state.canValid and not state.canTimeout and state.cruiseState.available and
-    getattr(parsed, 'distance_setting', 0) == STALK_EXPERIMENTAL_SETTING)
+    (getattr(parsed, 'distance_setting', 0) == STALK_EXPERIMENTAL_SETTING or getattr(parsed, 'op_crawl', False)))
   return message
 
 
