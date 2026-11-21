@@ -2,7 +2,8 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from opendbc.car.mazda.gen2_longitudinal import KI, KP, MAX_BRAKE_OVERSHOOT, ERROR_FILTER_RC, policy_for
+from opendbc.car.mazda.gen2_longitudinal import (KI, KP, MAX_BRAKE_OVERSHOOT, ERROR_FILTER_RC, STANDSTILL_GO_DWELL_FRAMES,
+                                                 LongCtrlState, policy_for)
 from opendbc.car.mazda.values import MazdaSafetyFlags
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.pid import PIDController
@@ -103,3 +104,96 @@ def test_reset_rearms_the_filter():
   run(policy, pid, np.full(50, 0.4), np.full(50, 0.0))
   policy.reset()
   assert not policy.error_filter.initialized
+
+
+def stop_states(stop, goes, *, standstill=True, active=True):
+  """Gen2StopPolicy fed LongControl's native transition: leaving stopping whenever the plan says go."""
+  cs = SimpleNamespace(standstill=standstill)
+  state, out = LongCtrlState.stopping, []
+  for go in goes:
+    native = (LongCtrlState.off if not active else
+              LongCtrlState.pid if go else LongCtrlState.stopping if state == LongCtrlState.stopping else state)
+    state = stop.transition(native, state, active, cs, 0.22 if go else -0.1, not go, None)
+    out.append(state)
+  return out
+
+
+def test_standstill_go_blip_keeps_the_stop():
+  # route 00000022--89e0df5b7f 4:36: one 50 ms planner frame of go at standstill, 1.8 m behind a stopped lead
+  stop = policy_for(make_cp()).stop_policy()
+  goes = [False] * 20 + [True] * 6 + [False] * 30
+  assert set(stop_states(stop, goes)) == {LongCtrlState.stopping}
+  # route 00000016--47046e6bc8 45:59.7: three planner frames of go (0.13 s) that the planner cancelled
+  # itself; three frames can span 16 control frames
+  goes = [False] * 20 + [True] * 16 + [False] * 30
+  assert set(stop_states(stop, goes)) == {LongCtrlState.stopping}
+
+
+def test_alternating_go_frames_never_add_up():
+  # the flat-plan artifact (target = -previous target) flips go/stop every planner frame
+  stop = policy_for(make_cp()).stop_policy()
+  goes = ([True] * 5 + [False] * 5) * 10
+  assert set(stop_states(stop, goes)) == {LongCtrlState.stopping}
+
+
+def test_held_go_leaves_the_stop_after_the_dwell():
+  stop = policy_for(make_cp()).stop_policy()
+  states = stop_states(stop, [True] * 40)
+  assert states.index(LongCtrlState.pid) == STANDSTILL_GO_DWELL_FRAMES - 1
+  assert set(states[STANDSTILL_GO_DWELL_FRAMES - 1:]) == {LongCtrlState.pid}
+
+
+def test_rolling_car_leaves_the_stop_at_once():
+  # an interrupted launch: the second go comes at 0.3-0.5 m/s and must not wait
+  stop = policy_for(make_cp()).stop_policy()
+  assert stop_states(stop, [True] * 3, standstill=False)[0] == LongCtrlState.pid
+
+
+def test_inactive_resets_the_dwell():
+  stop = policy_for(make_cp()).stop_policy()
+  stop_states(stop, [True] * (STANDSTILL_GO_DWELL_FRAMES - 1))
+  assert stop_states(stop, [True], active=False) == [LongCtrlState.off]
+  assert stop.go_frames == 0
+
+
+def test_longcontrol_holds_the_brake_through_a_standstill_blip():
+  # The same 4:36 sequence through openpilot's LongControl. Without the stop policy the blip leaves
+  # stopping (+0.41 sent on the car) and the stop ramp restarts from about zero.
+  from opendbc.car.structs import CarParams, CarState
+  from openpilot.selfdrive.controls.lib.longcontrol import LongControl
+
+  CP = CarParams(brand="mazda", openpilotLongitudinalControl=True, flags=MazdaSafetyFlags.GEN2.value, stopAccel=-0.5)
+  CS = CarState(standstill=True, vEgo=0.0, aEgo=0.0)
+  plan = [(-0.2, True)] * 100 + [(0.22, False)] * 5 + [(-0.1, True)] * 60
+
+  def drive(lc):
+    return [(lc.update(True, CS, target, stop, (-3.5, 2.0)), lc.long_control_state) for target, stop in plan]
+
+  guarded = LongControl(CP)
+  assert guarded.extension is not None and guarded.extension.vehicle_stop is not None
+  got = drive(guarded)
+  assert {state for _, state in got} == {LongCtrlState.stopping}
+  assert max(out for out, _ in got[100:]) <= -0.5 + 1e-9
+
+  unguarded = LongControl(CP)
+  unguarded.extension.vehicle_stop = None
+  base = drive(unguarded)
+  assert LongCtrlState.pid in {state for _, state in base[100:105]}
+  assert max(out for out, _ in base[100:]) > 0.2
+
+
+def test_longcontrol_launches_after_the_dwell():
+  from opendbc.car.structs import CarParams, CarState
+  from openpilot.selfdrive.controls.lib.longcontrol import LongControl
+
+  CP = CarParams(brand="mazda", openpilotLongitudinalControl=True, flags=MazdaSafetyFlags.GEN2.value, stopAccel=-0.5)
+  CS = CarState(standstill=True, vEgo=0.0, aEgo=0.0)
+  lc = LongControl(CP)
+  for _ in range(100):
+    lc.update(True, CS, -0.2, True, (-3.5, 2.0))
+  states = []
+  for _ in range(40):
+    lc.update(True, CS, 0.5, False, (-3.5, 2.0))
+    states.append(lc.long_control_state)
+  assert states.index(LongCtrlState.pid) == STANDSTILL_GO_DWELL_FRAMES - 1
+  assert lc.last_output_accel > 0.0
