@@ -4,6 +4,9 @@ import numpy as np
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.realtime import DT_CTRL
 from opendbc.car.mazda.values import MazdaSafetyFlags
+from opendbc.car.structs import car
+
+LongCtrlState = car.CarControl.Actuators.LongControlState
 
 # The ACC accel interface is unity-gain and linear over +-1.6 m/s^2 against a first-order plant
 # with tau ~0.42 s, so the feedforward carries the request and the PI only has to reject
@@ -28,6 +31,38 @@ ERROR_FILTER_BYPASS = 1.5
 # authority the old kp=0/ki=0.1 loop had.
 MAX_BRAKE_OVERSHOOT = 0.10
 
+# At standstill a planner "go" has to hold this long before openpilot leaves its stop. GEN2 reports
+# no cruise standstill under openpilot long, so one frame of not-should-stop is otherwise enough,
+# and openpilot owns the standstill outright in the crawl zone. Route 00000022--89e0df5b7f 4:36:
+# stopped 1.8 m behind a stopped lead, CEM dropped experimental for 0.25 s while vEgo undershot
+# zero, the chill plan read +0.22 for one 50 ms frame (a flat plan returns -previous target), the
+# command went to +0.41 and the stop ramp then took 0.5 s to rebuild -0.5, so the car lurched
+# forward 0.55 s later. False starts at standstill on the 11-19/11-21 drives were 1-3 planner
+# frames (0.04-0.13 s, 4 of 4, each cancelled by the planner itself); real launches say go for
+# seconds. Four planner frames covers three at any frame timing and costs 0.19 s per launch. It
+# has to be continuous: the flat-plan artifact alternates go/stop frames, so it never accumulates.
+STANDSTILL_GO_DWELL_FRAMES = round(0.20 / DT_CTRL)
+
+
+class Gen2StopPolicy:
+  """Holds openpilot's stop at standstill until the planner's go has lasted STANDSTILL_GO_DWELL_FRAMES."""
+
+  def __init__(self):
+    self.go_frames = 0
+
+  def reset(self) -> None:
+    self.go_frames = 0
+
+  def transition(self, native, previous, active, cs, target, should_stop, evidence):
+    # A rolling car still leaves at once: an interrupted launch comes back at 0.3-0.5 m/s.
+    leaving = (active and previous == LongCtrlState.stopping and cs.standstill and
+               native not in (LongCtrlState.stopping, LongCtrlState.off))
+    if not leaving:
+      self.go_frames = 0
+      return native
+    self.go_frames += 1
+    return native if self.go_frames >= STANDSTILL_GO_DWELL_FRAMES else LongCtrlState.stopping
+
 
 class Gen2LongitudinalPolicy:
   friction_variant = False
@@ -43,6 +78,9 @@ class Gen2LongitudinalPolicy:
   def reset(self) -> None:
     self.error_filter.initialized = False
     self.error_delta = 0.0
+
+  def stop_policy(self) -> Gen2StopPolicy:
+    return Gen2StopPolicy()
 
   def feedforward(self, target: float, speed: float, last_output: float) -> float:
     return target
