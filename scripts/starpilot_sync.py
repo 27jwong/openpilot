@@ -12,14 +12,20 @@ messages are byte-identical, and so are trees, with one exception: upstream
 sometimes commits a file as a Git LFS pointer for a few commits before fixing
 it, and GitHub rejects pushes that reference LFS objects it does not store. In
 those commits the pointer is replaced by the blob the file had in the first
-parent (see lfs_fixups). The same upstream commit therefore always maps to the
-same rewritten SHA, and each sync extends the mirror branch instead of
+parent (see lfs_fixups). The same upstream commit therefore maps to the same
+rewritten SHA on every sync, and each sync extends the mirror branch instead of
 replacing it.
 
+That holds for syncs that extend an existing mirror, not for a mirror built from
+nothing: older mirrors kept some pointers this script now replaces (17 panda
+bootstub binaries from 2026-10-28 in the testing mirror), so a fresh build
+rewrites history from there on. Start a new mirror branch from an existing one
+that shares the history (git branch starpilot-stable starpilot-upstream).
+
 Usage:
-  scripts/starpilot_sync.py             # fetch upstream, update the starpilot-upstream branch
-  git rebase starpilot-upstream         # rebase your work onto it
-  git push origin starpilot-upstream    # optional: publish the mirror
+  scripts/starpilot_sync.py             # fetch upstream, update the starpilot-stable branch
+  git rebase starpilot-stable           # rebase your work onto it
+  git push origin starpilot-stable      # optional: publish the mirror
 """
 import argparse
 import hashlib
@@ -29,7 +35,7 @@ import tempfile
 from pathlib import Path
 
 UPSTREAM_URL = "https://github.com/StarPilotHQ/StarPilot"
-UPSTREAM_BRANCH = "testing"  # Dom until 2026-11-17, SecretGoodStarPilot until 2026-10-28; each continues its predecessor's history
+UPSTREAM_BRANCH = "stable"  # StarPilot 7.0's release channel, branched from testing; the testing stack follows "testing"
 CUTOFF = "22a8575199bfb5676da392cdc2281ef8c06533e8"  # "Vendor dependencies and resources for standalone builds"
 SHALLOW_SINCE = "2026-09-25"  # comfortably before CUTOFF, for shallow clones
 LFS_POINTER = b"version https://git-lfs.github.com/spec/v1"
@@ -154,7 +160,7 @@ def rewrite(raw: bytes, parents: list[str], tree: str | None = None) -> bytes:
 def main() -> int:
   parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
   parser.add_argument("--remote", default="starpilot", help="remote name for StarPilot (added if missing)")
-  parser.add_argument("--branch", default="starpilot-upstream", help="local branch that receives the rewritten mirror")
+  parser.add_argument("--branch", default="starpilot-stable", help="local branch that receives the rewritten mirror")
   parser.add_argument("--no-fetch", action="store_true", help="use the already fetched remote-tracking branch")
   args = parser.parse_args()
 
