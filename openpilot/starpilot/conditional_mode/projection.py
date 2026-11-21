@@ -32,6 +32,10 @@ from openpilot.starpilot.model_geometry import (
 
 SERVICES = ('carState', 'carControl', 'selfdriveState', 'controlsState', 'radarState', 'modelV2', 'longitudinalPlan', 'starpilotRadarState')
 SOURCE_MAX_AGE_NS = 250_000_000
+# Deepest Kalman undershoot accepted at standstill with the raw wheel speed exactly zero. The CX-30
+# dips to -0.05..-0.076 m/s for ~0.25 s at 90% of its stops (62 stops, 2026-11-19/21), deeper the
+# harder it arrived (r = 0.91, -0.076 after -1.85 m/s^2); a full -3.5 stop extrapolates to ~-0.14.
+STANDSTILL_UNDERSHOOT_MPS = 0.25
 MODEL_EOF_MAX_AGE_NS = 150_000_000
 CLOCK_PAIR_MAX_SKEW_NS = 1_000_000
 KPH_TO_MPS = 1 / 3.6
@@ -155,12 +159,14 @@ def _field(source, field: str):
 
 
 def _ego_speed(car) -> float | None:
-  speed = _number(_field(car, 'vEgo'), low=-STANDSTILL_SPEED_NOISE_MPS, high=80.0)
+  speed = _number(_field(car, 'vEgo'), low=-STANDSTILL_UNDERSHOOT_MPS, high=80.0)
   if speed is None or speed >= 0.0:
     return speed
   # The wheel-speed Kalman estimate can undershoot zero while physically stopped.
   # Require both standstill and exactly zero raw wheel speed; moving or materially
   # negative estimates remain unavailable rather than gaining scene authority.
+  # Bounding this by the 0.01 noise band rejected the undershoot before the test below
+  # could accept it, so a car that undershoots deeper dropped CEM at every stop.
   if _field(car, 'standstill') is True and _number(_field(car, 'vEgoRaw'), high=80.0) == 0.0:
     return 0.0
   return None
