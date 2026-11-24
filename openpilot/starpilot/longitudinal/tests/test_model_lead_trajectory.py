@@ -328,5 +328,8 @@ class TestModelLeadTrajectory(unittest.TestCase):
     sm, _ = inputs(False)
     model, lead = sm['modelV2'].leadsV3[0], sm['radarState'].leadOne
     self.assertIsNotNone(m.build_model_lead_trajectory(model, lead, 20.1, 20.))
-    lead.vRel = .01
+    # radard's learned closing-speed calibration may move a vision vRel by up to the cap
+    lead.vRel = m.VISION_SPEED_CORRECTION_CAP
+    self.assertIsNotNone(m.build_model_lead_trajectory(model, lead, 20.1, 20.))
+    lead.vRel = m.VISION_SPEED_CORRECTION_CAP + .01
     self.assertIsNone(m.build_model_lead_trajectory(model, lead, 20.1, 20.))
