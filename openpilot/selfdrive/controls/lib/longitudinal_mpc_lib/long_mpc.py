@@ -12,6 +12,7 @@ from openpilot.common.swaglog import cloudlog
 # WARNING: imports outside of constants will not trigger a rebuild
 from openpilot.selfdrive.modeld.constants import index_function, ModelConstants
 from openpilot.selfdrive.controls.radard import _LEAD_ACCEL_TAU, RADAR_TO_CAMERA
+from openpilot.starpilot.longitudinal.vision_lead_speed import CORRECTION_CAP as VISION_SPEED_CORRECTION_CAP
 
 if __name__ == '__main__':  # generating code
   from acados.acados_template import AcadosModel, AcadosOcp, AcadosOcpSolver
@@ -142,9 +143,11 @@ def lead_horizon_matches(model_lead, lead, v_ego, model_v_ego):
       return bool(lead.radarTrackId >= 0 and
         abs(distance - expected_distance) < max(5., .25 * expected_distance) and
         abs(lateral + model_y) < 1. and abs(speed - expected_speed) < 2.)
+    # Distance and lateral pin the vision lead to this model frame; its closing speed may carry radard's
+    # learned calibration (vision_lead_speed), which is capped.
     return bool(lead.radarTrackId == -1 and abs(distance - expected_distance) <= .001 and
       abs(lateral + model_y) <= .001 and math.isfinite(float(lead.vRel)) and
-      abs(float(lead.vRel) - (model_v - model_ego)) <= .001)
+      abs(float(lead.vRel) - (model_v - model_ego)) <= VISION_SPEED_CORRECTION_CAP + .001)
   except (AttributeError, IndexError, TypeError, ValueError, OverflowError):
     return False
 
