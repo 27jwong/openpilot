@@ -19,6 +19,9 @@ OP_CRAWL_SPEED = 6.5 * CV.MPH_TO_MS
 # Left only above this, so traffic hovering at the entry speed does not swap controllers and planner
 # modes on every crossing.
 OP_CRAWL_EXIT_SPEED = 8.0 * CV.MPH_TO_MS
+# CRUZE_STATE DISTANCE_SETTING: 1 closest .. 4 farthest, 0 with main off. It stops at both ends; a closer
+# press at 1 leaves the car at 1 (10 of 10 times in the logs).
+CLOSEST_DISTANCE_SETTING = 1
 
 
 def op_crawl_zone(v_ego: float, in_zone: bool) -> bool:
@@ -57,6 +60,7 @@ class CarState(CarStateBase):
     self.params = CarControllerParams(CP)
 
     self.distance_button = 0
+    self.distance_press_reported = False
     self.distance_setting = 0
     self.op_crawl = False
     self.accel_button = 0
@@ -273,17 +277,40 @@ class CarState(CarStateBase):
     ret.cruiseState.standstill = ret.standstill if not self.CP.openpilotLongitudinalControl else False
 
     # Only the AOL gestures consume the cancel button (CAN on GEN2, CAN_OFF on GEN1), so it is reported just for the
-    # qualified, AOL-marked configuration and every other GEN2 car keeps its existing, button-less behaviour.
+    # qualified, AOL-marked configuration and every other GEN2 car keeps reporting no cancel events.
+    # Collected first and assigned once: reading ret.buttonEvents back out of the capnp builder and
+    # reassigning it would orphan the events already in it.
+    button_events = []
     if qualified(self.CP, marked_only=True):
       prev_cancel_button = self.cancel_button
       self.cancel_button = cp.vl["CRZ_BTNS"]["CAN"]
-      ret.buttonEvents = create_button_events(self.cancel_button, prev_cancel_button, {1: ButtonType.cancel})
+      button_events += create_button_events(self.cancel_button, prev_cancel_button, {1: ButtonType.cancel})
+    if self.CP.flags & MazdaSafetyFlags.GEN2:
+      button_events += self.closest_distance_press(cp.vl["CRZ_BTNS"]["DISTANCE_LESS"])
+    if button_events:
+      ret.buttonEvents = button_events
 
     self.cp = cp
     self.cp_cam = cp_cam
     self.acc = copy.copy(cp.vl["ACC"])
 
     return ret
+
+  def closest_distance_press(self, closer) -> list[structs.CarState.ButtonEvent]:
+    """The closer distance button, reported as the distance button only for a press that starts while the car is
+    already on its closest setting. There the press cannot move the car's own following distance, so it means only
+    what Wheel Controls assigns it. Anywhere else it is the car changing distance, and the setting it lands on picks
+    the personality, so it is not also a wheel press. The farther button is always the car's."""
+    prev = self.distance_button
+    self.distance_button = int(closer)
+    if self.distance_button and not prev:
+      # The setting steps ~0.25 s after the press starts, so this still reads the setting the press began on.
+      self.distance_press_reported = self.distance_setting == CLOSEST_DISTANCE_SETTING
+    events = (create_button_events(self.distance_button, prev, {1: ButtonType.gapAdjustCruise})
+              if self.distance_press_reported else [])
+    if not self.distance_button:
+      self.distance_press_reported = False
+    return events
 
   @staticmethod
   def get_can_parsers(CP):

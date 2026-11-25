@@ -38,8 +38,8 @@ def _companion(state, message, car_state_stamp):
 
 
 def write_stalk_experimental(parsed, state, message, *, car_state_stamp):
-  """GEN2 has no distance button on the bus, only the setting it cycles. Parking the stalk on
-  the closest setting demands experimental mode for as long as it stays there.
+  """The GEN2 distance buttons (closer and farther, in CRZ_BTNS) step the car's own distance setting.
+  Parking it on the closest setting demands experimental mode for as long as it stays there.
 
   The crawl zone demands it too. openpilot owns the car there under blended ACC, and left to
   itself CEM's slow-lead trigger flips chill/experimental about once a second behind a creeping
