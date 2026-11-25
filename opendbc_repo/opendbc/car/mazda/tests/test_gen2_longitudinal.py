@@ -2,8 +2,8 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from opendbc.car.mazda.gen2_longitudinal import (KI, KP, MAX_BRAKE_OVERSHOOT, ERROR_FILTER_RC, STANDSTILL_GO_DWELL_FRAMES,
-                                                 LongCtrlState, policy_for)
+from opendbc.car.mazda.gen2_longitudinal import (KI, KP, MAX_BRAKE_OVERSHOOT, MAX_GAS_OVERSHOOT, ERROR_FILTER_RC,
+                                                 STANDSTILL_GO_DWELL_FRAMES, LongCtrlState, policy_for)
 from opendbc.car.mazda.values import MazdaSafetyFlags
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.pid import PIDController
@@ -58,7 +58,11 @@ def test_large_error_bypasses_the_filter():
   policy = policy_for(make_cp())
   pid = PIDController(KP, 0.0, rate=1 / DT_CTRL)
   got = run(policy, pid, np.full(5, 1.0), np.full(5, -2.0))
-  assert np.allclose(got, 1.0 + float(np.interp(10.0, *KP)) * 3.0)
+  # the raw error goes through: no filter correction, and the filter restarts from it
+  assert policy.error_delta == 0.0 and policy.error_filter.x == 3.0
+  # the unfiltered P term (1.0 + kp * 3.0) is then held to the gas bound
+  assert 1.0 + float(np.interp(10.0, *KP)) * 3.0 > 1.0 + MAX_GAS_OVERSHOOT
+  assert np.allclose(got, 1.0 + MAX_GAS_OVERSHOOT)
 
 
 def test_brake_overshoot_is_bounded_and_integrator_follows():
@@ -96,6 +100,55 @@ def test_brake_floor_is_continuous_where_the_target_crosses_zero():
   targets = np.concatenate([np.full(100, 0.01), np.full(20, -0.01)])
   got = run(policy, pid, targets, np.full(120, 0.8), speed=0.8)
   assert np.abs(np.diff(got)).max() < 0.02
+
+
+def test_gas_overshoot_is_bounded_and_integrator_follows():
+  policy = policy_for(make_cp())
+  pid = PIDController(KP, KI, pos_limit=4.0, neg_limit=-3.5, rate=1 / DT_CTRL)
+  # planner wants +1.5 but the car has not picked up yet: feedback would push far past it
+  got = run(policy, pid, np.full(300, 1.5), np.full(300, 0.3))
+  assert got.max() <= 1.5 + MAX_GAS_OVERSHOOT + 1e-9
+  assert np.isclose(got[-1], 1.5 + MAX_GAS_OVERSHOOT)
+  # back-calculated: the integrator holds only what was actually sent
+  assert pid.i <= MAX_GAS_OVERSHOOT + 1e-6
+
+
+def test_wound_up_gas_lets_go_when_the_target_drops():
+  # CX-30 route 00000028 8:57: chill stepped the target to 1.9 for a second, the car lagged at ~0.7, feedback
+  # sent 3.3 and the integrator kept pulling after the target came back to 0.8
+  policy = policy_for(make_cp())
+  pid = PIDController(KP, KI, pos_limit=4.0, neg_limit=-3.5, rate=1 / DT_CTRL)
+  targets = np.concatenate([np.full(100, 1.9), np.full(50, 0.8)])
+  a_ego = np.concatenate([np.full(100, 0.7), np.full(50, 1.9)])
+  got = run(policy, pid, targets, a_ego, speed=11.0)
+  assert got[:100].max() <= 1.9 + MAX_GAS_OVERSHOOT + 1e-9
+  assert got[100:].max() <= 0.8 + MAX_GAS_OVERSHOOT + 1e-9
+
+
+def test_gas_ceiling_holds_for_a_target_asking_for_brake():
+  # route 00000028 10:09: the car braked harder than the -0.40 asked and feedback sent +0.38 of gas
+  policy = policy_for(make_cp())
+  pid = PIDController(KP, KI, pos_limit=4.0, neg_limit=-3.5, rate=1 / DT_CTRL)
+  got = run(policy, pid, np.full(200, -0.4), np.full(200, -1.5), speed=9.0)
+  assert got.max() <= MAX_GAS_OVERSHOOT + 1e-9
+
+
+def test_gas_ceiling_is_continuous_where_the_target_crosses_zero():
+  policy = policy_for(make_cp())
+  pid = PIDController(KP, KI, pos_limit=4.0, neg_limit=-3.5, rate=1 / DT_CTRL)
+  targets = np.concatenate([np.full(100, -0.01), np.full(20, 0.01)])
+  got = run(policy, pid, targets, np.full(120, -0.8), speed=0.8)
+  assert np.abs(np.diff(got)).max() < 0.02
+
+
+def test_ordinary_tracking_never_meets_the_gas_ceiling():
+  # a car that follows the target with the usual noise stays well inside both bounds
+  rng = np.random.default_rng(1)
+  policy = policy_for(make_cp())
+  pid = PIDController(KP, KI, pos_limit=4.0, neg_limit=-3.5, rate=1 / DT_CTRL)
+  targets = 0.6 * np.sin(np.linspace(0, 6 * np.pi, 1500))
+  got = run(policy, pid, targets, targets + rng.normal(0, 0.05, 1500), speed=15.0)
+  assert (got - targets).max() < MAX_GAS_OVERSHOOT
 
 
 def test_reset_rearms_the_filter():
