@@ -35,6 +35,7 @@ from openpilot.starpilot.conditional_mode.runtime_settings import ConditionalSet
 from openpilot.starpilot.conditional_mode.policy import ModeChoice
 from openpilot.starpilot.conditional_mode.projection import ConditionalOwnerContext, ObservedBool
 from openpilot.starpilot.conditional_mode.traffic import TrafficOwner, TrafficVerdict
+from openpilot.starpilot.conditional_mode.traffic_chill import traffic_chill
 from openpilot.starpilot.controllers.coast import CoastRuntime
 from openpilot.starpilot.controllers.mode_actions import ModeActionOwner, KINDS as CONTROLLER_MODE_KINDS, publish_switchback, apply_switchback_gesture
 import secrets
@@ -602,8 +603,10 @@ def starpilot_main():
               manual_event=current_manual_event(pending_conditional_events, conditional_now_ns,
                                                 int(sm.logMonoTime['carState'])),
               ui_event=current_ui_manual_event(pending_conditional_ui, conditional_now_ns),
-              manual=(mazda_crawl_experimental(sm, current_start_ns, conditional_now_ns)
-                      if CP.brand == 'mazda' else None),
+              # Traffic Mode holds chill over everything, the crawl zone's experimental demand included.
+              manual=(traffic_chill(traffic_verdict, current_start_ns, conditional_now_ns) or
+                      (mazda_crawl_experimental(sm, current_start_ns, conditional_now_ns)
+                       if CP.brand == 'mazda' else None)),
             )
             planner_status = conditional_host.status.attach(
               planner_status, proposal, snapshot, now_ns=conditional_now_ns,
