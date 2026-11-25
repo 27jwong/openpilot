@@ -355,7 +355,7 @@ class RadarD:
           self.lead_prob_filters[i].update(lead_prob)
 
       self._observe_vision_lead_speed(sm, leads_v3[0], model_v_ego)
-      corrections = [self._vision_lead_speed_correction(leads_v3[i], model_v_ego) for i in range(2)]
+      corrections = [self._vision_lead_speed_correction(i, sm, leads_v3[i], model_v_ego) for i in range(2)]
       if self.use_voacc:
         self.radar_state.leadOne = get_lead(self.v_ego, self.ready, {}, leads_v3[0], model_v_ego,
                                           self.lead_prob_filters[0].x, low_speed_override=False, v_rel_correction=corrections[0])
@@ -387,12 +387,13 @@ class RadarD:
       cloudlog.event('vision_lead_speed', windows=cal.windows, theta=[round(float(x), 3) for x in cal.theta],
                      bias_50mph_30m=round(cal.bias(22.35, 30.0), 3), bias_70mph_40m=round(cal.bias(31.29, 40.0), 3))
 
-  def _vision_lead_speed_correction(self, lead, model_v_ego: float) -> float:
+  def _vision_lead_speed_correction(self, index: int, sm: messaging.SubMaster, lead, model_v_ego: float) -> float:
     now = self._lead_now(lead)
     if self.vision_lead_speed is None or now is None:
       return 0.0
     _, d_rel, v_lead, a_lead, _ = now
-    return self.vision_lead_speed.correction(self.v_ego, d_rel, v_lead - model_v_ego, a_lead)
+    return self.vision_lead_speed.correction(index, sm.logMonoTime['modelV2'] * 1e-9, self.v_ego, d_rel,
+                                             v_lead - model_v_ego, a_lead)
 
   def publish(self, pm: messaging.PubMaster):
     assert self.radar_state is not None

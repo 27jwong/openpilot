@@ -12,6 +12,11 @@ Kalman filter on theta fed one 5 s window at a time. It starts at zero every dri
 whatever model is loaded; no model's numbers are built in. Corrections are capped, ramp in only above
 ~20 mph, and fade out while the lead is closing in or slowing, so an urgent situation is always seen
 exactly as the model reports it.
+
+The bias is a steady-following error only. While the gap is really closing faster than ~1.5 m/s, or the
+lead is slowing, the same models read the closing speed too LOW, not too high (2026-11-24, six models,
+1393 windows at 27+ mph): a full correction there made the planner see an approach ~0.35 m/s slower than
+it was. So the correction also fades with the lead's closing speed and decel over its last second.
 """
 import math
 
@@ -31,6 +36,9 @@ CORRECTION_CAP = 1.0            # m/s, either direction
 APPLY_SPEED_BP = (8.0, 12.0)    # m/s: none at crawl and stop-and-go speeds, full above ~27 mph
 URGENT_TTC_BP = (5.0, 12.0)     # s: no correction at 5 s to impact, full beyond 12 s
 URGENT_ACCEL_BP = (-1.2, -0.4)  # m/s^2 of lead accel: no correction while the lead brakes harder than 1.2
+TREND_TAU_S = 1.0               # s: the closing and slowing fades judge the lead on its last second, not one frame
+CLOSING_FADE_BP = (0.5, 1.5)    # m/s of corrected closing speed: full correction below 0.5, none above 1.5
+SLOWING_FADE_BP = (-0.5, -0.1)  # m/s^2 of lead accel: none while the lead slows at 0.5, full from -0.1 up
 
 
 def _features(v_ego: float, d_rel: float) -> np.ndarray:
@@ -49,6 +57,7 @@ class VisionLeadSpeedCalibration:
     self.P = np.diag(np.square(PRIOR_STD))
     self.Q = np.diag(np.square(DRIFT_STD))
     self.windows = 0
+    self._trend: dict[int, tuple[float, float, float, float]] = {}  # lead index -> (mono_s, d_rel, v_rel, a_lead)
     self._clear()
 
   def _clear(self) -> None:
@@ -62,14 +71,32 @@ class VisionLeadSpeedCalibration:
     value = float(_features(v_ego, d_rel) @ self.theta)
     return min(max(value, -CORRECTION_CAP), CORRECTION_CAP) if math.isfinite(value) else 0.0
 
-  def correction(self, v_ego: float, d_rel: float, v_rel: float, a_lead: float) -> float:
-    """m/s to subtract from the model's closing speed for this lead, right now."""
-    if not all(math.isfinite(x) for x in (v_ego, d_rel, v_rel, a_lead)):
+  def _lead_trend(self, lead: int, mono_s: float, d_rel: float, v_rel: float, a_lead: float) -> tuple[float, float]:
+    """This lead's closing speed and accel over about the last second; a new car or a gap starts over."""
+    last = self._trend.get(lead)
+    if last is None or not 0.0 < mono_s - last[0] < MAX_FRAME_GAP_S or abs(d_rel - last[1]) > max(4.0, 0.15 * last[1]):
+      v_trend, a_trend = v_rel, a_lead
+    else:
+      k = min((mono_s - last[0]) / TREND_TAU_S, 1.0)
+      v_trend, a_trend = last[2] + k * (v_rel - last[2]), last[3] + k * (a_lead - last[3])
+    self._trend[lead] = (mono_s, d_rel, v_trend, a_trend)
+    return v_trend, a_trend
+
+  def correction(self, lead: int, mono_s: float, v_ego: float, d_rel: float, v_rel: float, a_lead: float) -> float:
+    """m/s to subtract from the model's closing speed for this lead (0: leadOne, 1: leadTwo), right now.
+
+    Call once per model frame for each lead, so its trend follows that lead."""
+    if not all(math.isfinite(x) for x in (mono_s, v_ego, d_rel, v_rel, a_lead)):
+      self._trend.pop(lead, None)
       return 0.0
+    v_trend, a_trend = self._lead_trend(lead, mono_s, d_rel, v_rel, a_lead)
+    bias = self.bias(v_ego, d_rel)
     closing = max(-v_rel, 0.0)
     ttc = d_rel / closing if closing > 0.1 else math.inf
-    weight = _ramp(v_ego, APPLY_SPEED_BP) * _ramp(ttc, URGENT_TTC_BP) * _ramp(a_lead, URGENT_ACCEL_BP)
-    return weight * self.bias(v_ego, d_rel)
+    corrected_closing = max(bias - v_trend, 0.0)  # what the planner would see closing, over the last second
+    weight = (_ramp(v_ego, APPLY_SPEED_BP) * _ramp(ttc, URGENT_TTC_BP) * _ramp(a_lead, URGENT_ACCEL_BP) *
+              (1.0 - _ramp(corrected_closing, CLOSING_FADE_BP)) * _ramp(a_trend, SLOWING_FADE_BP))
+    return weight * bias
 
   def observe(self, mono_s: float, prob: float, d_rel: float, v_rel: float, v_ego: float, x_std: float) -> bool:
     """One model frame of the primary lead (v_rel is lead speed minus model ego speed). True when a window lands."""
