@@ -119,8 +119,10 @@ def test_entering_the_zone_hands_over_under_the_jerk_cap():
   assert coeffs[-1] > 0.
 
 
-def test_closest_stalk_setting_still_hands_over_above_the_zone():
+@pytest.mark.parametrize('distance_setting', (1, 2, 3, 4))
+def test_no_distance_setting_hands_over_above_the_zone(distance_setting):
+  # The setting-1 handover (it sat on the farthest setting) was removed: above the zone MRCC keeps the car.
   d = Drive()
   for _ in range(300):
-    sent = d.step(20., LongCtrlState.pid, 0.2, stock=op(0.2), distance_setting=1)
-  assert d.cc.blend_coeff == 1. and sent == sent_as(0.2)
+    sent = d.step(20., LongCtrlState.pid, 0.2, stock=op(-0.3), distance_setting=distance_setting)
+  assert d.cc.blend_coeff == 0. and sent == op(-0.3)
