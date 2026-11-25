@@ -15,6 +15,19 @@ from openpilot.starpilot.longitudinal.vision_lead_speed import CORRECTION_CAP, W
 DT = 0.05
 
 
+def now(cal, v_ego, d_rel, v_rel, a_lead, lead=0):
+  """The correction for one frame on its own (same timestamp twice is not a sequence, so no trend carries over)."""
+  return cal.correction(lead, 0., v_ego, d_rel, v_rel, a_lead)
+
+
+def held(cal, frames, v_ego, d_rel, v_rel, a_lead, lead=0, t0=10.):
+  """The correction after this reading has been held for this many 20 Hz frames."""
+  c = 0.
+  for k in range(frames):
+    c = cal.correction(lead, t0 + k * DT, v_ego, d_rel, v_rel, a_lead)
+  return c
+
+
 def follow(cal, frames, *, v_ego=30., gap=35., bias=-0.6, lead_speed=None, noise=0.3, seed=0, t0=0.):
   """Feed frames of one car. lead_speed(t) is the true lead speed; the model reports closing speed + bias."""
   rng = np.random.default_rng(seed)
@@ -35,7 +48,7 @@ class TestLearner(unittest.TestCase):
     self.assertEqual(cal.windows, 60)
     self.assertAlmostEqual(cal.bias(30., 35.), -0.6, delta=0.1)
     # applied while following steadily: the corrected closing speed is ~0, as the gap says
-    self.assertAlmostEqual(-0.6 - cal.correction(30., 35., -0.6, 0.), 0., delta=0.1)
+    self.assertAlmostEqual(-0.6 - now(cal, 30., 35., -0.6, 0.), 0., delta=0.1)
 
   def test_a_consistent_model_learns_nothing_while_the_lead_changes_speed(self):
     cal = VisionLeadSpeedCalibration()
@@ -75,27 +88,58 @@ class TestCorrectionLimits(unittest.TestCase):
 
   def test_none_at_crawl_and_stop_and_go_speeds(self):
     cal = self.calibrated()
-    self.assertEqual(cal.correction(0., 8., 0., 0.), 0.)
-    self.assertEqual(cal.correction(8., 15., 0., 0.), 0.)
-    self.assertAlmostEqual(cal.correction(10., 20., 0., 0.), -0.3)
-    self.assertAlmostEqual(cal.correction(12., 20., 0., 0.), -0.6)
+    self.assertEqual(now(cal, 0., 8., 0., 0.), 0.)
+    self.assertEqual(now(cal, 8., 15., 0., 0.), 0.)
+    self.assertAlmostEqual(now(cal, 10., 20., 0., 0.), -0.3)
+    self.assertAlmostEqual(now(cal, 12., 20., 0., 0.), -0.6)
 
   def test_urgent_leads_are_seen_exactly_as_the_model_reports_them(self):
     cal = self.calibrated()
-    self.assertEqual(cal.correction(30., 20., -4., 0.), 0.)     # 5 s to impact
-    self.assertEqual(cal.correction(30., 40., -1., -1.2), 0.)   # lead braking at 1.2 m/s^2
-    self.assertAlmostEqual(cal.correction(30., 40., -4., 0.), -0.6 * (10. - 5.) / 7.)  # 10 s: part way
-    self.assertAlmostEqual(cal.correction(30., 40., 1., 0.), -0.6)  # pulling away: full
+    self.assertEqual(now(cal, 30., 20., -4., 0.), 0.)     # 5 s to impact
+    self.assertEqual(now(cal, 30., 40., -.6, -1.2), 0.)   # lead braking at 1.2 m/s^2, at once
+    self.assertAlmostEqual(now(cal, 30., 10., -1., 0.), -0.6 * (10. - 5.) / 7.)  # 10 s to impact: part way
+    self.assertAlmostEqual(now(cal, 30., 40., 1., 0.), -0.6)  # pulling away: full
+
+  def test_no_correction_while_really_closing_in(self):
+    # the model under-reads a real approach, so the steady-following bias must not be removed there
+    cal = self.calibrated()
+    self.assertAlmostEqual(held(cal, 40, 30., 60., -1.1, 0.), -0.6)  # what the bias alone explains: full
+    self.assertAlmostEqual(held(cal, 40, 30., 60., -1.6, 0.), -0.3)  # 1 m/s closing once corrected: half
+    self.assertEqual(held(cal, 40, 30., 60., -2.1, 0.), 0.)          # 1.5 m/s closing once corrected: none
+
+  def test_no_correction_while_the_lead_slows(self):
+    cal = self.calibrated()
+    self.assertAlmostEqual(held(cal, 40, 30., 40., -.6, -.1), -0.6)
+    self.assertAlmostEqual(held(cal, 40, 30., 40., -.6, -.3), -0.3, delta=.01)
+    self.assertEqual(held(cal, 40, 30., 40., -.6, -.5), 0.)
+
+  def test_the_fades_follow_the_last_second_not_one_frame(self):
+    cal = self.calibrated()
+    held(cal, 40, 30., 40., -.6, 0.)
+    # one frame that reads a hard approach and a slowing lead barely moves it
+    self.assertLess(cal.correction(0, 10. + 40 * DT, 30., 40., -2.6, -.45), -0.5)
+    # held for a second and a half, it is gone
+    self.assertAlmostEqual(held(cal, 30, 30., 40., -2.6, -.45, t0=10. + 41 * DT), 0., delta=.02)
+    # each lead keeps its own trend, and a new car or a gap in the frames starts over from its first reading
+    self.assertAlmostEqual(cal.correction(1, 20., 30., 40., -.6, 0.), -0.6)
+    self.assertAlmostEqual(cal.correction(0, 10. + 71 * DT, 30., 60., -.6, 0.), -0.6)  # 20 m farther: another car
+    held(cal, 40, 30., 40., -2.6, 0., t0=30.)
+    self.assertAlmostEqual(cal.correction(0, 30. + 39 * DT + .5, 30., 40., -.6, 0.), -0.6)  # 0.5 s of frames missing
 
   def test_capped_and_robust_to_bad_numbers(self):
-    for bias in (-5., 5.):
-      self.assertEqual(abs(self.calibrated(bias).correction(30., 35., 0., 0.)), CORRECTION_CAP)
+    for sign in (-1., 1.):  # steady following, the model reading exactly its (capped) bias
+      self.assertEqual(now(self.calibrated(5. * sign), 30., 35., sign * CORRECTION_CAP, 0.), sign * CORRECTION_CAP)
     cal = self.calibrated()
     for bad in (float('nan'), float('inf')):
-      self.assertEqual(cal.correction(bad, 35., 0., 0.), 0.)
-      self.assertEqual(cal.correction(30., 35., bad, 0.), 0.)
+      self.assertEqual(now(cal, bad, 35., 0., 0.), 0.)
+      self.assertEqual(now(cal, 30., 35., bad, 0.), 0.)
+      self.assertEqual(cal.correction(0, bad, 30., 35., 0., 0.), 0.)
+    # a bad frame does not poison the trend
+    held(cal, 20, 30., 35., -.6, 0.)
+    cal.correction(0, 10. + 20 * DT, 30., 35., float('nan'), 0.)
+    self.assertAlmostEqual(cal.correction(0, 10. + 21 * DT, 30., 35., -.6, 0.), -0.6)
     cal.theta = np.array([float('nan'), 0., 0.])
-    self.assertEqual(cal.correction(30., 35., 0., 0.), 0.)
+    self.assertEqual(now(cal, 30., 35., 0., 0.), 0.)
 
 
 class TestRadardWiring(unittest.TestCase):
