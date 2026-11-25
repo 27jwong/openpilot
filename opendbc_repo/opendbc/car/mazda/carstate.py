@@ -19,9 +19,9 @@ OP_CRAWL_SPEED = 6.5 * CV.MPH_TO_MS
 # Left only above this, so traffic hovering at the entry speed does not swap controllers and planner
 # modes on every crossing.
 OP_CRAWL_EXIT_SPEED = 8.0 * CV.MPH_TO_MS
-# CRUZE_STATE DISTANCE_SETTING: 1 closest .. 4 farthest, 0 with main off. It stops at both ends; a closer
-# press at 1 leaves the car at 1 (10 of 10 times in the logs).
-CLOSEST_DISTANCE_SETTING = 1
+# CRUZE_STATE DISTANCE_SETTING: 4 closest .. 1 farthest, 0 with main off (the driver sits on 4 in 967 logged
+# segments, 1 in 111). It stops at both ends; a closer press at 4 leaves the car at 4 (6 of 6 times in the logs).
+CLOSEST_DISTANCE_SETTING = 4
 
 
 def op_crawl_zone(v_ego: float, in_zone: bool) -> bool:

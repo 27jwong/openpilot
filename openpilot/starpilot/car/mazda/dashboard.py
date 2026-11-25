@@ -9,7 +9,9 @@ from openpilot.starpilot.conditional_mode.preferences import manual_for_drive
 
 MAX_AGE_NS = 150_000_000
 DASHBOARD_CARS = frozenset(CAR)
-STALK_EXPERIMENTAL_SETTING = 1  # CRUZE_STATE DISTANCE_SETTING: 1 closest .. 4 farthest, 0 with main off
+# CRUZE_STATE DISTANCE_SETTING: 4 closest .. 1 farthest, 0 with main off. The demand sits on 1, the FARTHEST
+# setting; it was written as "closest" while the setting's direction was read backwards.
+STALK_EXPERIMENTAL_SETTING = 1
 
 
 def capable(cp):
@@ -39,7 +41,7 @@ def _companion(state, message, car_state_stamp):
 
 def write_stalk_experimental(parsed, state, message, *, car_state_stamp):
   """The GEN2 distance buttons (closer and farther, in CRZ_BTNS) step the car's own distance setting.
-  Parking it on the closest setting demands experimental mode for as long as it stays there.
+  Parking it on setting 1 (the farthest) demands experimental mode for as long as it stays there.
 
   The crawl zone demands it too. openpilot owns the car there under blended ACC, and left to
   itself CEM's slow-lead trigger flips chill/experimental about once a second behind a creeping
@@ -64,9 +66,9 @@ def stalk_experimental(sm, drive_id, now_ns):
   return manual_for_drive(ManualIntent.FORCE_EXPERIMENTAL, drive_id, stamp)
 
 
-# DISTANCE_SETTING -> LongitudinalPersonality (0 aggressive, 1 standard, 2 relaxed). The closest setting is
-# where the driver spends most of the time, so it carries the everyday personality (Aggressive).
-SETTING_PERSONALITY = {1: 0, 2: 1, 3: 2, 4: 2}
+# DISTANCE_SETTING (4 closest .. 1 farthest) -> LongitudinalPersonality (0 aggressive, 1 standard, 2 relaxed).
+# The closest setting is where the driver spends most of the time, so it carries the everyday personality.
+SETTING_PERSONALITY = {4: 0, 3: 1, 2: 2, 1: 2}
 
 
 class DistancePersonality:
