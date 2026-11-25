@@ -1,5 +1,5 @@
-"""Optional Mazda camera observation and GEN2 experimental-mode demand (distance stalk, crawl zone); never a
-longitudinal control grant."""
+"""Optional Mazda camera observation, GEN2 experimental-mode demand (distance stalk, crawl zone) and the GEN2
+distance-setting personality; never a longitudinal control grant."""
 import time
 
 from opendbc.car.mazda.values import CAR, MazdaFlags
@@ -62,6 +62,32 @@ def stalk_experimental(sm, drive_id, now_ns):
   if not forced or type(drive_id) is not int or not 0 < drive_id <= stamp <= now_ns or now_ns - stamp > MAX_AGE_NS:
     return None
   return manual_for_drive(ManualIntent.FORCE_EXPERIMENTAL, drive_id, stamp)
+
+
+# DISTANCE_SETTING -> LongitudinalPersonality (0 aggressive, 1 standard, 2 relaxed). The closest setting is
+# where the driver spends most of the time, so it carries the everyday personality (Aggressive).
+SETTING_PERSONALITY = {1: 0, 2: 1, 3: 2, 4: 2}
+
+
+class DistancePersonality:
+  """GEN2 openpilot long: the car's distance setting picks the driving personality whenever it changes,
+  including the first reading after main comes on. A personality chosen in between (a Wheel Controls
+  press at the closest setting, the settings screen) holds until the setting moves again."""
+
+  def __init__(self):
+    self.setting = None
+
+  def update(self, cp, parsed, state, params):
+    """Returns the personality it saved, or None."""
+    if not (gen2(cp) and cp.openpilotLongitudinalControl) or not state.canValid or state.canTimeout:
+      return None
+    setting = getattr(parsed, 'distance_setting', 0)
+    previous, self.setting = self.setting, setting
+    personality = SETTING_PERSONALITY.get(setting)
+    if personality is None or setting == previous or params.get_bool("SafeMode"):
+      return None
+    params.put("LongitudinalPersonality", personality)  # selfdrived re-reads it every 0.1 s
+    return personality
 
 
 def write_stop_sign(parsed, state, message, *, car_state_stamp):
