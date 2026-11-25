@@ -28,7 +28,7 @@ def _flag(cp, setting, op_crawl=False, **state):
 
 
 @pytest.mark.parametrize('setting, expected', ((1, True), (2, False), (3, False), (4, False), (0, False)))
-def test_gen2_closest_setting_demands_experimental(setting, expected):
+def test_gen2_setting_1_the_farthest_demands_experimental(setting, expected):
   assert _flag(_params(CAR.MAZDA_CX_30), setting) is expected
 
 

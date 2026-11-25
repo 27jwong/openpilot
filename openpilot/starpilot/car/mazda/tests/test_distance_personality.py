@@ -37,36 +37,41 @@ def _drive(settings, *, cp=None, params=None, can_valid=None):
   return params.writes
 
 
+# DISTANCE_SETTING counts 4 closest .. 1 farthest, 0 with main off.
+CLOSEST, FARTHEST = 4, 1
+
+
 def test_closest_setting_is_the_everyday_aggressive_personality():
   assert _cp().openpilotLongitudinalControl
-  assert _drive([1]) == [AGGRESSIVE]
+  assert _drive([CLOSEST]) == [AGGRESSIVE]
+  assert _drive([FARTHEST]) == [RELAXED]
 
 
 def test_each_setting_change_picks_its_personality_once():
   # main off (0) -> closest -> out to the farthest -> main off -> back on at the closest
-  assert _drive([0, 1, 1, 2, 2, 3, 4, 0, 1]) == [AGGRESSIVE, STANDARD, RELAXED, RELAXED, AGGRESSIVE]
+  assert _drive([0, 4, 4, 3, 3, 2, 1, 0, 4]) == [AGGRESSIVE, STANDARD, RELAXED, RELAXED, AGGRESSIVE]
 
 
 def test_staying_on_a_setting_keeps_a_personality_chosen_in_between():
   # Only changes write, so a Wheel Controls "Cycle personality" press at the closest setting holds.
   params = _Params()
-  assert _drive([1] + [1] * 50, params=params) == [AGGRESSIVE]
+  assert _drive([CLOSEST] * 51, params=params) == [AGGRESSIVE]
 
 
 def test_invalid_can_neither_writes_nor_swallows_the_change():
-  assert _drive([1, 2, 2], can_valid=[True, False, True]) == [AGGRESSIVE, STANDARD]
+  assert _drive([4, 3, 3], can_valid=[True, False, True]) == [AGGRESSIVE, STANDARD]
 
 
 def test_safe_mode_leaves_the_personality_alone():
-  assert _drive([1, 2, 3], params=_Params(safe_mode=True)) == []
+  assert _drive([4, 3, 2], params=_Params(safe_mode=True)) == []
 
 
 def test_without_openpilot_long_there_is_nothing_to_set():
   cp = _cp()
   cp.openpilotLongitudinalControl = False
-  assert _drive([1, 2, 3], cp=cp) == []
+  assert _drive([4, 3, 2], cp=cp) == []
 
 
 @pytest.mark.parametrize('identity', (CAR.MAZDA_CX5_2022, CAR.MAZDA_CX9_2021))
 def test_gen1_is_untouched(identity):
-  assert _drive([1, 2, 3], cp=_cp(identity)) == []
+  assert _drive([4, 3, 2], cp=_cp(identity)) == []

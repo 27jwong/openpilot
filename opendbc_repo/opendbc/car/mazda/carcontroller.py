@@ -191,7 +191,8 @@ class CarController(CarControllerBase):
         # stops, the standstill and the launches, with experimental mode held on there by the same
         # zone so chill/experimental flips cannot step the plan. A launch therefore never changes
         # hands, and the only crawl handover is the one on the way down through the entry speed.
-        # The closest distance setting on the stalk is the driver demanding openpilot long.
+        # Distance setting 1 is the driver demanding openpilot long. It is the FARTHEST setting (4 is the
+        # closest); this was written as "closest" while the setting's direction was read backwards.
         crawl_to_op = CS.op_crawl
         manual_to_op = CS.distance_setting == 1
         cem_to_op = experimental_mode
