@@ -31,6 +31,17 @@ ERROR_FILTER_BYPASS = 1.5
 # authority the old kp=0/ki=0.1 loop had.
 MAX_BRAKE_OVERSHOOT = 0.10
 
+# The same lead builds on the gas side whenever the planner steps up faster than the car follows (the car
+# answers a command after ~0.15 s plus a 0.4 s lag). With Blended ACC off, the CX-30 drives of 2026-11-24/25
+# had 2-3 such steps a drive, mostly where conditional mode dropped back to chill: feedback put the command
+# 0.8-1.5 m/s^2 over the planner for 0.5-1.7 s (route 00000028 8:57: target 1.9, command 3.3), and the wound-up
+# integrator then kept the car pulling after the target had come back down. Simulated on those drives through
+# the fitted plant, 0.30 halves that overshoot (10:49: car peak 2.6 -> 1.9 m/s^2), slightly improves overall
+# tracking (RMS 0.111 -> 0.106 m/s^2), and leaves step-ups (median rise 0.66 -> 0.67 s) and launches (2.01 ->
+# 2.02 s to 1 m/s) as they were. More gas room than the brake side gets because only gas has to beat the lag
+# out of a launch.
+MAX_GAS_OVERSHOOT = 0.30
+
 # At standstill a planner "go" has to hold this long before openpilot leaves its stop. GEN2 reports
 # no cruise standstill under openpilot long, so one frame of not-should-stop is otherwise enough,
 # and openpilot owns the standstill outright in the crawl zone. Route 00000022--89e0df5b7f 4:36:
@@ -115,6 +126,11 @@ class Gen2LongitudinalPolicy:
       if output < floor:
         self.pid.i += floor - output
         output = floor
+      # Mirror image on the gas side, also continuous where the target crosses zero.
+      ceiling = max(target, 0.0) + MAX_GAS_OVERSHOOT
+      if output > ceiling:
+        self.pid.i -= output - ceiling
+        output = ceiling
     return output
 
 
