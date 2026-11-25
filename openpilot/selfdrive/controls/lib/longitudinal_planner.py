@@ -368,6 +368,9 @@ class LongitudinalPlanner:
                                             fallback=should_stop(v_ego, a_target))
     output_a_target_mpc, output_should_stop_mpc = get_accel_from_plan_split(accel_from_delay, v_ego,
                                                                             self.gas_delay, self.brake_delay)
+    # base's single lookahead for the checks further down. Only GEN2 Mazda learns two different
+    # delays, and the check it reaches (force-stop braking) is about braking.
+    action_t = self.brake_delay + DT_MDL
     output_a_target_e2e = sm['modelV2'].action.desiredAcceleration
     output_should_stop_e2e = sm['modelV2'].action.shouldStop
     if (self.force_stop_plan.resume_override and not self.force_stop_plan.forcing and
