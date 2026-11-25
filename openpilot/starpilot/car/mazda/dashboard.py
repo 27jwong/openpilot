@@ -1,5 +1,5 @@
-"""Optional Mazda camera observation, GEN2 experimental-mode demand (distance stalk, crawl zone) and the GEN2
-distance-setting personality; never a longitudinal control grant."""
+"""Optional Mazda camera observation, GEN2 crawl-zone experimental-mode demand and the GEN2 distance-setting
+personality; never a longitudinal control grant."""
 import time
 
 from opendbc.car.mazda.values import CAR, MazdaFlags
@@ -9,9 +9,6 @@ from openpilot.starpilot.conditional_mode.preferences import manual_for_drive
 
 MAX_AGE_NS = 150_000_000
 DASHBOARD_CARS = frozenset(CAR)
-# CRUZE_STATE DISTANCE_SETTING: 4 closest .. 1 farthest, 0 with main off. The demand sits on 1, the FARTHEST
-# setting; it was written as "closest" while the setting's direction was read backwards.
-STALK_EXPERIMENTAL_SETTING = 1
 
 
 def capable(cp):
@@ -26,7 +23,7 @@ def gen2(cp):
 
 def compose(cp, parsed, state, message, *, car_state_stamp):
   if gen2(cp):
-    return write_stalk_experimental(parsed, state, message, car_state_stamp=car_state_stamp)
+    return write_crawl_experimental(parsed, state, message, car_state_stamp=car_state_stamp)
   if not capable(cp):
     return message
   return write_stop_sign(parsed, state, message, car_state_stamp=car_state_stamp)
@@ -39,23 +36,22 @@ def _companion(state, message, car_state_stamp):
   return message
 
 
-def write_stalk_experimental(parsed, state, message, *, car_state_stamp):
-  """The GEN2 distance buttons (closer and farther, in CRZ_BTNS) step the car's own distance setting.
-  Parking it on setting 1 (the farthest) demands experimental mode for as long as it stays there.
+def write_crawl_experimental(parsed, state, message, *, car_state_stamp):
+  """The GEN2 crawl zone demands experimental mode. openpilot owns the car there under blended ACC, and
+  left to itself CEM's slow-lead trigger flips chill/experimental about once a second behind a creeping
+  lead (20/min on the 11-19 drives), each flip stepping the plan 0.3-0.5 m/s^2 in one frame.
 
-  The crawl zone demands it too. openpilot owns the car there under blended ACC, and left to
-  itself CEM's slow-lead trigger flips chill/experimental about once a second behind a creeping
-  lead (20/min on the 11-19 drives), each flip stepping the plan 0.3-0.5 m/s^2 in one frame."""
+  The distance setting no longer demands it: the old setting-1 demand sat on the farthest setting (it
+  was written as "closest" while the direction was read backwards) and was removed on 2026-11-25."""
   message = _companion(state, message, car_state_stamp)
   message.starpilotCarState.forceExperimental = bool(
-    state.canValid and not state.canTimeout and state.cruiseState.available and
-    (getattr(parsed, 'distance_setting', 0) == STALK_EXPERIMENTAL_SETTING or getattr(parsed, 'op_crawl', False)))
+    state.canValid and not state.canTimeout and state.cruiseState.available and getattr(parsed, 'op_crawl', False))
   return message
 
 
-def stalk_experimental(sm, drive_id, now_ns):
-  """The conditional host's manual override while the stalk demands experimental mode, else None
-  so the driver's own manual state applies. Held, never saved: leaving the setting ends it."""
+def crawl_experimental(sm, drive_id, now_ns):
+  """The conditional host's manual override while the crawl zone demands experimental mode, else None
+  so the driver's own manual state applies. Held, never saved: leaving the zone ends it."""
   try:
     stamp = int(sm.logMonoTime['starpilotCarState'])
     forced = sm.valid['starpilotCarState'] and sm['starpilotCarState'].forceExperimental

@@ -191,21 +191,20 @@ class CarController(CarControllerBase):
         # stops, the standstill and the launches, with experimental mode held on there by the same
         # zone so chill/experimental flips cannot step the plan. A launch therefore never changes
         # hands, and the only crawl handover is the one on the way down through the entry speed.
-        # Distance setting 1 is the driver demanding openpilot long. It is the FARTHEST setting (4 is the
-        # closest); this was written as "closest" while the setting's direction was read backwards.
+        # The distance setting no longer hands over: the old setting-1 handover sat on the farthest
+        # setting (it was written as "closest" while the direction was read backwards).
         crawl_to_op = CS.op_crawl
-        manual_to_op = CS.distance_setting == 1
         cem_to_op = experimental_mode
         ttc_to_op = lead_ttc < LEAD_ENGAGE_TTC
         headway_to_op = lead_headway < LEAD_ENGAGE_HEADWAY
-        blend_to_op = crawl_to_op or manual_to_op or cem_to_op or ttc_to_op or headway_to_op
+        blend_to_op = crawl_to_op or cem_to_op or ttc_to_op or headway_to_op
 
         # A closing lead shortens the crossfade whatever else is asking; a close one only
-        # lengthens it when it is the sole reason, so it never slows a crawl, manual or CEM handover.
+        # lengthens it when it is the sole reason, so it never slows a crawl or CEM handover.
         transition_time = self.transition_time
         if ttc_to_op:
           transition_time *= LEAD_TTC_TRANSITION_SCALE
-        elif headway_to_op and not (crawl_to_op or manual_to_op or cem_to_op):
+        elif headway_to_op and not (crawl_to_op or cem_to_op):
           transition_time *= LEAD_HEADWAY_TRANSITION_SCALE
 
         # transition_time sets the fastest crossfade; the jerk cap slows it when the two
