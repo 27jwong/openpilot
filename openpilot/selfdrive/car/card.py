@@ -1160,8 +1160,14 @@ class Car:
       except Exception:
         self.learning_feedback_publication = None
     if self.CP.brand == 'mazda':
-      from openpilot.starpilot.car.mazda.dashboard import compose
+      from openpilot.starpilot.car.mazda.dashboard import DistancePersonality, compose
       companion = compose(self.CP, self.CI.CS, CS, companion, car_state_stamp=int(cs_send.logMonoTime))
+      if getattr(self, 'mazda_distance_personality', None) is None:
+        self.mazda_distance_personality = DistancePersonality()
+      try:
+        self.mazda_distance_personality.update(self.CP, self.CI.CS, CS, self.params)
+      except Exception:
+        pass  # Optional preference sync; it must never stop carState publishing.
     elif self.CP.brand == 'hyundai':
       from openpilot.starpilot.car.hyundai.dashboard import compose as hyundai_compose
       companion = hyundai_compose(self.CP, self.CI.CS, CS, companion, car_state_stamp=int(cs_send.logMonoTime))
