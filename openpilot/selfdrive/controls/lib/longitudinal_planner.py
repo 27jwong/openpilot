@@ -25,7 +25,7 @@ from openpilot.starpilot.navigation.intent import NAVIGATION_BRAKE_MAGNITUDE, cr
 from openpilot.starpilot.navigation.slowdown import DEFAULT_SLOWDOWN_PERCENT
 from openpilot.starpilot.car.tesla.preap_adaptive import startup_owner as preap_adaptive_owner
 from openpilot.starpilot.longitudinal.vehicle_policy import forecast_should_stop, planner_cost_owner, far_follow_owner
-from openpilot.starpilot.longitudinal.coast_governor import lead_from as coast_lead_from, owner_for as coast_governor_owner
+from openpilot.starpilot.longitudinal.approach_coast import lead_from as approach_lead_from, owner_for as approach_coast_owner
 from openpilot.starpilot.longitudinal.cruise_ceiling import CruiseCeiling, CurveCeiling, select_cruise_ceiling, select_curve_ceiling
 from openpilot.starpilot.longitudinal.profile_runtime import (AppliedProfile, ProfileSmoother, ProfileTuning, SelectedProfileTuning,
                                                              TRAFFIC_CRUISE_BRAKE_MAGNITUDE)
@@ -181,7 +181,7 @@ class LongitudinalPlanner:
     self.lead_takeoff = LeadTakeoff()
     self.button_cruise = highlander_cruise_owner(CP, dt)
     self.vehicle_far_follow = far_follow_owner(CP, dt)
-    self.coast_governor = coast_governor_owner(CP)
+    self.approach_coast = approach_coast_owner(CP, dt)
     self.vision_stop_buffer = vision_stop_owner(CP)
     self.ford_stop_approach = ford_stop_owner(CP, STOP_DISTANCE - .5) or vw_stop_owner(CP, STOP_DISTANCE - .5)
     self.preap_adaptive = preap_adaptive_owner(CP)
@@ -563,6 +563,19 @@ class LongitudinalPlanner:
 
     candidates = [(output_a_target_mpc, self.mpc.source, output_should_stop_mpc),
                   (self.a_cruise, LongitudinalPlanSource.cruise, cruise_should_stop)]
+    if self.approach_coast is not None:
+      # A slower lead caps the throttle at what coasting can still take back; braking stays the MPC's.
+      orientation = sm['carControl'].orientationNED
+      # Traffic Mode locks on to the car ahead, so it hands the throttle back like a lost lead
+      approach_leads = [] if traffic_mode is not False else [
+        lead for lead in (approach_lead_from(sm['radarState'].leadOne), approach_lead_from(sm['radarState'].leadTwo)) if lead is not None]
+      approach_target = self.approach_coast.step(
+        approach_leads, float(v_ego), float(orientation[1]) if len(orientation) == 3 else 0.0, float(self.mpc.params[0, 4]),
+        STOP_DISTANCE, float(accel_ceiling), float(a_prev),
+        blocked=bool(reset_state or not profile_eligible or self.fcw or sm['carState'].standstill or
+                     sm['carState'].gasPressed or sm['carState'].brakePressed or sm['controlsState'].forceDecel))
+      if approach_target is not None:
+        candidates.append((approach_target, LongitudinalPlanSource.cruise, False))
     if self.force_stop_distance_braking and self.force_stop_plan.forcing and self.force_stop_plan.obstacle_m is not None:
       stop_target = distance_target(v_ego, sm['carState'].aEgo, self.force_stop_plan.obstacle_m, action_t)
       candidates.append((stop_target, LongitudinalPlanSource.cruise, False))
@@ -592,19 +605,6 @@ class LongitudinalPlanner:
       follow_seconds=float(self.mpc.params[0, 4]), mpc_target=output_a_target_mpc,
       cruise_target=self.a_cruise, model_target=output_a_target_e2e, stopping=self.output_should_stop,
       force_stop=self.force_stop_plan.forcing, traffic_mode=traffic_mode, accel_min=ACCEL_MIN)
-    if self.coast_governor is not None:
-      # Only lead-following braking may be eased: cruise, a forced stop and the model bound what coasting gives back.
-      leads = [lead for lead in (coast_lead_from(sm['radarState'].leadOne), coast_lead_from(sm['radarState'].leadTwo))
-               if lead is not None]
-      orientation = sm['carControl'].orientationNED
-      output_a_target = self.coast_governor.step(
-        float(output_a_target), float(min(c[0] for c in candidates[1:])), float(v_ego),
-        min(leads, key=lambda lead: lead.d_rel + lead.v_lead ** 2 / 5.0) if leads else None,
-        float(orientation[1]) if len(orientation) == 3 else 0.0, sample_now_ns / 1e9,
-        blocked=bool(reset_state or not profile_eligible or traffic_mode is not False or self.fcw or
-                     self.output_should_stop or self.force_stop_plan.forcing or sm['carState'].standstill or
-                     sm['carState'].gasPressed or sm['carState'].brakePressed or sm['controlsState'].forceDecel or
-                     sm['modelV2'].action.shouldStop or not self.allow_throttle or self.mpc.solution_status != 0))
     if faster_lead_takeoff:
       # Dom takeoff bypasses the standstill cruise slew, never its final bounds.
       takeoff_max = accel_ceiling if sm['selfdriveState'].experimentalMode else get_max_accel(v_ego, faster_takeoffs)
