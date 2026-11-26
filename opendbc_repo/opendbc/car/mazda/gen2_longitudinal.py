@@ -13,8 +13,16 @@ LongCtrlState = car.CarControl.Actuators.LongControlState
 # disturbance. The gains are IMC-tuned against that plant. kp is only usable because the error is
 # low-passed first, and it comes back down at highway speed: at 0.8 it turned aEgo noise into a
 # 0.3-1.5 Hz back-and-forth behind a lead, 3x what the planner asked for, and tracked no better.
-KP = ([0., 12., 30.], [0.2, 0.5, 0.4])
-KI = ([0., 35.], [1.0, 1.0])
+# Cruising, the planner closes its own speed loop around this one (cruise accel = speed error, per
+# second over the set speed), so the integrator is a second speed loop on top of it; with the car's
+# ~0.55 s lag the two left a resonance near 0.4 Hz. Route 00000029, no-lead cruise at 45-75 mph: the
+# phone IMU follows the command by 0.26 s (r 0.77) and the feedback reacts to aEgo 0.18 s later with
+# the opposite sign (r -0.93), a ~0.4-1 Hz rocking 30% above MRCC's at 54-81 mph (0.041 vs 0.031 m/s^2,
+# 0.3-1.5 Hz). Replayed with both loops closed, ki 0.3 and kp 0.25 at speed take ~10% off the felt
+# 0.2-1.5 Hz rocking for 0.02 m/s more speed error; below 8 m/s, where launches and stops live, the
+# gains are as they were.
+KP = ([0., 12., 30.], [0.2, 0.5, 0.25])
+KI = ([0., 8., 12., 35.], [1.0, 1.0, 0.3, 0.3])
 
 # aEgo is a differentiated wheel speed, so it carries 0.05 m/s^2 of noise at highway speed and 0.15
 # at parking-lot speed. Feeding that straight into kp would dither the pedal, so the error gets a

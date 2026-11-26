@@ -228,6 +228,37 @@ def test_highway_braking_is_unchanged():
   assert out >= -1.0 - MAX_BRAKE_OVERSHOOT - 1e-9
 
 
+def cruise_amplification(kp, ki, freq, speed=20.0):
+  """Felt accel over an injected disturbance, with the planner's cruise speed loop (accel = speed error per
+  second) closed around the PI and a 0.15 s + 0.4 s car, the way plannerd and controlsd run it at cruise."""
+  pid = PIDController(kp, ki, pos_limit=2.0, neg_limit=-3.5, rate=1 / DT_CTRL)
+  a = v = 0.0; sent = [0.0] * 15; target = 0.0; felt = []; dist = []
+  for k in range(int(30 / DT_CTRL)):
+    t = k * DT_CTRL
+    d = 0.05 * np.sin(2 * np.pi * freq * t)
+    if k % 5 == 0:  # 20 Hz planner
+      target = float(np.clip(-v, -0.5, 0.6))
+    out = pid.update(target - (a + d), speed=speed, feedforward=target)
+    sent.append(out)
+    a += DT_CTRL / 0.4 * (sent[-16] - a)
+    v += DT_CTRL * (a + d)
+    if t > 15:
+      felt.append(a + d); dist.append(d)
+  return np.std(felt) / np.std(dist)
+
+
+def test_cruise_tune_rocks_less_than_the_old_one():
+  # route 00000029: a ~0.4-1 Hz rocking at steady no-lead cruise, the two speed loops amplifying the car's own
+  # wobble; the at-speed gains have to take the resonance down without changing the low-speed tune
+  old_kp, old_ki = ([0., 12., 30.], [0.2, 0.5, 0.4]), ([0., 35.], [1.0, 1.0])
+  old = max(cruise_amplification(old_kp, old_ki, f) for f in (0.3, 0.4, 0.5, 0.7, 1.0))
+  new = max(cruise_amplification(KP, KI, f) for f in (0.3, 0.4, 0.5, 0.7, 1.0))
+  assert old > 1.0  # the old tune amplified it
+  assert new < old - 0.05
+  for v in (0.0, 4.0, 8.0):
+    assert np.interp(v, *KI) == 1.0
+
+
 def test_reset_rearms_the_filter():
   policy = policy_for(make_cp())
   pid = PIDController(KP, 0.0, rate=1 / DT_CTRL)
