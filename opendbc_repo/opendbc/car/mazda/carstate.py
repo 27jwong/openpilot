@@ -263,7 +263,13 @@ class CarState(CarStateBase):
     unit_conversion = CV.MPH_TO_MS if cp.vl["SYSTEM_SETTINGS"]["IMPERIAL_UNIT"] else CV.KPH_TO_MS
     ret.standstill = cp_cam.vl["SPEED"]["SPEED"] * unit_conversion < 0.1
     if self.CP.flags & MazdaSafetyFlags.GEN2:
-      ret.cruiseState.speed = cp.vl["CRUZE_STATE"]["CRZ_SPEED"] * unit_conversion
+      # The set speed is in the car's own speed frame, the one the dash and MRCC use: MRCC holds the uncorrected
+      # wheel speed at the set speed (route 00000024: set 45 -> 44.75 mph on the wheels). vEgo is in the true
+      # frame (wheelSpeedFactor), so the target is scaled the same way. Unscaled, openpilot cruised at the set
+      # speed by GPS and the dash read ~4.6% low on the CX-30's tires (route 00000029: set 75, wheels 71.5).
+      # speedCluster keeps the number the driver set, for the UI.
+      ret.cruiseState.speedCluster = cp.vl["CRUZE_STATE"]["CRZ_SPEED"] * unit_conversion
+      ret.cruiseState.speed = ret.cruiseState.speedCluster * (self.CP.wheelSpeedFactor or 1.0)
       ret.cruiseState.enabled = (cp.vl["CRUZE_STATE"]["CRZ_STATE"] >= 2)
       ret.cruiseState.available = (cp.vl["CRUZE_STATE"]["CRZ_STATE"] != 0)
       self.distance_setting = int(cp.vl["CRUZE_STATE"]["DISTANCE_SETTING"])
