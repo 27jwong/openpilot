@@ -36,6 +36,7 @@ from openpilot.starpilot.conditional_mode.policy import ModeChoice
 from openpilot.starpilot.conditional_mode.projection import ConditionalOwnerContext, ObservedBool
 from openpilot.starpilot.conditional_mode.traffic import TrafficOwner, TrafficVerdict
 from openpilot.starpilot.conditional_mode.traffic_chill import traffic_chill
+from openpilot.starpilot.longitudinal.traffic_lock_on import traffic_lock_on
 from openpilot.starpilot.controllers.coast import CoastRuntime
 from openpilot.starpilot.controllers.mode_actions import ModeActionOwner, KINDS as CONTROLLER_MODE_KINDS, publish_switchback, apply_switchback_gesture
 import secrets
@@ -539,6 +540,8 @@ def starpilot_main():
         # cannot turn on ordinary saved profiles without their existing gate.
         profile_tuning = (profile_for_frame(profile_host, sm, CP, now_ns, traffic_mode=traffic_mode)
                           if profile_replay or traffic_mode is not False else None)
+        if traffic_mode is True and profile_host is not None:
+          profile_tuning = traffic_lock_on(CP, profile_tuning, profile_host.settings, float(sm['carState'].vEgo))
         # selected response supersedes the old global-only channel.
         global_braking_response = None
         selected_profiles = (profile_host.sample_selected(now_ns, sm['selfdriveState'].personality,
