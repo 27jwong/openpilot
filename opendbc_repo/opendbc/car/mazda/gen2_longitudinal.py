@@ -31,6 +31,43 @@ ERROR_FILTER_BYPASS = 1.5
 # authority the old kp=0/ki=0.1 loop had.
 MAX_BRAKE_OVERSHOOT = 0.10
 
+# Below ~5 m/s the CX-30 brakes less than it is asked to. Steady commands over routes 25-29, median aEgo minus
+# command: +0.2..+0.45 m/s^2 for -0.8..-2.0 at 1-5 m/s, and below 1 m/s creep adds +0.13..+0.28 even for -0.3..-0.5.
+# Above 5 m/s the car does what it is told (+-0.1). The bound above then pinned the command at exactly target -
+# 0.10 through the final approach of route 00000029 5:48-5:50.5 (planned -1.9, car -1.35..-1.6), and from 5:52 the
+# car crept at 1 mph on -0.3..-0.47 from 2.3 m down to 1.3 m behind a stopped car until the driver braked.
+# So the feedforward carries the measured shortfall, and the bound widens there for the PI to fill the rest.
+# Both scale with the braking requested and vanish at a zero target, so a target that asks for gas (a launch
+# lurch, the 2026-11-19 case below) still gets the plain bound. Replayed through the measured shortfall map, the
+# 5:50 stop lands 4.1 m back instead of creeping into 2.1 m, and three other stops land 0.6-1.1 m farther back.
+LOW_SPEED_SHORTFALL_BP = [3.5, 5.5]  # m/s: full below, none above
+LOW_SPEED_SHORTFALL_GAIN = 0.3  # per m/s^2 of braking asked for
+LOW_SPEED_SHORTFALL_MAX = 0.3  # m/s^2
+CREEP_SHORTFALL_BP = [1.0, 2.0]  # m/s
+CREEP_SHORTFALL = 0.2  # m/s^2, at full braking request
+CREEP_SHORTFALL_FULL = 0.5  # m/s^2 of braking asked for at which the creep term is complete
+LOW_SPEED_BRAKE_OVERSHOOT = 0.40
+LOW_SPEED_BRAKE_OVERSHOOT_BP = [3.0, 6.0]  # m/s
+LOW_SPEED_BRAKE_OVERSHOOT_FULL = 0.6  # m/s^2 of braking asked for at which the wider bound is complete
+
+
+def low_speed_shortfall(target: float, speed: float) -> float:
+  """m/s^2 the CX-30 falls short of a braking request at this speed; 0 for a target that is not braking."""
+  if target >= 0.0:
+    return 0.0
+  brake = -target
+  low = float(np.interp(speed, LOW_SPEED_SHORTFALL_BP, [1.0, 0.0])) * min(LOW_SPEED_SHORTFALL_MAX, LOW_SPEED_SHORTFALL_GAIN * brake)
+  creep = CREEP_SHORTFALL * float(np.interp(speed, CREEP_SHORTFALL_BP, [1.0, 0.0])) * min(1.0, brake / CREEP_SHORTFALL_FULL)
+  return low + creep
+
+
+def brake_overshoot(target: float, speed: float) -> float:
+  """How far feedback may brake past the (shortfall-corrected) target."""
+  if target >= 0.0:
+    return MAX_BRAKE_OVERSHOOT
+  wide = float(np.interp(speed, LOW_SPEED_BRAKE_OVERSHOOT_BP, [1.0, 0.0])) * min(1.0, -target / LOW_SPEED_BRAKE_OVERSHOOT_FULL)
+  return MAX_BRAKE_OVERSHOOT + (LOW_SPEED_BRAKE_OVERSHOOT - MAX_BRAKE_OVERSHOOT) * wide
+
 # The same lead builds on the gas side whenever the planner steps up faster than the car follows (the car
 # answers a command after ~0.15 s plus a 0.4 s lag). With Blended ACC off, the CX-30 drives of 2026-11-24/25
 # had 2-3 such steps a drive, mostly where conditional mode dropped back to chill: feedback put the command
@@ -94,7 +131,8 @@ class Gen2LongitudinalPolicy:
     return Gen2StopPolicy()
 
   def feedforward(self, target: float, speed: float, last_output: float) -> float:
-    return target
+    # the error stays target - aEgo; only the command carries the car's low-speed braking shortfall
+    return target - low_speed_shortfall(target, speed)
 
   def prepare_pid(self, pid, target: float, error: float, speed: float,
                   last_output: float, accel_limits: tuple[float, float], *,
@@ -121,8 +159,10 @@ class Gen2LongitudinalPolicy:
     # while the planner asked for gas, and the clamp snapped the command up in one frame (-0.66 to
     # -0.10) the moment the target dipped below zero. That bit after the CX-30's launch lurch and
     # after every stretch of MRCC driving, when the integrator had wound against MRCC's own accel.
+    # Below ~5 m/s the margin is measured from the shortfall-corrected command and widens with the braking
+    # asked for (LOW_SPEED_SHORTFALL above); both terms are zero at a zero target, so continuity holds.
     if self.pid is not None:
-      floor = min(target, 0.0) - MAX_BRAKE_OVERSHOOT
+      floor = min(target - low_speed_shortfall(target, speed), 0.0) - brake_overshoot(target, speed)
       if output < floor:
         self.pid.i += floor - output
         output = floor

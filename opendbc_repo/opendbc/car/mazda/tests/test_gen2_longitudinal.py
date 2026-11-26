@@ -1,9 +1,12 @@
 from types import SimpleNamespace
 
+import pytest
+
 import numpy as np
 
 from opendbc.car.mazda.gen2_longitudinal import (KI, KP, MAX_BRAKE_OVERSHOOT, MAX_GAS_OVERSHOOT, ERROR_FILTER_RC,
-                                                 STANDSTILL_GO_DWELL_FRAMES, LongCtrlState, policy_for)
+                                                 LOW_SPEED_BRAKE_OVERSHOOT, STANDSTILL_GO_DWELL_FRAMES, LongCtrlState,
+                                                 brake_overshoot, low_speed_shortfall, policy_for)
 from opendbc.car.mazda.values import MazdaSafetyFlags
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.pid import PIDController
@@ -99,7 +102,9 @@ def test_brake_floor_is_continuous_where_the_target_crosses_zero():
   pid = PIDController(KP, KI, pos_limit=2.0, neg_limit=-3.5, rate=1 / DT_CTRL)
   targets = np.concatenate([np.full(100, 0.01), np.full(20, -0.01)])
   got = run(policy, pid, targets, np.full(120, 0.8), speed=0.8)
-  assert np.abs(np.diff(got)).max() < 0.02
+  # At crawl speed the floor also carries the low-speed braking shortfall, so it is ~2x steeper in the target
+  # there: this 0.02 target step moves it 0.022. Still no snap (the old one was 0.56).
+  assert np.abs(np.diff(got)).max() < 0.03
 
 
 def test_gas_overshoot_is_bounded_and_integrator_follows():
@@ -149,6 +154,78 @@ def test_ordinary_tracking_never_meets_the_gas_ceiling():
   targets = 0.6 * np.sin(np.linspace(0, 6 * np.pi, 1500))
   got = run(policy, pid, targets, targets + rng.normal(0, 0.05, 1500), speed=15.0)
   assert (got - targets).max() < MAX_GAS_OVERSHOOT
+
+
+# Measured CX-30 braking shortfall (median aEgo - steady command), routes 25-29.
+SHORTFALL_V = [0.6, 1.5, 2.75, 4.25, 6.5, 10.0]
+SHORTFALL_U = [-2.0, -1.5, -1.1, -0.8, -0.5, -0.3, 0.0]
+SHORTFALL = [[0.30, 0.30, 0.28, 0.28, 0.20, 0.13, 0.0],
+             [0.45, 0.42, 0.17, 0.26, 0.05, 0.03, 0.0],
+             [0.31, 0.40, 0.18, 0.20, 0.00, -0.06, 0.0],
+             [0.25, 0.28, 0.10, 0.04, 0.04, -0.02, 0.0],
+             [0.09, 0.10, 0.03, -0.06, -0.08, -0.08, 0.0],
+             [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]]
+
+
+def cx30_braking(speed, command):
+  if command >= 0:
+    return command
+  row = [np.interp(command, SHORTFALL_U, r) for r in SHORTFALL]
+  return command + float(np.interp(speed, SHORTFALL_V, row))
+
+
+def closed_loop(target, speed, seconds=3.0, policy=None):
+  """The policy and PI against a 0.15 s dead time + 0.4 s lag car with the measured braking shortfall."""
+  policy = policy or policy_for(make_cp())
+  pid = PIDController(KP, KI, pos_limit=2.0, neg_limit=-3.5, rate=1 / DT_CTRL)
+  a, sent = 0.0, [0.0] * 15
+  for _ in range(int(seconds / DT_CTRL)):
+    error = target - a
+    ff = policy.feedforward(target, speed, 0.0)
+    freeze = policy.prepare_pid(pid, target, error, speed, 0.0, (-3.5, 2.0))
+    out = policy.shape_output(float(pid.update(error, speed=speed, feedforward=ff, freeze_integrator=freeze)), target, error, speed)
+    sent.append(out)
+    a += DT_CTRL / 0.4 * (cx30_braking(speed, sent[-16]) - a)
+  return a, out
+
+
+def test_shortfall_is_zero_unless_braking_at_low_speed():
+  for speed in (0.0, 0.5, 2.0, 4.0):
+    assert low_speed_shortfall(0.0, speed) == 0.0 and low_speed_shortfall(0.5, speed) == 0.0
+    assert brake_overshoot(0.0, speed) == MAX_BRAKE_OVERSHOOT and brake_overshoot(0.5, speed) == MAX_BRAKE_OVERSHOOT
+  for target in (-0.3, -1.0, -2.0):
+    assert low_speed_shortfall(target, 6.0) == 0.0 and brake_overshoot(target, 7.0) == MAX_BRAKE_OVERSHOOT
+  # grows with the braking asked for, capped, and at full width below 3 m/s
+  assert 0 < low_speed_shortfall(-0.3, 2.5) < low_speed_shortfall(-1.0, 2.5) <= low_speed_shortfall(-2.0, 2.5) <= 0.3
+  assert brake_overshoot(-1.0, 2.0) == LOW_SPEED_BRAKE_OVERSHOOT
+
+
+@pytest.mark.parametrize('speed, target', ((0.6, -0.35), (0.6, -0.5), (1.5, -1.5), (2.75, -1.1), (4.25, -1.5)))
+def test_low_speed_braking_reaches_the_request(speed, target):
+  # route 00000029 5:48-5:53: the plain bound left the car 0.4-0.6 m/s^2 short and then creeping at 1 mph
+  a, _ = closed_loop(target, speed)
+  assert abs(a - target) < 0.05
+
+  class Plain:  # the policy before the low-speed terms: plain feedforward and the fixed 0.10 bound
+    def __init__(self):
+      self.p = policy_for(make_cp())
+    def feedforward(self, t, v, last):
+      return t
+    def prepare_pid(self, *args, **kwargs):
+      return self.p.prepare_pid(*args, **kwargs)
+    def shape_output(self, out, t, e, v):
+      out = self.p.shape_output(out, t, e, 10.0)  # 10 m/s: no low-speed terms
+      return out
+  a_plain, _ = closed_loop(target, speed, policy=Plain())
+  assert a_plain - target > 0.07
+
+
+def test_highway_braking_is_unchanged():
+  # above ~6 m/s the car brakes as asked, so neither term may add braking there
+  policy = policy_for(make_cp())
+  assert policy.feedforward(-1.0, 15.0, 0.0) == -1.0
+  a, out = closed_loop(-1.0, 15.0)
+  assert out >= -1.0 - MAX_BRAKE_OVERSHOOT - 1e-9
 
 
 def test_reset_rearms_the_filter():
