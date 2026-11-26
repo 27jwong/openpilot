@@ -8,6 +8,7 @@ from libdatachannel import Description
 
 from teleoprtc.builder import WebRTCOfferBuilder, WebRTCAnswerBuilder
 from teleoprtc.info import parse_info_from_offer
+from teleoprtc.stream import strip_sctp_init
 from teleoprtc.tracks import TiciVideoStreamTrack
 
 
@@ -231,3 +232,46 @@ a=sctp-port:5000"""
 
     assert stream.expected_number_of_incoming_media == 1
     await stream.stop()
+
+  async def test_answer_drops_snap_sctp_init(self):
+    # Android Chrome 158 offers SNAP; echoing its a=sctp-init back left the data channel
+    # half-open and the video never started
+    offer_sdp = """v=0
+o=- 3910274679 3910274679 IN IP4 0.0.0.0
+s=-
+t=0 0
+a=group:BUNDLE 0 1
+m=video 9 UDP/TLS/RTP/SAVPF 100
+c=IN IP4 0.0.0.0
+a=recvonly
+a=mid:0
+a=rtcp-mux
+a=rtpmap:100 H264/90000
+a=fmtp:100 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f
+a=ice-ufrag:1234
+a=ice-pwd:1234
+a=fingerprint:sha-256 15:F3:F0:23:67:44:EE:2C:AA:8C:D9:50:95:26:42:7C:67:EA:1F:D2:92:C5:97:01:7B:2E:57:C9:A3:13:00:4A
+a=setup:actpass
+m=application 9 UDP/DTLS/SCTP webrtc-datachannel
+c=IN IP4 0.0.0.0
+a=mid:1
+a=sctp-port:5000
+a=max-message-size:262144
+a=sctp-init:AQAAHgTkvGIAUAAA/////77A1zLAAAAEgAgABoLA"""
+
+    builder = WebRTCAnswerBuilder(offer_sdp)
+    builder.add_video_stream("road", DummyH264VideoStreamTrack("road", 0.05))
+    stream = builder.stream()
+    try:
+      answer = await stream.start()
+      assert "a=sctp-init" not in answer.sdp
+      assert "webrtc-datachannel" in answer.sdp
+    finally:
+      await stream.stop()
+
+
+def test_strip_sctp_init():
+  offer = "v=0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\na=sctp-port:5000\r\na=sctp-init:AQAA\r\na=mid:1\r\n"
+  assert strip_sctp_init(offer) == "v=0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\na=sctp-port:5000\r\na=mid:1\r\n"
+  plain = "v=0\na=sctp-port:5000\n"
+  assert strip_sctp_init(plain) is plain
