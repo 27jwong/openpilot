@@ -224,8 +224,9 @@ def refresh_expired_lateral_snapshot(sm, *, now_ns: int, allow_combined: bool = 
     sm.update(0)
     if allow_combined and sm.logMonoTime['aolAxisState'] == header_ns:
       from openpilot.cereal import messaging
-      # GM EPS can refuse a one-frame withdrawal. Wait at most one control tick
-      # for a new proof; all permission and physical checks still run afterward.
+      # A one-frame withdrawal costs more than the frame: GM EPS can refuse it, and a
+      # rate-limited torque EPS needs most of a second to ramp back. Wait at most one
+      # control tick for a new proof; all permission and physical checks still run afterward.
       poller = messaging.Poller()
       poller.registerSocket(sm.sock['aolAxisState'])
       poller.poll(10)
