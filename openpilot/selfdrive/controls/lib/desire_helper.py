@@ -9,6 +9,10 @@ LaneChangeDirection = log.LaneChangeDirection
 LANE_CHANGE_SPEED_MIN = 20 * CV.MPH_TO_MS
 LANE_CHANGE_TIME_MAX = 10.
 LANE_CHANGE_START_TIME = 0.5
+# Model frames openpilot must be out of lateral control before a signal loses its automatic
+# lane change. Two frames (50+ ms) pass over a one-frame controls dropout: a 10-40 ms
+# latActive=False blip is sampled by at most one model frame.
+AUTO_SIGNAL_BLOCK_FRAMES = 2
 
 class DesireHelper:
   def __init__(self, policy: LaneChangePolicy | None = None):
@@ -21,6 +25,7 @@ class DesireHelper:
     self.desire = log.Desire.none
     self.pre_lane_change_timer = 0.0
     self.auto_signal_blocked = False
+    self.uncontrolled_frames = 0
     self.last_signal_direction = LaneChangeDirection.none
     self.auto_status = "manualRequired"
 
@@ -45,8 +50,9 @@ class DesireHelper:
       self.lane_change_performed = False
       self.auto_signal_blocked = False
     signal_direction = self.get_lane_change_direction(carstate) if one_blinker else LaneChangeDirection.none
+    self.uncontrolled_frames = 0 if lateral_active and engaged else self.uncontrolled_frames + 1
     if self.policy.auto_lane_change and (carstate.leftBlinker or carstate.rightBlinker) and (
-      not one_blinker or not lateral_active or not engaged or
+      not one_blinker or self.uncontrolled_frames >= AUTO_SIGNAL_BLOCK_FRAMES or
       (self.last_signal_direction not in (LaneChangeDirection.none, signal_direction))):
       self.auto_signal_blocked = True
     self.last_signal_direction = signal_direction
