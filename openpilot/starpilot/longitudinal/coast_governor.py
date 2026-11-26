@@ -19,8 +19,11 @@ horizon, once already inside the floor while closing, in Traffic Mode (which is 
 whenever cruise, the model, a stop, a curve or the driver is what is asking to slow down.
 
 Replayed on route 00000029's lead-following stretches against the logged leads (closed loop, measured
-CX-30 plant, brake threshold and fuel model, base's inside-gap cap included): brake time 142.7 -> 114.3 s,
-applications 28 -> 25, minimum gap 6.6 -> 6.5 m and headway 0.92 -> 0.90 s, accel RMS -6%, fuel -0.9%.
+CX-30 plant, brake threshold and fuel model, base's inside-gap cap and the model's gas gating included):
+brake time 146.7 -> 124.6 s, applications unchanged (27), minimum gap 6.6 m and headway 0.92 -> 0.90 s,
+accel RMS -5%, fuel -0.8%. It stands aside while the model gates the throttle (17 of the drive's 43 brake
+applications): there base's coast limit already sits at or below the brake onset, and easing to it measured
+no gain.
 """
 from dataclasses import dataclass
 import math
