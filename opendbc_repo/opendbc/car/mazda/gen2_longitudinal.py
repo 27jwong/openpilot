@@ -1,4 +1,6 @@
 """CX-30 (GEN2) longitudinal tune: the PI gains and output shaping identified from its logs."""
+import math
+
 import numpy as np
 
 from openpilot.common.filter_simple import FirstOrderFilter
@@ -7,6 +9,18 @@ from opendbc.car.mazda.values import MazdaSafetyFlags
 from opendbc.car.structs import car
 
 LongCtrlState = car.CarControl.Actuators.LongControlState
+
+# Where the CX-30's ACC starts using the friction brakes (and lights the brake lamps) instead of engine
+# braking: logistic fit of ACC_2 (0x222) BRAKE_RELATED against the sent command, route 00000029 (P = 0.5;
+# P goes 0.1 -> 0.9 over +-0.2 m/s^2 around it). More speed means more drag and more room before the brakes;
+# an uphill adds room, a downhill takes it away. Flat: -0.15 at 8 m/s, -0.26 at 15, -0.40 at 25, -0.51 at 33.
+FRICTION_BRAKE_ONSET = (-0.039, -0.0144, -0.436)  # m/s^2, per m/s, per m/s^2 of g*sin(pitch)
+
+
+def friction_brake_onset(speed: float, pitch: float) -> float:
+  """Commanded accel below which the CX-30 brakes with the friction brakes rather than the engine."""
+  c0, c_speed, c_grade = FRICTION_BRAKE_ONSET
+  return c0 + c_speed * speed + c_grade * 9.81 * math.sin(pitch)
 
 # The ACC accel interface is unity-gain and linear over +-1.6 m/s^2 against a first-order plant
 # with tau ~0.42 s, so the feedforward carries the request and the PI only has to reject
