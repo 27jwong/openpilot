@@ -42,6 +42,23 @@ ConnectionProvider = Callable[[StreamingOffer], Awaitable[RTCSessionDescription]
 MessageHandler = Callable[[Union[bytes, str]], None]
 
 
+def strip_sctp_init(sdp: str) -> str:
+  """
+  Drop SNAP's a=sctp-init lines from a remote offer.
+
+  Newer Chrome (Android Chrome 158 here) puts its SCTP INIT in the offer (SNAP,
+  draft-hancke-tsvwg-snap) and skips the INIT handshake on the wire when the answer
+  carries an a=sctp-init too. libdatachannel before v0.24.6 copies that line into its
+  answer unchanged, so Chrome opens its data channel while ours never opens, and
+  wait_for_connection() never starts the video. Without the line Chrome uses the
+  normal handshake. Fixed in libdatachannel #1637 (v0.24.6, libdatachannel-py
+  2026.1.0); drop this once the AGNOS venv ships that.
+  """
+  lines = sdp.splitlines(keepends=True)
+  kept = [line for line in lines if not line.startswith("a=sctp-init:")]
+  return sdp if len(kept) == len(lines) else "".join(kept)
+
+
 class WebRTCBaseStream(abc.ABC):
   # destorying wrapper on close can cause deadlock
   # TODO: upstream a fix to this
@@ -434,9 +451,10 @@ class WebRTCAnswerStream(WebRTCBaseStream):
     self._loop = asyncio.get_running_loop()
     assert self.peer_connection.remote_description() is None, "Connection already established"
 
-    self._parse_incoming_streams(remote_sdp=self.session.sdp)
-    self.peer_connection.set_remote_description(Description(self.session.sdp, Description.Type.Offer))
-    self._add_producer_tracks(self.session.sdp)
+    offer_sdp = strip_sctp_init(self.session.sdp)
+    self._parse_incoming_streams(remote_sdp=offer_sdp)
+    self.peer_connection.set_remote_description(Description(offer_sdp, Description.Type.Offer))
+    self._add_producer_tracks(offer_sdp)
 
     self.peer_connection.set_local_description(Description.Type.Answer)
     await self._wait_for_gathering_complete()
