@@ -21,6 +21,7 @@ from openpilot.starpilot.conditional_mode.adjacent import (
 )
 from openpilot.starpilot.feature_runtime import enabled as feature_enabled
 from openpilot.starpilot.longitudinal.voacc import selected as voacc_selected
+from openpilot.starpilot.longitudinal.vision_lead_accel import VisionLeadAccel
 from openpilot.starpilot.longitudinal.vision_lead_speed import VisionLeadSpeedCalibration
 
 
@@ -206,9 +207,10 @@ def get_lead(v_ego: float, ready: bool, tracks: dict[int, Track], lead_msg: capn
 class RadarD:
   def __init__(self, delay: float = 0.0, *, adjacent_enabled: bool = False, radar_available: bool = False,
                clock_pair_fn=None, honda_bosch_a_radar: bool = False, use_voacc: bool = False,
-               vision_lead_speed_calibration: bool = False):
+               vision_lead_speed_calibration: bool = False, vision_lead_accel: bool = False):
     self.use_voacc = use_voacc
     self.vision_lead_speed = VisionLeadSpeedCalibration() if vision_lead_speed_calibration else None
+    self.vision_lead_accel = VisionLeadAccel() if vision_lead_accel else None
     self.tracks: dict[int, Track] = {}
     self.honda_bosch_a = None
     if honda_bosch_a_radar:
@@ -356,18 +358,25 @@ class RadarD:
 
       self._observe_vision_lead_speed(sm, leads_v3[0], model_v_ego)
       corrections = [self._vision_lead_speed_correction(i, sm, leads_v3[i], model_v_ego) for i in range(2)]
+      if self.vision_lead_accel is not None:
+        self.vision_lead_accel.observe_ego(self.v_ego)
       if self.use_voacc:
-        self.radar_state.leadOne = get_lead(self.v_ego, self.ready, {}, leads_v3[0], model_v_ego,
-                                          self.lead_prob_filters[0].x, low_speed_override=False, v_rel_correction=corrections[0])
-        self.radar_state.leadTwo = get_lead(self.v_ego, self.ready, {}, leads_v3[1], model_v_ego,
-                                          self.lead_prob_filters[1].x, low_speed_override=False, v_rel_correction=corrections[1])
+        lead_one = get_lead(self.v_ego, self.ready, {}, leads_v3[0], model_v_ego,
+                            self.lead_prob_filters[0].x, low_speed_override=False, v_rel_correction=corrections[0])
+        lead_two = get_lead(self.v_ego, self.ready, {}, leads_v3[1], model_v_ego,
+                            self.lead_prob_filters[1].x, low_speed_override=False, v_rel_correction=corrections[1])
       elif self.honda_bosch_a is not None:
-        self.radar_state.leadOne, self.radar_state.leadTwo = self.honda_bosch_a.leads(sm, self, model_v_ego)
+        lead_one, lead_two = self.honda_bosch_a.leads(sm, self, model_v_ego)
       else:
-        self.radar_state.leadOne = get_lead(self.v_ego, self.ready, self.tracks, leads_v3[0], model_v_ego, self.lead_prob_filters[0].x,
-                                            low_speed_override=True, v_rel_correction=corrections[0])
-        self.radar_state.leadTwo = get_lead(self.v_ego, self.ready, self.tracks, leads_v3[1], model_v_ego,
-                                          self.lead_prob_filters[1].x, low_speed_override=False, v_rel_correction=corrections[1])
+        lead_one = get_lead(self.v_ego, self.ready, self.tracks, leads_v3[0], model_v_ego, self.lead_prob_filters[0].x,
+                            low_speed_override=True, v_rel_correction=corrections[0])
+        lead_two = get_lead(self.v_ego, self.ready, self.tracks, leads_v3[1], model_v_ego,
+                            self.lead_prob_filters[1].x, low_speed_override=False, v_rel_correction=corrections[1])
+      if self.vision_lead_accel is not None and self.honda_bosch_a is None:
+        lead_one = self._vision_lead_braking(0, sm, lead_one, leads_v3[0], model_v_ego)
+        lead_two = self._vision_lead_braking(1, sm, lead_two, leads_v3[1], model_v_ego)
+      self.radar_state.leadOne = lead_one
+      self.radar_state.leadTwo = lead_two
     if self.adjacent_enabled:
       self._qualified_adjacent(sm, rr)
 
@@ -394,6 +403,20 @@ class RadarD:
     _, d_rel, v_lead, a_lead, _ = now
     return self.vision_lead_speed.correction(index, sm.logMonoTime['modelV2'] * 1e-9, self.v_ego, d_rel,
                                              v_lead - model_v_ego, a_lead)
+
+  def _vision_lead_braking(self, index: int, sm: messaging.SubMaster, lead_dict: dict[str, Any], lead,
+                           model_v_ego: float) -> dict[str, Any]:
+    """A vision lead's aLeadK from its own speed track once the model says it brakes (radar leads untouched)."""
+    assert self.vision_lead_accel is not None
+    now = self._lead_now(lead)
+    if not lead_dict.get('present', False) or lead_dict.get('radar', True) or now is None:
+      self.vision_lead_accel.reset(index)
+      return lead_dict
+    _, d_rel, v_lead, a_lead, _ = now
+    # the raw closing speed: the learner's correction fades in and out with braking, which would read as accel
+    lead_dict['aLeadK'] = float(self.vision_lead_accel.update(index, sm.logMonoTime['modelV2'] * 1e-9, d_rel,
+                                                              v_lead - model_v_ego, a_lead))
+    return lead_dict
 
   def publish(self, pm: messaging.PubMaster):
     assert self.radar_state is not None
@@ -449,9 +472,10 @@ def main() -> None:
   from opendbc.car.honda.bosch_a_radar import VERIFIED_BOSCH_A_CARS
   honda_bosch_a = CP.brand == "honda" and CP.carFingerprint in VERIFIED_BOSCH_A_CARS and not CP.radarUnavailable
   # Mazda leads are vision-only (GEN2 radar publishes no objects), so their closing speed is calibrated online
+  # and their braking is measured from their own speed track
   RD = RadarD(CP.radarDelay, adjacent_enabled=adjacent_enabled, radar_available=not CP.radarUnavailable,
               honda_bosch_a_radar=honda_bosch_a, use_voacc=voacc_selected(params, CP),
-              vision_lead_speed_calibration=CP.brand == 'mazda')
+              vision_lead_speed_calibration=CP.brand == 'mazda', vision_lead_accel=CP.brand == 'mazda')
   set_core_affinity([3, 5])
 
   while 1:
