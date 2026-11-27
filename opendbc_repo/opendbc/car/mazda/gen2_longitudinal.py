@@ -90,6 +90,66 @@ def brake_overshoot(target: float, speed: float) -> float:
   wide = float(np.interp(speed, LOW_SPEED_BRAKE_OVERSHOOT_BP, [1.0, 0.0])) * min(1.0, -target / LOW_SPEED_BRAKE_OVERSHOOT_FULL)
   return MAX_BRAKE_OVERSHOOT + (LOW_SPEED_BRAKE_OVERSHOOT - MAX_BRAKE_OVERSHOOT) * wide
 
+# The bound above exists for the PI's lead over the car's lag, so it can't tell that lead from a car that
+# really isn't braking as hard as it was told. Route 0000002b 2:37.3-2:39.0 (24 mph, lead slowing to a stop):
+# cresting a hill the car delivered -0.4..-0.6 for -1.13..-1.26 sent, 0.5-0.6 m/s^2 short of what its own
+# response to those commands predicts, and the command sat at exactly target - 0.10 for 1.5 s. The driver
+# braked at 2:41.5 with the lead 5.6 m ahead; replayed without the driver, the car stops 1.4 m short of it.
+# Widening the bound alone barely helps: at speed the integrator takes ~3 s to absorb a step like that (the
+# gains above are low there on purpose). So, as at low speed, the feedforward carries the shortfall, here as
+# measured rather than mapped: how far aEgo falls short of the car's known response to what was actually sent,
+# a 0.15 s dead time and a 0.4 s lag (fitted against aEgo, the same plant the gains were tuned on). While the car
+# follows that response, which is all the PI's lead over the lag is, nothing changes and the bound holds.
+# Replayed with both loops closed from 2:37 (the car's measured shortfall added back in), the stop lands 3.1 m
+# back instead of 1.4. Whole drives 00000029, 0000002a and 0000002b: the felt jabs (car 0.25+ past the plan for
+# 0.2 s+) stay at 4, 4 and 6 and the time 0.2+ past it at 3.8 -> 3.9, 3.6 and 7.8 s. A flat 0.40 bound took
+# 2:40 to 4.1 m but went to 9, 6 and 7 jabs.
+RESPONSE_DEAD_FRAMES = round(0.15 / DT_CTRL)
+RESPONSE_LAG = 0.40  # s
+RESPONSE_WARMUP_FRAMES = round(0.60 / DT_CTRL)  # the dead time and most of a lag before the model is trusted
+SHORTFALL_RC = 0.30  # s: aEgo noise is 0.05-0.15 m/s^2 per frame
+SHORTFALL_DEADBAND = 0.10  # m/s^2: model error left over at steady braking (median -0.06, p95 +0.10-0.16)
+SHORTFALL_COMPENSATION_MAX = 0.50  # m/s^2
+# Below this the mapped low-speed terms above own the braking: stops, creep and launch lurches were tuned there.
+SHORTFALL_SPEED_BP = [4.0, 6.0]  # m/s
+
+
+class CarResponse:
+  """What aEgo should be given the commands actually sent, and how far the car is falling short of it."""
+
+  def __init__(self):
+    self.reset()
+
+  def reset(self) -> None:
+    self.expected: list[float] = []
+    self.model = 0.0
+    self.shortfall = FirstOrderFilter(0.0, SHORTFALL_RC, DT_CTRL, initialized=False)
+    self.frames = 0
+    self.returned: float | None = None
+
+  def update(self, sent: float, a_ego: float, expected_delivery: float | None) -> None:
+    """One control frame: sent is last frame's command, expected_delivery what the car should make of it."""
+    if self.returned is None or expected_delivery is None or not abs(sent - self.returned) < 1e-6:
+      # first frame, or frames this loop didn't shape (stop, start) or a command it didn't send: start over
+      self.reset()
+      self.model = float(a_ego)
+      self.shortfall.x = 0.0
+      self.shortfall.initialized = True
+      return
+    self.expected.append(float(expected_delivery))
+    del self.expected[:-(RESPONSE_DEAD_FRAMES + 1)]
+    if len(self.expected) > RESPONSE_DEAD_FRAMES:
+      self.model += DT_CTRL / RESPONSE_LAG * (self.expected[0] - self.model)
+    self.frames += 1
+    self.shortfall.update(float(a_ego) - self.model)
+
+  def compensation(self, target: float, speed: float) -> float:
+    """m/s^2 of extra braking to send for the car's measured shortfall, while braking is asked for."""
+    if target >= 0.0 or self.frames < RESPONSE_WARMUP_FRAMES:
+      return 0.0
+    short = min(max(float(self.shortfall.x) - SHORTFALL_DEADBAND, 0.0), SHORTFALL_COMPENSATION_MAX)
+    return short * min(1.0, -target / LOW_SPEED_BRAKE_OVERSHOOT_FULL) * float(np.interp(speed, SHORTFALL_SPEED_BP, [0.0, 1.0]))
+
 # The same lead builds on the gas side whenever the planner steps up faster than the car follows (the car
 # answers a command after ~0.15 s plus a 0.4 s lag). With Blended ACC off, the CX-30 drives of 2026-11-24/25
 # had 2-3 such steps a drive, mostly where conditional mode dropped back to chill: feedback put the command
@@ -144,17 +204,22 @@ class Gen2LongitudinalPolicy:
     self.pid = None
     self.error_filter = FirstOrderFilter(0.0, ERROR_FILTER_RC, DT_CTRL, initialized=False)
     self.error_delta = 0.0
+    self.response = CarResponse()
+    self.accel_limits = (-math.inf, math.inf)
+    self.expected_delivery: float | None = None
 
   def reset(self) -> None:
     self.error_filter.initialized = False
     self.error_delta = 0.0
+    self.response.reset()
+    self.expected_delivery = None
 
   def stop_policy(self) -> Gen2StopPolicy:
     return Gen2StopPolicy()
 
   def feedforward(self, target: float, speed: float, last_output: float) -> float:
-    # the error stays target - aEgo; only the command carries the car's low-speed braking shortfall
-    return target - low_speed_shortfall(target, speed)
+    # the error stays target - aEgo; only the command carries the car's braking shortfall
+    return target - low_speed_shortfall(target, speed) - self.response.compensation(target, speed)
 
   def prepare_pid(self, pid, target: float, error: float, speed: float,
                   last_output: float, accel_limits: tuple[float, float], *,
@@ -162,6 +227,8 @@ class Gen2LongitudinalPolicy:
     # LongControl hands the PID the raw error, so the filtered part of it is applied to the output in
     # shape_output instead: the P term is linear in the error, and the integrator averages the noise out.
     self.pid = pid
+    self.accel_limits = accel_limits
+    self.response.update(float(last_output), float(target) - float(error), self.expected_delivery)
     if abs(error) > ERROR_FILTER_BYPASS:
       self.error_filter.x = float(error)
       self.error_filter.initialized = True
@@ -183,8 +250,10 @@ class Gen2LongitudinalPolicy:
     # after every stretch of MRCC driving, when the integrator had wound against MRCC's own accel.
     # Below ~5 m/s the margin is measured from the shortfall-corrected command and widens with the braking
     # asked for (LOW_SPEED_SHORTFALL above); both terms are zero at a zero target, so continuity holds.
+    # The measured shortfall (CarResponse above) moves it the same way, and is zero at a zero target too.
+    shortfall = low_speed_shortfall(target, speed)
     if self.pid is not None:
-      floor = min(target - low_speed_shortfall(target, speed), 0.0) - brake_overshoot(target, speed)
+      floor = min(target - shortfall - self.response.compensation(target, speed), 0.0) - brake_overshoot(target, speed)
       if output < floor:
         self.pid.i += floor - output
         output = floor
@@ -193,6 +262,9 @@ class Gen2LongitudinalPolicy:
       if output > ceiling:
         self.pid.i -= output - ceiling
         output = ceiling
+    # what LongControl will send (it clips to the same limits), and what the car should make of it
+    self.response.returned = min(max(output, self.accel_limits[0]), self.accel_limits[1])
+    self.expected_delivery = self.response.returned + shortfall
     return output
 
 

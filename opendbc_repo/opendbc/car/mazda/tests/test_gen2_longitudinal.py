@@ -5,8 +5,9 @@ import pytest
 import numpy as np
 
 from opendbc.car.mazda.gen2_longitudinal import (KI, KP, MAX_BRAKE_OVERSHOOT, MAX_GAS_OVERSHOOT, ERROR_FILTER_RC,
-                                                 LOW_SPEED_BRAKE_OVERSHOOT, STANDSTILL_GO_DWELL_FRAMES, LongCtrlState,
-                                                 brake_overshoot, low_speed_shortfall, policy_for)
+                                                 LOW_SPEED_BRAKE_OVERSHOOT, RESPONSE_WARMUP_FRAMES, SHORTFALL_COMPENSATION_MAX,
+                                                 STANDSTILL_GO_DWELL_FRAMES, LongCtrlState, brake_overshoot,
+                                                 low_speed_shortfall, policy_for)
 from opendbc.car.mazda.values import MazdaSafetyFlags
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.pid import PIDController
@@ -20,12 +21,14 @@ def make_cp(brand="mazda", long=True, flags=MazdaSafetyFlags.GEN2.value):
 def run(policy, pid, targets, a_ego, speed=10.0):
   """LongControl's pid branch, as extension.prepare_pid / shape_output drive it."""
   outs = []
+  last = 0.0
   for target, ego in zip(targets, a_ego, strict=True):
     error = target - ego
-    ff = policy.feedforward(target, speed, 0.0)
-    freeze = policy.prepare_pid(pid, target, error, speed, 0.0, (-3.5, 2.0))
+    ff = policy.feedforward(target, speed, last)
+    freeze = policy.prepare_pid(pid, target, error, speed, last, (-3.5, 2.0))
     out = pid.update(error, speed=speed, feedforward=ff, freeze_integrator=freeze)
-    outs.append(policy.shape_output(float(out), target, error, speed))
+    last = float(np.clip(policy.shape_output(float(out), target, error, speed), -3.5, 2.0))
+    outs.append(last)
   return np.array(outs)
 
 
@@ -73,8 +76,13 @@ def test_brake_overshoot_is_bounded_and_integrator_follows():
   pid = PIDController(KP, KI, pos_limit=2.0, neg_limit=-3.5, rate=1 / DT_CTRL)
   # planner wants -1.0 but the car is not decelerating yet: feedback would out-brake it
   got = run(policy, pid, np.full(300, -1.0), np.full(300, 0.0))
-  assert got.min() >= -1.0 - MAX_BRAKE_OVERSHOOT - 1e-9
-  assert np.isclose(got[-1], -1.0 - MAX_BRAKE_OVERSHOOT)
+  # through the car's dead time and lag that is only the PI's lead, and the bound holds it
+  lag = RESPONSE_WARMUP_FRAMES
+  assert got[:lag].min() >= -1.0 - MAX_BRAKE_OVERSHOOT - 1e-9
+  assert np.isclose(got[lag - 1], -1.0 - MAX_BRAKE_OVERSHOOT)
+  # a car still not braking after that is short of its own response, and the command makes it up, to a limit
+  assert got.min() >= -1.0 - MAX_BRAKE_OVERSHOOT - SHORTFALL_COMPENSATION_MAX - 1e-9
+  assert np.isclose(got[-1], -1.0 - MAX_BRAKE_OVERSHOOT - SHORTFALL_COMPENSATION_MAX)
   # back-calculated: the integrator holds only what was actually sent
   assert np.isclose(pid.p + pid.i + pid.f, got[-1], atol=1e-6) or pid.i > -1.0
 
@@ -181,9 +189,10 @@ def closed_loop(target, speed, seconds=3.0, policy=None):
   a, sent = 0.0, [0.0] * 15
   for _ in range(int(seconds / DT_CTRL)):
     error = target - a
-    ff = policy.feedforward(target, speed, 0.0)
-    freeze = policy.prepare_pid(pid, target, error, speed, 0.0, (-3.5, 2.0))
+    ff = policy.feedforward(target, speed, sent[-1])
+    freeze = policy.prepare_pid(pid, target, error, speed, sent[-1], (-3.5, 2.0))
     out = policy.shape_output(float(pid.update(error, speed=speed, feedforward=ff, freeze_integrator=freeze)), target, error, speed)
+    out = float(np.clip(out, -3.5, 2.0))
     sent.append(out)
     a += DT_CTRL / 0.4 * (cx30_braking(speed, sent[-16]) - a)
   return a, out
@@ -209,6 +218,7 @@ def test_low_speed_braking_reaches_the_request(speed, target):
   class Plain:  # the policy before the low-speed terms: plain feedforward and the fixed 0.10 bound
     def __init__(self):
       self.p = policy_for(make_cp())
+      self.p.response.compensation = lambda target, speed: 0.0  # nor the measured shortfall
     def feedforward(self, t, v, last):
       return t
     def prepare_pid(self, *args, **kwargs):
@@ -226,6 +236,73 @@ def test_highway_braking_is_unchanged():
   assert policy.feedforward(-1.0, 15.0, 0.0) == -1.0
   a, out = closed_loop(-1.0, 15.0)
   assert out >= -1.0 - MAX_BRAKE_OVERSHOOT - 1e-9
+
+
+def trace(targets, speed, deliver, policy=None, noise=0.0, seed=0):
+  """closed_loop with a target per frame, a delivery function and aEgo noise; returns (car accel, sent)."""
+  policy = policy or policy_for(make_cp())
+  pid = PIDController(KP, KI, pos_limit=2.0, neg_limit=-3.5, rate=1 / DT_CTRL)
+  rng = np.random.default_rng(seed)
+  a, sent, accels = 0.0, [0.0] * 15, []
+  for target in targets:
+    a_ego = a + rng.normal(0.0, noise) if noise else a
+    error = target - a_ego
+    ff = policy.feedforward(target, speed, sent[-1])
+    freeze = policy.prepare_pid(pid, target, error, speed, sent[-1], (-3.5, 2.0))
+    out = policy.shape_output(float(pid.update(error, speed=speed, feedforward=ff, freeze_integrator=freeze)), target, error, speed)
+    sent.append(float(np.clip(out, -3.5, 2.0)))
+    a += DT_CTRL / 0.4 * (deliver(sent[-16]) - a)
+    accels.append(a)
+  return np.array(accels), np.array(sent[15:])
+
+
+def test_car_following_its_response_keeps_the_plain_bound():
+  # a hard brake ramp (0 to -2.5 in 1 s) is where the PI leads the car's lag the most; a car that answers the
+  # way it was identified has no shortfall to make up, so the plain 0.10 bound holds throughout
+  targets = np.concatenate([np.linspace(0.0, -2.5, 100), np.full(250, -2.5)])
+  policy = policy_for(make_cp())
+  _, sent = trace(targets, 15.0, lambda u: u, policy=policy, noise=0.05)
+  assert (sent >= targets - MAX_BRAKE_OVERSHOOT - 1e-9).all()
+  assert policy.response.compensation(-2.5, 15.0) == 0.0
+
+
+def test_car_short_of_its_response_is_made_up():
+  # route 0000002b 2:37.3-2:39.0, 24 mph: cresting a hill the car delivered 0.5-0.6 m/s^2 less braking than it
+  # was sent, and the plain bound held the command at target - 0.10, so it stayed ~0.45 short for 1.5 s
+  targets = np.full(300, -1.1)
+  short = lambda u: u + 0.55 if u < 0 else u  # noqa: E731
+  plain = policy_for(make_cp())
+  plain.response.compensation = lambda target, speed: 0.0
+  a_plain, _ = trace(targets, 10.9, short, policy=plain)
+  a, sent = trace(targets, 10.9, short)
+  assert a_plain[-1] - targets[-1] > 0.4
+  assert abs(a[200:] - targets[200:]).max() < 0.15  # within 0.15 of the plan 2 s in (the deadband is left to the PI)
+  assert sent.min() >= -1.1 - MAX_BRAKE_OVERSHOOT - SHORTFALL_COMPENSATION_MAX - 1e-9
+
+
+def test_compensation_vanishes_at_a_zero_target():
+  policy = policy_for(make_cp())
+  pid = PIDController(KP, KI, pos_limit=2.0, neg_limit=-3.5, rate=1 / DT_CTRL)
+  run(policy, pid, np.full(300, -1.0), np.full(300, 0.0))  # the car never braked: a large shortfall
+  room = policy.response.compensation
+  assert room(-1.0, 10.0) == SHORTFALL_COMPENSATION_MAX
+  assert room(0.0, 10.0) == 0.0 and room(0.5, 10.0) == 0.0
+  assert room(-0.001, 10.0) < 0.001  # scales with the braking asked for, so the command and floor stay continuous
+  # and none at stop-and-go speeds, where the mapped low-speed terms own the braking
+  assert room(-1.0, 4.0) == 0.0 and 0.0 < room(-1.0, 5.0) < SHORTFALL_COMPENSATION_MAX
+
+
+def test_frames_the_policy_did_not_shape_restart_the_response():
+  policy = policy_for(make_cp())
+  pid = PIDController(KP, KI, pos_limit=2.0, neg_limit=-3.5, rate=1 / DT_CTRL)
+  run(policy, pid, np.full(300, -1.0), np.full(300, 0.0))
+  assert policy.response.compensation(-1.0, 10.0) > 0.0
+  # a stop or a launch in between: LongControl sent something this policy never returned
+  policy.prepare_pid(pid, -1.0, -1.0, 10.0, -0.3, (-3.5, 2.0))
+  assert policy.response.frames == 0 and policy.response.compensation(-1.0, 10.0) == 0.0
+  run(policy, pid, np.full(300, -1.0), np.full(300, 0.0))
+  policy.reset()
+  assert policy.response.frames == 0 and policy.expected_delivery is None
 
 
 def cruise_amplification(kp, ki, freq, speed=20.0):
