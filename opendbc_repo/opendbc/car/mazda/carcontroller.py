@@ -188,9 +188,8 @@ class CarController(CarControllerBase):
         lead_ttc = self.lead_distance / -self.lead_velocity if lead_status and self.lead_velocity < 0 else math.inf
 
         # The crawl zone (carstate's op_crawl, entered below 6.5 mph) is openpilot's outright: the
-        # stops, the standstill and the launches, with experimental mode held on there by the same
-        # zone so chill/experimental flips cannot step the plan. A launch therefore never changes
-        # hands, and the only crawl handover is the one on the way down through the entry speed.
+        # stops, the standstill and the launches. A launch therefore never changes hands, and the
+        # only crawl handover is the one on the way down through the entry speed.
         # The distance setting no longer hands over: the old setting-1 handover sat on the farthest
         # setting (it was written as "closest" while the direction was read backwards).
         crawl_to_op = CS.op_crawl

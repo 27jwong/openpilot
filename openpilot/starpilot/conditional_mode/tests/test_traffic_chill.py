@@ -1,4 +1,4 @@
-"""Traffic Mode holds chill over CEM/CCM and the crawl zone, and lets go when it ends."""
+"""Traffic Mode holds chill over CEM/CCM, and lets go when it ends."""
 
 from dataclasses import replace
 from types import SimpleNamespace
@@ -6,7 +6,6 @@ from types import SimpleNamespace
 import pytest
 
 from openpilot.starpilot.conditional_mode import ConditionalModePolicy, LeadEvidence, ManualIntent, ModeChoice, ModeSettings, Reason
-from openpilot.starpilot.conditional_mode.preferences import manual_for_drive
 from openpilot.starpilot.conditional_mode.tests.test_policy import AUTHORITY, scene
 from openpilot.starpilot.conditional_mode.traffic_chill import traffic_chill
 
@@ -35,13 +34,6 @@ def test_no_override_without_a_traffic_request(verdict):
 
 def test_no_override_without_a_drive():
   assert traffic_chill(_verdict(True), 0, NOW) is None
-
-
-def test_traffic_chill_takes_precedence_over_the_crawl_zone_demand():
-  # plannerd: traffic_chill(...) or crawl_experimental(...)
-  crawl = manual_for_drive(ManualIntent.FORCE_EXPERIMENTAL, DRIVE, NOW)
-  assert (traffic_chill(_verdict(True), DRIVE, NOW) or crawl).intent is ManualIntent.FORCE_CHILL
-  assert (traffic_chill(_verdict(False), DRIVE, NOW) or crawl) is crawl
 
 
 def _cem_step(policy, now, traffic):

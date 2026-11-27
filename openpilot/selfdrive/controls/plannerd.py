@@ -30,7 +30,6 @@ from openpilot.starpilot.curve_speed.preferences import PreferenceHost as CurveP
 from openpilot.starpilot.curve_speed.status import StatusPublisher as CurveStatusPublisher
 from openpilot.starpilot.model_geometry import road_curvature
 from openpilot.starpilot.conditional_mode.planner_host import ConditionalPlannerHost
-from openpilot.starpilot.car.mazda.dashboard import crawl_experimental as mazda_crawl_experimental
 from openpilot.starpilot.conditional_mode.runtime_settings import ConditionalSettingsOwner
 from openpilot.starpilot.conditional_mode.policy import ModeChoice
 from openpilot.starpilot.conditional_mode.projection import ConditionalOwnerContext, ObservedBool
@@ -401,9 +400,7 @@ def starpilot_main():
   if conditional_host is not None:
     subscribed_services.append('starpilotRadarState')
   optional_slc = slc_lifecycle.source_services() if slc_available else []
-  # Mazda GEN2 also carries its crawl-zone experimental demand here for the conditional host.
-  if ((force_stop_owner is not None or drive_mode_capable(CP) or
-       conditional_host is not None and CP.brand == 'mazda') and 'starpilotCarState' not in optional_slc):
+  if (force_stop_owner is not None or drive_mode_capable(CP)) and 'starpilotCarState' not in optional_slc:
     optional_slc.append('starpilotCarState')
   if force_stop_owner is not None and 'slcVisionObservation' not in optional_slc:
     optional_slc.append('slcVisionObservation')
@@ -606,10 +603,8 @@ def starpilot_main():
               manual_event=current_manual_event(pending_conditional_events, conditional_now_ns,
                                                 int(sm.logMonoTime['carState'])),
               ui_event=current_ui_manual_event(pending_conditional_ui, conditional_now_ns),
-              # Traffic Mode holds chill over everything, the crawl zone's experimental demand included.
-              manual=(traffic_chill(traffic_verdict, current_start_ns, conditional_now_ns) or
-                      (mazda_crawl_experimental(sm, current_start_ns, conditional_now_ns)
-                       if CP.brand == 'mazda' else None)),
+              # Traffic Mode holds chill over CEM/CCM and the saved manual state.
+              manual=traffic_chill(traffic_verdict, current_start_ns, conditional_now_ns),
             )
             planner_status = conditional_host.status.attach(
               planner_status, proposal, snapshot, now_ns=conditional_now_ns,
