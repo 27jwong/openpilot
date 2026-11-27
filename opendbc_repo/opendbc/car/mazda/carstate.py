@@ -10,7 +10,7 @@ ButtonType = structs.CarState.ButtonEvent.Type
 
 DASHBOARD_CARS = frozenset(CAR)
 
-# GEN2 crawl zone: below this openpilot owns the car outright under blended ACC, held in experimental mode.
+# GEN2 crawl zone: below this openpilot owns the car outright under blended ACC.
 # MRCC used to keep crawl-speed following because openpilot's stops were the harsher ones (09-29: -1.42 vs
 # -0.97 m/s^2, jerk 2.47 vs 0.76). On the 11-19 drives openpilot's experimental stop requests were the gentler
 # ones (-1.09 vs -1.26, worst -2.00 vs -3.54), and what jerked the car at crawl was chill/experimental flipping

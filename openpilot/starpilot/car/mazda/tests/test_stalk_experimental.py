@@ -36,14 +36,12 @@ def test_gen2_demand_needs_valid_can_and_main_on():
   cp = _params(CAR.MAZDA_CX_30)
   assert _flag(cp, 1, can_valid=False) is False
   assert _flag(cp, 1, available=False) is False
-  assert _flag(cp, 4, op_crawl=True, can_valid=False) is False
-  assert _flag(cp, 4, op_crawl=True, available=False) is False
 
 
-@pytest.mark.parametrize('setting', (1, 2, 3, 4))
-def test_gen2_crawl_zone_demands_experimental_at_any_setting(setting):
-  # openpilot owns the crawl zone under blended ACC; CEM flipping modes there steps the plan
-  assert _flag(_params(CAR.MAZDA_CX_30), setting, op_crawl=True) is True
+@pytest.mark.parametrize('setting, expected', ((1, True), (2, False), (3, False), (4, False)))
+def test_gen2_crawl_zone_adds_no_demand(setting, expected):
+  # The crawl zone's experimental hold was removed; only the stalk setting demands it.
+  assert _flag(_params(CAR.MAZDA_CX_30), setting, op_crawl=True) is expected
 
 
 def test_gen1_has_no_stalk_demand(monkeypatch):
